@@ -1001,6 +1001,7 @@ function getInitialState(): SwarmBoardState {
       nodes: persisted.nodes as Node<SwarmBoardNodeData>[],
       edges: (persisted.edges ?? []) as SwarmBoardEdge[],
       selectedNodeId: null,
+      selectedNodeIds: [],
       inspectorOpen: false,
       fileWatchRevision: 0,
       bundlePath: "",
@@ -1014,6 +1015,7 @@ function getInitialState(): SwarmBoardState {
     nodes: [],
     edges: [],
     selectedNodeId: null,
+    selectedNodeIds: [],
     inspectorOpen: false,
     fileWatchRevision: 0,
     bundlePath: "",
@@ -1027,6 +1029,8 @@ function getInitialState(): SwarmBoardState {
 interface SwarmBoardStoreState extends SwarmBoardState {
   // Derived state
   selectedNode: Node<SwarmBoardNodeData> | undefined;
+  selectedNodes: Node<SwarmBoardNodeData>[];
+  comparisonMode: boolean;
   rfEdges: Edge[];
 
   // Actions namespace (matching swarm-store.tsx pattern)
@@ -1042,6 +1046,7 @@ interface SwarmBoardStoreState extends SwarmBoardState {
       },
     ) => Node<SwarmBoardNodeData> | undefined;
     selectNode: (nodeId: string | null) => void;
+    setSelectedNodeIds: (ids: string[]) => void;
     addEdge: (edge: SwarmBoardEdge) => void;
     removeEdge: (edgeId: string) => void;
     clearBoard: () => void;
@@ -1070,6 +1075,15 @@ function deriveSelectedNode(
   return selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) : undefined;
 }
 
+function deriveSelectedNodes(
+  nodes: Node<SwarmBoardNodeData>[],
+  selectedNodeIds: string[],
+): Node<SwarmBoardNodeData>[] {
+  if (selectedNodeIds.length === 0) return [];
+  const idSet = new Set(selectedNodeIds);
+  return nodes.filter((n) => idSet.has(n.id));
+}
+
 function receiptCreatedAt(receipt: Receipt | undefined): number | undefined {
   if (!receipt) {
     return undefined;
@@ -1088,6 +1102,8 @@ const initialState = getInitialState();
 const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
   ...initialState,
   selectedNode: deriveSelectedNode(initialState.nodes, initialState.selectedNodeId),
+  selectedNodes: deriveSelectedNodes(initialState.nodes, initialState.selectedNodeIds),
+  comparisonMode: initialState.selectedNodeIds.length > 1,
   rfEdges: toRfEdges(initialState.edges),
 
   actions: {
@@ -1100,6 +1116,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       set({
         nodes,
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
       return node;
@@ -1112,6 +1130,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       set({
         nodes,
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
     },
@@ -1124,12 +1144,16 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       );
       const selectedNodeId = current.selectedNodeId === nodeId ? null : current.selectedNodeId;
       const inspectorOpen = current.selectedNodeId === nodeId ? false : current.inspectorOpen;
+      const selectedNodeIds = current.selectedNodeIds.filter((id) => id !== nodeId);
       set({
         nodes,
         edges,
         selectedNodeId,
+        selectedNodeIds,
         inspectorOpen,
         selectedNode: deriveSelectedNode(nodes, selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, selectedNodeIds),
+        comparisonMode: selectedNodeIds.length > 1,
         rfEdges: toRfEdges(edges),
       });
       schedulePersist({ ...get() });
@@ -1143,6 +1167,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       set({
         nodes,
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
     },
@@ -1176,6 +1202,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       set({
         nodes,
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
       return updatedNode;
@@ -1188,6 +1216,26 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodeId: nodeId,
         inspectorOpen: nodeId !== null,
         selectedNode: deriveSelectedNode(nodes, nodeId),
+      });
+    },
+
+    setSelectedNodeIds: (ids: string[]): void => {
+      const current = get();
+      const nodes = current.nodes;
+      const selectedNodes = deriveSelectedNodes(nodes, ids);
+      const comparisonMode = ids.length > 1;
+
+      // Backward compat: sync selectedNodeId for single selection
+      const selectedNodeId = ids.length === 1 ? ids[0] : (ids.length === 0 ? null : current.selectedNodeId);
+      const inspectorOpen = ids.length > 0;
+
+      set({
+        selectedNodeIds: ids,
+        selectedNodes,
+        comparisonMode,
+        selectedNodeId,
+        inspectorOpen,
+        selectedNode: deriveSelectedNode(nodes, selectedNodeId),
       });
     },
 
@@ -1217,8 +1265,11 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         nodes: [],
         edges: [],
         selectedNodeId: null,
+        selectedNodeIds: [],
         inspectorOpen: false,
         selectedNode: undefined,
+        selectedNodes: [],
+        comparisonMode: false,
         rfEdges: [],
       });
       schedulePersist({ ...get() });
@@ -1233,11 +1284,15 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       const current = get();
       const nodes = partial.nodes ?? current.nodes;
       const edges = partial.edges ?? current.edges;
+      const selectedNodeIds = partial.selectedNodeIds ?? current.selectedNodeIds;
       set({
         ...partial,
         nodes,
         edges,
+        selectedNodeIds,
         selectedNode: deriveSelectedNode(nodes, partial.selectedNodeId ?? current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, selectedNodeIds),
+        comparisonMode: selectedNodeIds.length > 1,
         rfEdges: toRfEdges(edges),
       });
       schedulePersist({ ...get() });
@@ -1262,6 +1317,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       set({
         nodes,
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
     },
@@ -1278,6 +1335,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       set({
         nodes,
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
     },
@@ -1287,6 +1346,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       set({
         nodes,
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
     },
@@ -1340,9 +1401,12 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
           nodes,
           edges,
           selectedNodeId: null,
+          selectedNodeIds: [],
           inspectorOpen: false,
           fileWatchRevision: 0,
           selectedNode: undefined,
+          selectedNodes: [],
+          comparisonMode: false,
           rfEdges: toRfEdges(edges),
         });
         boardPersistenceReady = true;
@@ -1362,6 +1426,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       set({
         nodes,
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
     },
@@ -1427,13 +1493,18 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       const selectedNodeId = current.selectedNodeId && nodes.some((n) => n.id === current.selectedNodeId)
         ? current.selectedNodeId
         : null;
+      const nodeIdSet = new Set(nodes.map((n) => n.id));
+      const selectedNodeIds = current.selectedNodeIds.filter((id) => nodeIdSet.has(id));
 
       set({
         nodes,
         edges,
         rfEdges: toRfEdges(edges),
         selectedNodeId,
+        selectedNodeIds,
         selectedNode: deriveSelectedNode(nodes, selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, selectedNodeIds),
+        comparisonMode: selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
     },
@@ -1490,6 +1561,8 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         edges,
         rfEdges: toRfEdges(edges),
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
+        comparisonMode: current.selectedNodeIds.length > 1,
       });
       schedulePersist({ ...get() });
     },
@@ -1502,7 +1575,11 @@ function reinitializeFromStorage(): void {
   const fresh = getInitialState();
   useSwarmBoardStoreBase.setState({
     ...fresh,
+    selectedNodeId: null,
+    selectedNodeIds: [],
     selectedNode: deriveSelectedNode(fresh.nodes, fresh.selectedNodeId),
+    selectedNodes: [],
+    comparisonMode: false,
     rfEdges: toRfEdges(fresh.edges),
   });
   if (isDesktop()) {
@@ -1540,10 +1617,13 @@ async function hydrateSwarmBoardFromDisk(force = false): Promise<void> {
         nodes,
         edges,
         selectedNodeId: null,
+        selectedNodeIds: [],
         inspectorOpen: false,
         fileWatchRevision: 0,
         bundlePath: "",
         selectedNode: undefined,
+        selectedNodes: [],
+        comparisonMode: false,
         rfEdges: toRfEdges(edges),
       });
     }
@@ -1613,6 +1693,8 @@ interface SwarmBoardContextValue {
   removeEdge: (edgeId: string) => void;
   clearBoard: () => void;
   selectedNode: Node<SwarmBoardNodeData> | undefined;
+  selectedNodes: Node<SwarmBoardNodeData>[];
+  comparisonMode: boolean;
   rfEdges: Edge[];
   spawnSession: (opts: SpawnSessionOptions) => Promise<Node<SwarmBoardNodeData>>;
   spawnClaudeSession: (opts: SpawnClaudeSessionOptions) => Promise<Node<SwarmBoardNodeData>>;
@@ -1701,6 +1783,8 @@ export function useSwarmBoard(): SwarmBoardContextValue {
     })),
   );
   const selectedNode = useSwarmBoardStore((s) => s.selectedNode);
+  const selectedNodes = useSwarmBoardStore((s) => s.selectedNodes);
+  const comparisonMode = useSwarmBoardStore((s) => s.comparisonMode);
   const rfEdges = useSwarmBoardStore((s) => s.rfEdges);
   const actions = useSwarmBoardStore((s) => s.actions);
 
@@ -1737,10 +1821,12 @@ export function useSwarmBoard(): SwarmBoardContextValue {
       removeEdge: actions.removeEdge,
       clearBoard: actions.clearBoard,
       selectedNode,
+      selectedNodes,
+      comparisonMode,
       rfEdges,
       ...sessionMethods,
     }),
-    [state, dispatch, actions, selectedNode, rfEdges, sessionMethods],
+    [state, dispatch, actions, selectedNode, selectedNodes, comparisonMode, rfEdges, sessionMethods],
   );
 }
 

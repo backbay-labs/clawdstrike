@@ -28,6 +28,7 @@ import {
   BackgroundVariant,
   MiniMap,
   useReactFlow,
+  useOnSelectionChange,
   type Node,
   type Edge,
   type Viewport,
@@ -168,7 +169,6 @@ function isInputTarget(e: KeyboardEvent): boolean {
 function SwarmBoardCanvas() {
   const {
     state,
-    selectNode,
     removeNode,
     addNode,
     updateNode,
@@ -464,31 +464,25 @@ function SwarmBoardCanvas() {
     [storeActions],
   );
 
-  // Node click -> select & open inspector
+  // Node click -> dismiss context menu (selection handled by useOnSelectionChange)
   const onNodeClick: NodeMouseHandler = useCallback(
-    (_event, node) => {
-      selectNode(node.id);
+    (_event, _node) => {
       setContextMenu(null);
     },
-    [selectNode],
+    [],
   );
 
-  // Double-click on node -> type-specific behavior
+  // Double-click on node -> type-specific behavior (node already selected by mousedown)
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
       const d = node.data as SwarmBoardNodeData;
-      selectNode(node.id);
-
       if (d.nodeType === "agentSession") {
-        // Open inspector AND expand terminal preview
         updateNode(node.id, { maximized: true });
       } else if (d.nodeType === "note") {
-        // Enter edit mode
         updateNode(node.id, { editing: true });
       }
-      // For all other types, just opening inspector (via selectNode) is sufficient
     },
-    [selectNode, updateNode],
+    [updateNode],
   );
 
   // Right-click on node -> context menu
@@ -506,10 +500,21 @@ function SwarmBoardCanvas() {
 
   // Click on empty canvas -> deselect
   const onPaneClick = useCallback(() => {
-    selectNode(null);
+    storeActions.setSelectedNodeIds([]);
     setContextMenu(null);
     setHoveredNodeId(null);
-  }, [selectNode]);
+  }, [storeActions]);
+
+  // Sync React Flow multi-selection to Zustand store
+  const onSelectionChangeHandler = useCallback(
+    ({ nodes: selectedNodes }: { nodes: Node[]; edges: Edge[] }) => {
+      const ids = selectedNodes.map((n) => n.id);
+      storeActions.setSelectedNodeIds(ids);
+    },
+    [storeActions],
+  );
+
+  useOnSelectionChange({ onChange: onSelectionChangeHandler });
 
   // Click on edge -> open receipt detail for receipt-type edges
   const onEdgeClick = useCallback(
@@ -747,7 +752,7 @@ function SwarmBoardCanvas() {
 
       // Escape -> deselect all and close inspector
       if (e.key === "Escape") {
-        selectNode(null);
+        storeActions.setSelectedNodeIds([]);
         setContextMenu(null);
         return;
       }
@@ -853,7 +858,7 @@ function SwarmBoardCanvas() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectNode, storeActions, addNode, fitBoard, getDropPosition, spawnSession, state.repoRoot, state.selectedNodeId]);
+  }, [storeActions, addNode, fitBoard, getDropPosition, spawnSession, state.repoRoot, state.selectedNodeId]);
 
   // Space+drag pan — hold Space to enable left-click pan mode
   useEffect(() => {
@@ -901,10 +906,10 @@ function SwarmBoardCanvas() {
   // Context menu actions
   const handleContextInspect = useCallback(() => {
     if (contextMenu) {
-      selectNode(contextMenu.nodeId);
+      storeActions.setSelectedNodeIds([contextMenu.nodeId]);
       setContextMenu(null);
     }
-  }, [contextMenu, selectNode]);
+  }, [contextMenu, storeActions]);
 
   const handleContextDuplicate = useCallback(() => {
     if (!contextMenu) return;
