@@ -108,13 +108,13 @@ let boardHydratePromise: Promise<void> | null = null;
 
 let _persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-function schedulePersist(state: SwarmBoardState): void {
+function schedulePersist(getState: () => SwarmBoardState): void {
   if (!boardPersistenceReady) {
     return;
   }
   if (_persistTimer) clearTimeout(_persistTimer);
   _persistTimer = setTimeout(() => {
-    persistBoard(state);
+    persistBoard(getState());
     _persistTimer = null;
   }, 500);
 }
@@ -250,7 +250,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
       return node;
     },
 
@@ -264,7 +264,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     removeNode: (nodeId: string): void => {
@@ -287,7 +287,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         comparisonMode: selectedNodeIds.length > 1,
         rfEdges: toRfEdges(edges),
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     updateNode: (nodeId: string, patch: Partial<SwarmBoardNodeData>): void => {
@@ -301,7 +301,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     updateNodeRecord: (
@@ -336,7 +336,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
       return updatedNode;
     },
 
@@ -378,7 +378,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         edges,
         rfEdges: toRfEdges(edges),
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     removeEdge: (edgeId: string): void => {
@@ -388,7 +388,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         edges,
         rfEdges: toRfEdges(edges),
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     clearBoard: (): void => {
@@ -403,12 +403,12 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         comparisonMode: false,
         rfEdges: [],
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     setRepoRoot: (repoRoot: string): void => {
       set({ repoRoot });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     loadState: (partial: Partial<SwarmBoardState>): void => {
@@ -426,7 +426,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         comparisonMode: selectedNodeIds.length > 1,
         rfEdges: toRfEdges(edges),
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     setSessionStatus: (sessionId: string, status: SessionStatus, exitCode?: number): void => {
@@ -451,7 +451,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     setSessionMetadata: (sessionId: string, metadata: Partial<SwarmBoardNodeData>): void => {
@@ -469,7 +469,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     setNodes: (nodes: Node<SwarmBoardNodeData>[]): void => {
@@ -480,7 +480,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     setEdges: (edges: SwarmBoardEdge[]): void => {
@@ -488,7 +488,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         edges,
         rfEdges: toRfEdges(edges),
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     toggleInspector: (open?: boolean): void => {
@@ -560,7 +560,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     engineSync: (
@@ -637,7 +637,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, selectedNodeIds),
         comparisonMode: selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
 
     guardEvaluate: (
@@ -695,7 +695,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNodes: deriveSelectedNodes(nodes, current.selectedNodeIds),
         comparisonMode: current.selectedNodeIds.length > 1,
       });
-      schedulePersist({ ...get() });
+      schedulePersist(get);
     },
   },
 }));
@@ -762,7 +762,7 @@ async function hydrateSwarmBoardFromDisk(force = false): Promise<void> {
     boardPersistenceReady = true;
 
     if (!payload && legacy) {
-      schedulePersist(useSwarmBoardStoreBase.getState());
+      schedulePersist(() => useSwarmBoardStoreBase.getState());
     }
   })().finally(() => {
     boardHydratePromise = null;
