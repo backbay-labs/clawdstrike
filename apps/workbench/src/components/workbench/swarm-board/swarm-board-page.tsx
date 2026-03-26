@@ -252,6 +252,14 @@ function SwarmBoardCanvas() {
   const edgesRef = useRef(edges);
   edgesRef.current = edges;
 
+  // Refs for values needed inside the keyboard handler to avoid effect churn
+  const repoRootRef = useRef(state.repoRoot);
+  const selectedNodeIdRef = useRef(state.selectedNodeId);
+  useEffect(() => {
+    repoRootRef.current = state.repoRoot;
+    selectedNodeIdRef.current = state.selectedNodeId;
+  }, [state.repoRoot, state.selectedNodeId]);
+
   const cancelSnapback = useCallback(() => {
     if (snapbackTimerRef.current != null) {
       window.clearTimeout(snapbackTimerRef.current);
@@ -796,7 +804,7 @@ function SwarmBoardCanvas() {
         const step = e.shiftKey ? SWARM_BOARD_GRID_MAJOR_GAP : SWARM_BOARD_GRID_GAP;
         const nudgedNodes = nudgeSelectedBoardNodes(
           nodesRef.current,
-          state.selectedNodeId,
+          selectedNodeIdRef.current,
           e.key,
           step,
         );
@@ -810,7 +818,7 @@ function SwarmBoardCanvas() {
       // Cmd/Ctrl+Shift+N -> new session node (real PTY with fallback)
       if (isMeta && e.shiftKey && e.key === "N") {
         e.preventDefault();
-        const cwd = state.repoRoot || "/tmp";
+        const cwd = repoRootRef.current || "/tmp";
         spawnSession({ cwd, position: getDropPosition(), title: "Terminal" }).catch(() => {
           // Fallback to mock node if Tauri is not available
           addNode({
@@ -882,7 +890,7 @@ function SwarmBoardCanvas() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [storeActions, addNode, fitBoard, getDropPosition, spawnSession, state.repoRoot, state.selectedNodeId]);
+  }, [storeActions, addNode, fitBoard, getDropPosition, spawnSession]);
 
   // Space+drag pan — hold Space to enable left-click pan mode
   useEffect(() => {
