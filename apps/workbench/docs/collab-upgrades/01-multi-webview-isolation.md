@@ -3,7 +3,7 @@
 Technical specification for bringing process-isolated webview tiles from the
 Collaborator project into the Clawdstrike Swarm Board.
 
-**Status:** Draft
+**Status:** Shelved (see [ADR-001](ADR-001-multi-webview-isolation-deferred.md))
 **Author:** Engineering
 **Date:** 2026-03-25
 
