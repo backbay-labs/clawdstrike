@@ -359,13 +359,15 @@ fn prune_expired_self_writes(writes: &mut HashMap<String, Instant>, now: Instant
 #[cfg(test)]
 mod tests {
     use super::{
-        build_watch_plan, classify_events, mark_self_writes, normalize_watch_path_value,
-        ConfigureSwarmFileWatcherRequest, SwarmFileWatchCategory, SwarmFileWatcherState,
+        build_watch_plan, classify_events, find_existing_watch_root, mark_self_writes,
+        normalize_watch_path_value, record_content_hash, ConfigureSwarmFileWatcherRequest,
+        SwarmFileWatchCategory, SwarmFileWatcherState, MAX_ANCESTOR_WALK_DEPTH,
     };
     use notify::RecursiveMode;
     use notify_debouncer_mini::{DebouncedEvent, DebouncedEventKind};
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
     #[test]
     fn build_watch_plan_resolves_persistence_and_parent_dirs() {
@@ -501,5 +503,185 @@ mod tests {
             events[1].paths,
             vec![PathBuf::from(&workspace_file).to_string_lossy().to_string()]
         );
+    }
+
+    #[test]
+    fn content_hash_suppression() {
+        // A file with a recorded content hash is suppressed even after the TTL window
+        // expires (hash matches on-disk content).
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let target = tempdir.path().join("state.json");
+        let content = b"{\"v\":42}";
+        std::fs::write(&target, content).expect("write test file");
+
+        let plan = build_watch_plan(
+            tempdir.path(),
+            ConfigureSwarmFileWatcherRequest {
+                persistence_filenames: vec!["state.json".to_string()],
+                workspace_paths: vec![],
+            },
+        )
+        .expect("plan");
+
+        let watcher_state = SwarmFileWatcherState::default();
+
+        // Record self-write with TTL in the past (already expired).
+        {
+            let mut writes = watcher_state.self_writes.lock().unwrap();
+            let expired_deadline = Instant::now() - Duration::from_millis(100);
+            writes.insert(
+                normalize_watch_path_value(target.to_string_lossy().as_ref(), cfg!(windows)),
+                expired_deadline,
+            );
+        }
+
+        // Record the content hash (simulating what persistence write does).
+        record_content_hash(&watcher_state, &target, content);
+
+        // Event should be suppressed because content hash matches on-disk file.
+        let events = classify_events(
+            vec![DebouncedEvent::new(target.clone(), DebouncedEventKind::Any)],
+            &watcher_state.self_writes,
+            &watcher_state.content_hashes,
+            &plan,
+        );
+        assert!(
+            events.is_none(),
+            "self-write with matching content hash should be suppressed even after TTL expires"
+        );
+    }
+
+    #[test]
+    fn content_hash_allows_different_content() {
+        // A file within the TTL window is NOT suppressed when the on-disk content hash
+        // differs from the last-written hash (external write detection).
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let target = tempdir.path().join("state.json");
+        let our_content = b"{\"v\":1}";
+        let external_content = b"{\"v\":999}";
+
+        // Write the external content to disk (simulating an external editor).
+        std::fs::write(&target, external_content).expect("write test file");
+
+        let plan = build_watch_plan(
+            tempdir.path(),
+            ConfigureSwarmFileWatcherRequest {
+                persistence_filenames: vec!["state.json".to_string()],
+                workspace_paths: vec![],
+            },
+        )
+        .expect("plan");
+
+        let watcher_state = SwarmFileWatcherState::default();
+
+        // Record self-write with TTL still valid.
+        mark_self_writes(&watcher_state, std::slice::from_ref(&target));
+
+        // Record the content hash for OUR content (which differs from what's on disk).
+        record_content_hash(&watcher_state, &target, our_content);
+
+        // Event should NOT be suppressed because on-disk content differs from our hash.
+        let events = classify_events(
+            vec![DebouncedEvent::new(target.clone(), DebouncedEventKind::Any)],
+            &watcher_state.self_writes,
+            &watcher_state.content_hashes,
+            &plan,
+        );
+        assert!(
+            events.is_some(),
+            "external write with different content hash should NOT be suppressed"
+        );
+        let events = events.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].category, SwarmFileWatchCategory::Persistence);
+    }
+
+    #[test]
+    fn self_write_ttl_expiry_without_hash() {
+        // A file that has no content hash recorded is correctly let through after TTL
+        // expires (backward compatibility).
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let target = tempdir.path().join("state.json");
+        std::fs::write(&target, b"data").expect("write test file");
+
+        let plan = build_watch_plan(
+            tempdir.path(),
+            ConfigureSwarmFileWatcherRequest {
+                persistence_filenames: vec!["state.json".to_string()],
+                workspace_paths: vec![],
+            },
+        )
+        .expect("plan");
+
+        let watcher_state = SwarmFileWatcherState::default();
+
+        // Record self-write with expired TTL, no content hash.
+        {
+            let mut writes = watcher_state.self_writes.lock().unwrap();
+            let expired_deadline = Instant::now() - Duration::from_millis(100);
+            writes.insert(
+                normalize_watch_path_value(target.to_string_lossy().as_ref(), cfg!(windows)),
+                expired_deadline,
+            );
+        }
+
+        // No content hash recorded -- should let through after TTL.
+        let events = classify_events(
+            vec![DebouncedEvent::new(target.clone(), DebouncedEventKind::Any)],
+            &watcher_state.self_writes,
+            &watcher_state.content_hashes,
+            &plan,
+        );
+        assert!(
+            events.is_some(),
+            "event without content hash should pass through after TTL expires"
+        );
+    }
+
+    #[test]
+    fn ancestor_walk_depth_limit() {
+        // find_existing_watch_root returns None when no ancestor exists within
+        // MAX_ANCESTOR_WALK_DEPTH levels above the target.
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let base = tempdir.path().join("existing_root");
+        std::fs::create_dir_all(&base).expect("create base");
+
+        // Build a path that is MAX_ANCESTOR_WALK_DEPTH + 1 levels below `base`.
+        let mut deep_path = base.clone();
+        for i in 0..=MAX_ANCESTOR_WALK_DEPTH {
+            deep_path = deep_path.join(format!("level_{i}"));
+        }
+
+        // The deep path and its intermediates don't exist on disk.
+        // From the deepest point, walking MAX_ANCESTOR_WALK_DEPTH ancestors should
+        // NOT reach `base` (which does exist).
+        let result = find_existing_watch_root(&deep_path);
+        assert!(
+            result.is_none(),
+            "should return None when existing ancestor is beyond depth limit, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn ancestor_walk_within_limit() {
+        // find_existing_watch_root succeeds when an ancestor exists within 4 levels.
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let base = tempdir.path().join("root");
+        std::fs::create_dir_all(&base).expect("create base");
+
+        // Build a path that is exactly MAX_ANCESTOR_WALK_DEPTH levels below `base`.
+        let mut target_path = base.clone();
+        for i in 0..MAX_ANCESTOR_WALK_DEPTH {
+            target_path = target_path.join(format!("sub_{i}"));
+        }
+
+        // Only `base` exists. Walking up MAX_ANCESTOR_WALK_DEPTH should reach it.
+        let result = find_existing_watch_root(&target_path);
+        assert!(
+            result.is_some(),
+            "should find existing ancestor within depth limit"
+        );
+        assert_eq!(result.unwrap(), base);
     }
 }
