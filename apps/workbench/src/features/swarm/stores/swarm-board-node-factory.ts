@@ -15,8 +15,6 @@ import type {
 // ID generators
 // ---------------------------------------------------------------------------
 
-let nodeCounter = 0;
-
 const AUTH_CHANGES_DIFF = `diff --git a/src/middleware/auth.rs b/src/middleware/auth.rs
 index 91c8f76..5f14219 100644
 --- a/src/middleware/auth.rs
@@ -51,9 +49,8 @@ function generateBoardId(): string {
   return `board-${Date.now().toString(36)}`;
 }
 
-export function generateNodeId(prefix: string = "sbn"): string {
-  nodeCounter += 1;
-  return `${prefix}-${Date.now().toString(36)}-${nodeCounter}`;
+export function generateNodeId(): string {
+  return `node-${crypto.randomUUID()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +65,7 @@ export interface CreateNodeConfig {
 }
 
 export function createBoardNode(config: CreateNodeConfig): Node<SwarmBoardNodeData> {
-  const id = generateNodeId(config.nodeType);
+  const id = generateNodeId();
   const position = config.position ?? {
     x: 100 + Math.random() * 400,
     y: 100 + Math.random() * 300,
