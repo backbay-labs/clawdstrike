@@ -1,8 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type WorkspaceWatchEvent = {
   payload: {
     category: "workspace";
+    paths: string[];
+    filenames: string[];
+  };
+};
+
+type PersistenceWatchEvent = {
+  payload: {
+    category: "persistence";
     paths: string[];
     filenames: string[];
   };
@@ -164,5 +172,91 @@ describe("swarm-file-watch", () => {
 
     unsubscribe();
     await clearSwarmFileWatchScope("board");
+  });
+
+  it("allows events through after self-write TTL expires", async () => {
+    vi.useFakeTimers();
+
+    let capturedEventHandler:
+      | ((event: PersistenceWatchEvent) => void)
+      | undefined;
+    listenMock.mockImplementationOnce(async (_event: string, handler: unknown) => {
+      capturedEventHandler = handler as (event: PersistenceWatchEvent) => void;
+      return () => {};
+    });
+
+    const {
+      markSwarmFileWatchSelfWrite,
+      setSwarmFileWatchScope,
+      clearSwarmFileWatchScope,
+      subscribeSwarmFileWatchEvents,
+    } = await import("../swarm-file-watch");
+
+    const received = vi.fn();
+    const unsubscribe = subscribeSwarmFileWatchEvents(received);
+    await setSwarmFileWatchScope("swarms", {
+      persistenceFilenames: ["swarms-state.v1.json"],
+    });
+
+    markSwarmFileWatchSelfWrite("/tmp/state/swarms-state.v1.json");
+
+    // Advance past the 1500ms self-write TTL
+    vi.advanceTimersByTime(1600);
+
+    const dispatchEvent = capturedEventHandler;
+    if (!dispatchEvent) {
+      throw new Error("Expected watcher event handler to be registered");
+    }
+
+    dispatchEvent({
+      payload: {
+        category: "persistence",
+        paths: ["/tmp/state/swarms-state.v1.json"],
+        filenames: ["swarms-state.v1.json"],
+      },
+    });
+
+    // Event should NOT be suppressed since TTL expired
+    expect(received).toHaveBeenCalledTimes(1);
+    expect(received).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "persistence",
+        paths: ["/tmp/state/swarms-state.v1.json"],
+      }),
+    );
+
+    unsubscribe();
+    await clearSwarmFileWatchScope("swarms");
+    vi.useRealTimers();
+  });
+
+  it("aggregates three store scopes with distinct persistence filenames", async () => {
+    const {
+      setSwarmFileWatchScope,
+      clearSwarmFileWatchScope,
+    } = await import("../swarm-file-watch");
+
+    await setSwarmFileWatchScope("board", {
+      persistenceFilenames: ["swarm-board-state.v1.json"],
+    });
+    await setSwarmFileWatchScope("feed", {
+      persistenceFilenames: ["swarm-feed-state.v1.json"],
+    });
+    await setSwarmFileWatchScope("swarms", {
+      persistenceFilenames: ["swarms-state.v1.json"],
+    });
+
+    expect(configureWatcherMock).toHaveBeenLastCalledWith({
+      persistence_filenames: [
+        "swarm-board-state.v1.json",
+        "swarm-feed-state.v1.json",
+        "swarms-state.v1.json",
+      ],
+      workspace_paths: [],
+    });
+
+    await clearSwarmFileWatchScope("board");
+    await clearSwarmFileWatchScope("feed");
+    await clearSwarmFileWatchScope("swarms");
   });
 });
