@@ -662,7 +662,7 @@ describe("SwarmBoardStore (Zustand)", () => {
       data: { filePath: "src/test-file.rs", fileType: "rust" },
     });
 
-    expect(node.id).toMatch(/^artifact-/);
+    expect(node.id).toMatch(/^node-/);
     expect(node.type).toBe("artifact");
     expect(node.position).toEqual({ x: 50, y: 50 });
     expect(node.data.title).toBe("test-file.rs");

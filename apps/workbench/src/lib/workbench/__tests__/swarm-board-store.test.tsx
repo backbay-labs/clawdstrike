@@ -1122,18 +1122,18 @@ describe("createBoardNode", () => {
 // ---------------------------------------------------------------------------
 
 describe("generateNodeId", () => {
-  it("generates unique IDs with the given prefix", () => {
-    const id1 = generateNodeId("test");
-    const id2 = generateNodeId("test");
+  it("generates unique IDs with node- prefix", () => {
+    const id1 = generateNodeId();
+    const id2 = generateNodeId();
 
     expect(id1).not.toBe(id2);
-    expect(id1).toMatch(/^test-/);
-    expect(id2).toMatch(/^test-/);
+    expect(id1).toMatch(/^node-/);
+    expect(id2).toMatch(/^node-/);
   });
 
-  it("uses default prefix when none provided", () => {
+  it("generates valid UUID-based IDs", () => {
     const id = generateNodeId();
-    expect(id).toMatch(/^sbn-/);
+    expect(id).toMatch(/^node-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 });
 

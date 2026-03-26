@@ -271,7 +271,7 @@ describe("Store without engine context", () => {
       data: { filePath: "src/test-file.rs", fileType: "rust" },
     });
 
-    expect(node.id).toMatch(/^artifact-/);
+    expect(node.id).toMatch(/^node-/);
     expect(node.data.title).toBe("test-file.rs");
     expect(node.data.nodeType).toBe("artifact");
     expect(node.data.status).toBe("idle");
