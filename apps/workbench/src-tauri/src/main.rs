@@ -16,6 +16,9 @@ use tauri::Manager;
 use tauri::Emitter;
 use terminal::TerminalState;
 
+/// Guard against duplicate ExitRequested events spawning multiple exit threads.
+static EXIT_PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -189,6 +192,15 @@ fn main() {
         .run(|app, event| {
             match event {
                 tauri::RunEvent::ExitRequested { api, .. } => {
+                    // Guard: only handle the first ExitRequested event.
+                    if EXIT_PENDING.compare_exchange(
+                        false, true,
+                        std::sync::atomic::Ordering::SeqCst,
+                        std::sync::atomic::Ordering::SeqCst,
+                    ).is_err() {
+                        api.prevent_exit();
+                        return;
+                    }
                     // Signal frontend to flush pending feed state before exit.
                     // Reliable exit flush via Rust ExitRequested event -- replaces
                     // beforeunload which is unreliable in Tauri webviews because
