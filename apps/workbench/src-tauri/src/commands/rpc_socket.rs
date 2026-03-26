@@ -40,6 +40,10 @@ pub enum RpcTransportKind {
     Tcp,
 }
 
+fn default_scopes() -> Vec<String> {
+    vec!["*".to_string()]
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct RpcRuntimeInfo {
     pub transport: RpcTransportKind,
@@ -49,6 +53,8 @@ pub struct RpcRuntimeInfo {
     pub socket_path: Option<String>,
     pub host: Option<String>,
     pub port: Option<u16>,
+    #[serde(default = "default_scopes")]
+    pub scopes: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -87,11 +93,32 @@ struct FrontendRpcRequest {
     params: Value,
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RpcMethodRiskTier {
+    None,
+    Read,
+    Mutate,
+    Lifecycle,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RpcMethodScope {
+    Rpc,
+    RepoRead,
+    RepoMutate,
+    TerminalRead,
+    TerminalLifecycle,
+}
+
 #[derive(Serialize)]
 struct RpcMethodDescriptor {
     name: &'static str,
     description: &'static str,
     params: &'static str,
+    risk_tier: RpcMethodRiskTier,
+    scope: RpcMethodScope,
 }
 
 const RPC_METHODS: &[RpcMethodDescriptor] = &[
@@ -99,76 +126,106 @@ const RPC_METHODS: &[RpcMethodDescriptor] = &[
         name: "rpc.discover",
         description: "List supported RPC methods and runtime transport details.",
         params: "{}",
+        risk_tier: RpcMethodRiskTier::None,
+        scope: RpcMethodScope::Rpc,
     },
     RpcMethodDescriptor {
         name: "board.snapshot",
         description: "Return the current board snapshot from the active workbench view.",
         params: "{}",
+        risk_tier: RpcMethodRiskTier::Read,
+        scope: RpcMethodScope::RepoRead,
     },
     RpcMethodDescriptor {
         name: "board.nodeAdd",
         description: "Create a board node. Params: { nodeType, title, position?, data?, id?, width?, height?, selected? }",
         params: "{ nodeType: string, title: string, position?: { x, y }, data?: object }",
+        risk_tier: RpcMethodRiskTier::Mutate,
+        scope: RpcMethodScope::RepoMutate,
     },
     RpcMethodDescriptor {
         name: "board.nodeRemove",
         description: "Remove a board node by id.",
         params: "{ nodeId: string }",
+        risk_tier: RpcMethodRiskTier::Mutate,
+        scope: RpcMethodScope::RepoMutate,
     },
     RpcMethodDescriptor {
         name: "board.nodeUpdate",
         description: "Patch a board node's layout and/or data.",
         params: "{ nodeId: string, data?: object, position?: { x, y }, width?: number, height?: number, selected?: boolean }",
+        risk_tier: RpcMethodRiskTier::Mutate,
+        scope: RpcMethodScope::RepoMutate,
     },
     RpcMethodDescriptor {
         name: "board.edgeAdd",
         description: "Create a board edge.",
         params: "{ source: string, target: string, id?: string, label?: string, type?: string }",
+        risk_tier: RpcMethodRiskTier::Mutate,
+        scope: RpcMethodScope::RepoMutate,
     },
     RpcMethodDescriptor {
         name: "board.edgeRemove",
         description: "Remove a board edge by id.",
         params: "{ edgeId: string }",
+        risk_tier: RpcMethodRiskTier::Mutate,
+        scope: RpcMethodScope::RepoMutate,
     },
     RpcMethodDescriptor {
         name: "board.viewportGet",
         description: "Get the active canvas viewport.",
         params: "{}",
+        risk_tier: RpcMethodRiskTier::Read,
+        scope: RpcMethodScope::RepoRead,
     },
     RpcMethodDescriptor {
         name: "board.viewportSet",
         description: "Set the active canvas viewport.",
         params: "{ viewport: { x, y, zoom }, duration?: number }",
+        risk_tier: RpcMethodRiskTier::Mutate,
+        scope: RpcMethodScope::RepoMutate,
     },
     RpcMethodDescriptor {
         name: "session.spawn",
         description: "Spawn a terminal, Claude, or worktree session on the board.",
         params: "{ kind?: 'terminal'|'claude'|'worktree', ... }",
+        risk_tier: RpcMethodRiskTier::Lifecycle,
+        scope: RpcMethodScope::TerminalLifecycle,
     },
     RpcMethodDescriptor {
         name: "session.kill",
         description: "Kill a session by nodeId or sessionId.",
         params: "{ nodeId?: string, sessionId?: string }",
+        risk_tier: RpcMethodRiskTier::Lifecycle,
+        scope: RpcMethodScope::TerminalLifecycle,
     },
     RpcMethodDescriptor {
         name: "session.list",
         description: "List board-visible and backend-discovered sessions.",
         params: "{}",
+        risk_tier: RpcMethodRiskTier::Read,
+        scope: RpcMethodScope::TerminalRead,
     },
     RpcMethodDescriptor {
         name: "session.readOutput",
         description: "Read recent output lines for a session by nodeId or sessionId.",
         params: "{ nodeId?: string, sessionId?: string, lines?: number }",
+        risk_tier: RpcMethodRiskTier::Read,
+        scope: RpcMethodScope::TerminalRead,
     },
     RpcMethodDescriptor {
         name: "coordinator.status",
         description: "Return current coordinator connectivity and joined swarm state.",
         params: "{}",
+        risk_tier: RpcMethodRiskTier::Read,
+        scope: RpcMethodScope::RepoRead,
     },
     RpcMethodDescriptor {
         name: "coordinator.publish",
         description: "Publish a coordinator message by swarmId and channel.",
         params: "{ swarmId: string, channel: 'intel'|'signal'|'detection'|'coordination', payload: unknown }",
+        risk_tier: RpcMethodRiskTier::Mutate,
+        scope: RpcMethodScope::RepoMutate,
     },
 ];
 
@@ -468,6 +525,7 @@ fn create_runtime_info<R: Runtime>(app: &AppHandle<R>) -> Result<(RpcRuntimeInfo
             socket_path: Some(socket_path.to_string_lossy().to_string()),
             host: None,
             port: None,
+            scopes: default_scopes(),
         };
         return Ok((runtime_info, token));
     }
@@ -482,6 +540,7 @@ fn create_runtime_info<R: Runtime>(app: &AppHandle<R>) -> Result<(RpcRuntimeInfo
             socket_path: None,
             host: Some("127.0.0.1".to_string()),
             port: None,
+            scopes: default_scopes(),
         };
         Ok((runtime_info, token))
     }
@@ -590,7 +649,11 @@ pub async fn rpc_frontend_respond(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_known_method, parse_bearer_token, response_with_error, RpcRuntimeInfo, RpcTransportKind};
+    use super::{
+        discover_payload, is_known_method, parse_bearer_token, response_with_error,
+        default_scopes, RpcMethodRiskTier, RpcMethodScope, RpcRuntimeInfo, RpcTransportKind,
+        RPC_METHODS,
+    };
     use serde_json::Value;
 
     #[test]
@@ -642,9 +705,114 @@ mod tests {
             socket_path: Some("/tmp/ipc.sock".to_string()),
             host: None,
             port: None,
+            scopes: default_scopes(),
         };
         let serialized = serde_json::to_string(&runtime).expect("serialize");
         assert!(serialized.contains("\"endpoint\":\"/tmp/ipc.sock\""));
         assert!(serialized.contains("\"token_file\":\"/tmp/ipc.token\""));
+    }
+
+    #[test]
+    fn authorization_scope_maps_all_methods() {
+        for method in RPC_METHODS {
+            // Every method must have an explicitly assigned scope and risk tier.
+            // RpcMethodScope::Rpc is reserved for rpc.discover only.
+            if method.name == "rpc.discover" {
+                assert!(
+                    matches!(method.scope, RpcMethodScope::Rpc),
+                    "rpc.discover should have Rpc scope"
+                );
+                assert!(
+                    matches!(method.risk_tier, RpcMethodRiskTier::None),
+                    "rpc.discover should have None risk tier"
+                );
+            } else {
+                assert!(
+                    !matches!(method.scope, RpcMethodScope::Rpc),
+                    "{} must not use the Rpc scope",
+                    method.name
+                );
+                assert!(
+                    !matches!(method.risk_tier, RpcMethodRiskTier::None),
+                    "{} must not use the None risk tier",
+                    method.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn discover_payload_includes_risk_tiers() {
+        let runtime = RpcRuntimeInfo {
+            transport: RpcTransportKind::Unix,
+            endpoint: "/tmp/ipc.sock".to_string(),
+            token_file: "/tmp/ipc.token".to_string(),
+            info_file: "/tmp/ipc.json".to_string(),
+            socket_path: Some("/tmp/ipc.sock".to_string()),
+            host: None,
+            port: None,
+            scopes: default_scopes(),
+        };
+        let payload = discover_payload(&runtime);
+        let methods = payload["methods"].as_array().expect("methods array");
+        assert!(!methods.is_empty());
+        for method in methods {
+            assert!(
+                method.get("risk_tier").is_some(),
+                "method {} missing risk_tier",
+                method["name"]
+            );
+            assert!(
+                method.get("scope").is_some(),
+                "method {} missing scope",
+                method["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_info_includes_scopes_field() {
+        let runtime = RpcRuntimeInfo {
+            transport: RpcTransportKind::Unix,
+            endpoint: "/tmp/ipc.sock".to_string(),
+            token_file: "/tmp/ipc.token".to_string(),
+            info_file: "/tmp/ipc.json".to_string(),
+            socket_path: Some("/tmp/ipc.sock".to_string()),
+            host: None,
+            port: None,
+            scopes: default_scopes(),
+        };
+        let serialized = serde_json::to_value(&runtime).expect("serialize");
+        let scopes = serialized["scopes"].as_array().expect("scopes array");
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0], "*");
+    }
+
+    #[test]
+    fn high_risk_methods_are_lifecycle_tier() {
+        let spawn = RPC_METHODS
+            .iter()
+            .find(|m| m.name == "session.spawn")
+            .expect("session.spawn exists");
+        let kill = RPC_METHODS
+            .iter()
+            .find(|m| m.name == "session.kill")
+            .expect("session.kill exists");
+        assert!(
+            matches!(spawn.risk_tier, RpcMethodRiskTier::Lifecycle),
+            "session.spawn must be Lifecycle tier"
+        );
+        assert!(
+            matches!(kill.risk_tier, RpcMethodRiskTier::Lifecycle),
+            "session.kill must be Lifecycle tier"
+        );
+        assert!(
+            matches!(spawn.scope, RpcMethodScope::TerminalLifecycle),
+            "session.spawn must have TerminalLifecycle scope"
+        );
+        assert!(
+            matches!(kill.scope, RpcMethodScope::TerminalLifecycle),
+            "session.kill must have TerminalLifecycle scope"
+        );
     }
 }
