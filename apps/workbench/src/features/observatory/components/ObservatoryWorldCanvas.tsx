@@ -1533,7 +1533,7 @@ function OperationsArrivalBeat({
             barRefs.current[i] = mesh;
           }}
           position={[x, origin[1] + 0.4, 0.18]}
-          rotation={[0, 0.18 * (index === 0 ? -1 : 1), 0]}
+          rotation={[0, 0.18 * (i === 0 ? -1 : 1), 0]}
         >
           <boxGeometry args={[0.12, 0.92, 1.5]} />
           <meshBasicMaterial color="#fff3c8" transparent opacity={0.18} />
