@@ -1,5 +1,6 @@
 import { useLayoutEffect } from "react";
 import { create } from "zustand";
+import { castDraft } from "immer";
 import { immer } from "zustand/middleware/immer";
 import { createSelectors } from "@/lib/create-selectors";
 import type { Annotation } from "@/lib/workbench/hunt-types";
@@ -217,7 +218,7 @@ const useFindingStoreBase = create<FindingState>()(
             if (idx !== -1) {
               const result = engineConfirm(state.findings[idx] as Finding, actor);
               if (!("error" in result)) {
-                state.findings[idx] = result as any;
+                state.findings[idx] = castDraft(result);
               }
             }
           });
@@ -230,7 +231,7 @@ const useFindingStoreBase = create<FindingState>()(
             if (idx !== -1) {
               const result = engineDismiss(state.findings[idx] as Finding, actor, reason);
               if (!("error" in result)) {
-                state.findings[idx] = result as any;
+                state.findings[idx] = castDraft(result);
               }
             }
           });
@@ -243,7 +244,7 @@ const useFindingStoreBase = create<FindingState>()(
             if (idx !== -1) {
               const result = engineMarkFP(state.findings[idx] as Finding, actor, reason);
               if (!("error" in result)) {
-                state.findings[idx] = result as any;
+                state.findings[idx] = castDraft(result);
               }
             }
           });
@@ -256,7 +257,7 @@ const useFindingStoreBase = create<FindingState>()(
             if (idx !== -1) {
               const result = enginePromote(state.findings[idx] as Finding, actor, intelId);
               if (!("error" in result)) {
-                state.findings[idx] = result as any;
+                state.findings[idx] = castDraft(result);
               }
             }
           });
@@ -272,7 +273,7 @@ const useFindingStoreBase = create<FindingState>()(
                 enrichment,
                 actor,
               );
-              state.findings[idx] = result as any;
+              state.findings[idx] = castDraft(result);
             }
           });
           schedulePersist(get());
@@ -286,7 +287,7 @@ const useFindingStoreBase = create<FindingState>()(
                 state.findings[idx] as Finding,
                 annotation,
               );
-              state.findings[idx] = result as any;
+              state.findings[idx] = castDraft(result);
             }
           });
           schedulePersist(get());
@@ -301,7 +302,7 @@ const useFindingStoreBase = create<FindingState>()(
                 verdict,
                 actor,
               );
-              state.findings[idx] = result as any;
+              state.findings[idx] = castDraft(result);
             }
           });
           schedulePersist(get());
@@ -327,7 +328,7 @@ const useFindingStoreBase = create<FindingState>()(
               (f, i) => f.status !== (state.findings[i] as Finding | undefined)?.status,
             );
             if (changed) {
-              state.findings = archived as any;
+              state.findings = castDraft(archived);
             }
           });
           schedulePersist(get());
@@ -342,7 +343,7 @@ const useFindingStoreBase = create<FindingState>()(
                 : findings.length > 0
                   ? findings[0].id
                   : null;
-            state.findings = findings as any;
+            state.findings = castDraft(findings);
             state.activeFindingId = activeId;
           });
           schedulePersist(get());
