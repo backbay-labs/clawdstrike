@@ -77,11 +77,11 @@ describe("swarm-feed-recovery", () => {
   });
 
   // -------------------------------------------------------------------------
-  // unwrapEnvelope version handling
+  // unwrapEnvelope version handling (exercises migrateV1ToV2 path)
   // -------------------------------------------------------------------------
 
   describe("unwrapEnvelope version migration", () => {
-    it("migrates v1 envelope by adding empty highWaterMarks", () => {
+    it("migrates v1 envelope via migrateV1ToV2 by adding empty highWaterMarks", () => {
       const raw = JSON.stringify({
         version: 1,
         savedAt: "2026-03-25T00:00:00Z",

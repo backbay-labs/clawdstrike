@@ -39,6 +39,7 @@ import {
 import {
   SWARM_FEED_PERSISTENCE_FILE,
   readSwarmPersistencePayload,
+  writeArchivePayload,
   writeSwarmPersistencePayload,
 } from "./swarm-persistence";
 import {
@@ -1054,6 +1055,14 @@ function persistSwarmFeed(state: SwarmFeedState): void {
         overflow.quarantinedHeadAnnouncements.length +
         overflow.quarantinedRevocationEnvelopes.length;
       console.log(`[swarm-feed-store] retention trimmed ${trimmedCount} records`);
+
+      // Archive overflow to monthly file (fire-and-forget)
+      const overflowCount =
+        (overflow.findingEnvelopes?.length ?? 0) +
+        (overflow.headAnnouncements?.length ?? 0) +
+        (overflow.revocationEnvelopes?.length ?? 0);
+      console.log(`[swarm-feed-store] archiving ${overflowCount} overflow records`);
+      void writeArchivePayload(overflow);
     }
 
     const payload: PersistedSwarmFeedPayload = {
