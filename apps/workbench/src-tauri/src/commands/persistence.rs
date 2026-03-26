@@ -4,7 +4,9 @@ use std::path::{Component, Path, PathBuf};
 
 use tauri::{AppHandle, Manager, Runtime};
 
-use super::file_watcher::{mark_self_writes, SwarmFileWatcherState};
+use sha2::{Digest, Sha256};
+
+use super::file_watcher::{mark_self_writes, record_content_hash_value, SwarmFileWatcherState};
 
 const PERSISTENCE_DIR: &str = "state";
 const MAX_FILENAME_LEN: usize = 128;
@@ -218,11 +220,16 @@ pub async fn write_app_persistence_file<R: Runtime>(
 ) -> Result<(), String> {
     let root = persistence_root(&app)?;
     let (target, temp, backup) = resolve_paths(&root, &filename)?;
+
+    // Pre-compute the content hash before moving `content` into the blocking task.
+    let content_hash: [u8; 32] = Sha256::digest(content.as_bytes()).into();
+
     tauri::async_runtime::spawn_blocking(move || write_persistence_file(&root, &filename, content))
         .await
         .map_err(|e| format!("Persistence write task failed: {e}"))??;
 
-    mark_self_writes(&watcher_state, &[target, temp, backup]);
+    mark_self_writes(&watcher_state, &[target.clone(), temp, backup]);
+    record_content_hash_value(&watcher_state, &target, content_hash);
     Ok(())
 }
 

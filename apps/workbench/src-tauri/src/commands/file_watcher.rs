@@ -10,6 +10,7 @@ use notify_debouncer_mini::{
     DebounceEventResult, Debouncer,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 use super::persistence::{persistence_root, validate_filename};
@@ -17,6 +18,7 @@ use super::persistence::{persistence_root, validate_filename};
 pub const SWARM_FILE_WATCH_EVENT: &str = "swarm:file-watch";
 const FILE_WATCH_DEBOUNCE_MS: u64 = 300;
 const SELF_WRITE_TTL_MS: u64 = 1_500;
+const MAX_ANCESTOR_WALK_DEPTH: usize = 4;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
@@ -43,6 +45,7 @@ pub struct SwarmFileWatchEvent {
 pub struct SwarmFileWatcherState {
     runtime: Arc<Mutex<WatcherRuntime>>,
     self_writes: Arc<Mutex<HashMap<String, Instant>>>,
+    content_hashes: Arc<Mutex<HashMap<String, [u8; 32]>>>,
 }
 
 #[derive(Default)]
@@ -61,6 +64,19 @@ impl WatchPlan {
     fn is_empty(&self) -> bool {
         self.watch_roots.is_empty()
     }
+}
+
+pub fn record_content_hash(state: &SwarmFileWatcherState, path: &Path, content: &[u8]) {
+    let hash: [u8; 32] = Sha256::digest(content).into();
+    record_content_hash_value(state, path, hash);
+}
+
+pub fn record_content_hash_value(state: &SwarmFileWatcherState, path: &Path, hash: [u8; 32]) {
+    let mut hashes = state
+        .content_hashes
+        .lock()
+        .expect("content-hash mutex poisoned");
+    hashes.insert(normalize_watch_path(path), hash);
 }
 
 pub fn mark_self_writes(state: &SwarmFileWatcherState, paths: &[PathBuf]) {
@@ -97,11 +113,18 @@ pub async fn configure_swarm_file_watcher<R: Runtime>(
 
     let app_handle = app.clone();
     let self_writes = watcher_state.self_writes.clone();
+    let content_hashes = watcher_state.content_hashes.clone();
     let plan_for_callback = plan.clone();
     let mut debouncer = new_debouncer(
         Duration::from_millis(FILE_WATCH_DEBOUNCE_MS),
         move |result: DebounceEventResult| {
-            handle_debounced_events(&app_handle, &self_writes, &plan_for_callback, result);
+            handle_debounced_events(
+                &app_handle,
+                &self_writes,
+                &content_hashes,
+                &plan_for_callback,
+                result,
+            );
         },
     )
     .map_err(|err| format!("Failed to create file watcher debouncer: {err}"))?;
@@ -217,7 +240,15 @@ fn find_existing_watch_root(path: &Path) -> Option<PathBuf> {
         return Some(path.to_path_buf());
     }
 
-    for ancestor in path.ancestors() {
+    // Walk ancestors with a depth limit to prevent watching the filesystem root
+    // on deeply nested missing paths. Depth 0 is `path` itself (already checked
+    // above), so we count hops starting from the first parent.
+    let mut depth = 0usize;
+    for ancestor in path.ancestors().skip(1) {
+        depth += 1;
+        if depth > MAX_ANCESTOR_WALK_DEPTH {
+            return None;
+        }
         if ancestor.exists() {
             return Some(ancestor.to_path_buf());
         }
@@ -249,6 +280,7 @@ fn normalize_watch_path(path: &Path) -> String {
 fn handle_debounced_events<R: Runtime>(
     app: &AppHandle<R>,
     self_writes: &Arc<Mutex<HashMap<String, Instant>>>,
+    content_hashes: &Arc<Mutex<HashMap<String, [u8; 32]>>>,
     plan: &WatchPlan,
     result: DebounceEventResult,
 ) {
@@ -260,7 +292,7 @@ fn handle_debounced_events<R: Runtime>(
         }
     };
 
-    let filtered = match classify_events(events, self_writes, plan) {
+    let filtered = match classify_events(events, self_writes, content_hashes, plan) {
         Some(events) => events,
         None => return,
     };
@@ -273,6 +305,7 @@ fn handle_debounced_events<R: Runtime>(
 fn classify_events(
     events: Vec<notify_debouncer_mini::DebouncedEvent>,
     self_writes: &Arc<Mutex<HashMap<String, Instant>>>,
+    content_hashes: &Arc<Mutex<HashMap<String, [u8; 32]>>>,
     plan: &WatchPlan,
 ) -> Option<Vec<SwarmFileWatchEvent>> {
     let mut persistence_paths = HashSet::new();
@@ -280,7 +313,7 @@ fn classify_events(
     let mut workspace_paths = HashSet::new();
 
     for event in events {
-        if should_suppress_path(self_writes, &event.path) {
+        if should_suppress_path(self_writes, content_hashes, &event.path) {
             continue;
         }
 
@@ -342,14 +375,59 @@ fn sorted_display_paths(paths: HashSet<PathBuf>) -> Vec<String> {
     items
 }
 
-fn should_suppress_path(self_writes: &Arc<Mutex<HashMap<String, Instant>>>, path: &Path) -> bool {
+fn should_suppress_path(
+    self_writes: &Arc<Mutex<HashMap<String, Instant>>>,
+    content_hashes: &Arc<Mutex<HashMap<String, [u8; 32]>>>,
+    path: &Path,
+) -> bool {
     let now = Instant::now();
-    let mut writes = self_writes
-        .lock()
-        .expect("self-write suppression mutex poisoned");
-    prune_expired_self_writes(&mut writes, now);
     let normalized_path = normalize_watch_path(path);
-    matches!(writes.get(&normalized_path), Some(deadline) if *deadline > now)
+
+    let within_ttl = {
+        let mut writes = self_writes
+            .lock()
+            .expect("self-write suppression mutex poisoned");
+        prune_expired_self_writes(&mut writes, now);
+        matches!(writes.get(&normalized_path), Some(deadline) if *deadline > now)
+    };
+
+    // Look up the recorded content hash (if any).
+    let recorded_hash = {
+        let hashes = content_hashes
+            .lock()
+            .expect("content-hash mutex poisoned");
+        hashes.get(&normalized_path).copied()
+    };
+
+    let Some(expected_hash) = recorded_hash else {
+        // No content hash recorded -- fall back to TTL-only behavior.
+        return within_ttl;
+    };
+
+    // Read the on-disk content and compute its hash.
+    let disk_hash_matches = std::fs::read(path)
+        .map(|bytes| {
+            let disk_hash: [u8; 32] = Sha256::digest(&bytes).into();
+            disk_hash == expected_hash
+        })
+        .unwrap_or(false);
+
+    if within_ttl {
+        // Within TTL window: suppress only if content matches (our write).
+        // If content differs, an external write landed -- let it through.
+        disk_hash_matches
+    } else {
+        // Outside TTL window: suppress if content still matches (late debouncer fire).
+        // Remove the hash entry after suppression to prevent stale matches on future
+        // external writes.
+        if disk_hash_matches {
+            let mut hashes = content_hashes
+                .lock()
+                .expect("content-hash mutex poisoned");
+            hashes.remove(&normalized_path);
+        }
+        disk_hash_matches
+    }
 }
 
 fn prune_expired_self_writes(writes: &mut HashMap<String, Instant>, now: Instant) {
@@ -459,6 +537,7 @@ mod tests {
                 DebouncedEvent::new(workspace_file.clone(), DebouncedEventKind::Any),
             ],
             &watcher_state.self_writes,
+            &watcher_state.content_hashes,
             &plan,
         )
         .expect("classified");
@@ -486,12 +565,14 @@ mod tests {
         .expect("plan");
 
         let self_writes = Arc::new(Mutex::new(Default::default()));
+        let content_hashes = Arc::new(Mutex::new(Default::default()));
         let events = classify_events(
             vec![
                 DebouncedEvent::new(target.clone(), DebouncedEventKind::Any),
                 DebouncedEvent::new(workspace_file.clone(), DebouncedEventKind::Any),
             ],
             &self_writes,
+            &content_hashes,
             &plan,
         )
         .expect("classified");
