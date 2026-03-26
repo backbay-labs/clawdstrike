@@ -33,15 +33,16 @@ interface ComparisonInspectorProps {
 }
 
 export function ComparisonInspector({ nodes, onClose }: ComparisonInspectorProps) {
-  // Overflow guard
-  if (nodes.length > MAX_COMPARISON_NODES) {
-    return <ComparisonOverflow count={nodes.length} max={MAX_COMPARISON_NODES} onClose={onClose} />;
-  }
-
+  // All hooks must be called unconditionally (Rules of Hooks)
   const nodeTypes = useMemo(
     () => new Set(nodes.map((n) => (n.data as SwarmBoardNodeData).nodeType)),
     [nodes],
   );
+
+  // Overflow guard — after all hooks
+  if (nodes.length > MAX_COMPARISON_NODES) {
+    return <ComparisonOverflow count={nodes.length} max={MAX_COMPARISON_NODES} onClose={onClose} />;
+  }
 
   // Homogeneous selection -> type-specific comparison
   if (nodeTypes.size === 1) {
