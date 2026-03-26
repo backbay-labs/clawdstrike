@@ -48,6 +48,7 @@ import {
   IconCopy,
   IconTrash,
   IconCommand,
+  IconLink,
 } from "@tabler/icons-react";
 
 import {
@@ -90,7 +91,7 @@ import {
   type SwarmViewportPoint,
   type SwarmViewportSource,
 } from "@/features/swarm/canvas/viewport-controller";
-import type { SwarmBoardNodeData, SwarmNodeType } from "@/features/swarm/swarm-board-types";
+import type { SwarmBoardNodeData, SwarmBoardEdge, SwarmNodeType } from "@/features/swarm/swarm-board-types";
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -209,6 +210,12 @@ function SwarmBoardCanvas() {
   // Context menu
   const [contextMenu, setContextMenu] = useState<NodeContextMenuState | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Manual edge-creation: two-phase "Connect to..." workflow
+  const [connectingFrom, setConnectingFrom] = useState<{
+    nodeId: string;
+    edgeType: SwarmBoardEdge["type"];
+  } | null>(null);
 
   // Follow-active toggle
   const [followActive, setFollowActive] = useState(false);
@@ -464,12 +471,24 @@ function SwarmBoardCanvas() {
     [storeActions],
   );
 
-  // Node click -> dismiss context menu (selection handled by useOnSelectionChange)
+  // Node click -> dismiss context menu, or complete connecting-from workflow
   const onNodeClick: NodeMouseHandler = useCallback(
-    (_event, _node) => {
+    (_event, node) => {
       setContextMenu(null);
+      if (connectingFrom && node.id !== connectingFrom.nodeId) {
+        const edgeId = `edge-${connectingFrom.nodeId}-${node.id}-${Date.now().toString(36)}`;
+        storeActions.addEdge({
+          id: edgeId,
+          source: connectingFrom.nodeId,
+          target: node.id,
+          type: connectingFrom.edgeType ?? "handoff",
+        });
+        setConnectingFrom(null);
+      } else if (connectingFrom && node.id === connectingFrom.nodeId) {
+        // Self-loop: do nothing, stay in connecting mode
+      }
     },
-    [],
+    [connectingFrom, storeActions],
   );
 
   // Double-click on node -> type-specific behavior (node already selected by mousedown)
@@ -498,10 +517,11 @@ function SwarmBoardCanvas() {
     [],
   );
 
-  // Click on empty canvas -> deselect
+  // Click on empty canvas -> deselect and cancel connecting-from
   const onPaneClick = useCallback(() => {
     storeActions.setSelectedNodeIds([]);
     setContextMenu(null);
+    setConnectingFrom(null);
     setHoveredNodeId(null);
   }, [storeActions]);
 
@@ -555,7 +575,10 @@ function SwarmBoardCanvas() {
       }
     }
     function handleEsc(e: KeyboardEvent) {
-      if (e.key === "Escape") setContextMenu(null);
+      if (e.key === "Escape") {
+        setContextMenu(null);
+        setConnectingFrom(null);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEsc);
@@ -943,6 +966,12 @@ function SwarmBoardCanvas() {
     }
   }, [contextMenu, removeNode, killSession]);
 
+  const handleContextConnect = useCallback(() => {
+    if (!contextMenu) return;
+    setConnectingFrom({ nodeId: contextMenu.nodeId, edgeType: "handoff" });
+    setContextMenu(null);
+  }, [contextMenu]);
+
   // Memoize the type maps (must be stable references)
   const nodeTypes = useMemo(() => swarmBoardNodeTypes, []);
   const edgeTypes = useMemo(() => swarmBoardEdgeTypes, []);
@@ -1018,28 +1047,8 @@ function SwarmBoardCanvas() {
         {/* Canvas */}
         <div ref={canvasViewportRef} className={`flex-1 relative flex flex-col${spaceHeld ? " space-held" : ""}`}>
           <div className="flex-1 relative">
-            {/* Global keyframe animations for node breathing effects */}
+            {/* Global keyframe animations for node transitions */}
             <style>{`
-              @keyframes breathe-gold {
-                0%, 100% { box-shadow: 0 0 12px 0 rgba(212,168,75,0.05); }
-                50% { box-shadow: 0 0 24px 4px rgba(212,168,75,0.1); }
-              }
-              @keyframes breathe-amber {
-                0%, 100% { box-shadow: 0 0 12px 0 rgba(245,158,11,0.05); }
-                50% { box-shadow: 0 0 24px 4px rgba(245,158,11,0.1); }
-              }
-              @keyframes breathe-red {
-                0%, 100% { box-shadow: 0 0 12px 0 rgba(196,92,92,0.05); }
-                50% { box-shadow: 0 0 24px 4px rgba(196,92,92,0.08); }
-              }
-              @keyframes heartbeat {
-                0%, 100% { opacity: 0.3; transform: scale(1); }
-                50% { opacity: 1; transform: scale(1.015); }
-              }
-              @keyframes eval-glow {
-                0%, 100% { box-shadow: 0 0 8px 0 rgba(212,168,75,0.08); }
-                50% { box-shadow: 0 0 28px 6px rgba(212,168,75,0.2); }
-              }
               @keyframes nodeEnter {
                 from { opacity: 0; transform: scale(0.85); }
                 to { opacity: 1; transform: scale(1); }
@@ -1201,9 +1210,29 @@ function SwarmBoardCanvas() {
                 ref={contextMenuRef}
                 menu={contextMenu}
                 onInspect={handleContextInspect}
+                onConnect={handleContextConnect}
                 onDuplicate={handleContextDuplicate}
                 onDelete={handleContextDelete}
               />
+            )}
+
+            {/* Connecting-from indicator */}
+            {connectingFrom && (
+              <div
+                data-testid="connecting-indicator"
+                className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 rounded bg-[#0c0e14] border border-[#c49a3c]/30 shadow-lg"
+              >
+                <span className="text-[10px] font-mono text-[#c49a3c]">
+                  Click a target node to connect
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setConnectingFrom(null)}
+                  className="text-[9px] font-mono text-[#6f7f9a] hover:text-[#ece7dc] ml-2"
+                >
+                  Cancel (Esc)
+                </button>
+              </div>
             )}
           </div>
 
@@ -1234,12 +1263,14 @@ const NodeContextMenu = forwardRef<
   {
     menu: NodeContextMenuState;
     onInspect: () => void;
+    onConnect: () => void;
     onDuplicate: () => void;
     onDelete: () => void;
   }
->(({ menu, onInspect, onDuplicate, onDelete }, ref) => {
+>(({ menu, onInspect, onConnect, onDuplicate, onDelete }, ref) => {
   const items: Array<{ label: string; icon: typeof IconSearch; action: () => void; danger?: boolean }> = [
     { label: "Inspect", icon: IconSearch, action: onInspect },
+    { label: "Connect to\u2026", icon: IconLink, action: onConnect },
     { label: "Duplicate", icon: IconCopy, action: onDuplicate },
     { label: "Delete", icon: IconTrash, action: onDelete, danger: true },
   ];
