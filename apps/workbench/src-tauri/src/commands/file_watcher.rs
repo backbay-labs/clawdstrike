@@ -402,6 +402,13 @@ fn should_suppress_path(
         return within_ttl;
     };
 
+    // Always consume the hash entry after reading it (single-use check).
+    // The hash is recorded fresh on every persistence write, so stale entries
+    // serve no purpose and would cause the map to grow without bound.
+    if let Ok(mut hashes) = content_hashes.lock() {
+        hashes.remove(&normalized_path);
+    }
+
     // Read the on-disk content and compute its hash.
     let disk_hash_matches = std::fs::read(path)
         .map(|bytes| {
@@ -416,13 +423,6 @@ fn should_suppress_path(
         disk_hash_matches
     } else {
         // Outside TTL window: suppress if content still matches (late debouncer fire).
-        // Remove the hash entry after suppression to prevent stale matches on future
-        // external writes.
-        if disk_hash_matches {
-            if let Ok(mut hashes) = content_hashes.lock() {
-                hashes.remove(&normalized_path);
-            }
-        }
         disk_hash_matches
     }
 }
