@@ -3,8 +3,8 @@
  * for each off-screen node, providing at-a-glance awareness of nodes
  * outside the visible viewport.
  */
-import React, { useMemo } from "react";
-import { useReactFlow, useViewport, Panel } from "@xyflow/react";
+import React, { useCallback, useMemo } from "react";
+import { useStore, useViewport, Panel } from "@xyflow/react";
 
 // --- Geometry ---
 
@@ -54,9 +54,12 @@ interface IndicatorData {
 // --- Component ---
 
 export function EdgeIndicators(): React.ReactElement | null {
-  const { getNodes } = useReactFlow();
+  // Stable selector — only triggers re-render when nodeLookup identity changes
+  // (i.e. when nodes are added/removed/moved), not on every viewport pan/zoom frame.
+  const nodeLookup = useStore(
+    useCallback((s: { nodeLookup: Map<string, { id: string; position: { x: number; y: number }; measured?: { width?: number; height?: number } }> }) => s.nodeLookup, []),
+  );
   const viewport = useViewport();
-  const nodes = getNodes();
 
   const indicators = useMemo(() => {
     const results: IndicatorData[] = [];
@@ -70,7 +73,7 @@ export function EdgeIndicators(): React.ReactElement | null {
     const centerX = containerW / 2;
     const centerY = containerH / 2;
 
-    for (const node of nodes) {
+    for (const [, node] of nodeLookup) {
       const screenX = node.position.x * zoom + vx;
       const screenY = node.position.y * zoom + vy;
       const nodeW = (node.measured?.width ?? 280) * zoom;
@@ -115,7 +118,7 @@ export function EdgeIndicators(): React.ReactElement | null {
     }
 
     return results;
-  }, [nodes, viewport]);
+  }, [nodeLookup, viewport]);
 
   if (indicators.length === 0) return null;
 
