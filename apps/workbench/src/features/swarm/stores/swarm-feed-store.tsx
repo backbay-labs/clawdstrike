@@ -47,12 +47,14 @@ import {
   subscribeSwarmFileWatchEvents,
 } from "./swarm-file-watch";
 
+/** Used only for web/non-desktop localStorage fallback. Desktop uses disk persistence. */
 export const SWARM_FEED_STORAGE_KEY = "clawdstrike_workbench_swarm_feed";
-let lastSwarmFeedStorageSnapshot =
-  typeof window === "undefined" ? null : readSwarmFeedStorageSnapshot();
+/** Lazy-initialized: only read on first web-path access, not eagerly at module load. */
+let lastSwarmFeedStorageSnapshot: string | null = null;
 let swarmFeedPersistenceReady = typeof window === "undefined" || !isDesktop();
 let swarmFeedHydratePromise: Promise<void> | null = null;
 
+/** Read localStorage snapshot. Used only for web/non-desktop environments. */
 function readSwarmFeedStorageSnapshot(): string | null {
   try {
     return localStorage.getItem(SWARM_FEED_STORAGE_KEY);
@@ -1084,11 +1086,13 @@ function syncSwarmFeedStoreWithStorage(options?: {
   force?: boolean;
   persistHydratedState?: boolean;
 }): void {
+  // Desktop: canonical path -- hydrate from disk file, skip localStorage entirely.
   if (isDesktop()) {
     void hydrateSwarmFeedStoreFromDisk(options?.force ?? false);
     return;
   }
 
+  // Web/non-desktop: localStorage fallback for test and browser environments only.
   const force = options?.force ?? false;
   const snapshot = readSwarmFeedStorageSnapshot();
   if (!force && snapshot === lastSwarmFeedStorageSnapshot) {
@@ -2324,11 +2328,15 @@ export function SwarmFeedProvider({ children }: { children: ReactNode }) {
   if (!initialized.current) {
     initialized.current = true;
     resetDigestHydrationTracker();
-    const restored = loadPersistedSwarmFeed() ?? INITIAL_SWARM_FEED_STATE;
-    lastSwarmFeedStorageSnapshot = readSwarmFeedStorageSnapshot();
-    replaceSwarmFeedStoreState(restored);
-    for (const record of restored.findingEnvelopes) {
-      queueFindingDigestHydration(record);
+    // On desktop the subsequent syncSwarmFeedStoreWithStorage call (useLayoutEffect
+    // below) handles hydration from disk -- skip the localStorage read entirely.
+    if (!isDesktop()) {
+      const restored = loadPersistedSwarmFeed() ?? INITIAL_SWARM_FEED_STATE;
+      lastSwarmFeedStorageSnapshot = readSwarmFeedStorageSnapshot();
+      replaceSwarmFeedStoreState(restored);
+      for (const record of restored.findingEnvelopes) {
+        queueFindingDigestHydration(record);
+      }
     }
   }
 

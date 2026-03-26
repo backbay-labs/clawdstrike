@@ -456,3 +456,81 @@ describe("high-water mark integration", () => {
     _setHighWaterMarks({});
   });
 });
+
+// ---------------------------------------------------------------------------
+// Desktop localStorage dead code removal
+// ---------------------------------------------------------------------------
+
+describe("desktop localStorage isolation", () => {
+  it("SWARM_FEED_STORAGE_KEY export has web-only documentation comment", async () => {
+    // Source-level verification: the SWARM_FEED_STORAGE_KEY should be annotated
+    // with a comment indicating it is for web/non-desktop use only.
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const storeSource = fs.readFileSync(
+      path.resolve(__dirname, "../swarm-feed-store.tsx"),
+      "utf-8",
+    );
+
+    // Verify the comment is present near the export
+    const keyIndex = storeSource.indexOf("export const SWARM_FEED_STORAGE_KEY");
+    expect(keyIndex).toBeGreaterThan(-1);
+
+    // Check for the documentation comment within 200 chars before the export
+    const contextBefore = storeSource.slice(Math.max(0, keyIndex - 200), keyIndex);
+    expect(contextBefore).toContain("Used only for web");
+    expect(contextBefore).toContain("Desktop uses disk persistence");
+  });
+
+  it("lastSwarmFeedStorageSnapshot is initialized to null (not eagerly read)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const storeSource = fs.readFileSync(
+      path.resolve(__dirname, "../swarm-feed-store.tsx"),
+      "utf-8",
+    );
+
+    // The old eager initialization was:
+    //   let lastSwarmFeedStorageSnapshot = typeof window === "undefined" ? null : readSwarmFeedStorageSnapshot();
+    // After cleanup it should be:
+    //   let lastSwarmFeedStorageSnapshot: string | null = null;
+    expect(storeSource).not.toContain("readSwarmFeedStorageSnapshot();\nlet swarmFeedPersistenceReady");
+    expect(storeSource).toContain("let lastSwarmFeedStorageSnapshot: string | null = null;");
+  });
+
+  it("syncSwarmFeedStoreWithStorage has desktop-path documentation", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const storeSource = fs.readFileSync(
+      path.resolve(__dirname, "../swarm-feed-store.tsx"),
+      "utf-8",
+    );
+
+    // Verify desktop branch is documented
+    const syncIndex = storeSource.indexOf("function syncSwarmFeedStoreWithStorage");
+    expect(syncIndex).toBeGreaterThan(-1);
+
+    const syncBlock = storeSource.slice(syncIndex, syncIndex + 600);
+    expect(syncBlock).toContain("Desktop");
+    expect(syncBlock).toContain("canonical");
+  });
+
+  it("SwarmFeedProvider guards localStorage init behind !isDesktop()", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const storeSource = fs.readFileSync(
+      path.resolve(__dirname, "../swarm-feed-store.tsx"),
+      "utf-8",
+    );
+
+    // The old code called loadPersistedSwarmFeed() unconditionally in SwarmFeedProvider.
+    // Now it should be guarded behind !isDesktop().
+    const providerIndex = storeSource.indexOf("function SwarmFeedProvider");
+    expect(providerIndex).toBeGreaterThan(-1);
+
+    const providerBlock = storeSource.slice(providerIndex, providerIndex + 800);
+    // The localStorage read should be inside an !isDesktop() guard
+    expect(providerBlock).toContain("!isDesktop()");
+    expect(providerBlock).toContain("loadPersistedSwarmFeed");
+  });
+});
