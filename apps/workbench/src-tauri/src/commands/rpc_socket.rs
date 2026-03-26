@@ -527,7 +527,7 @@ fn create_runtime_info<R: Runtime>(app: &AppHandle<R>) -> Result<(RpcRuntimeInfo
             port: None,
             scopes: default_scopes(),
         };
-        return Ok((runtime_info, token));
+        Ok((runtime_info, token))
     }
 
     #[cfg(windows)]
@@ -582,7 +582,7 @@ pub async fn start_rpc_socket_server<R: Runtime>(
             run_unix_server(listener, app, state_clone).await;
         });
         *state.server_task.lock().await = Some(task);
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(windows)]
@@ -607,7 +607,7 @@ pub async fn start_rpc_socket_server<R: Runtime>(
             run_tcp_server(listener, app, state_clone).await;
         });
         *state.server_task.lock().await = Some(task);
-        return Ok(());
+        Ok(())
     }
 }
 

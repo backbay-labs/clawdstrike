@@ -66,6 +66,7 @@ impl WatchPlan {
     }
 }
 
+#[cfg(test)]
 pub fn record_content_hash(state: &SwarmFileWatcherState, path: &Path, content: &[u8]) {
     let hash: [u8; 32] = Sha256::digest(content).into();
     record_content_hash_value(state, path, hash);

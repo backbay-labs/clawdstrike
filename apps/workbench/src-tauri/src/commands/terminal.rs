@@ -367,7 +367,7 @@ fn ensure_private_metadata_dir(path: &Path) -> Result<(), String> {
             .map_err(|e| format!("Failed to create session metadata dir: {e}"))?;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
             .map_err(|e| format!("Failed to secure session metadata dir: {e}"))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(unix))]
@@ -394,7 +394,7 @@ fn write_metadata_file(path: &Path, contents: &str) -> Result<(), String> {
             .map_err(|e| format!("Failed to write session metadata file: {e}"))?;
         file.flush()
             .map_err(|e| format!("Failed to flush session metadata file: {e}"))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(unix))]
@@ -668,7 +668,7 @@ async fn capture_tmux_scrollback(
     session_id: &str,
     line_hint: usize,
 ) -> Result<Vec<String>, String> {
-    let start_line = line_hint.max(DEFAULT_PREVIEW_LINES).max(40) as i32 * -1;
+    let start_line = -(line_hint.max(DEFAULT_PREVIEW_LINES).max(40) as i32);
     let mut args = tmux_socket_args();
     args.extend([
         "capture-pane".to_string(),
@@ -860,6 +860,7 @@ fn spawn_pty_command(cmd: CommandBuilder, description: &str) -> Result<SpawnedPt
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn register_live_session<R: Runtime>(
     app: AppHandle<R>,
     state: TerminalState,
@@ -1010,6 +1011,7 @@ async fn register_live_session<R: Runtime>(
     Ok(info)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_tmux_session<R: Runtime>(
     app: &AppHandle<R>,
     tmux_bin: &str,
