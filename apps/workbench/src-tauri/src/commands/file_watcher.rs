@@ -72,23 +72,19 @@ pub fn record_content_hash(state: &SwarmFileWatcherState, path: &Path, content: 
 }
 
 pub fn record_content_hash_value(state: &SwarmFileWatcherState, path: &Path, hash: [u8; 32]) {
-    let mut hashes = state
-        .content_hashes
-        .lock()
-        .expect("content-hash mutex poisoned");
-    hashes.insert(normalize_watch_path(path), hash);
+    if let Ok(mut hashes) = state.content_hashes.lock() {
+        hashes.insert(normalize_watch_path(path), hash);
+    }
 }
 
 pub fn mark_self_writes(state: &SwarmFileWatcherState, paths: &[PathBuf]) {
     let now = Instant::now();
     let deadline = now + Duration::from_millis(SELF_WRITE_TTL_MS);
-    let mut writes = state
-        .self_writes
-        .lock()
-        .expect("self-write suppression mutex poisoned");
-    prune_expired_self_writes(&mut writes, now);
-    for path in paths {
-        writes.insert(normalize_watch_path(path), deadline);
+    if let Ok(mut writes) = state.self_writes.lock() {
+        prune_expired_self_writes(&mut writes, now);
+        for path in paths {
+            writes.insert(normalize_watch_path(path), deadline);
+        }
     }
 }
 
@@ -384,18 +380,20 @@ fn should_suppress_path(
     let normalized_path = normalize_watch_path(path);
 
     let within_ttl = {
-        let mut writes = self_writes
-            .lock()
-            .expect("self-write suppression mutex poisoned");
+        let Ok(mut writes) = self_writes.lock() else {
+            // Mutex poisoned — conservative default: let events through.
+            return false;
+        };
         prune_expired_self_writes(&mut writes, now);
         matches!(writes.get(&normalized_path), Some(deadline) if *deadline > now)
     };
 
     // Look up the recorded content hash (if any).
     let recorded_hash = {
-        let hashes = content_hashes
-            .lock()
-            .expect("content-hash mutex poisoned");
+        let Ok(hashes) = content_hashes.lock() else {
+            // Mutex poisoned — conservative default: let events through.
+            return false;
+        };
         hashes.get(&normalized_path).copied()
     };
 
@@ -421,10 +419,9 @@ fn should_suppress_path(
         // Remove the hash entry after suppression to prevent stale matches on future
         // external writes.
         if disk_hash_matches {
-            let mut hashes = content_hashes
-                .lock()
-                .expect("content-hash mutex poisoned");
-            hashes.remove(&normalized_path);
+            if let Ok(mut hashes) = content_hashes.lock() {
+                hashes.remove(&normalized_path);
+            }
         }
         disk_hash_matches
     }
