@@ -130,7 +130,34 @@ export interface SwarmFeedState {
 }
 
 type MaybePromise<T> = T | Promise<T>;
-type PersistedSwarmFeedPayload = SwarmFeedState;
+
+// ---------------------------------------------------------------------------
+// Retention policy configuration
+// ---------------------------------------------------------------------------
+
+export const RETENTION_MAX_FINDINGS = 500;
+export const RETENTION_MAX_HEADS = 200;
+export const RETENTION_MAX_REVOCATIONS = 200;
+
+/** Maps swarmId -> feedId -> max feedSeq ever observed. */
+export type HighWaterMarkMap = Record<string, Record<string, number>>;
+
+interface PersistedSwarmFeedPayload extends SwarmFeedState {
+  highWaterMarks?: HighWaterMarkMap;
+}
+
+/** Module-level high-water marks, same lifetime pattern as _persistTimer. */
+let _highWaterMarks: HighWaterMarkMap = {};
+
+/** @internal Expose high-water marks for test inspection. */
+export function _getHighWaterMarks(): HighWaterMarkMap {
+  return _highWaterMarks;
+}
+
+/** @internal Set high-water marks for testing. */
+export function _setHighWaterMarks(marks: HighWaterMarkMap): void {
+  _highWaterMarks = marks;
+}
 
 const INITIAL_SWARM_FEED_STATE: SwarmFeedState = {
   findingEnvelopes: [],
@@ -194,6 +221,103 @@ function sortRevocationEnvelopes(
     }
     return right.receivedAt - left.receivedAt;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Retention policy helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Trim each of the 6 feed arrays to bounded limits before disk persistence.
+ * Arrays are expected to be pre-sorted descending (newest first).
+ * Returns retained state + overflow (null if nothing was trimmed).
+ */
+export function applyRetentionPolicy(state: SwarmFeedState): {
+  retained: SwarmFeedState;
+  overflow: SwarmFeedState | null;
+} {
+  let hasOverflow = false;
+
+  const trimArray = <T,>(arr: T[], max: number): { kept: T[]; overflow: T[] } => {
+    if (arr.length <= max) {
+      return { kept: arr, overflow: [] };
+    }
+    hasOverflow = true;
+    return { kept: arr.slice(0, max), overflow: arr.slice(max) };
+  };
+
+  const findings = trimArray(state.findingEnvelopes, RETENTION_MAX_FINDINGS);
+  const heads = trimArray(state.headAnnouncements, RETENTION_MAX_HEADS);
+  const revocations = trimArray(state.revocationEnvelopes, RETENTION_MAX_REVOCATIONS);
+  const qFindings = trimArray(state.quarantinedFindingEnvelopes, RETENTION_MAX_FINDINGS);
+  const qHeads = trimArray(state.quarantinedHeadAnnouncements, RETENTION_MAX_HEADS);
+  const qRevocations = trimArray(state.quarantinedRevocationEnvelopes, RETENTION_MAX_REVOCATIONS);
+
+  const retained: SwarmFeedState = {
+    findingEnvelopes: findings.kept,
+    headAnnouncements: heads.kept,
+    revocationEnvelopes: revocations.kept,
+    quarantinedFindingEnvelopes: qFindings.kept,
+    quarantinedHeadAnnouncements: qHeads.kept,
+    quarantinedRevocationEnvelopes: qRevocations.kept,
+    defaultTrustPolicy: state.defaultTrustPolicy,
+    trustPolicies: state.trustPolicies,
+  };
+
+  if (!hasOverflow) {
+    return { retained, overflow: null };
+  }
+
+  const overflow: SwarmFeedState = {
+    findingEnvelopes: findings.overflow,
+    headAnnouncements: heads.overflow,
+    revocationEnvelopes: revocations.overflow,
+    quarantinedFindingEnvelopes: qFindings.overflow,
+    quarantinedHeadAnnouncements: qHeads.overflow,
+    quarantinedRevocationEnvelopes: qRevocations.overflow,
+    defaultTrustPolicy: state.defaultTrustPolicy,
+    trustPolicies: state.trustPolicies,
+  };
+
+  return { retained, overflow };
+}
+
+/**
+ * Scan finding and revocation envelopes to track the maximum feedSeq per
+ * (swarmId, feedId) key. Returns a new map (immutable update pattern).
+ */
+export function updateHighWaterMarks(
+  current: HighWaterMarkMap,
+  state: SwarmFeedState,
+): HighWaterMarkMap {
+  const next: HighWaterMarkMap = {};
+
+  // Deep clone current
+  for (const [swarmId, feeds] of Object.entries(current)) {
+    next[swarmId] = { ...feeds };
+  }
+
+  const trackSeq = (swarmId: string, feedId: string, feedSeq: number) => {
+    if (!next[swarmId]) {
+      next[swarmId] = {};
+    }
+    const existing = next[swarmId]![feedId];
+    if (existing === undefined || feedSeq > existing) {
+      next[swarmId]![feedId] = feedSeq;
+    }
+  };
+
+  // Scan findings
+  for (const record of state.findingEnvelopes) {
+    trackSeq(record.swarmId, record.envelope.feedId, record.envelope.feedSeq);
+  }
+
+  // Scan revocations (they also have feedSeq)
+  for (const record of state.revocationEnvelopes) {
+    trackSeq(record.swarmId, record.envelope.feedId, record.envelope.feedSeq);
+  }
+
+  return next;
 }
 
 function findingEnvelopeReplayKey(
@@ -903,18 +1027,38 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
 // plaintext localStorage. Quarantined data should be treated as untrusted on
 // reload and must be re-evaluated against the active trust policy before
 // restoration.
+let _lastOverflow: SwarmFeedState | null = null;
+
+/** @internal Test helper: returns the last overflow from applyRetentionPolicy. */
+export function _getOverflowForArchive(): SwarmFeedState | null {
+  return _lastOverflow;
+}
+
 function persistSwarmFeed(state: SwarmFeedState): void {
   try {
+    // Update high-water marks before retention trim so max seqs are captured
+    _highWaterMarks = updateHighWaterMarks(_highWaterMarks, state);
+
+    // Apply retention policy: trim arrays to bounded limits
+    const { retained, overflow } = applyRetentionPolicy(state);
+    _lastOverflow = overflow;
+
+    if (overflow !== null) {
+      const trimmedCount =
+        overflow.findingEnvelopes.length +
+        overflow.headAnnouncements.length +
+        overflow.revocationEnvelopes.length +
+        overflow.quarantinedFindingEnvelopes.length +
+        overflow.quarantinedHeadAnnouncements.length +
+        overflow.quarantinedRevocationEnvelopes.length;
+      console.log(`[swarm-feed-store] retention trimmed ${trimmedCount} records`);
+    }
+
     const payload: PersistedSwarmFeedPayload = {
-      findingEnvelopes: state.findingEnvelopes,
-      headAnnouncements: state.headAnnouncements,
-      revocationEnvelopes: state.revocationEnvelopes,
-      quarantinedFindingEnvelopes: state.quarantinedFindingEnvelopes,
-      quarantinedHeadAnnouncements: state.quarantinedHeadAnnouncements,
-      quarantinedRevocationEnvelopes: state.quarantinedRevocationEnvelopes,
-      defaultTrustPolicy: state.defaultTrustPolicy,
-      trustPolicies: state.trustPolicies,
+      ...retained,
+      highWaterMarks: _highWaterMarks,
     };
+
     if (isDesktop()) {
       void writeSwarmPersistencePayload(SWARM_FEED_PERSISTENCE_FILE, payload).then((ok) => {
         if (!ok) {
@@ -1502,12 +1646,23 @@ export function getSwarmFeedSyncState(
   issuerId: string,
 ): SwarmFeedSyncState {
   const replayProgress = selectReplayProgress(state, swarmId, feedId, issuerId);
+
+  // Fall back to high-water marks when the array no longer contains the max seq
+  // (e.g., after retention trimming removed older records).
+  let localMaxFindingSeq = replayProgress.highestSeenSeq;
+  if (localMaxFindingSeq === null) {
+    const hwm = _highWaterMarks[swarmId]?.[feedId];
+    if (hwm !== undefined) {
+      localMaxFindingSeq = hwm;
+    }
+  }
+
   return {
     swarmId,
     feedId,
     issuerId,
     localFindingSeq: replayProgress.contiguousSeq,
-    localMaxFindingSeq: replayProgress.highestSeenSeq,
+    localMaxFindingSeq,
     localHeadSeq: selectLatestHeadSeq(state, swarmId, feedId, issuerId),
   };
 }
@@ -2017,6 +2172,22 @@ async function hydrateSwarmFeedStoreFromDisk(force = false): Promise<void> {
     const legacy = loadPersistedSwarmFeed();
     const payload = await readSwarmPersistencePayload(SWARM_FEED_PERSISTENCE_FILE);
     const restored = normalizePersistedSwarmFeed(payload) ?? legacy ?? INITIAL_SWARM_FEED_STATE;
+
+    // Restore high-water marks from persisted payload (if present)
+    if (isRecord(payload) && isRecord(payload.highWaterMarks)) {
+      const restoredMarks: HighWaterMarkMap = {};
+      for (const [swarmId, feeds] of Object.entries(payload.highWaterMarks)) {
+        if (isRecord(feeds)) {
+          restoredMarks[swarmId] = {};
+          for (const [feedId, seq] of Object.entries(feeds)) {
+            if (typeof seq === "number") {
+              restoredMarks[swarmId]![feedId] = seq;
+            }
+          }
+        }
+      }
+      _highWaterMarks = restoredMarks;
+    }
 
     replaceSwarmFeedStoreState(restored);
     for (const record of restored.findingEnvelopes) {

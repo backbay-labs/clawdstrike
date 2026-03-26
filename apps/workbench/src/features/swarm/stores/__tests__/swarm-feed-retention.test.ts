@@ -78,6 +78,7 @@ import {
   RETENTION_MAX_FINDINGS,
   RETENTION_MAX_HEADS,
   RETENTION_MAX_REVOCATIONS,
+  _setHighWaterMarks,
 } from "../swarm-feed-store";
 
 // ---------------------------------------------------------------------------
@@ -424,24 +425,34 @@ describe("high-water mark integration", () => {
     expect(hwmAfterTrim.s1!.f1).toBe(600);
   });
 
-  it("getSwarmFeedSyncState falls back to highWaterMarks when array lacks the max seq", () => {
-    // Create a trimmed state: only seq 101..600
-    const trimmedFindings = generateFindings(600).slice(0, 500);
-    const state = makeState({ findingEnvelopes: trimmedFindings });
-
-    // Without high-water marks, sync state should report max from array
-    const syncWithArray = getSwarmFeedSyncState(state, "s1", "f1", "i1");
-    expect(syncWithArray.localMaxFindingSeq).toBe(600);
-
-    // Even with high-water marks, the array still has seq 600 since we kept newest 500
-    // Test the fallback case: state has no findings for a specific feed but HWM exists
+  it("getSwarmFeedSyncState falls back to highWaterMarks when array is empty", () => {
     const emptyState = makeState({ findingEnvelopes: [] });
 
-    // getSwarmFeedSyncState should fall back to highWaterMarks
-    // We need to set the module-level _highWaterMarks for this test
-    // This will be tested after the implementation provides a way to set HWM for tests
-    const syncEmpty = getSwarmFeedSyncState(emptyState, "s1", "f1", "i1");
-    // Without HWM set, this should be null
-    expect(syncEmpty.localMaxFindingSeq).toBeNull();
+    // Without HWM set, localMaxFindingSeq should be null
+    _setHighWaterMarks({});
+    const syncWithout = getSwarmFeedSyncState(emptyState, "s1", "f1", "i1");
+    expect(syncWithout.localMaxFindingSeq).toBeNull();
+
+    // Set high-water marks and verify fallback
+    _setHighWaterMarks({ s1: { f1: 600 } });
+    const syncWith = getSwarmFeedSyncState(emptyState, "s1", "f1", "i1");
+    expect(syncWith.localMaxFindingSeq).toBe(600);
+
+    // Reset for other tests
+    _setHighWaterMarks({});
+  });
+
+  it("getSwarmFeedSyncState prefers array scan over HWM when array has data", () => {
+    // Array has data: seq 600..101
+    const findings = generateFindings(600).slice(0, 500);
+    const state = makeState({ findingEnvelopes: findings });
+
+    _setHighWaterMarks({ s1: { f1: 600 } });
+    const sync = getSwarmFeedSyncState(state, "s1", "f1", "i1");
+    // The array has feedSeq 600 in it (newest), so highestSeenSeq comes from array, not HWM
+    expect(sync.localMaxFindingSeq).toBe(600);
+
+    // Reset
+    _setHighWaterMarks({});
   });
 });
