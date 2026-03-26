@@ -115,6 +115,8 @@ pub struct SessionInfo {
     pub shell: String,
     pub persistence_mode: SessionPersistenceMode,
     pub recovery_state: SessionRecoveryState,
+    /// Whether the session's original CWD still exists on disk.
+    pub cwd_valid: bool,
 }
 
 /// Central manager holding all active sessions.
@@ -478,6 +480,13 @@ fn tmux_session_info(
     recovery_state: SessionRecoveryState,
     line_count: usize,
 ) -> SessionInfo {
+    let cwd_valid = Path::new(&metadata.cwd).exists();
+    if !cwd_valid {
+        eprintln!(
+            "[terminal] Warning: session {} CWD no longer exists: {}",
+            metadata.id, metadata.cwd
+        );
+    }
     SessionInfo {
         id: metadata.id.clone(),
         cwd: metadata.cwd.clone(),
@@ -489,11 +498,56 @@ fn tmux_session_info(
         shell: metadata.shell.clone(),
         persistence_mode: metadata.persistence_mode,
         recovery_state,
+        cwd_valid,
     }
 }
 
 fn supports_tmux_persistence() -> bool {
     cfg!(target_os = "macos") || cfg!(target_os = "linux")
+}
+
+/// Parse a tmux version string like "3.5a" into (major, minor, suffix).
+///
+/// The suffix character is optional; "3.4" parses as `(3, 4, '\0')`.
+#[allow(dead_code)] // Used by tests; called at runtime via detect_tmux_version for version gating
+fn parse_tmux_version(version_str: &str) -> Option<(u32, u32, char)> {
+    let s = version_str.trim();
+    let dot = s.find('.')?;
+    let major: u32 = s[..dot].parse().ok()?;
+    let rest = &s[dot + 1..];
+    // Split numeric part from optional suffix character
+    let num_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    if num_end == 0 {
+        return None;
+    }
+    let minor: u32 = rest[..num_end].parse().ok()?;
+    let suffix = rest[num_end..].chars().next().unwrap_or('\0');
+    Some((major, minor, suffix))
+}
+
+/// Returns true if the given tmux version supports `allow-passthrough` (>= 3.3a).
+#[allow(dead_code)] // Used by tests; reserved for runtime version gating
+fn tmux_version_supports_passthrough(version_str: &str) -> bool {
+    match parse_tmux_version(version_str) {
+        Some((major, minor, _)) => major > 3 || (major == 3 && minor >= 3),
+        None => false, // conservative: assume no support if unparseable
+    }
+}
+
+/// Detect the installed tmux version by running `tmux -V`.
+///
+/// Returns the version string (e.g. "3.5a") or `None` if the command fails.
+#[allow(dead_code)] // Reserved for runtime version gating beyond tmux.conf if-shell
+async fn detect_tmux_version(tmux_bin: &str) -> Option<String> {
+    let args = vec!["-V".to_string()];
+    match run_tmux_command(tmux_bin, &args, None).await {
+        Ok(output) => {
+            // Output format: "tmux 3.5a" -- extract version part
+            let version = output.trim().strip_prefix("tmux ").unwrap_or(output.trim());
+            Some(version.to_string())
+        }
+        Err(_) => None,
+    }
 }
 
 fn bundled_tmux_path<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
@@ -684,6 +738,7 @@ fn session_info(session: &mut TerminalSession) -> SessionInfo {
         shell: session.shell.clone(),
         persistence_mode: session.persistence_mode,
         recovery_state: session.recovery_state,
+        cwd_valid: true, // Live sessions always have a valid CWD (verified at creation)
     }
 }
 
@@ -861,6 +916,7 @@ async fn register_live_session<R: Runtime>(
         shell,
         persistence_mode,
         recovery_state,
+        cwd_valid: true, // Session just created/connected — CWD verified at creation
     };
 
     {
@@ -1001,6 +1057,22 @@ async fn create_tmux_session<R: Runtime>(
         shell.to_string(),
     ]);
     run_tmux_command(tmux_bin, &set_shell_args, None).await?;
+
+    // Persist caller-supplied env vars in the tmux session environment.
+    // On reconnect these are already available — no additional passthrough needed.
+    for (key, value) in env {
+        let mut set_env_args = tmux_socket_args();
+        set_env_args.extend([
+            "set-environment".to_string(),
+            "-t".to_string(),
+            session_id.to_string(),
+            key.clone(),
+            value.clone(),
+        ]);
+        if let Err(e) = run_tmux_command(tmux_bin, &set_env_args, None).await {
+            eprintln!("[terminal] Failed to set tmux env {key}: {e}");
+        }
+    }
 
     let metadata = PersistedSessionMetadata {
         id: session_id.to_string(),
@@ -1278,6 +1350,14 @@ pub async fn terminal_reconnect<R: Runtime>(
 
     let metadata = read_session_metadata(&app, &session_id)?
         .ok_or_else(|| format!("Recoverable session metadata not found: {session_id}"))?;
+
+    let cwd_valid = Path::new(&metadata.cwd).exists();
+    if !cwd_valid {
+        eprintln!(
+            "[terminal] Warning: session {} CWD no longer exists: {}",
+            session_id, metadata.cwd
+        );
+    }
 
     connect_tmux_session(
         app,
@@ -1633,8 +1713,8 @@ pub async fn kill_all_sessions(state: &TerminalState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_to_ring_buffer, build_tmux_shell_command, normalize_shell, shell_quote,
-        tmux_socket_args, RING_BUFFER_MAX_LINES,
+        append_to_ring_buffer, build_tmux_shell_command, normalize_shell, parse_tmux_version,
+        shell_quote, tmux_socket_args, tmux_version_supports_passthrough, RING_BUFFER_MAX_LINES,
     };
     use std::collections::HashMap;
 
@@ -1740,5 +1820,35 @@ mod tests {
     #[test]
     fn test_shell_quote_empty() {
         assert_eq!(shell_quote(""), "''");
+    }
+
+    #[test]
+    fn test_parse_tmux_version_standard() {
+        assert_eq!(parse_tmux_version("3.5a"), Some((3, 5, 'a')));
+    }
+
+    #[test]
+    fn test_parse_tmux_version_no_suffix() {
+        assert_eq!(parse_tmux_version("3.4"), Some((3, 4, '\0')));
+    }
+
+    #[test]
+    fn test_parse_tmux_version_two_digit_minor() {
+        assert_eq!(parse_tmux_version("4.12b"), Some((4, 12, 'b')));
+    }
+
+    #[test]
+    fn test_tmux_version_supports_passthrough_33a() {
+        assert!(tmux_version_supports_passthrough("3.3a"));
+    }
+
+    #[test]
+    fn test_tmux_version_supports_passthrough_32a() {
+        assert!(!tmux_version_supports_passthrough("3.2a"));
+    }
+
+    #[test]
+    fn test_tmux_version_supports_passthrough_40() {
+        assert!(tmux_version_supports_passthrough("4.0"));
     }
 }

@@ -61,6 +61,8 @@ export interface SessionInfo {
   shell: string;
   persistence_mode: "direct" | "tmux";
   recovery_state: "fresh" | "recoverable" | "recovered";
+  /** Whether the session's original CWD still exists on disk. */
+  cwd_valid: boolean;
 }
 
 export interface WorktreeInfo {
@@ -179,6 +181,13 @@ export const terminalService = {
     listen<number | null>(`terminal:exit:${sessionId}`, (event) =>
       callback(event.payload),
     ),
+
+  /**
+   * Detach a tmux-backed session without destroying it.
+   * The session remains alive in tmux and can be reconnected later.
+   */
+  detach: (sessionId: string): Promise<void> =>
+    invokeSensitive<void>("terminal_detach", { sessionId }),
 };
 
 // ---------------------------------------------------------------------------
