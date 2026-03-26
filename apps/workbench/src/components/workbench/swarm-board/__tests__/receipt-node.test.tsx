@@ -10,6 +10,7 @@ vi.mock("@xyflow/react", () => ({
   ),
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
   NodeResizer: () => null,
+  useStore: (selector: (s: any) => any) => selector({ transform: [0, 0, 1] }),
 }));
 
 import { ReceiptNode } from "../nodes/receipt-node";

@@ -11,9 +11,11 @@ import { cn } from "@/lib/utils";
 import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
 import { summarizeUnifiedDiff } from "../diff-preview";
 import { DiffPreviewPane } from "../diff-preview-pane";
+import { useZoomTier } from "../hooks/use-zoom-tier";
 
 function DiffNodeInner({ data, selected }: NodeProps) {
   const d = data as SwarmBoardNodeData;
+  const tier = useZoomTier();
   const summary = useMemo(
     () => d.diffSummary ?? summarizeUnifiedDiff(d.diffContent ?? ""),
     [d.diffContent, d.diffSummary],
@@ -23,6 +25,64 @@ function DiffNodeInner({ data, selected }: NodeProps) {
   const files = summary?.files ?? [];
   const hasPreviewSource = Boolean(d.diffContent?.trim() || d.diffPath);
   const fileCount = files.length;
+  const netColor = added >= removed ? "#38a876" : "#b85450";
+
+  // ---------------------------------------------------------------------------
+  // Dot tier — small rectangle with green/red split indicator
+  // ---------------------------------------------------------------------------
+  if (tier === "dot") {
+    return (
+      <div
+        className="rounded-none"
+        style={{
+          backgroundColor: "#0a0c11",
+          width: "100%",
+          height: "100%",
+          minWidth: 40,
+          minHeight: 20,
+          borderLeft: `2px solid ${netColor}`,
+        }}
+      >
+        <Handle type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent" />
+        <Handle type="source" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chip tier — +N / -N with filename truncated, single line
+  // ---------------------------------------------------------------------------
+  if (tier === "chip") {
+    return (
+      <div
+        className="rounded-none flex items-center gap-1.5 px-2"
+        style={{
+          backgroundColor: "#0a0c11",
+          minWidth: 100,
+          minHeight: 22,
+        }}
+      >
+        <Handle type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent" />
+        <span className="text-[8px] font-mono font-bold" style={{ color: "#38a876", fontVariantNumeric: "tabular-nums" }}>
+          +{added}
+        </span>
+        <span className="text-[8px] font-mono font-bold" style={{ color: "#b85450", fontVariantNumeric: "tabular-nums" }}>
+          -{removed}
+        </span>
+        {d.diffPath && (
+          <span className="text-[7px] font-mono text-[#4a5568] truncate flex-1">
+            {d.diffPath.split("/").pop()}
+          </span>
+        )}
+        <Handle type="source" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compact tier — +/- summary and files count, no DiffPreviewPane
+  // Full tier — unchanged
+  // ---------------------------------------------------------------------------
 
   return (
     <div
@@ -37,17 +97,19 @@ function DiffNodeInner({ data, selected }: NodeProps) {
         backgroundColor: selected ? "#0e1018" : "#0a0c11",
         width: "100%",
         height: "100%",
-        minWidth: 200,
-        minHeight: selected && hasPreviewSource ? 144 : 88,
+        minWidth: tier === "compact" ? 140 : 200,
+        minHeight: tier === "compact" ? 60 : (selected && hasPreviewSource ? 144 : 88),
       }}
     >
-      <NodeResizer
-        minWidth={200}
-        minHeight={88}
-        isVisible={selected}
-        lineClassName="!border-[#c49a3c]/25"
-        handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
-      />
+      {tier === "full" && (
+        <NodeResizer
+          minWidth={200}
+          minHeight={88}
+          isVisible={selected}
+          lineClassName="!border-[#c49a3c]/25"
+          handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
+        />
+      )}
       <Handle
         type="target"
         position={Position.Top}
@@ -96,7 +158,7 @@ function DiffNodeInner({ data, selected }: NodeProps) {
         )}
       </div>
 
-      {selected && hasPreviewSource && (
+      {tier === "full" && selected && hasPreviewSource && (
         <div className="px-2.5 pb-2" style={{ borderTop: "1px solid #1a1e2830" }}>
           <div className="py-1.5 text-[8px] font-mono uppercase tracking-[0.14em] text-[#4a5568]">
             preview

@@ -9,6 +9,7 @@ vi.mock("@xyflow/react", () => ({
     <div data-testid={`handle-${type}-${position}`} />
   ),
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
+  useStore: (selector: (s: any) => any) => selector({ transform: [0, 0, 1] }),
 }));
 
 import { ArtifactNode } from "../nodes/artifact-node";
