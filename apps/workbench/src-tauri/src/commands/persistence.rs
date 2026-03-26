@@ -224,12 +224,18 @@ pub async fn write_app_persistence_file<R: Runtime>(
     // Pre-compute the content hash before moving `content` into the blocking task.
     let content_hash: [u8; 32] = Sha256::digest(content.as_bytes()).into();
 
+    // Record self-write suppression and content hash BEFORE the blocking write
+    // to close a TOCTOU race: the file watcher debouncer could fire between
+    // the atomic rename inside write_persistence_file and the hash recording.
+    // The hash is computed from the in-memory content that will be written, so
+    // recording it early is correct.
+    mark_self_writes(&watcher_state, &[target.clone(), temp, backup]);
+    record_content_hash_value(&watcher_state, &target, content_hash);
+
     tauri::async_runtime::spawn_blocking(move || write_persistence_file(&root, &filename, content))
         .await
         .map_err(|e| format!("Persistence write task failed: {e}"))??;
 
-    mark_self_writes(&watcher_state, &[target.clone(), temp, backup]);
-    record_content_hash_value(&watcher_state, &target, content_hash);
     Ok(())
 }
 
