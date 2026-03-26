@@ -36,6 +36,8 @@ vi.mock("@xyflow/react", () => ({
     viewportInitialized: true,
   }),
   useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+  useStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({ transform: [0, 0, 1], nodeLookup: new Map() }),
   useOnSelectionChange: vi.fn(),
   applyNodeChanges: (changes: unknown, nodes: unknown) => nodes,
   applyEdgeChanges: (changes: unknown, edges: unknown) => edges,
