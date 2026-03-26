@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { useSwarmBoard } from "@/features/swarm/stores/swarm-board-store";
 import { TerminalRenderer } from "../terminal-renderer";
 import type { SwarmBoardNodeData, SessionStatus, RiskLevel } from "@/features/swarm/swarm-board-types";
+import { useZoomTier, type ZoomTier } from "../hooks/use-zoom-tier";
 
 // ---------------------------------------------------------------------------
 // Status dot colors — slightly tinted, never neon
@@ -125,6 +126,7 @@ class TerminalTileErrorBoundary extends React.Component<
 
 function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
   const d = data as SwarmBoardNodeData;
+  const tier = useZoomTier();
   const { updateNode, removeNode, killSession } = useSwarmBoard();
   const status = d.status ?? "idle";
   const statusColor = STATUS_COLOR[status];
@@ -186,9 +188,95 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
     setStatusFlash(true);
     const timeout = window.setTimeout(() => {
       setStatusFlash(false);
-    }, 900);
+    }, 500);
     return () => window.clearTimeout(timeout);
   }, [status]);
+
+  // ---------------------------------------------------------------------------
+  // Dot tier — minimal colored rectangle, status border only
+  // ---------------------------------------------------------------------------
+  if (tier === "dot") {
+    return (
+      <div
+        className="rounded-sm"
+        style={{
+          backgroundColor: "#0a0c11",
+          width: "100%",
+          height: "100%",
+          minWidth: 40,
+          minHeight: 20,
+          borderLeft: `2px solid ${statusColor}`,
+          boxShadow: statusFlash
+            ? `0 0 0 1px ${statusColor}40, 0 0 18px ${statusColor}18`
+            : undefined,
+        }}
+      >
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!w-1 !h-1 !bg-transparent"
+        />
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!w-1 !h-1 !bg-transparent"
+        />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chip tier — status dot + title + status label, single compact row
+  // ---------------------------------------------------------------------------
+  if (tier === "chip") {
+    return (
+      <div
+        className="rounded-sm flex items-center gap-1.5 px-2"
+        style={{
+          backgroundColor: "#0a0c11",
+          borderLeft: `2px solid ${statusColor}`,
+          minWidth: 120,
+          minHeight: 28,
+          boxShadow: statusFlash
+            ? `0 0 0 1px ${statusColor}40, 0 0 12px ${statusColor}18`
+            : undefined,
+        }}
+      >
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!w-1 !h-1 !bg-transparent"
+        />
+        {/* Status dot */}
+        <span
+          className="w-[5px] h-[5px] rounded-full shrink-0"
+          style={{ backgroundColor: statusColor }}
+        />
+        {/* Title */}
+        <span className="text-[8px] font-mono text-[#5c6a80] truncate flex-1">
+          {d.title ?? d.agentModel ?? "session"}
+        </span>
+        {/* Status label */}
+        <span
+          className="text-[7px] font-mono font-bold uppercase shrink-0"
+          style={{ color: statusColor, letterSpacing: "0.1em" }}
+        >
+          {STATUS_LABEL[status]}
+        </span>
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!w-1 !h-1 !bg-transparent"
+        />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compact tier — title bar + condensed metrics (numbers only), no terminal
+  // ---------------------------------------------------------------------------
+  // Full tier — render everything as-is (no changes)
+  // ---------------------------------------------------------------------------
 
   return (
     <div
@@ -205,20 +293,22 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
         backgroundColor: selected ? "#0e1018" : "#0a0c11",
         width: "100%",
         height: "100%",
-        minWidth: 320,
-        minHeight: 216,
+        minWidth: tier === "compact" ? 240 : 320,
+        minHeight: tier === "compact" ? 60 : 216,
         boxShadow: statusFlash
           ? `0 0 0 1px ${statusColor}40, 0 0 18px ${statusColor}18`
           : undefined,
       }}
     >
-      <NodeResizer
-        minWidth={320}
-        minHeight={216}
-        isVisible={selected}
-        lineClassName="!border-[#c49a3c]/25"
-        handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
-      />
+      {tier === "full" && (
+        <NodeResizer
+          minWidth={320}
+          minHeight={216}
+          isVisible={selected}
+          lineClassName="!border-[#c49a3c]/25"
+          handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
+        />
+      )}
       {/* Top handle */}
       <Handle
         type="target"
@@ -274,90 +364,94 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
           </span>
         </div>
 
-        {/* Right: window controls — tiny, flush */}
-        <div className="flex items-center shrink-0 ml-2">
-          <button
-            onClick={handleToggleMaximize}
-            className="p-0.5 text-[#2a2f3a] hover:text-[#6b7a92] transition-colors"
-            title={maximized ? "Minimize" : "Maximize"}
-            aria-label={maximized ? "Minimize session" : "Maximize session"}
-          >
-            {maximized ? <IconMinimize size={9} stroke={1.5} /> : <IconMaximize size={9} stroke={1.5} />}
-          </button>
-          <button
-            onClick={handleClose}
-            className="p-0.5 ml-0.5 text-[#2a2f3a] hover:text-[#b85450] transition-colors"
-            title="Close session"
-            aria-label="Close session"
-          >
-            <IconX size={9} stroke={1.5} />
-          </button>
-        </div>
-      </div>
-
-      {/* Terminal body — flex-1 fills remaining space */}
-      <div className="flex-1 min-h-0 relative">
-        {liveTerminalVisible ? (
-          <TerminalTileErrorBoundary
-            sessionId={d.sessionId!}
-            active={!!selected || maximized}
-            fontSize={selected || maximized ? 11 : 8}
-            initialLines={d.previewLines ?? []}
-          />
-        ) : (
-          /* Fallback: static preview lines — no frills, just output */
-          <div
-            className="w-full h-full overflow-auto"
-            style={{ backgroundColor: "#06070b" }}
-          >
-            <div className="py-1">
-              {(d.previewLines ?? []).slice(-previewLineLimit).map((line, i) => (
-                <div
-                  key={i}
-                  className="flex hover:bg-[#ffffff02]"
-                >
-                  {/* Line gutter */}
-                  <span
-                    className="shrink-0 w-7 text-right pr-1.5 text-[8px] font-mono text-[#1a1e28] select-none leading-[1.7]"
-                    style={{ fontVariantNumeric: 'tabular-nums' }}
-                  >
-                    {i + 1}
-                  </span>
-                  {/* Line content */}
-                  <span
-                    className={cn(
-                      "flex-1 pl-1.5 font-mono text-[10px] leading-[1.7] whitespace-pre truncate",
-                      line.startsWith("$")
-                        ? "text-[#c49a3c]"
-                        : line.includes("FAILED") || line.includes("error")
-                          ? "text-[#b85450]"
-                          : line.includes("ok") || line.includes("passed")
-                            ? "text-[#38a876]"
-                            : "text-[#5c6a80]",
-                    )}
-                  >
-                    {line}
-                  </span>
-                </div>
-              ))}
-              {(!d.previewLines || d.previewLines.length === 0) && (
-                <div className="flex items-center justify-center h-full min-h-[60px]">
-                  <span className="text-[9px] font-mono text-[#1a1e28]">
-                    {hasSession && !d.terminalAttached
-                      ? "select to attach recovered session"
-                      : "awaiting output"}
-                  </span>
-                </div>
-              )}
-            </div>
+        {/* Right: window controls — tiny, flush (full tier only) */}
+        {tier === "full" && (
+          <div className="flex items-center shrink-0 ml-2">
+            <button
+              onClick={handleToggleMaximize}
+              className="p-0.5 text-[#2a2f3a] hover:text-[#6b7a92] transition-colors"
+              title={maximized ? "Minimize" : "Maximize"}
+              aria-label={maximized ? "Minimize session" : "Maximize session"}
+            >
+              {maximized ? <IconMinimize size={9} stroke={1.5} /> : <IconMaximize size={9} stroke={1.5} />}
+            </button>
+            <button
+              onClick={handleClose}
+              className="p-0.5 ml-0.5 text-[#2a2f3a] hover:text-[#b85450] transition-colors"
+              title="Close session"
+              aria-label="Close session"
+            >
+              <IconX size={9} stroke={1.5} />
+            </button>
           </div>
         )}
       </div>
 
-      {/* Footer metrics — dense icon+number pairs, tabular numbers */}
+      {/* Terminal body — full tier only */}
+      {tier === "full" && (
+        <div className="flex-1 min-h-0 relative">
+          {liveTerminalVisible ? (
+            <TerminalTileErrorBoundary
+              sessionId={d.sessionId!}
+              active={!!selected || maximized}
+              fontSize={selected || maximized ? 11 : 8}
+              initialLines={d.previewLines ?? []}
+            />
+          ) : (
+            /* Fallback: static preview lines — no frills, just output */
+            <div
+              className="w-full h-full overflow-auto"
+              style={{ backgroundColor: "#06070b" }}
+            >
+              <div className="py-1">
+                {(d.previewLines ?? []).slice(-previewLineLimit).map((line, i) => (
+                  <div
+                    key={i}
+                    className="flex hover:bg-[#ffffff02]"
+                  >
+                    {/* Line gutter */}
+                    <span
+                      className="shrink-0 w-7 text-right pr-1.5 text-[8px] font-mono text-[#1a1e28] select-none leading-[1.7]"
+                      style={{ fontVariantNumeric: 'tabular-nums' }}
+                    >
+                      {i + 1}
+                    </span>
+                    {/* Line content */}
+                    <span
+                      className={cn(
+                        "flex-1 pl-1.5 font-mono text-[10px] leading-[1.7] whitespace-pre truncate",
+                        line.startsWith("$")
+                          ? "text-[#c49a3c]"
+                          : line.includes("FAILED") || line.includes("error")
+                            ? "text-[#b85450]"
+                            : line.includes("ok") || line.includes("passed")
+                              ? "text-[#38a876]"
+                              : "text-[#5c6a80]",
+                      )}
+                    >
+                      {line}
+                    </span>
+                  </div>
+                ))}
+                {(!d.previewLines || d.previewLines.length === 0) && (
+                  <div className="flex items-center justify-center h-full min-h-[60px]">
+                    <span className="text-[9px] font-mono text-[#1a1e28]">
+                      {hasSession && !d.terminalAttached
+                        ? "select to attach recovered session"
+                        : "awaiting output"}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Footer metrics — condensed in compact (numbers only, reduced height), full in full tier */}
       <div
         className="flex items-center gap-2 px-2 shrink-0 select-none"
-        style={{ height: 18, backgroundColor: "#07080c" }}
+        style={{ height: tier === "compact" ? 14 : 18, backgroundColor: "#07080c" }}
       >
         <FooterMetric label="files changed" value={d.changedFilesCount ?? 0} color="#6f97d8" />
         <FooterMetric label="receipts" value={d.receiptCount ?? 0} color="#9777cf" />
