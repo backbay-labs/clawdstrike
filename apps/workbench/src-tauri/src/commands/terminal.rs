@@ -48,6 +48,12 @@ const MAX_WRITE_BYTES: usize = 64 * 1024;
 const MAX_PREVIEW_LINES: usize = 200;
 const TMUX_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const SESSION_METADATA_DIRNAME: &str = "terminal-sessions";
+const TMUX_SOCKET_NAME: &str = "clawdstrike";
+
+/// Returns the `-L clawdstrike` args for socket isolation across all tmux commands.
+fn tmux_socket_args() -> Vec<String> {
+    vec!["-L".to_string(), TMUX_SOCKET_NAME.to_string()]
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -521,6 +527,20 @@ async fn resolve_tmux_binary<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     probe.status.success().then_some("tmux".to_string())
 }
 
+/// Resolve the path to the bundled `tmux.conf` resource file.
+///
+/// Returns `None` in dev mode when bundled resources are not present.
+fn resolve_tmux_conf<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let conf_path = resource_dir.join("tmux.conf");
+    if conf_path.exists() {
+        Some(conf_path.to_string_lossy().to_string())
+    } else {
+        eprintln!("[terminal] tmux.conf not found at {}, using tmux defaults", conf_path.display());
+        None
+    }
+}
+
 fn format_tmux_command_error(args: &[String], stderr: &[u8], stdout: &[u8]) -> String {
     let stderr = String::from_utf8_lossy(stderr).trim().to_string();
     let stdout = String::from_utf8_lossy(stdout).trim().to_string();
@@ -580,11 +600,12 @@ fn build_tmux_shell_command(
 }
 
 async fn tmux_session_exists(tmux_bin: &str, session_id: &str) -> bool {
-    let args = vec![
+    let mut args = tmux_socket_args();
+    args.extend([
         "has-session".to_string(),
         "-t".to_string(),
         session_id.to_string(),
-    ];
+    ]);
     run_tmux_command(tmux_bin, &args, None).await.is_ok()
 }
 
@@ -594,7 +615,8 @@ async fn capture_tmux_scrollback(
     line_hint: usize,
 ) -> Result<Vec<String>, String> {
     let start_line = line_hint.max(DEFAULT_PREVIEW_LINES).max(40) as i32 * -1;
-    let args = vec![
+    let mut args = tmux_socket_args();
+    args.extend([
         "capture-pane".to_string(),
         "-p".to_string(),
         "-e".to_string(),
@@ -602,7 +624,7 @@ async fn capture_tmux_scrollback(
         start_line.to_string(),
         "-t".to_string(),
         format!("{session_id}:0.0"),
-    ];
+    ]);
     let output = run_tmux_command(tmux_bin, &args, None).await?;
     let mut lines = Vec::new();
     append_to_ring_buffer(&mut lines, &output);
@@ -943,7 +965,13 @@ async fn create_tmux_session<R: Runtime>(
     env: &HashMap<String, String>,
 ) -> Result<PersistedSessionMetadata, String> {
     let shell_command = build_tmux_shell_command(session_id, shell, env);
-    let create_args = vec![
+    let mut create_args = tmux_socket_args();
+    // Pass -f tmux.conf if available (bundled resource).
+    if let Some(conf_path) = resolve_tmux_conf(app) {
+        create_args.push("-f".to_string());
+        create_args.push(conf_path);
+    }
+    create_args.extend([
         "new-session".to_string(),
         "-d".to_string(),
         "-s".to_string(),
@@ -951,25 +979,27 @@ async fn create_tmux_session<R: Runtime>(
         "-c".to_string(),
         cwd.to_string(),
         shell_command,
-    ];
+    ]);
     run_tmux_command(tmux_bin, &create_args, Some(cwd)).await?;
 
-    let set_session_id_args = vec![
+    let mut set_session_id_args = tmux_socket_args();
+    set_session_id_args.extend([
         "set-environment".to_string(),
         "-t".to_string(),
         session_id.to_string(),
         "CLAWDSTRIKE_SESSION_ID".to_string(),
         session_id.to_string(),
-    ];
+    ]);
     run_tmux_command(tmux_bin, &set_session_id_args, None).await?;
 
-    let set_shell_args = vec![
+    let mut set_shell_args = tmux_socket_args();
+    set_shell_args.extend([
         "set-environment".to_string(),
         "-t".to_string(),
         session_id.to_string(),
         "SHELL".to_string(),
         shell.to_string(),
-    ];
+    ]);
     run_tmux_command(tmux_bin, &set_shell_args, None).await?;
 
     let metadata = PersistedSessionMetadata {
@@ -1012,6 +1042,16 @@ async fn connect_tmux_session<R: Runtime>(
     let mut cmd = CommandBuilder::new(&tmux_bin);
     cmd.cwd(&metadata.cwd);
     cmd.env("TERM", "xterm-256color");
+    // Socket isolation
+    cmd.arg("-L");
+    cmd.arg(TMUX_SOCKET_NAME);
+    // Optionally pass tmux.conf for consistency (harmless on attach since server
+    // already loaded it on new-session, but ensures config is loaded if the
+    // server was started without it).
+    if let Some(conf_path) = resolve_tmux_conf(&app) {
+        cmd.arg("-f");
+        cmd.arg(conf_path);
+    }
     cmd.arg("attach-session");
     cmd.arg("-t");
     cmd.arg(&metadata.id);
@@ -1041,11 +1081,12 @@ async fn kill_tmux_session<R: Runtime>(app: &AppHandle<R>, session_id: &str) -> 
     };
 
     if tmux_session_exists(&tmux_bin, session_id).await {
-        let args = vec![
+        let mut args = tmux_socket_args();
+        args.extend([
             "kill-session".to_string(),
             "-t".to_string(),
             session_id.to_string(),
-        ];
+        ]);
         run_tmux_command(&tmux_bin, &args, None).await?;
     }
 
@@ -1258,8 +1299,12 @@ pub async fn terminal_write<R: Runtime>(
 }
 
 /// Resize a PTY session.
+///
+/// For tmux sessions, also issues `tmux resize-window` so the tmux pseudo-window
+/// dimensions stay in sync with the PTY. The tmux resize is best-effort.
 #[tauri::command]
 pub async fn terminal_resize<R: Runtime>(
+    app: AppHandle<R>,
     window: tauri::Window<R>,
     capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
@@ -1270,21 +1315,45 @@ pub async fn terminal_resize<R: Runtime>(
     validate_session_id(&session_id)?;
     authorize_sensitive_command(&window, &capability_state, "terminal_resize").await?;
 
-    let manager = state.lock().await;
-    let session = manager
-        .sessions
-        .get(&session_id)
-        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    // Extract what we need under the lock, then drop it before async tmux calls.
+    let (persistence_mode, sid) = {
+        let manager = state.lock().await;
+        let session = manager
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
 
-    session
-        .master
-        .resize(PtySize {
-            rows: rows.max(1),
-            cols: cols.max(1),
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| format!("Failed to resize PTY: {e}"))?;
+        session
+            .master
+            .resize(PtySize {
+                rows: rows.max(1),
+                cols: cols.max(1),
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| format!("Failed to resize PTY: {e}"))?;
+
+        (session.persistence_mode, session.id.clone())
+    };
+
+    // For tmux sessions, also resize the tmux window so dimensions stay in sync.
+    if persistence_mode == SessionPersistenceMode::Tmux {
+        if let Some(tmux_bin) = resolve_tmux_binary(&app).await {
+            let mut args = tmux_socket_args();
+            args.extend([
+                "resize-window".to_string(),
+                "-t".to_string(),
+                sid,
+                "-x".to_string(),
+                cols.max(1).to_string(),
+                "-y".to_string(),
+                rows.max(1).to_string(),
+            ]);
+            if let Err(e) = run_tmux_command(&tmux_bin, &args, None).await {
+                eprintln!("[terminal] tmux resize-window failed (best-effort): {e}");
+            }
+        }
+    }
 
     Ok(())
 }
@@ -1435,6 +1504,11 @@ pub async fn get_cwd<R: Runtime>(
 }
 
 /// Kill all sessions. Called during app shutdown.
+///
+/// For `Direct` sessions: kills child, aborts reader, removes ring buffer (unchanged).
+/// For `Tmux` sessions: kills the PTY client (the `tmux attach-session` process)
+/// to detach, aborts reader, removes ring buffer, but does NOT delete session
+/// metadata files. The tmux server session persists for recovery on next launch.
 pub async fn kill_all_sessions(state: &TerminalState) {
     let pending: Vec<(
         String,
@@ -1458,11 +1532,26 @@ pub async fn kill_all_sessions(state: &TerminalState) {
         pending
     };
 
-    for (id, _persistence_mode, task) in pending {
+    for (id, persistence_mode, task) in pending {
         if let Some(t) = task {
             let _ = t.await;
         }
         remove_ring_buffer(&id);
+
+        match persistence_mode {
+            SessionPersistenceMode::Direct => {
+                // Direct sessions are fully cleaned up -- nothing more to do.
+            }
+            SessionPersistenceMode::Tmux => {
+                // Tmux sessions: the child.kill() above killed the PTY client
+                // (tmux attach-session process), which detaches from the tmux
+                // server session. Metadata is preserved so the session can be
+                // rediscovered on next launch.
+                eprintln!(
+                    "[terminal] Preserved tmux session {id} for recovery (detached on exit)"
+                );
+            }
+        }
     }
 }
 
