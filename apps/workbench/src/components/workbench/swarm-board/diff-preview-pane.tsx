@@ -192,8 +192,7 @@ export function DiffPreviewPane({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.status, state.content, parsedLines.length]);
+  }, [state.status, state.content, parsedLines, visibleLines]);
 
   if (state.status === "loading") {
     return (
