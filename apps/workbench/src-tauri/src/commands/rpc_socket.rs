@@ -53,6 +53,13 @@ pub struct RpcRuntimeInfo {
     pub socket_path: Option<String>,
     pub host: Option<String>,
     pub port: Option<u16>,
+    /// Advisory-only scope hints exposed via `rpc.discover`.
+    ///
+    /// These scopes are informational metadata for CLI tooling and agent
+    /// runtimes to understand the intended access surface. They are NOT
+    /// enforced by the RPC server — all authenticated requests are routed
+    /// to the frontend regardless of declared scopes. Enforcement, if
+    /// needed, must happen in the consumer (e.g. agent policy engine).
     #[serde(default = "default_scopes")]
     pub scopes: Vec<String>,
 }
