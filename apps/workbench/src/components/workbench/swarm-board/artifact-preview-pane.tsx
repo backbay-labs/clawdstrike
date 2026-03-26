@@ -4,12 +4,10 @@ import { json as jsonLanguage } from "@codemirror/lang-json";
 import { javascript } from "@codemirror/lang-javascript";
 import { yaml as yamlLanguage } from "@codemirror/lang-yaml";
 import {
-  HighlightStyle,
   bracketMatching,
   foldGutter,
-  syntaxHighlighting,
 } from "@codemirror/language";
-import { tags } from "@lezer/highlight";
+import { previewHighlightExtension } from "./codemirror-theme";
 import {
   EditorView,
   drawSelection,
@@ -74,19 +72,6 @@ const previewTheme = EditorView.theme({
     backgroundColor: "#202735 !important",
   },
 });
-
-const previewHighlight = syntaxHighlighting(
-  HighlightStyle.define([
-    { tag: tags.keyword, color: "#7c9aef" },
-    { tag: tags.string, color: "#38a876" },
-    { tag: tags.number, color: "#d4a84b" },
-    { tag: tags.comment, color: "#4a5568", fontStyle: "italic" },
-    { tag: tags.bool, color: "#c49a3c" },
-    { tag: tags.null, color: "#b85450" },
-    { tag: [tags.propertyName, tags.attributeName], color: "#9aa7bd" },
-    { tag: [tags.function(tags.variableName), tags.className], color: "#d7c7a2" },
-  ]),
-);
 
 type ArtifactPreviewState =
   | { status: "idle" | "loading"; content: string; error: null }
@@ -356,7 +341,7 @@ function CodeMirrorPreview({
       EditorView.editable.of(false),
       EditorState.readOnly.of(true),
       previewTheme,
-      previewHighlight,
+      previewHighlightExtension,
       ...resolveLanguageExtensions(filePath, fileType),
     ],
     [filePath, fileType],
