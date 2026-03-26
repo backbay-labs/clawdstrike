@@ -39,19 +39,21 @@ describe("DiffPreviewPane", () => {
     const pane = screen.getByTestId("diff-preview-pane");
     expect(pane).toBeInTheDocument();
 
-    // Add line should have green background
+    // Add line should have green background on the outer span
     const addLine = screen.getByText("+export const stale = true;");
     expect(addLine).toBeInTheDocument();
-    const addStyle = addLine.closest("span[style]");
-    expect(addStyle).toBeTruthy();
-    expect(addStyle!.getAttribute("style")).toContain("rgba(56, 168, 118, 0.12)");
+    // The text sits inside an inner <span style="color:..."> wrapped by an outer
+    // <span style="background-color:...">. Navigate to the parent to check bg.
+    const addBgSpan = addLine.parentElement;
+    expect(addBgSpan).toBeTruthy();
+    expect(addBgSpan!.getAttribute("style")).toContain("rgba(56, 168, 118, 0.12)");
 
-    // Remove line should have red background
+    // Remove line should have red background on the outer span
     const removeLine = screen.getByText("-export const stale = false;");
     expect(removeLine).toBeInTheDocument();
-    const removeStyle = removeLine.closest("span[style]");
-    expect(removeStyle).toBeTruthy();
-    expect(removeStyle!.getAttribute("style")).toContain("rgba(184, 84, 80, 0.12)");
+    const removeBgSpan = removeLine.parentElement;
+    expect(removeBgSpan).toBeTruthy();
+    expect(removeBgSpan!.getAttribute("style")).toContain("rgba(184, 84, 80, 0.12)");
   });
 
   it("renders empty message when no content is provided", () => {

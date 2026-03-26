@@ -1,15 +1,79 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { StyleModule } from "style-mod";
 import { readTextFileFromDisk } from "@/lib/tauri-bridge";
 import {
   normalizeUnifiedDiffContent,
   parseUnifiedDiffLines,
+  type DiffLineKind,
   type ParsedDiffLine,
 } from "./diff-preview";
+import {
+  resolveParser,
+  highlightLine,
+  extractDiffFilePath,
+  type HighlightedToken,
+} from "./diff-highlight";
+import { diffHighlightStyle } from "./codemirror-theme";
 
 type DiffPreviewState =
   | { status: "idle" | "loading"; content: string; error: null }
   | { status: "ready"; content: string; error: null }
   | { status: "error"; content: string; error: string };
+
+// ---------------------------------------------------------------------------
+// Diff-line style helpers (split from the old buildDiffLineStyle)
+// ---------------------------------------------------------------------------
+
+export function getDiffLineBg(kind: DiffLineKind): string | undefined {
+  switch (kind) {
+    case "add":
+      return "rgba(56, 168, 118, 0.12)";
+    case "remove":
+      return "rgba(184, 84, 80, 0.12)";
+    case "hunk":
+      return "rgba(85, 128, 204, 0.12)";
+    default:
+      return undefined;
+  }
+}
+
+export function getDiffLineFallbackColor(kind: DiffLineKind): string {
+  switch (kind) {
+    case "add":
+      return "#8bd4ab";
+    case "remove":
+      return "#e3a19e";
+    case "hunk":
+      return "#8fb2ff";
+    case "meta":
+      return "#7b8496";
+    default:
+      return "#c7ccd6";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Token rendering helper
+// ---------------------------------------------------------------------------
+
+function renderHighlightedTokens(
+  tokens: HighlightedToken[],
+  fallbackColor: string,
+): ReactNode {
+  return tokens.map((token, i) => (
+    <span
+      key={i}
+      style={{ color: token.className ? undefined : fallbackColor }}
+      className={token.className || undefined}
+    >
+      {token.text}
+    </span>
+  ));
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export function DiffPreviewPane({
   diffContent,
@@ -33,6 +97,15 @@ export function DiffPreviewPane({
     content: "",
     error: null,
   });
+
+  const [tokensByLine, setTokensByLine] = useState<Map<number, HighlightedToken[]> | null>(null);
+
+  // Mount the StyleModule CSS classes so syntax class names resolve in the DOM
+  useEffect(() => {
+    if (diffHighlightStyle.module) {
+      StyleModule.mount(document, diffHighlightStyle.module);
+    }
+  }, []);
 
   useEffect(() => {
     const inlineContent = diffContent?.trim();
@@ -89,6 +162,39 @@ export function DiffPreviewPane({
   const hiddenLineCount = Math.max(parsedLines.length - visibleLines.length, 0);
   const previewContent = visibleLines.map((line) => line.content).join("\n");
 
+  // Syntax highlighting effect: resolve parser and tokenize visible lines
+  useEffect(() => {
+    if (state.status !== "ready" || visibleLines.length === 0) {
+      setTokensByLine(null);
+      return;
+    }
+
+    const filePath = extractDiffFilePath(parsedLines);
+    if (!filePath) {
+      setTokensByLine(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void resolveParser(filePath).then((parser) => {
+      if (cancelled || !parser) return;
+
+      const map = new Map<number, HighlightedToken[]>();
+      visibleLines.forEach((line, index) => {
+        if (line.kind === "add" || line.kind === "remove" || line.kind === "context") {
+          map.set(index, highlightLine(line.content, parser, diffHighlightStyle));
+        }
+      });
+      setTokensByLine(map);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.status, state.content, parsedLines.length]);
+
   if (state.status === "loading") {
     return (
       <div
@@ -140,9 +246,12 @@ export function DiffPreviewPane({
             )}
             <span
               className="block flex-1 whitespace-pre px-2 py-0.5"
-              style={buildDiffLineStyle(line)}
+              style={{ backgroundColor: getDiffLineBg(line.kind) }}
             >
-              {line.content || " "}
+              {tokensByLine?.get(index)
+                ? renderHighlightedTokens(tokensByLine.get(index)!, getDiffLineFallbackColor(line.kind))
+                : <span style={{ color: getDiffLineFallbackColor(line.kind) }}>{line.content || " "}</span>
+              }
             </span>
           </div>
         ))}
@@ -154,32 +263,4 @@ export function DiffPreviewPane({
       )}
     </div>
   );
-}
-
-function buildDiffLineStyle(line: ParsedDiffLine | undefined): CSSProperties {
-  switch (line?.kind) {
-    case "add":
-      return {
-        backgroundColor: "rgba(56, 168, 118, 0.12)",
-        color: "#8bd4ab",
-      };
-    case "remove":
-      return {
-        backgroundColor: "rgba(184, 84, 80, 0.12)",
-        color: "#e3a19e",
-      };
-    case "hunk":
-      return {
-        backgroundColor: "rgba(85, 128, 204, 0.12)",
-        color: "#8fb2ff",
-      };
-    case "meta":
-      return {
-        color: "#7b8496",
-      };
-    default:
-      return {
-        color: "#c7ccd6",
-      };
-  }
 }

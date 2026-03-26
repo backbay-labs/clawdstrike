@@ -17,12 +17,18 @@ vi.mock("@/lib/tauri-bridge", () => ({
   readTextFileFromDisk: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("react-syntax-highlighter", () => ({
-  Prism: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+vi.mock("../diff-highlight", () => ({
+  resolveParser: vi.fn().mockResolvedValue(null),
+  highlightLine: vi.fn().mockReturnValue([]),
+  extractDiffFilePath: vi.fn().mockReturnValue(null),
 }));
 
-vi.mock("react-syntax-highlighter/dist/cjs/styles/prism", () => ({
-  atomDark: {},
+vi.mock("style-mod", () => ({
+  StyleModule: { mount: vi.fn() },
+}));
+
+vi.mock("../codemirror-theme", () => ({
+  diffHighlightStyle: { module: null },
 }));
 
 import { DiffNode } from "../nodes/diff-node";
