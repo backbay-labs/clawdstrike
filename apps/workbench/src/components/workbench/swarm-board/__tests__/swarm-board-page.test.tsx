@@ -608,3 +608,37 @@ describe("SwarmBoard page edge cases", () => {
     expect(edgeCount).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: Escape key cancels connecting-from mode (GRAPH-01 gap closure)
+// ---------------------------------------------------------------------------
+
+describe("Escape cancels connecting-from mode (regression)", () => {
+  it("keyboard-shortcuts Escape handler includes setConnectingFrom(null)", async () => {
+    // This is a source-level regression test. The connecting-from Escape bug
+    // occurred because the keyboard-shortcuts useEffect's Escape branch
+    // cleared selections and context menu but omitted setConnectingFrom(null).
+    // We verify the fix is present by reading the production source and
+    // checking the Escape branch contains the call.
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+
+    const srcPath = path.resolve(
+      __dirname,
+      "..",
+      "swarm-board-page.tsx",
+    );
+    const src = fs.readFileSync(srcPath, "utf-8");
+
+    // Find the keyboard-shortcuts useEffect Escape branch.
+    // Pattern: the block starting with `if (e.key === "Escape")` that also
+    // contains `setSelectedNodeIds` (distinguishing it from the context-menu
+    // useEffect Escape handler which checks `contextMenu` instead).
+    const escapeBlockRe =
+      /if\s*\(\s*e\.key\s*===?\s*["']Escape["']\s*\)\s*\{[^}]*setSelectedNodeIds[^}]*\}/s;
+    const match = src.match(escapeBlockRe);
+
+    expect(match).not.toBeNull();
+    expect(match![0]).toContain("setConnectingFrom(null)");
+  });
+});
