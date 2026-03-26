@@ -1,0 +1,13 @@
+{
+  "name": "@clawdstrike/csw",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Clawdstrike Swarm Workbench CLI client for JSON-RPC automation",
+  "bin": {
+    "csw": "./csw"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
