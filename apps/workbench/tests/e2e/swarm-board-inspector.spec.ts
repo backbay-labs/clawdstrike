@@ -3,7 +3,7 @@
  *
  * Covers inspector open/close lifecycle, per-node-type detail views,
  * selection switching between nodes, canvas deselection, close button,
- * and keyboard interactions (Escape, Cmd+A, Space follow toggle).
+ * and keyboard interactions (Escape, Cmd+A, G follow toggle).
  *
  * The app uses HashRouter (`/#/swarm-board`) and no Tauri runtime is
  * available. Board state persists in localStorage under the key
@@ -265,16 +265,16 @@ test.describe("SwarmBoard inspector panel", () => {
     await expect(selectedNodes).toHaveCount(3, { timeout: 5_000 });
   });
 
-  test("keyboard shortcut Space toggles follow mode", async ({ page }) => {
+  test("keyboard shortcut G toggles follow mode", async ({ page }) => {
     await gotoBoard(page);
 
     await pressOnCanvas(page, "1");
     await expect(page.locator(".react-flow__node")).toHaveCount(1, { timeout: 5_000 });
 
-    await pressOnCanvas(page, " ");
+    await pressOnCanvas(page, "g");
     await expect(page.getByText("following")).toBeVisible({ timeout: 3_000 });
 
-    await pressOnCanvas(page, " ");
+    await pressOnCanvas(page, "g");
     await expect(page.getByText("following")).not.toBeVisible({ timeout: 3_000 });
   });
 });
