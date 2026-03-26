@@ -157,8 +157,10 @@ export function DiffPreviewPane({
     () => (state.status === "ready" ? parseUnifiedDiffLines(state.content) : []),
     [state.content, state.status],
   );
-  const visibleLines =
-    typeof maxLines === "number" ? parsedLines.slice(0, maxLines) : parsedLines;
+  const visibleLines = useMemo(
+    () => (typeof maxLines === "number" ? parsedLines.slice(0, maxLines) : parsedLines),
+    [parsedLines, maxLines],
+  );
   const hiddenLineCount = Math.max(parsedLines.length - visibleLines.length, 0);
   const previewContent = visibleLines.map((line) => line.content).join("\n");
 
