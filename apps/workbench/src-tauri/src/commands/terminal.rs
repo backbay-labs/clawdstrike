@@ -1299,10 +1299,13 @@ pub async fn terminal_discover<R: Runtime>(
         ));
     }
 
-    // Orphan cleanup: if no metadata matched a live tmux session, check whether
-    // the tmux server on our socket has orphaned sessions (e.g. from a crash)
-    // and kill the server to reclaim resources.
-    if discovered.is_empty() {
+    // Orphan cleanup: if no discoverable (unattached) sessions remain AND no
+    // sessions are currently attached in the manager, the tmux server on our
+    // socket only contains orphans (e.g. from a crash). Kill the server to
+    // reclaim resources. The `attached_ids.is_empty()` guard prevents killing
+    // the server when all sessions happen to be attached (discovered would be
+    // empty, but the sessions are still in active use).
+    if discovered.is_empty() && attached_ids.is_empty() {
         let mut list_args = tmux_socket_args();
         list_args.extend([
             "list-sessions".to_string(),
