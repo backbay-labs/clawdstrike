@@ -2031,6 +2031,28 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
     [cleanupSessionTracking],
   );
 
+  // -----------------------------------------------------------------------
+  // ORCHESTRATOR RECOVERY POLICY (Phase 26 / SESS-03)
+  //
+  // Recovered tmux sessions operate in "manual mode" only. The
+  // SwarmOrchestrator's AgentRegistry, TaskGraph, and TopologyManager are
+  // in-memory-only and are NOT persisted or recoverable. On restart, the
+  // orchestrator creates fresh state with no knowledge of prior agents.
+  //
+  // Recovered sessions get `manualSession: true` (set below),
+  // which means:
+  //   - The guard pipeline is NOT evaluated for actions in these sessions
+  //   - The task graph does NOT track these sessions
+  //   - The operator can still interact with the shell and view output
+  //
+  // This is the pragmatic stance: orchestrator state persistence would
+  // require inventing a serialization format for AgentRegistry and
+  // TaskGraph, which is deferred to a future phase if engine-level
+  // recovery becomes a product requirement.
+  //
+  // See: apps/workbench/docs/collab-upgrades/reviews/02-tmux-persistent-sessions-review.md
+  //      Section 3.1 "Swarm Engine Orchestrator Integration"
+  // -----------------------------------------------------------------------
   useEffect(() => {
     if (!isDesktop()) {
       return;
@@ -2084,6 +2106,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
               terminalAttached: false,
             }),
             status: data.status === "blocked" ? "blocked" : "running",
+            cwdMissing: session.cwd_valid === false,
           });
 
           await refreshSessionPreview(node.id, session.id, data.previewLines);
@@ -2135,6 +2158,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
             terminalAttached: true,
           }),
           status: data.status === "blocked" ? "blocked" : "running",
+          cwdMissing: session.cwd_valid === false,
         });
         await refreshSessionPreview(selectedNode.id, session.id, data.previewLines);
       })

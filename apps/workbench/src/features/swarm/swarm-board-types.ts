@@ -101,6 +101,8 @@ export interface SwarmBoardNodeData {
   format?: FileType;
   publishState?: "draft" | "validated" | "published" | "deployed";
   coverageDelta?: { added: string[]; removed: string[] };
+  /** True if the session's original CWD was deleted between app restarts. */
+  cwdMissing?: boolean;
 }
 
 /** The set of detection artifact kinds a SwarmBoardNode can represent. */
