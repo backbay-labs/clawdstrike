@@ -156,7 +156,7 @@ fn policy_for_command(command: &str) -> Result<ScopePolicy, String> {
             message:
                 "Allow this window to list and preview terminal sessions for the next 60 seconds?",
         }),
-        "terminal_create" | "terminal_kill" | "terminal_resize" | "terminal_reconnect" => Ok(ScopePolicy {
+        "terminal_create" | "terminal_kill" | "terminal_resize" | "terminal_reconnect" | "terminal_detach" => Ok(ScopePolicy {
             scope: AuthorizationScope::TerminalLifecycle,
             ttl_secs: TERMINAL_LIFECYCLE_TTL_SECS,
             max_uses: TERMINAL_LIFECYCLE_MAX_USES,
