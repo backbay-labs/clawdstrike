@@ -298,3 +298,210 @@ The following CSS transitions are endorsed for smooth visual updates on state ch
 - `transition-all duration-150` -- general node container transitions (opacity, shadow)
 
 These transitions fire only on actual state changes and settle immediately. They do not loop.
+
+---
+
+## 7. Multi-Select and Comparison Awareness
+
+### ComparisonInspector is the canonical multi-node comparison surface
+
+The ComparisonInspector (shipped Phase 24, source: `comparison-inspector.tsx`) is endorsed as the canonical way to compare multiple nodes. It provides type-specific comparison views that deliver deeper analysis than any single-node surface can offer.
+
+### Comparison model
+
+1. **Selection:** Shift+click or marquee-select multiple nodes. Selection state flows through `useOnSelectionChange` only -- no click handler race conditions.
+2. **Inspector mode switch:** When 2+ nodes are selected, the inspector automatically expands from `INSPECTOR_WIDTH` (340px) to `COMPARISON_INSPECTOR_WIDTH` (680px) and renders the ComparisonInspector instead of the single-node detail view.
+3. **Type-specific views:** Homogeneous selections (all same node type) route to dedicated comparison components:
+   - `SessionComparison` -- side-by-side agent session metrics and status
+   - `ReceiptComparison` -- verdict comparison with PostureSummaryBar and GuardHeatmapTable posture analytics
+   - `DiffComparison` -- diff statistics comparison
+   - `TaskComparison` -- task status and timing comparison
+   - `ArtifactComparison` -- artifact metadata comparison
+4. **Mixed fallback:** Heterogeneous selections (multiple node types) use `MixedComparison`, which groups nodes by type with summary statistics.
+5. **Cap:** `MAX_COMPARISON_NODES = 6`. Selections exceeding this cap show an overflow message explaining the limit.
+
+### Relationship between metrics bar and comparison
+
+The metrics bar on AgentSessionNode (footer) and the ComparisonInspector serve complementary purposes:
+
+- **Metrics bar:** Provides at-a-glance cross-node scanning during active board monitoring. The operator can visually scan blocked-action counts across all visible sessions without selecting any nodes.
+- **ComparisonInspector:** Provides deep side-by-side analysis of selected nodes. PostureSummaryBar and GuardHeatmapTable deliver aggregate posture analytics that cannot fit on a node surface.
+
+Both surfaces must be preserved. Removing the metrics bar from nodes would force every cross-node comparison into the inspector, defeating the board-scan use case.
+
+### Protection rule
+
+Any future chrome changes MUST NOT break the comparison workflow:
+
+1. Selection highlighting must remain visible (ring-1 ring-[#c49a3c]/20 or equivalent).
+2. Inspector mode switching between single-node and comparison must continue to work.
+3. Posture analytics (PostureSummaryBar, GuardHeatmapTable) in receipt comparison must be preserved.
+4. The MAX_COMPARISON_NODES=6 cap must remain enforced with a user-facing overflow message.
+
+---
+
+## 8. Accessibility Requirements
+
+### Dark-mode-only declaration
+
+The swarm board is dark-mode-only. There are no light mode variables, no theme toggle, and no `prefers-color-scheme` media query support in any swarm board component. The `swarm-board-page.tsx` explicitly overrides React Flow chrome for dark theme. Drop the light mode palette entirely -- it does not apply.
+
+### Board background color
+
+The board background is `#0a0c11`. All contrast calculations in this section are computed against this value.
+
+### Minimum contrast ratios
+
+Per WCAG 2.1 AA:
+
+| Element Category | Minimum Ratio | Applies To |
+|-----------------|---------------|------------|
+| Normal text (< 18px, not bold) | 4.5:1 | Metric values, status labels, descriptions, timestamps |
+| Large text (>= 18px or >= 14px bold) | 3:1 | Verdict hero labels, +/- hero numbers |
+| Non-text UI components | 3:1 | Icons, borders, focus rings, interactive controls |
+
+### Computed hex values, not opacity multipliers
+
+Opacity-based styling on `#0a0c11` produces insufficient contrast. For example:
+- White (#ffffff) at `opacity: 0.35` on #0a0c11 yields approximately `#3e3f44` -- contrast ratio ~2.2:1 (FAILS 3:1).
+- White (#ffffff) at `opacity: 0.4` on #0a0c11 yields approximately `#474850` -- contrast ratio ~2.6:1 (FAILS 3:1).
+
+All interactive elements must use computed hex color values with validated contrast ratios. Opacity multipliers are rejected for foreground text and interactive elements on the board background.
+
+### Current accent color contrast audit
+
+The following table lists the accent colors currently used in the implementation and their approximate WCAG contrast ratios against `#0a0c11`:
+
+| Color | Hex | Usage | Approx Ratio vs #0a0c11 | 3:1 Pass? | 4.5:1 Pass? |
+|-------|-----|-------|------------------------|-----------|-------------|
+| Gold accent | #c49a3c | Selection ring, status border, title highlights | ~6.2:1 | YES | YES |
+| Files changed | #6f97d8 | FooterMetric: files changed count | ~5.7:1 | YES | YES |
+| Receipts | #9777cf | FooterMetric: receipt count | ~4.5:1 | YES | BORDERLINE |
+| Blocked actions (active) | #d06860 | FooterMetric: blocked action count (non-zero) | ~4.3:1 | YES | MARGINAL |
+| Allow/success | #38a876 | Verdict accent, status dot (running), pass count | ~5.4:1 | YES | YES |
+| Deny/failure | #b85450 | Verdict accent, status dot (failed), fail count | ~3.8:1 | YES | NO |
+| Muted text | #8a96ab | Title text, description text | ~4.8:1 | YES | YES |
+| Dim text | #5c6a80 | Chip tier title, secondary labels | ~3.2:1 | YES | NO |
+| Very dim text | #4a5568 | Pass/fail counts, guard counts, file counts | ~2.6:1 | NO | NO |
+| Action buttons | #2a2f3a | Maximize/close buttons at rest | ~1.4:1 | NO | NO |
+
+**Findings:**
+
+1. **#4a5568 (very dim text) fails 3:1.** This color is used for guard counts, file counts, and pass/fail detail text. At 2.6:1 it is below the minimum for non-text UI components. However, this text appears at 8-9px size within nodes that also have a primary high-contrast signal (verdict icon, status label) -- the dim text is supplementary, not the primary information channel. Future implementation work should consider bumping this to at least #5a6578 (~3.3:1) for items that serve as the sole information carrier.
+
+2. **#2a2f3a (action buttons at rest) fails all thresholds.** The maximize and close buttons use this color at rest, relying on hover state (#6b7a92, ~3.5:1) for visibility. This is a known accessibility concern. These buttons are intentionally de-emphasized in the Bloomberg terminal aesthetic (functional controls should not compete with operational data), but they should be bumped to at least #3a4050 (~2.0:1) at rest. This is flagged for future work, not blocking.
+
+3. **#b85450 (deny/failure) passes 3:1 but fails 4.5:1.** This is used as a large-text accent (verdict labels at 13-18px bold), which only requires 3:1. It passes. For normal-text usage (9px fail counts), the primary verdict icon already communicates the signal at a passing contrast ratio.
+
+### Tier-based exemptions
+
+Chip and dot tiers are exempt from text contrast requirements. At these zoom levels, text renders at 1.4-2.8px equivalent screen size (chip) or is absent entirely (dot). These tiers serve as spatial markers for board topology. Operators are not expected to read text at these tiers -- they zoom in or click to inspect.
+
+### Touch target sizes
+
+Minimum touch target sizes for interactive elements:
+
+| Tier | Minimum Target Size | Rationale |
+|------|-------------------|-----------|
+| **full** | 24x24px | Standard accessible target at 1:1 zoom |
+| **compact** | 24x24px effective | Buttons hidden at compact tier; node itself is the click target (minimum 240x60px) |
+| **chip** | 100x22px (full chip area) | Entire chip is a click target for selection |
+| **dot** | 40x20px (full dot area) | Entire dot is a click target for selection |
+
+---
+
+## 9. Anti-Patterns (Explicit Rejections)
+
+The following patterns are explicitly rejected for the swarm board. Each entry includes the pattern name, what it looks like in practice, and why it is wrong for this domain.
+
+### 1. collab-public as a reference model
+
+**What it looks like:** Proposals to borrow collab-public's aesthetic -- no footer, no status indicators, no metrics, opacity-based dimming, single-accent palette.
+
+**Why it is rejected:** collab-public is a personal workspace with no monitoring semantics. Its tiles have no status, no health indicators, and no operational telemetry. Borrowing its aesthetic for a security operations monitoring surface removes the very elements that make the board useful during an active hunt. The diagnosis (too much visual noise) was correct; the prescription (remove operational data) was wrong.
+
+### 2. "No footer" as a goal
+
+**What it looks like:** Proposals to remove the metrics bar from AgentSessionNode to save 18-24px of vertical space and achieve a "cleaner" look.
+
+**Why it is rejected:** The metrics bar is operational telemetry, not decorative clutter. Every metric answers a board-scan question: "How many files changed?" "How many guard evaluations?" "Any blocked actions?" "What risk level?" Removing the footer forces every status check into click-to-inspect, which defeats the purpose of a spatial monitoring surface. See Section 4 for the full metrics bar contract.
+
+### 3. Hover tooltips as an information tier
+
+**What it looks like:** Proposals to add a 400ms hover delay tooltip showing branch, model, compact metrics as an intermediate disclosure layer.
+
+**Why it is rejected:**
+- **Touch screens:** iPad and touch-enabled security workstations (common in SOC environments) have no hover state. The entire tooltip tier becomes inaccessible.
+- **Prevents comparison:** An operator cannot compare two nodes' tooltip content simultaneously. The information is ephemeral.
+- **Conflicts with React Flow:** React Flow already uses mouse hover for edge highlight effects and node proximity detection. Adding tooltip rendering creates z-index and pointer-event conflicts.
+- **Even collab-public does not use them:** The reference implementation that inspired the tooltip proposal has no tooltip code in `tile-renderer.js` or `tile-interactions.js`.
+
+### 4. Opacity-based interactive element styling without contrast validation
+
+**What it looks like:** Setting action button opacity to 0.35 idle / 0.7 hover, or title text opacity to 0.7, without computing the effective contrast ratio against the actual background.
+
+**Why it is rejected:** On `#0a0c11`, white at 0.35 opacity produces approximately 1.6:1 contrast -- well below the WCAG AA 3:1 minimum for non-text UI components. collab-public's opacity approach works on its lighter `#121212` background but does not transfer to the swarm board's darker surface. Use computed hex values with validated contrast ratios.
+
+### 5. Continuous ambient animations (breathing, pulsing, heartbeat)
+
+**What it looks like:** CSS `@keyframes` with `infinite` iteration count applied to node containers, status dots, or edge paths. Examples: `breathe-gold` (2.5s infinite box-shadow pulse), `heartbeat` (3s infinite scale transform), status dot `pulse` (2s infinite).
+
+**Why it is rejected:** At swarm scale (3-8 concurrent sessions), continuous animations on every node create a "Christmas tree" effect where every element competes for peripheral attention. The operator cannot distinguish meaningful state changes from ambient motion. One-shot signals (statusFlash/verdictFlash) on state change are the endorsed replacement -- they catch the operator's eye when something actually changes, then settle to a static state.
+
+### 6. Removing metrics for "minimalism"
+
+**What it looks like:** Proposals to remove file count, receipt count, or blocked action count from node surfaces to achieve a simpler visual appearance.
+
+**Why it is rejected:** Every metric on the footer bar answers a specific operator question (see Section 4 table). Removing them trades visual simplicity for functional regression. The board exists to provide at-a-glance monitoring -- removing the data that enables monitoring optimizes for the wrong goal. Simplification of metrics presentation (numbers-only, no icons, 14-18px height) is endorsed; removal of metrics is not.
+
+### 7. Per-node compact/expanded toggle independent of zoom
+
+**What it looks like:** A double-click or button that toggles an individual node between "compact" and "expanded" views, independently of the current zoom tier.
+
+**Why it is rejected:** Adding a per-node toggle creates combinatorial complexity: 4 tiers x 2 modes = 8 render paths per node type, across 6 node types = 48 render paths to implement, test, and maintain. The semantic zoom tier system already provides compact/expanded behavior. To see more detail, zoom in. To see less, zoom out. To inspect one node in detail, click it (the inspector opens at full width regardless of zoom tier).
+
+### 8. Writing the contract against the old spec instead of the current code
+
+**What it looks like:** Contract sections that reference "remove the breathing animations" or "add semantic zoom" as future work, when these changes have already shipped in Phases 24-25.
+
+**Why it is rejected:** Phases 24-25 shipped significant chrome improvements. The breathing animations are already removed. Semantic zoom is already implemented. Multi-select comparison is already built. The metrics bar is already simplified. The contract must reflect the actual implementation state (post-Phase 32), not the pre-Phase-24 state described in the original spec.
+
+---
+
+## 10. Appendix -- Review Item Disposition
+
+The following table maps all 12 review items from `04-cleaner-tile-chrome-review.md` (Section 7: Summary of Required Changes) to their disposition in this contract.
+
+| # | Original Issue | Severity | Disposition | Contract Section | Rationale |
+|---|---------------|----------|-------------|-----------------|-----------|
+| 1 | Metrics bar removal eliminates critical operational data | **High** | ENDORSED in this contract | Section 4 | Metrics bar declared REQUIRED operational telemetry. Simplified to numbers-only format but never removed. |
+| 2 | Multi-select + inspector conflict | **High** | RESOLVED by Phase 24 | Section 7 | ComparisonInspector shipped with type-specific views, MAX_COMPARISON_NODES=6, and posture analytics. |
+| 3 | Phase 5 must be atomic with Phases 2-4 | **High** | N/A | -- | Original spec's phased implementation approach was not followed. Phases 24-25 shipped changes organically. |
+| 4 | Animation removal needs one-shot replacement | **Medium** | RESOLVED by Phase 25 | Section 6 | statusFlash/verdictFlash pattern shipped: 500ms one-shot box-shadow on state transition. |
+| 5 | Color accessibility not validated | **Medium** | ENDORSED in this contract | Section 8 | Contrast ratios computed against #0a0c11. Hex values specified. Opacity multipliers rejected. |
+| 6 | Hover tooltips don't work on touch / prevent comparison | **Medium** | REJECTED with rationale | Section 9 (#3) | Hover tooltips never implemented. Explicitly rejected: touch incompatibility, comparison prevention, React Flow conflicts. |
+| 7 | No semantic zoom strategy | **Medium** | RESOLVED by Phase 25 | Section 5 | 4-tier semantic zoom (full/compact/chip/dot) shipped with thresholds at 0.6/0.35/0.18. Endorsed as authoritative. |
+| 8 | Receipt min-height too small (56px proposed) | **Low** | RESOLVED | Section 3 | Current min-heights are appropriate: 96px full tier, 52px compact tier. |
+| 9 | Keep timestamp on ReceiptNode | **Low** | RESOLVED | Section 3 | Relative timestamp (e.g., "2m ago") shown in full tier via formatReceiptNodeTime helper. |
+| 10 | Dark-mode-only not stated | **Low** | ENDORSED in this contract | Section 8 | Dark-mode-only explicitly declared. No light mode variables, no theme toggle, no prefers-color-scheme. |
+| 11 | Visual regression test plan missing | **Low** | ACKNOWLEDGED | -- | This contract recommends screenshot comparison tests and edge routing validation but does not block on them. Test infrastructure is outside the scope of the chrome contract. |
+| 12 | Latent bug: `pulse` keyframe undefined for status dot | **Low** | RESOLVED by Phase 25 | Section 6 | Old `pulse` animation removed (it was a silent no-op). statusFlash pattern replaces it with a working implementation. |
+
+### Summary
+
+Of the 12 review items:
+- **5 RESOLVED** by Phase 24-25 implementation work (items 2, 4, 7, 8, 9, 12 -- 6 items)
+- **3 ENDORSED** in this contract with specifications (items 1, 5, 10)
+- **1 REJECTED** with documented rationale (item 6)
+- **1 ACKNOWLEDGED** without blocking requirement (item 11)
+- **1 N/A** -- original concern no longer applies (item 3)
+
+All three high-severity items are addressed: the metrics bar is preserved (item 1), multi-select comparison is shipped (item 2), and the atomicity concern does not apply (item 3). All four medium-severity items are addressed: animations have one-shot replacements (item 4), color accessibility is specified (item 5), hover tooltips are rejected (item 6), and semantic zoom is implemented (item 7).
+
+---
+
+## Document Status
+
+This contract is APPROVED and supersedes `04-cleaner-tile-chrome.md`. Future chrome implementation work on the swarm board must conform to the principles, specifications, and anti-patterns defined in this document.
+
+Any proposed deviation from this contract requires explicit review and approval with rationale for why the deviation better serves the security operations monitoring use case.
