@@ -981,9 +981,9 @@ function SwarmBoardCanvas() {
     setContextMenu(null);
   }, [contextMenu]);
 
-  // Memoize the type maps (must be stable references)
-  const nodeTypes = useMemo(() => swarmBoardNodeTypes, []);
-  const edgeTypes = useMemo(() => swarmBoardEdgeTypes, []);
+  // Module-level constants — already stable references, no useMemo needed
+  const nodeTypes = swarmBoardNodeTypes;
+  const edgeTypes = swarmBoardEdgeTypes;
 
   // Enrich edges with hoveredNodeId for hover-reveal behavior + receipt activity timestamps
   const enrichedEdges = useMemo(() => {
