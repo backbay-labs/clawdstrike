@@ -188,16 +188,22 @@ fn main() {
         .expect("error while building tauri application")
         .run(|app, event| {
             match event {
-                tauri::RunEvent::ExitRequested { .. } => {
+                tauri::RunEvent::ExitRequested { api, .. } => {
                     // Signal frontend to flush pending feed state before exit.
                     // Reliable exit flush via Rust ExitRequested event -- replaces
                     // beforeunload which is unreliable in Tauri webviews because
                     // the async writeSwarmPersistencePayload invoke may not
                     // complete before the page unloads.
+                    api.prevent_default();
                     let _ = app.emit("swarm:flush-requested", ());
-                    // Brief window for the frontend persist to complete via IPC.
-                    // The actual write_persistence_file is fast (~1-5ms for bounded JSON).
-                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    // Move the wait off the event-loop thread so the IPC flush
+                    // can actually complete.  After the brief window, exit the
+                    // app from the spawned thread.
+                    let handle = app.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(250));
+                        handle.exit(0);
+                    });
                 }
                 tauri::RunEvent::Exit => {
                     // Clean up the MCP sidecar child process on exit.
