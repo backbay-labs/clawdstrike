@@ -174,6 +174,7 @@ fn main() {
             terminal::terminal_kill,
             terminal::terminal_list,
             terminal::terminal_preview,
+            terminal::terminal_detach,
             terminal::get_cwd,
             worktree::worktree_create,
             worktree::worktree_remove,

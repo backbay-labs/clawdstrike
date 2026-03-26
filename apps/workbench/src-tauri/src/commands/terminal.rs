@@ -1227,6 +1227,33 @@ pub async fn terminal_discover<R: Runtime>(
         ));
     }
 
+    // Orphan cleanup: if no metadata matched a live tmux session, check whether
+    // the tmux server on our socket has orphaned sessions (e.g. from a crash)
+    // and kill the server to reclaim resources.
+    if discovered.is_empty() {
+        let mut list_args = tmux_socket_args();
+        list_args.extend([
+            "list-sessions".to_string(),
+            "-F".to_string(),
+            "#{session_name}".to_string(),
+        ]);
+        if let Ok(output) = run_tmux_command(&tmux_bin, &list_args, None).await {
+            let server_sessions: Vec<&str> =
+                output.trim().lines().filter(|l| !l.is_empty()).collect();
+            if !server_sessions.is_empty() {
+                // Orphaned sessions exist with no matching metadata -- kill server
+                eprintln!(
+                    "[terminal] Killing orphaned tmux server with {} sessions on socket '{}'",
+                    server_sessions.len(),
+                    TMUX_SOCKET_NAME
+                );
+                let mut kill_args = tmux_socket_args();
+                kill_args.push("kill-server".to_string());
+                let _ = run_tmux_command(&tmux_bin, &kill_args, None).await;
+            }
+        }
+    }
+
     Ok(discovered)
 }
 
@@ -1488,6 +1515,54 @@ pub async fn terminal_preview<R: Runtime>(
         .collect())
 }
 
+/// Detach a single tmux session without destroying it.
+///
+/// Kills the PTY client (`tmux attach-session` process) and removes the session
+/// from the in-memory manager, but preserves the tmux server session and its
+/// metadata file. The session can later be rediscovered and reconnected via
+/// `terminal_discover` + `terminal_reconnect`.
+///
+/// Only tmux sessions can be detached; direct sessions must be killed.
+#[tauri::command]
+pub async fn terminal_detach<R: Runtime>(
+    _app: AppHandle<R>,
+    window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
+    state: tauri::State<'_, TerminalState>,
+    session_id: String,
+) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    authorize_sensitive_command(&window, &capability_state, "terminal_detach").await?;
+
+    let extracted = {
+        let mut manager = state.lock().await;
+        manager.sessions.remove(&session_id).map(|mut session| {
+            session.alive.store(false, Ordering::SeqCst);
+            let _ = session.child.kill(); // kills tmux attach client, NOT the tmux session
+            (session.reader_task.take(), session.persistence_mode)
+        })
+    };
+
+    let Some((reader_task, persistence_mode)) = extracted else {
+        return Err(format!("Session not found: {session_id}"));
+    };
+
+    if let Some(task) = reader_task {
+        task.abort();
+        let _ = task.await;
+    }
+    remove_ring_buffer(&session_id);
+
+    if persistence_mode != SessionPersistenceMode::Tmux {
+        return Err(
+            "Only tmux sessions can be detached; direct sessions must be killed".to_string(),
+        );
+    }
+
+    // Metadata is preserved -- session can be rediscovered and reconnected later
+    Ok(())
+}
+
 /// Return the current working directory of the Tauri process.
 ///
 /// Used by the frontend to auto-detect a sensible default for `repoRoot` when
@@ -1557,7 +1632,11 @@ pub async fn kill_all_sessions(state: &TerminalState) {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_shell;
+    use super::{
+        append_to_ring_buffer, build_tmux_shell_command, normalize_shell, shell_quote,
+        tmux_socket_args, RING_BUFFER_MAX_LINES,
+    };
+    use std::collections::HashMap;
 
     #[test]
     fn normalize_shell_rejects_relative_path_components() {
@@ -1583,5 +1662,83 @@ mod tests {
         let path = r"C:\Windows\System32\cmd.exe";
 
         assert_eq!(normalize_shell(path, true).as_deref(), Some(path));
+    }
+
+    #[test]
+    fn test_build_tmux_shell_command_basic() {
+        let env = HashMap::new();
+        let cmd = build_tmux_shell_command("test-id", "/bin/zsh", &env);
+        assert!(cmd.contains("CLAWDSTRIKE_SESSION_ID='test-id'"));
+        assert!(cmd.contains("SHELL='/bin/zsh'"));
+        assert!(cmd.contains("TERM='xterm-256color'"));
+        assert!(cmd.ends_with("exec '/bin/zsh'"));
+    }
+
+    #[test]
+    fn test_build_tmux_shell_command_with_extra_env() {
+        let mut env = HashMap::new();
+        env.insert("LANG".to_string(), "en_US.UTF-8".to_string());
+        let cmd = build_tmux_shell_command("sid", "bash", &env);
+        assert!(cmd.contains("LANG='en_US.UTF-8'"));
+        assert!(cmd.contains("CLAWDSTRIKE_SESSION_ID='sid'"));
+    }
+
+    #[test]
+    fn test_build_tmux_shell_command_quotes_special_chars() {
+        let mut env = HashMap::new();
+        env.insert("EDITOR".to_string(), "it's vim".to_string());
+        let cmd = build_tmux_shell_command("sid", "bash", &env);
+        // The value should contain the escaped single-quote sequence
+        assert!(cmd.contains(r#"EDITOR='it'"'"'s vim'"#));
+    }
+
+    #[test]
+    fn test_tmux_socket_args_format() {
+        let args = tmux_socket_args();
+        assert_eq!(args, vec!["-L".to_string(), "clawdstrike".to_string()]);
+    }
+
+    #[test]
+    fn test_append_to_ring_buffer_basic() {
+        let mut buf = Vec::new();
+        append_to_ring_buffer(&mut buf, "line1\nline2\nline3\n");
+        assert_eq!(buf, vec!["line1", "line2", "line3", ""]);
+    }
+
+    #[test]
+    fn test_append_to_ring_buffer_partial_lines() {
+        let mut buf = Vec::new();
+        append_to_ring_buffer(&mut buf, "partial");
+        assert_eq!(buf, vec!["partial"]);
+        append_to_ring_buffer(&mut buf, " continuation\nnew line");
+        assert_eq!(buf, vec!["partial continuation", "new line"]);
+    }
+
+    #[test]
+    fn test_append_to_ring_buffer_capacity_limit() {
+        let mut buf = Vec::new();
+        // Fill buffer beyond capacity
+        for i in 0..RING_BUFFER_MAX_LINES + 50 {
+            append_to_ring_buffer(&mut buf, &format!("line{i}\n"));
+        }
+        assert!(buf.len() <= RING_BUFFER_MAX_LINES);
+        // The last line pushed should be retained
+        let last_line = format!("line{}", RING_BUFFER_MAX_LINES + 49);
+        assert!(buf.iter().any(|l| l == &last_line));
+    }
+
+    #[test]
+    fn test_shell_quote_handles_quotes() {
+        assert_eq!(shell_quote("it's"), "'it'\"'\"'s'");
+    }
+
+    #[test]
+    fn test_shell_quote_simple() {
+        assert_eq!(shell_quote("hello"), "'hello'");
+    }
+
+    #[test]
+    fn test_shell_quote_empty() {
+        assert_eq!(shell_quote(""), "''");
     }
 }
