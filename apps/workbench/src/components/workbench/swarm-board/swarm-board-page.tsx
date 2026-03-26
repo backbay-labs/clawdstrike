@@ -777,6 +777,7 @@ function SwarmBoardCanvas() {
       if (e.key === "Escape") {
         storeActions.setSelectedNodeIds([]);
         setContextMenu(null);
+        setConnectingFrom(null);
         return;
       }
 
