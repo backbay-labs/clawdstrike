@@ -1201,7 +1201,7 @@ pub async fn terminal_create<R: Runtime>(
     let state_handle: TerminalState = (*state).clone();
 
     if let Some(tmux_bin) = resolve_tmux_binary(&app).await {
-        let metadata = create_tmux_session(
+        match create_tmux_session(
             &app,
             &tmux_bin,
             &session_id,
@@ -1211,22 +1211,30 @@ pub async fn terminal_create<R: Runtime>(
             &shell_path,
             &sanitized_env,
         )
-        .await?;
-
-        return match connect_tmux_session(
-            app.clone(),
-            state_handle,
-            metadata.clone(),
-            SessionRecoveryState::Fresh,
-        )
         .await
         {
-            Ok(info) => Ok(info),
-            Err(err) => {
-                let _ = kill_tmux_session(&app, &metadata.id).await;
-                Err(err)
+            Ok(metadata) => {
+                return match connect_tmux_session(
+                    app.clone(),
+                    state_handle,
+                    metadata.clone(),
+                    SessionRecoveryState::Fresh,
+                )
+                .await
+                {
+                    Ok(info) => Ok(info),
+                    Err(err) => {
+                        let _ = kill_tmux_session(&app, &metadata.id).await;
+                        Err(err)
+                    }
+                };
             }
-        };
+            Err(err) => {
+                // tmux new-session failed — fall back to direct PTY rather than
+                // blocking terminal creation entirely (PR review #221 feedback).
+                eprintln!("[terminal] tmux session creation failed, falling back to direct PTY: {err}");
+            }
+        }
     }
 
     let session_permit = session_limiter().try_acquire_owned().map_err(|_| {
