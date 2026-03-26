@@ -194,7 +194,7 @@ fn main() {
                     // beforeunload which is unreliable in Tauri webviews because
                     // the async writeSwarmPersistencePayload invoke may not
                     // complete before the page unloads.
-                    api.prevent_default();
+                    api.prevent_exit();
                     let _ = app.emit("swarm:flush-requested", ());
                     // Move the wait off the event-loop thread so the IPC flush
                     // can actually complete.  After the brief window, exit the
