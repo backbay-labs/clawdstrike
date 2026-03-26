@@ -66,7 +66,7 @@
     "immer": "^11.1.4",
     "lucide-react": "^0.577.0",
     "motion": "^12.33.0",
-    "picomatch": "^4.0.2",
+    "picomatch": "^4.0.4",
     "postprocessing": "^6.38.3",
     "r3f-forcegraph": "^1.1.1",
     "react": "^19.0.0",
