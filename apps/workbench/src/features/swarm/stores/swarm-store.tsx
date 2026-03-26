@@ -3,7 +3,7 @@
 // Converted from Context+useReducer to Zustand with createSelectors.
 // Uses app-data persistence on desktop with localStorage retained as a
 // migration source and web/test fallback.
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import { isDesktop } from "@/lib/tauri-bridge";
@@ -24,6 +24,11 @@ import {
   readSwarmPersistencePayload,
   writeSwarmPersistencePayload,
 } from "./swarm-persistence";
+import {
+  setSwarmFileWatchScope,
+  clearSwarmFileWatchScope,
+  subscribeSwarmFileWatchEvents,
+} from "./swarm-file-watch";
 
 
 export interface SwarmState {
@@ -692,8 +697,32 @@ interface SwarmContextValue {
 
 /** @deprecated Use useSwarmStore directly */
 export function useSwarms(): SwarmContextValue {
+  const watchScopeIdRef = useRef(`swarm-store-${Math.random().toString(36).slice(2)}`);
+
   useLayoutEffect(() => {
     syncSwarmStoreWithStorage();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isDesktop()) return;
+
+    const scopeId = watchScopeIdRef.current;
+    void setSwarmFileWatchScope(scopeId, {
+      persistenceFilenames: [SWARMS_PERSISTENCE_FILE],
+    });
+    const unsubscribe = subscribeSwarmFileWatchEvents((event) => {
+      if (
+        event.category === "persistence" &&
+        event.filenames.includes(SWARMS_PERSISTENCE_FILE)
+      ) {
+        void hydrateSwarmStoreFromDisk(true);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      void clearSwarmFileWatchScope(scopeId);
+    };
   }, []);
 
   const swarms = useSwarmStore((s) => s.swarms);
