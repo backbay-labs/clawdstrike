@@ -1614,16 +1614,33 @@ pub async fn terminal_detach<R: Runtime>(
     validate_session_id(&session_id)?;
     authorize_sensitive_command(&window, &capability_state, "terminal_detach").await?;
 
+    // Check persistence mode BEFORE any destructive operations.  A Direct
+    // session cannot be detached—only killed—so we must reject early to avoid
+    // irreversibly destroying it.
+    {
+        let manager = state.lock().await;
+        match manager.sessions.get(&session_id) {
+            None => return Err(format!("Session not found: {session_id}")),
+            Some(session) if session.persistence_mode != SessionPersistenceMode::Tmux => {
+                return Err(
+                    "Only tmux sessions can be detached; direct sessions must be killed"
+                        .to_string(),
+                );
+            }
+            _ => {} // Tmux — proceed with detach below
+        }
+    }
+
     let extracted = {
         let mut manager = state.lock().await;
         manager.sessions.remove(&session_id).map(|mut session| {
             session.alive.store(false, Ordering::SeqCst);
             let _ = session.child.kill(); // kills tmux attach client, NOT the tmux session
-            (session.reader_task.take(), session.persistence_mode)
+            session.reader_task.take()
         })
     };
 
-    let Some((reader_task, persistence_mode)) = extracted else {
+    let Some(reader_task) = extracted else {
         return Err(format!("Session not found: {session_id}"));
     };
 
@@ -1632,12 +1649,6 @@ pub async fn terminal_detach<R: Runtime>(
         let _ = task.await;
     }
     remove_ring_buffer(&session_id);
-
-    if persistence_mode != SessionPersistenceMode::Tmux {
-        return Err(
-            "Only tmux sessions can be detached; direct sessions must be killed".to_string(),
-        );
-    }
 
     // Metadata is preserved -- session can be rediscovered and reconnected later
     Ok(())
