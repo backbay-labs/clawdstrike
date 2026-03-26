@@ -5,10 +5,51 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+// ---------------------------------------------------------------------------
+// Exit codes
+// ---------------------------------------------------------------------------
+const EXIT_SUCCESS = 0;
+const EXIT_RPC_ERROR = 1;
+const EXIT_CONNECTION_FAILURE = 2;
+
+// ---------------------------------------------------------------------------
+// Help
+// ---------------------------------------------------------------------------
+
 function usage() {
-  console.error("Usage: csw <method> [params-json] [--info <path>] [--token <token>]");
-  console.error("Example: csw rpc.discover '{}'");
+  const text = `Usage: csw <method> [params-json] [options]
+
+Options:
+  --info <path>      Path to ipc.json (default: auto-detected from app data dir)
+  --token <token>    Bearer token override (default: read from ipc.token)
+  --retry <count>    Connection retry attempts (default: 1, env: CSW_RETRY)
+  --result-only, -r  Output only the result field, not the full JSON-RPC envelope
+  --quiet, -q        Suppress non-fatal stderr output (env: CSW_QUIET)
+  --help, -h         Show this help
+
+Examples:
+  csw rpc.discover '{}'
+  csw board.snapshot '{}'
+  csw -r board.nodeAdd '{"nodeType":"note","title":"CVE Analysis"}'
+  csw --retry 30 rpc.discover '{}'   # Wait up to 30s for workbench startup
+
+Environment:
+  CSW_RPC_INFO    Path to ipc.json
+  CSW_RPC_TOKEN   Bearer token
+  CSW_RETRY       Default retry count
+  CSW_QUIET       Set to "1" for quiet mode
+
+Exit codes:
+  0  Success
+  1  RPC error (method returned an error response)
+  2  Connection failure (could not reach the workbench)`;
+
+  process.stderr.write(text + "\n");
 }
+
+// ---------------------------------------------------------------------------
+// Platform helpers
+// ---------------------------------------------------------------------------
 
 function defaultAppDataDir() {
   const home = homedir();
@@ -22,10 +63,17 @@ function defaultAppDataDir() {
   return join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "com.clawdstrike.workbench");
 }
 
+// ---------------------------------------------------------------------------
+// Argument parsing
+// ---------------------------------------------------------------------------
+
 function parseArgs(argv) {
   const args = [...argv];
   let infoPath = process.env.CSW_RPC_INFO ?? join(defaultAppDataDir(), "ipc.json");
   let token = process.env.CSW_RPC_TOKEN ?? null;
+  let retry = process.env.CSW_RETRY ? Number(process.env.CSW_RETRY) : 1;
+  let quiet = process.env.CSW_QUIET === "1";
+  let resultOnly = false;
   const positional = [];
 
   while (args.length > 0) {
@@ -38,9 +86,21 @@ function parseArgs(argv) {
       token = args.shift();
       continue;
     }
+    if (arg === "--retry") {
+      retry = Number(args.shift());
+      continue;
+    }
+    if (arg === "--result-only" || arg === "-r") {
+      resultOnly = true;
+      continue;
+    }
+    if (arg === "--quiet" || arg === "-q") {
+      quiet = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       usage();
-      process.exit(0);
+      process.exit(EXIT_SUCCESS);
     }
     positional.push(arg);
   }
@@ -49,19 +109,32 @@ function parseArgs(argv) {
     throw new Error("Missing --info value");
   }
 
+  // Clamp retry to [1, 60]
+  if (!Number.isFinite(retry) || retry < 1) retry = 1;
+  if (retry > 60) retry = 60;
+
   return {
     infoPath,
     token,
+    retry,
+    quiet,
+    resultOnly,
     method: positional[0],
     paramsJson: positional[1] ?? "{}",
   };
 }
 
+// ---------------------------------------------------------------------------
+// Runtime info & token
+// ---------------------------------------------------------------------------
+
 function readRuntimeInfo(infoPath) {
   if (!existsSync(infoPath)) {
     throw new Error(`RPC info file not found: ${infoPath}`);
   }
-  return JSON.parse(readFileSync(infoPath, "utf8"));
+  const info = JSON.parse(readFileSync(infoPath, "utf8"));
+  info._infoPath = infoPath;
+  return info;
 }
 
 function resolveToken(runtimeInfo, explicitToken) {
@@ -74,6 +147,10 @@ function resolveToken(runtimeInfo, explicitToken) {
   }
   return readFileSync(tokenPath, "utf8").trim();
 }
+
+// ---------------------------------------------------------------------------
+// Transport
+// ---------------------------------------------------------------------------
 
 function connect(runtimeInfo) {
   if (runtimeInfo.transport === "unix") {
@@ -89,6 +166,10 @@ function connect(runtimeInfo) {
   }
   throw new Error(`Unsupported RPC transport: ${runtimeInfo.transport}`);
 }
+
+// ---------------------------------------------------------------------------
+// Single-shot RPC request
+// ---------------------------------------------------------------------------
 
 async function sendRequest(runtimeInfo, token, method, params) {
   const socket = connect(runtimeInfo);
@@ -130,11 +211,44 @@ async function sendRequest(runtimeInfo, token, method, params) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Retry wrapper
+// ---------------------------------------------------------------------------
+
+async function sendRequestWithRetry(infoPath, runtimeInfo, token, method, params, maxRetries, quiet) {
+  let lastError;
+  let currentInfo = runtimeInfo;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await sendRequest(currentInfo, token, method, params);
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxRetries) {
+        if (!quiet) {
+          process.stderr.write(`csw: connection attempt ${attempt}/${maxRetries} failed, retrying in 1s...\n`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Re-read runtime info in case the port changed (Windows TCP restart)
+        try {
+          currentInfo = readRuntimeInfo(infoPath);
+        } catch {
+          // If info file disappeared, keep using previous info
+        }
+      }
+    }
+  }
+  throw lastError;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
 async function main() {
-  const { infoPath, token: explicitToken, method, paramsJson } = parseArgs(process.argv.slice(2));
+  const { infoPath, token: explicitToken, method, paramsJson, retry, quiet, resultOnly } = parseArgs(process.argv.slice(2));
   if (!method) {
     usage();
-    process.exit(1);
+    process.exit(EXIT_RPC_ERROR);
   }
 
   const runtimeInfo = readRuntimeInfo(infoPath);
@@ -144,17 +258,41 @@ async function main() {
   try {
     params = JSON.parse(paramsJson);
   } catch (error) {
-    throw new Error(`Failed to parse params JSON: ${error instanceof Error ? error.message : String(error)}`);
+    process.stderr.write(`csw: error: invalid params JSON — ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(EXIT_RPC_ERROR);
   }
 
-  const response = await sendRequest(runtimeInfo, token, method, params);
-  process.stdout.write(JSON.stringify(response, null, 2) + "\n");
+  let response;
+  try {
+    response = await sendRequestWithRetry(infoPath, runtimeInfo, token, method, params, retry, quiet);
+  } catch (error) {
+    process.stderr.write(`csw: fatal: could not connect to workbench RPC socket — is the workbench running?\n`);
+    if (!quiet) {
+      process.stderr.write(`csw: detail: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+    process.exit(EXIT_CONNECTION_FAILURE);
+  }
+
+  // Handle RPC error response
   if (response?.error) {
-    process.exit(1);
+    if (resultOnly) {
+      process.stdout.write(JSON.stringify(response.error, null, 2) + "\n");
+    } else {
+      process.stdout.write(JSON.stringify(response, null, 2) + "\n");
+    }
+    process.stderr.write(`csw: error: ${method} — ${response.error.message ?? "unknown error"} (code ${response.error.code ?? "?"})\n`);
+    process.exit(EXIT_RPC_ERROR);
+  }
+
+  // Success: output result or full envelope
+  if (resultOnly) {
+    process.stdout.write(JSON.stringify(response.result, null, 2) + "\n");
+  } else {
+    process.stdout.write(JSON.stringify(response, null, 2) + "\n");
   }
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+  process.stderr.write(`csw: fatal: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(EXIT_CONNECTION_FAILURE);
 });
