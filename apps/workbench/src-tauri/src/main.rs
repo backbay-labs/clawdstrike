@@ -13,6 +13,7 @@ use rpc_socket::RpcSocketState;
 use stronghold_cmds::StrongholdState;
 #[allow(unused_imports)]
 use tauri::Manager;
+use tauri::Emitter;
 use terminal::TerminalState;
 
 fn main() {
@@ -186,21 +187,35 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                // Clean up the MCP sidecar child process on exit.
-                let mcp_state = app.state::<McpState>();
-                mcp_sidecar::kill_mcp_server(&mcp_state);
+            match event {
+                tauri::RunEvent::ExitRequested { .. } => {
+                    // Signal frontend to flush pending feed state before exit.
+                    // Reliable exit flush via Rust ExitRequested event -- replaces
+                    // beforeunload which is unreliable in Tauri webviews because
+                    // the async writeSwarmPersistencePayload invoke may not
+                    // complete before the page unloads.
+                    let _ = app.emit("swarm:flush-requested", ());
+                    // Brief window for the frontend persist to complete via IPC.
+                    // The actual write_persistence_file is fast (~1-5ms for bounded JSON).
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+                tauri::RunEvent::Exit => {
+                    // Clean up the MCP sidecar child process on exit.
+                    let mcp_state = app.state::<McpState>();
+                    mcp_sidecar::kill_mcp_server(&mcp_state);
 
-                // Clean up all terminal sessions on exit.
-                let terminal_state = app.state::<TerminalState>();
-                let rpc_state = app.state::<RpcSocketState>();
-                // Use a blocking approach since we're in a sync callback.
-                let state_clone = (*terminal_state).clone();
-                let rpc_state_clone = (*rpc_state).clone();
-                tauri::async_runtime::block_on(async {
-                    terminal::kill_all_sessions(&state_clone).await;
-                    rpc_socket::stop_rpc_socket_server(&rpc_state_clone).await;
-                });
+                    // Clean up all terminal sessions on exit.
+                    let terminal_state = app.state::<TerminalState>();
+                    let rpc_state = app.state::<RpcSocketState>();
+                    // Use a blocking approach since we're in a sync callback.
+                    let state_clone = (*terminal_state).clone();
+                    let rpc_state_clone = (*rpc_state).clone();
+                    tauri::async_runtime::block_on(async {
+                        terminal::kill_all_sessions(&state_clone).await;
+                        rpc_socket::stop_rpc_socket_server(&rpc_state_clone).await;
+                    });
+                }
+                _ => {}
             }
         });
 }

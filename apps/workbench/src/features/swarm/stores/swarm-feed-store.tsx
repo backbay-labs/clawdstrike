@@ -1861,17 +1861,43 @@ function schedulePersist(state: SwarmFeedState): void {
   }, delay);
 }
 
-// Flush on beforeunload to avoid data loss
+// Flush pending feed state before app exit.
 if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
-    if (_persistTimer) {
-      clearTimeout(_persistTimer);
-      _persistTimer = null;
-      persistSwarmFeed(_pendingPersistState ?? useSwarmFeedStoreBase.getState());
-      _pendingPersistState = null;
-      _persistDeadlineMs = null;
-    }
-  });
+  if (isDesktop()) {
+    // Reliable exit flush via Rust ExitRequested event.
+    // Replaces beforeunload which is unreliable in Tauri webviews
+    // because the async writeSwarmPersistencePayload invoke may not
+    // complete before the page unloads.
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      void listen("swarm:flush-requested", () => {
+        if (_persistTimer) {
+          clearTimeout(_persistTimer);
+          _persistTimer = null;
+        }
+        // Synchronous path: serialize and fire invoke.
+        // The Rust side sleeps 250ms to wait for this.
+        persistSwarmFeed(
+          _pendingPersistState ?? useSwarmFeedStoreBase.getState(),
+        );
+        _pendingPersistState = null;
+        _persistDeadlineMs = null;
+      });
+    });
+  } else {
+    // Web fallback: beforeunload is acceptable for localStorage
+    // since localStorage.setItem is synchronous.
+    window.addEventListener("beforeunload", () => {
+      if (_persistTimer) {
+        clearTimeout(_persistTimer);
+        _persistTimer = null;
+        persistSwarmFeed(
+          _pendingPersistState ?? useSwarmFeedStoreBase.getState(),
+        );
+        _pendingPersistState = null;
+        _persistDeadlineMs = null;
+      }
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
