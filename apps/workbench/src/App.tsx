@@ -83,6 +83,37 @@ function LoadingFallback() {
 /** Guard against StrictMode double-mount firing concurrent inits. */
 let workspaceInitRunning = false;
 
+/**
+ * If the projects Map has no entry for `defaultPath`, inject a skeleton
+ * DetectionProject directly (no Tauri calls). This guarantees the Explorer
+ * always shows the workspace root, even when Tauri IPC is completely broken.
+ *
+ * Returns `true` if a skeleton was injected, `false` if the project was
+ * already loaded normally.
+ */
+function ensureSkeletonProject(defaultPath: string): boolean {
+  const { projectRoots, projects } = useProjectStore.getState();
+  if (projects.has(defaultPath)) return false; // already loaded — nothing to do
+
+  const name = defaultPath.split("/").filter(Boolean).pop() ?? "workspace";
+  const skeleton = {
+    rootPath: defaultPath,
+    name,
+    files: [],
+    expandedDirs: new Set<string>(),
+  };
+  const nextRoots = projectRoots.includes(defaultPath) ? projectRoots : [defaultPath, ...projectRoots];
+  const nextProjects = new Map(projects);
+  nextProjects.set(defaultPath, skeleton);
+  useProjectStore.setState({
+    projectRoots: nextRoots,
+    projects: nextProjects,
+    project: skeleton,
+  });
+  console.warn("[workspace-bootstrap] Tauri IPC unavailable, showing skeleton workspace for:", defaultPath);
+  return true;
+}
+
 /** Race a promise against a timeout. Returns the result or `fallback` on timeout. */
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([
@@ -182,15 +213,18 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
         // Always ensure the default workspace is loaded in the projects Map.
         await withTimeout(store.actions.loadRoot(defaultPath), TAURI_TIMEOUT_MS, undefined);
 
-        // Safety net: if after all bootstrap paths the projects Map is still
-        // empty, reset to a clean state with just the default workspace.
-        const finalProjects = useProjectStore.getState().projects;
-        if (finalProjects.size === 0) {
-          console.warn("[workspace-bootstrap] Projects Map empty after init, resetting to default workspace:", defaultPath);
-          const { projectRoots } = useProjectStore.getState();
-          const nextRoots = projectRoots.includes(defaultPath) ? projectRoots : [defaultPath, ...projectRoots];
-          useProjectStore.setState({ projectRoots: nextRoots });
-          await withTimeout(store.actions.loadRoot(defaultPath), TAURI_TIMEOUT_MS, undefined);
+        // Final safety net: if the projects Map is STILL empty (Tauri IPC
+        // completely broken — readDir never resolved), inject a skeleton
+        // project directly so the Explorer shows the workspace root with a
+        // Refresh option instead of "No folder open".
+        const usedSkeleton = ensureSkeletonProject(defaultPath);
+
+        // If we fell back to a skeleton, schedule a deferred rescan once
+        // Tauri IPC likely recovers (stale callbacks clear after a few seconds).
+        if (usedSkeleton) {
+          setTimeout(() => {
+            void useProjectStore.getState().actions.loadRoot(defaultPath);
+          }, 3_000);
         }
       } finally {
         useProjectStore.getState().actions.setLoading(false);
