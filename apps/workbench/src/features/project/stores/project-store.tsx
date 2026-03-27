@@ -745,11 +745,12 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
     },
 
     loadRoot: async (rootPath: string) => {
+      const normalizedRootPath = normalizeWorkspacePath(rootPath);
+      const name = normalizedRootPath.split("/").filter(Boolean).pop() ?? "workspace";
+
       try {
         const paths = await scanDir(rootPath, rootPath);
         const files = buildFileTree(rootPath, paths);
-        const normalizedRootPath = normalizeWorkspacePath(rootPath);
-        const name = normalizedRootPath.split("/").filter(Boolean).pop() ?? "workspace";
         const allDirs = collectDirPaths(files);
 
         const dp: DetectionProject = {
@@ -765,13 +766,27 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
         set(buildProjectSelectionPatch(get().projectRoots, newProjects));
       } catch (err) {
         console.error("[project-store] Failed to load root:", rootPath, err);
+        // Still register the root as an empty project so the Explorer
+        // shows the root name (with a Refresh option) instead of "No folder open".
+        const newProjects = new Map(get().projects);
+        if (!newProjects.has(rootPath)) {
+          newProjects.set(rootPath, {
+            rootPath,
+            name,
+            files: [],
+            expandedDirs: new Set<string>(),
+          });
+          set(buildProjectSelectionPatch(get().projectRoots, newProjects));
+        }
       }
     },
 
     initFromPersistedRoots: async () => {
-      const roots = loadPersistedRoots();
+      // Use roots already in state (populated from localStorage at store init)
+      // rather than re-reading localStorage to avoid desync if another part
+      // of the app modified localStorage between store init and now.
+      const roots = get().projectRoots;
       if (roots.length === 0) return;
-      set({ projectRoots: roots });
       for (const root of roots) {
         await get().actions.loadRoot(root);
       }

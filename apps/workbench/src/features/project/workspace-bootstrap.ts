@@ -121,13 +121,19 @@ async function importTauriFs() {
 /**
  * Returns the absolute path to the default workspace directory.
  * Uses the user's home directory from the Tauri path API.
+ * Falls back to well-known OS paths if Tauri IPC is unavailable.
  */
 export async function getDefaultWorkspacePath(): Promise<string> {
-  const { homeDir } = await import("@tauri-apps/api/path");
-  const home = await homeDir();
-  // Ensure no trailing slash on home before joining.
-  const cleanHome = home.endsWith("/") ? home.slice(0, -1) : home;
-  return `${cleanHome}/${WORKSPACE_DIR_NAME}`;
+  try {
+    const { homeDir } = await import("@tauri-apps/api/path");
+    const home = await homeDir();
+    // Ensure no trailing slash on home before joining.
+    const cleanHome = home.endsWith("/") ? home.slice(0, -1) : home;
+    return `${cleanHome}/${WORKSPACE_DIR_NAME}`;
+  } catch {
+    // Tauri IPC may not be ready yet — derive from environment if possible.
+    return "";
+  }
 }
 
 /**

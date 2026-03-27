@@ -71,7 +71,7 @@ function ExplorerPanelConnected() {
   useEffect(() => {
     if (!loading) return;
     setTimedOut(false);
-    const timer = setTimeout(() => setTimedOut(true), 5000);
+    const timer = setTimeout(() => setTimedOut(true), 30_000);
     return () => clearTimeout(timer);
   }, [loading]);
 

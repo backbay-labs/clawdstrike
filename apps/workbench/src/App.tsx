@@ -80,8 +80,46 @@ function LoadingFallback() {
  *
  * Fire-and-forget: errors are logged but never thrown.
  */
+/** Guard against StrictMode double-mount firing concurrent inits. */
+let workspaceInitRunning = false;
+
+/** Race a promise against a timeout. Returns the result or `fallback` on timeout. */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+/**
+ * Derive the default workspace path without calling any Tauri APIs.
+ * Uses the persisted roots or well-known OS conventions as fallback.
+ */
+function inferDefaultWorkspacePath(persistedRoots: string[]): string | null {
+  // Check if any persisted root looks like the default workspace.
+  const match = persistedRoots.find((r) => r.includes(".clawdstrike/workspace"));
+  if (match) return match;
+
+  // macOS/Linux: /Users/<name> or /home/<name>
+  // We can infer from the origin or navigator.
+  if (typeof location !== "undefined" && location.pathname) {
+    // Tauri dev serves from the filesystem; not useful.
+  }
+
+  // Last resort: try to extract from any persisted root.
+  for (const root of persistedRoots) {
+    const homeMatch = root.match(/^(\/(?:Users|home)\/[^/]+)/);
+    if (homeMatch) return `${homeMatch[1]}/.clawdstrike/workspace`;
+  }
+
+  return null;
+}
+
 function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useToast>["toast"] | null>) {
   useEffect(() => {
+    if (workspaceInitRunning) return;
+    workspaceInitRunning = true;
+
     async function init() {
       const { isDesktop } = await import("@/lib/tauri-bridge");
       const { getWorkbenchE2EBridge } = await import("@/lib/workbench/e2e-bridge");
@@ -99,21 +137,39 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
           return;
         }
 
-        // Always ensure the default workspace directory structure exists.
+        // Resolve the default workspace path. Use the Tauri path API with a
+        // timeout — if Tauri IPC is slow or broken (common during dev mode
+        // startup), fall back to inferring the path from persisted roots or
+        // OS conventions so the Explorer never hangs on "Loading workspace".
         const { bootstrapDefaultWorkspace, getDefaultWorkspacePath } = await import(
           "@/features/project/workspace-bootstrap"
         );
-        const workspacePath = await bootstrapDefaultWorkspace();
-        const defaultPath = workspacePath ?? await getDefaultWorkspacePath();
+
+        const TAURI_TIMEOUT_MS = 8_000;
+        const workspacePath = await withTimeout(bootstrapDefaultWorkspace(), TAURI_TIMEOUT_MS, null);
+        let defaultPath = workspacePath ?? await withTimeout(getDefaultWorkspacePath(), TAURI_TIMEOUT_MS, "");
+
+        if (!defaultPath) {
+          // Tauri IPC timed out — derive the path without Tauri.
+          defaultPath = inferDefaultWorkspacePath(store.projectRoots) ?? "";
+          if (defaultPath) {
+            console.warn("[workspace-bootstrap] Tauri IPC timed out, using inferred workspace path:", defaultPath);
+          }
+        }
+
+        if (!defaultPath) {
+          console.warn("[workspace-bootstrap] Unable to resolve default workspace path");
+          return;
+        }
 
         const roots = store.projectRoots;
 
         if (roots.length > 0) {
-          // Restore persisted workspace roots.
-          await store.actions.initFromPersistedRoots();
+          // Restore persisted workspace roots (loadRoot for each).
+          await withTimeout(store.actions.initFromPersistedRoots(), TAURI_TIMEOUT_MS, undefined);
 
           // If the default workspace path is missing from persisted roots,
-          // add it so the user always sees the workspace (not the raw config dir).
+          // add it so the user always sees the workspace.
           const currentRoots = useProjectStore.getState().projectRoots;
           if (!currentRoots.includes(defaultPath)) {
             store.actions.addRoot(defaultPath);
@@ -121,19 +177,20 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
         } else {
           // First launch: mount the default workspace.
           store.actions.addRoot(defaultPath);
-          await store.actions.loadRoot(defaultPath);
         }
 
+        // Always ensure the default workspace is loaded in the projects Map.
+        await withTimeout(store.actions.loadRoot(defaultPath), TAURI_TIMEOUT_MS, undefined);
+
         // Safety net: if after all bootstrap paths the projects Map is still
-        // empty (e.g. stale persisted roots pointing to deleted directories),
-        // ensure the default workspace is loaded as a fallback.
+        // empty, reset to a clean state with just the default workspace.
         const finalProjects = useProjectStore.getState().projects;
         if (finalProjects.size === 0) {
-          const finalRoots = useProjectStore.getState().projectRoots;
-          if (!finalRoots.includes(defaultPath)) {
-            store.actions.addRoot(defaultPath);
-          }
-          await store.actions.loadRoot(defaultPath);
+          console.warn("[workspace-bootstrap] Projects Map empty after init, resetting to default workspace:", defaultPath);
+          const { projectRoots } = useProjectStore.getState();
+          const nextRoots = projectRoots.includes(defaultPath) ? projectRoots : [defaultPath, ...projectRoots];
+          useProjectStore.setState({ projectRoots: nextRoots });
+          await withTimeout(store.actions.loadRoot(defaultPath), TAURI_TIMEOUT_MS, undefined);
         }
       } finally {
         useProjectStore.getState().actions.setLoading(false);
@@ -154,6 +211,8 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
     init().catch((err) => {
       console.warn("[workspace-bootstrap] Init failed:", err);
       useProjectStore.getState().actions.setLoading(false);
+    }).finally(() => {
+      workspaceInitRunning = false;
     });
   }, []);
 }
