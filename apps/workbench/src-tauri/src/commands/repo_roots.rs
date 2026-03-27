@@ -23,7 +23,10 @@ fn canonical_path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
-fn resolve_git_toplevel(path: &Path) -> Result<PathBuf, String> {
+/// Returns the git toplevel for `path`, or an error if the path is not inside
+/// a git working tree.  Exposed as `pub(crate)` so callers can distinguish
+/// "not in a git repo" from "in an unapproved repo".
+pub(crate) fn resolve_git_toplevel(path: &Path) -> Result<PathBuf, String> {
     let cwd = path.to_string_lossy().to_string();
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])

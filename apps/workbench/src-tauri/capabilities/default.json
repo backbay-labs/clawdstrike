@@ -21,53 +21,78 @@
     "stronghold:default",
     "fs:default",
     {
-      "identifier": "fs:scope",
+      "identifier": "fs:allow-read-text-file",
       "allow": [
-        "$HOME/**",
-        "$DOWNLOAD/**",
-        "$DOCUMENT/**",
-        "$DESKTOP/**"
-      ],
-      "deny": [
-        "$HOME/.ssh",
-        "$HOME/.ssh/**",
-        "$HOME/.gnupg",
-        "$HOME/.gnupg/**",
-        "$HOME/.aws",
-        "$HOME/.aws/**",
-        "$HOME/.config/gcloud",
-        "$HOME/.config/gcloud/**",
-        "$HOME/.config/gh",
-        "$HOME/.config/gh/**",
-        "$HOME/.config/docker",
-        "$HOME/.config/docker/**",
-        "$HOME/.azure",
-        "$HOME/.azure/**",
-        "$HOME/.password-store",
-        "$HOME/.password-store/**",
-        "$HOME/.kube",
-        "$HOME/.kube/**",
-        "$HOME/.docker",
-        "$HOME/.docker/**",
-        "$HOME/.local/share/keyrings",
-        "$HOME/.local/share/keyrings/**",
-        "$HOME/.local/share/kwalletd",
-        "$HOME/.local/share/kwalletd/**",
-        "$HOME/.netrc",
-        "$HOME/.git-credentials",
-        "$HOME/.npmrc",
-        "$HOME/.pypirc",
-        "$HOME/Library/Keychains",
-        "$HOME/Library/Keychains/**"
+        { "path": "$HOME/**" },
+        { "path": "$HOME/.clawdstrike/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
       ]
     },
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
-    "fs:allow-rename",
-    "fs:allow-remove",
-    "fs:allow-mkdir",
-    "fs:allow-exists",
-    "fs:allow-read-dir",
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$HOME/.clawdstrike/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-rename",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$HOME/.clawdstrike/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$HOME/.clawdstrike/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        { "path": "$HOME/.clawdstrike" },
+        { "path": "$HOME/.clawdstrike/**" },
+        { "path": "$HOME/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$HOME/.clawdstrike" },
+        { "path": "$HOME/.clawdstrike/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$HOME/.clawdstrike" },
+        { "path": "$HOME/.clawdstrike/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
+      ]
+    },
     "opener:default",
     "opener:allow-reveal-item-in-dir"
   ]

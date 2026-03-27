@@ -68,4 +68,29 @@ describe("useTerminalSessions", () => {
       expect.objectContaining({ branch: "feat/test" }),
     );
   });
+
+  it("uses the plain Claude helper without forcing a worktree", async () => {
+    mockSpawnClaudeSession.mockResolvedValue({ id: "node_claude" });
+
+    const { result } = renderHook(() => useTerminalSessions());
+    await result.current.spawnClaude({ x: 10, y: 20 });
+
+    expect(mockSpawnClaudeSession).toHaveBeenCalledWith({
+      position: { x: 10, y: 20 },
+    });
+  });
+
+  it("keeps worktree isolation behind the explicit Claude worktree helper", async () => {
+    mockSpawnClaudeSession.mockResolvedValue({ id: "node_claude_worktree" });
+
+    const { result } = renderHook(() => useTerminalSessions());
+    await result.current.spawnClaudeInWorktree({ x: 1, y: 2 }, "feat/worktree", "review");
+
+    expect(mockSpawnClaudeSession).toHaveBeenCalledWith({
+      position: { x: 1, y: 2 },
+      worktree: true,
+      branch: "feat/worktree",
+      prompt: "review",
+    });
+  });
 });

@@ -120,7 +120,13 @@ export function viewportNeedsSnapback(
 }
 
 export function shouldSyncControlledViewport(source: SwarmViewportSource): boolean {
-  return source !== "wheel" && source !== "snapback";
+  // Only sync React Flow's onViewportChange to React state during active
+  // interaction (pointer drag) or programmatic moves (fitView, setViewport).
+  // "idle" is excluded to prevent an infinite render loop: ReactFlow fires
+  // onViewportChange after every render with the controlled viewport prop,
+  // and sub-pixel floating-point drift can cause areViewportsEqual to miss,
+  // triggering setState → re-render → onViewportChange → setState → …
+  return source === "pointer" || source === "imperative";
 }
 
 export function areViewportsEqual(left: Viewport, right: Viewport): boolean {

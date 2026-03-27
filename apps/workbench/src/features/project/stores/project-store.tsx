@@ -18,8 +18,6 @@ import {
 } from "@/features/project/utils/resolve-project-path";
 import { getWorkbenchE2EBridge } from "@/lib/workbench/e2e-bridge";
 
-const TAURI_FS_SPECIFIER = "@tauri-apps/plugin-fs";
-
 // ---- Types ----
 
 export interface ProjectFile {
@@ -155,7 +153,7 @@ function persistRoots(roots: string[]): void {
 }
 
 async function importTauriFs() {
-  return import(/* @vite-ignore */ TAURI_FS_SPECIFIER);
+  return import("@tauri-apps/plugin-fs");
 }
 
 async function readProjectDirEntries(dirPath: string) {

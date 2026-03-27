@@ -14,10 +14,6 @@ import {
 } from "@/lib/workbench/file-type-registry";
 import { markSwarmFileWatchSelfWrite } from "@/features/swarm/stores/swarm-file-watch";
 
-const TAURI_FS_SPECIFIER = "@tauri-apps/plugin-fs";
-const TAURI_OPENER_SPECIFIER = "@tauri-apps/plugin-opener";
-const TAURI_DIALOG_SPECIFIER = "@tauri-apps/plugin-dialog";
-
 /** Returns true when running inside a Tauri webview. */
 export function isDesktop(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -30,15 +26,15 @@ export function isMacOS(): boolean {
 }
 
 async function importTauriFs() {
-  return import(/* @vite-ignore */ TAURI_FS_SPECIFIER);
+  return import("@tauri-apps/plugin-fs");
 }
 
 async function importTauriOpener() {
-  return import(/* @vite-ignore */ TAURI_OPENER_SPECIFIER);
+  return import("@tauri-apps/plugin-opener");
 }
 
 async function importTauriDialog() {
-  return import(/* @vite-ignore */ TAURI_DIALOG_SPECIFIER);
+  return import("@tauri-apps/plugin-dialog");
 }
 
 async function getWindow() {

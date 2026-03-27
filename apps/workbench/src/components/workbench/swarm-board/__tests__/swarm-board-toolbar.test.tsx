@@ -8,6 +8,9 @@ import {
   useSwarmBoard,
   useSwarmBoardStore,
 } from "@/features/swarm/stores/swarm-board-store";
+import * as swarmBoardStoreModule from "@/features/swarm/stores/swarm-board-store";
+import * as tauriBridge from "@/lib/tauri-bridge";
+import * as terminalSessionsModule from "@/lib/workbench/use-terminal-sessions";
 import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
 
 // ---------------------------------------------------------------------------
@@ -121,6 +124,7 @@ beforeEach(() => {
   mockFitBoard.mockClear();
   mockFitNodes.mockClear();
   mockZoomByFactor.mockClear();
+  vi.restoreAllMocks();
 });
 
 describe("SwarmBoardToolbar", () => {
@@ -139,6 +143,133 @@ describe("SwarmBoardToolbar", () => {
       expect(screen.getByTestId("node-count").textContent).toBe("1");
       const types = screen.getByTestId("node-types").textContent;
       expect(types).toBe("agentSession");
+    });
+
+    it("does not force /tmp when repoRoot is empty in desktop mode", async () => {
+      const addNode = vi.fn();
+      const dispatch = vi.fn();
+      const spawnSession = vi.fn().mockResolvedValue({ id: "node-1" });
+
+      vi.spyOn(tauriBridge, "isDesktop").mockReturnValue(true);
+      vi.spyOn(swarmBoardStoreModule, "useSwarmBoard").mockReturnValue({
+        addNode,
+        clearBoard: vi.fn(),
+        state: {
+          boardId: "b-test",
+          repoRoot: "",
+          nodes: [],
+          edges: [],
+          selectedNodeId: null,
+          selectedNodeIds: [],
+          inspectorOpen: false,
+          fileWatchRevision: 0,
+          bundlePath: "",
+        },
+        dispatch,
+      } as unknown as ReturnType<typeof swarmBoardStoreModule.useSwarmBoard>);
+      vi.spyOn(terminalSessionsModule, "useTerminalSessions").mockReturnValue({
+        spawnSession,
+        spawnClaude: vi.fn(),
+        spawnClaudeSession: vi.fn(),
+        spawnWorktreeSession: vi.fn(),
+        spawnTerminal: vi.fn(),
+        spawnClaudeInWorktree: vi.fn(),
+        spawnWorktree: vi.fn(),
+        killSession: vi.fn(),
+        removeNodeWithCleanup: vi.fn(),
+        activeSessionCount: 0,
+        totalSessionCount: 0,
+        canSpawnMore: true,
+        hasRepoRoot: false,
+        repoRoot: "",
+      } as ReturnType<typeof terminalSessionsModule.useTerminalSessions>);
+
+      render(
+        <MemoryRouter>
+          <SwarmBoardToolbar
+            viewportController={{
+              viewport: mockViewport,
+              fitBoard: mockFitBoard,
+              fitNodes: mockFitNodes,
+              zoomByFactor: mockZoomByFactor,
+            }}
+          />
+        </MemoryRouter>,
+      );
+
+      await act(async () => {
+        screen.getByLabelText("New Terminal").click();
+        await Promise.resolve();
+      });
+
+      expect(spawnSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: undefined,
+          title: "Terminal",
+        }),
+      );
+      expect(addNode).not.toHaveBeenCalled();
+      expect(dispatch).toHaveBeenCalledWith({ type: "SELECT_NODE", nodeId: "node-1" });
+    });
+
+    it("does not create an offline placeholder node in desktop mode when spawn fails", async () => {
+      const addNode = vi.fn();
+      const dispatch = vi.fn();
+
+      vi.spyOn(tauriBridge, "isDesktop").mockReturnValue(true);
+      vi.spyOn(swarmBoardStoreModule, "useSwarmBoard").mockReturnValue({
+        addNode,
+        clearBoard: vi.fn(),
+        state: {
+          boardId: "b-test",
+          repoRoot: "",
+          nodes: [],
+          edges: [],
+          selectedNodeId: null,
+          selectedNodeIds: [],
+          inspectorOpen: false,
+          fileWatchRevision: 0,
+          bundlePath: "",
+        },
+        dispatch,
+      } as unknown as ReturnType<typeof swarmBoardStoreModule.useSwarmBoard>);
+      vi.spyOn(terminalSessionsModule, "useTerminalSessions").mockReturnValue({
+        spawnSession: vi.fn().mockRejectedValue(new Error("native create failed")),
+        spawnClaude: vi.fn(),
+        spawnClaudeSession: vi.fn(),
+        spawnWorktreeSession: vi.fn(),
+        spawnTerminal: vi.fn(),
+        spawnClaudeInWorktree: vi.fn(),
+        spawnWorktree: vi.fn(),
+        killSession: vi.fn(),
+        removeNodeWithCleanup: vi.fn(),
+        activeSessionCount: 0,
+        totalSessionCount: 0,
+        canSpawnMore: true,
+        hasRepoRoot: false,
+        repoRoot: "",
+      } as ReturnType<typeof terminalSessionsModule.useTerminalSessions>);
+
+      render(
+        <MemoryRouter>
+          <SwarmBoardToolbar
+            viewportController={{
+              viewport: mockViewport,
+              fitBoard: mockFitBoard,
+              fitNodes: mockFitNodes,
+              zoomByFactor: mockZoomByFactor,
+            }}
+          />
+        </MemoryRouter>,
+      );
+
+      await act(async () => {
+        screen.getByLabelText("New Terminal").click();
+        await new Promise((r) => setTimeout(r, 50));
+      });
+
+      expect(addNode).not.toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalled();
     });
   });
 

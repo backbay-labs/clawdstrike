@@ -94,8 +94,9 @@ export const terminalService = {
     cwd: string,
     shell?: string,
     env?: Record<string, string>,
+    startupInput?: string,
   ): Promise<SessionInfo> =>
-    invokeSensitive<SessionInfo>("terminal_create", { cwd, shell, env }),
+    invokeSensitive<SessionInfo>("terminal_create", { cwd, shell, env, startupInput }),
 
   /**
    * Discover recoverable tmux-backed sessions persisted across app restarts.

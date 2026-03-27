@@ -167,6 +167,21 @@ describe("AgentSessionNode", () => {
     expect(screen.getByText("$ cargo test -p auth")).toBeInTheDocument();
   });
 
+  it("sanitizes ANSI escape sequences in unfocused preview lines", () => {
+    renderNode({
+      sessionId: "sess-123",
+      terminalAttached: true,
+      previewLines: [
+        "\u001b[38;2;136;136;136mClaude Code v2.1.85\u001b[39m",
+        "\u001b[1mOpus 4.6\u001b[22m",
+      ],
+    });
+
+    expect(screen.getByText("Claude Code v2.1.85")).toBeInTheDocument();
+    expect(screen.getByText("Opus 4.6")).toBeInTheDocument();
+    expect(screen.queryByText(/\[38;2;136;136;136m/)).toBeNull();
+  });
+
   it("shows TerminalRenderer when the attached session is selected", () => {
     renderNode({ sessionId: "sess-123", terminalAttached: true }, true);
     expect(screen.getByTestId("terminal-renderer")).toBeInTheDocument();

@@ -21,8 +21,10 @@ use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
-use crate::commands::capability::{authorize_sensitive_command, CommandCapabilityState};
-use crate::commands::repo_roots;
+use crate::commands::capability::{
+    authorize_sensitive_command, ensure_trusted_window, CommandCapabilityState,
+};
+use crate::commands::{mcp_sidecar, repo_roots};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -258,7 +260,13 @@ fn normalize_cwd(cwd: &str) -> Result<String, String> {
     if !canonical.is_dir() {
         return Err(format!("Working directory is not a directory: {cwd}"));
     }
-    repo_roots::ensure_path_within_approved_repo(&canonical)?;
+    // If the directory is inside a git repo, verify it's an approved root.
+    // Non-git directories (e.g. ~/.clawdstrike/workspace) are allowed —
+    // the repo-root check guards git-backed worktree operations, not
+    // plain terminal cwd.
+    if repo_roots::resolve_git_toplevel(&canonical).is_ok() {
+        repo_roots::ensure_path_within_approved_repo(&canonical)?;
+    }
 
     Ok(canonical.to_string_lossy().to_string())
 }
@@ -337,6 +345,10 @@ fn apply_extra_env(cmd: &mut CommandBuilder, env: &HashMap<String, String>) {
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r#"'"'"'"#))
+}
+
+fn enriched_path_string() -> String {
+    mcp_sidecar::enriched_path().to_string_lossy().to_string()
 }
 
 fn metadata_filename(session_id: &str) -> String {
@@ -640,8 +652,10 @@ fn build_tmux_shell_command(
     shell: &str,
     env: &HashMap<String, String>,
 ) -> String {
+    let path = enriched_path_string();
     let mut exports = vec![
         format!("TERM={}", shell_quote("xterm-256color")),
+        format!("PATH={}", shell_quote(&path)),
         format!("CLAWDSTRIKE_SESSION_ID={}", shell_quote(session_id)),
         format!("SHELL={}", shell_quote(shell)),
     ];
@@ -650,7 +664,7 @@ fn build_tmux_shell_command(
         exports.push(format!("{key}={}", shell_quote(value)));
     }
 
-    format!("env {} exec {}", exports.join(" "), shell_quote(shell))
+    format!("env {} {}", exports.join(" "), shell_quote(shell))
 }
 
 async fn tmux_session_exists(tmux_bin: &str, session_id: &str) -> bool {
@@ -874,6 +888,7 @@ async fn register_live_session<R: Runtime>(
     session_permit: OwnedSemaphorePermit,
     spawned: SpawnedPty,
     initial_scrollback: Vec<String>,
+    startup_input: Option<String>,
 ) -> Result<SessionInfo, String> {
     let SpawnedPty {
         master,
@@ -1008,6 +1023,42 @@ async fn register_live_session<R: Runtime>(
         return Err("Terminal session terminated during initialization".to_string());
     }
 
+    if let Some(startup_input) = startup_input {
+        let write_result = {
+            let mut manager = state.lock().await;
+            let session = manager
+                .sessions
+                .get_mut(&session_id)
+                .ok_or_else(|| format!("Session not found during initialization: {session_id}"))?;
+
+            session
+                .writer
+                .write_all(startup_input.as_bytes())
+                .map_err(|e| format!("Failed to write startup input to PTY: {e}"))?;
+            session
+                .writer
+                .flush()
+                .map_err(|e| format!("Failed to flush startup PTY writer: {e}"))
+        };
+
+        if let Err(err) = write_result {
+            let removed = {
+                let mut manager = state.lock().await;
+                manager.sessions.remove(&session_id)
+            };
+            if let Some(mut session) = removed {
+                session.alive.store(false, Ordering::SeqCst);
+                let _ = session.child.kill();
+                if let Some(task) = session.reader_task.take() {
+                    task.abort();
+                    let _ = task.await;
+                }
+            }
+            remove_ring_buffer(&session_id);
+            return Err(err);
+        }
+    }
+
     Ok(info)
 }
 
@@ -1048,7 +1099,9 @@ async fn create_tmux_session<R: Runtime>(
         "CLAWDSTRIKE_SESSION_ID".to_string(),
         session_id.to_string(),
     ]);
-    run_tmux_command(tmux_bin, &set_session_id_args, None).await?;
+    if let Err(err) = run_tmux_command(tmux_bin, &set_session_id_args, None).await {
+        eprintln!("[terminal] Failed to persist tmux session id env: {err}");
+    }
 
     let mut set_shell_args = tmux_socket_args();
     set_shell_args.extend([
@@ -1058,7 +1111,21 @@ async fn create_tmux_session<R: Runtime>(
         "SHELL".to_string(),
         shell.to_string(),
     ]);
-    run_tmux_command(tmux_bin, &set_shell_args, None).await?;
+    if let Err(err) = run_tmux_command(tmux_bin, &set_shell_args, None).await {
+        eprintln!("[terminal] Failed to persist tmux shell env: {err}");
+    }
+
+    let mut set_path_args = tmux_socket_args();
+    set_path_args.extend([
+        "set-environment".to_string(),
+        "-t".to_string(),
+        session_id.to_string(),
+        "PATH".to_string(),
+        enriched_path_string(),
+    ]);
+    if let Err(err) = run_tmux_command(tmux_bin, &set_path_args, None).await {
+        eprintln!("[terminal] Failed to persist tmux PATH env: {err}");
+    }
 
     // Persist caller-supplied env vars in the tmux session environment.
     // On reconnect these are already available — no additional passthrough needed.
@@ -1094,6 +1161,7 @@ async fn connect_tmux_session<R: Runtime>(
     state: TerminalState,
     metadata: PersistedSessionMetadata,
     recovery_state: SessionRecoveryState,
+    startup_input: Option<String>,
 ) -> Result<SessionInfo, String> {
     let session_permit = session_limiter().try_acquire_owned().map_err(|_| {
         format!(
@@ -1144,6 +1212,7 @@ async fn connect_tmux_session<R: Runtime>(
         session_permit,
         spawned,
         initial_scrollback,
+        startup_input,
     )
     .await
 }
@@ -1186,6 +1255,7 @@ pub async fn terminal_create<R: Runtime>(
     cwd: String,
     shell: Option<String>,
     env: Option<HashMap<String, String>>,
+    startup_input: Option<String>,
 ) -> Result<SessionInfo, String> {
     let cwd = normalize_cwd(&cwd)?;
     let shell_path = match shell.as_deref() {
@@ -1214,20 +1284,21 @@ pub async fn terminal_create<R: Runtime>(
         .await
         {
             Ok(metadata) => {
-                return match connect_tmux_session(
+                match connect_tmux_session(
                     app.clone(),
-                    state_handle,
+                    state_handle.clone(),
                     metadata.clone(),
                     SessionRecoveryState::Fresh,
+                    startup_input.clone(),
                 )
                 .await
                 {
-                    Ok(info) => Ok(info),
+                    Ok(info) => return Ok(info),
                     Err(err) => {
+                        eprintln!("[terminal] tmux attach failed, falling back to direct PTY: {err}");
                         let _ = kill_tmux_session(&app, &metadata.id).await;
-                        Err(err)
                     }
-                };
+                }
             }
             Err(err) => {
                 // tmux new-session failed — fall back to direct PTY rather than
@@ -1247,6 +1318,7 @@ pub async fn terminal_create<R: Runtime>(
     let mut cmd = CommandBuilder::new(&shell_path);
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
+    cmd.env("PATH", mcp_sidecar::enriched_path());
     apply_extra_env(&mut cmd, &sanitized_env);
 
     let spawned = spawn_pty_command(cmd, &format!("shell {shell_path}"))?;
@@ -1263,6 +1335,7 @@ pub async fn terminal_create<R: Runtime>(
         session_permit,
         spawned,
         Vec::new(),
+        startup_input,
     )
     .await
 }
@@ -1377,6 +1450,7 @@ pub async fn terminal_reconnect<R: Runtime>(
         (*state).clone(),
         metadata,
         SessionRecoveryState::Recovered,
+        None,
     )
     .await
 }
@@ -1674,9 +1748,8 @@ pub async fn terminal_detach<R: Runtime>(
 #[tauri::command]
 pub async fn get_cwd<R: Runtime>(
     window: tauri::Window<R>,
-    capability_state: tauri::State<'_, CommandCapabilityState>,
 ) -> Result<String, String> {
-    authorize_sensitive_command(&window, &capability_state, "get_cwd").await?;
+    ensure_trusted_window(&window)?;
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())
@@ -1775,7 +1848,9 @@ mod tests {
         assert!(cmd.contains("CLAWDSTRIKE_SESSION_ID='test-id'"));
         assert!(cmd.contains("SHELL='/bin/zsh'"));
         assert!(cmd.contains("TERM='xterm-256color'"));
-        assert!(cmd.ends_with("exec '/bin/zsh'"));
+        assert!(cmd.contains("PATH='"));
+        assert!(cmd.ends_with(" '/bin/zsh'"));
+        assert!(!cmd.contains(" exec "));
     }
 
     #[test]

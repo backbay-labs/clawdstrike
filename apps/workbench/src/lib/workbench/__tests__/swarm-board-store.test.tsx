@@ -1,6 +1,18 @@
 import React from "react";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { bootstrapDefaultWorkspaceMock, getDefaultWorkspacePathMock } = vi.hoisted(() => ({
+  bootstrapDefaultWorkspaceMock: vi.fn(),
+  getDefaultWorkspacePathMock: vi.fn(),
+}));
+
+vi.mock("@/features/project/workspace-bootstrap", () => ({
+  bootstrapDefaultWorkspace: bootstrapDefaultWorkspaceMock,
+  getDefaultWorkspacePath: getDefaultWorkspacePathMock,
+  WORKSPACE_DIR_NAME: ".clawdstrike/workspace",
+  WORKSPACE_SUBDIRS: [],
+}));
 
 import {
   SwarmBoardProvider,
@@ -17,6 +29,9 @@ import type {
   SwarmNodeType,
 } from "../swarm-board-types";
 import type { Node } from "@xyflow/react";
+import { terminalService } from "../terminal-service";
+import { useProjectStore } from "@/features/project/stores/project-store";
+import * as tauriBridge from "@/lib/tauri-bridge";
 
 // ---------------------------------------------------------------------------
 // Storage key must match the one in the store
@@ -334,6 +349,25 @@ function DynamicHarness() {
   );
 }
 
+function SpawnClaudeHarness() {
+  const { state, spawnClaudeSession } = useSwarmBoard();
+
+  return (
+    <div>
+      <pre data-testid="repo-root">{state.repoRoot}</pre>
+      <button
+        type="button"
+        data-testid="spawn-claude"
+        onClick={() => {
+          void spawnClaudeSession({ title: "Claude Session" });
+        }}
+      >
+        spawn-claude
+      </button>
+    </div>
+  );
+}
+
 /**
  * Renders a harness with a clean empty board. Seeds localStorage with a
  * placeholder node (needed because the store falls back to mock data when
@@ -352,6 +386,14 @@ function renderWithEmptyBoard(harness: React.ReactElement) {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.restoreAllMocks();
+  bootstrapDefaultWorkspaceMock.mockReset();
+  getDefaultWorkspacePathMock.mockReset();
+  useProjectStore.setState({
+    project: null,
+    projectRoots: [],
+    projects: new Map(),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -417,6 +459,92 @@ describe("SwarmBoard initial state", () => {
     // Board starts empty — no mock data seeded
     expect(Number(screen.getByTestId("node-count").textContent)).toBe(0);
     expect(Number(screen.getByTestId("edge-count").textContent)).toBe(0);
+  });
+
+  it("adopts the first mounted project root when repoRoot is empty", async () => {
+    useProjectStore.setState({
+      projectRoots: ["/Users/test/.clawdstrike/workspace"],
+    });
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike/workspace");
+    });
+  });
+
+  it("falls back to the default workspace path on mount when no project root is available", async () => {
+    vi.spyOn(tauriBridge, "isDesktop").mockReturnValue(true);
+    bootstrapDefaultWorkspaceMock.mockResolvedValue("/Users/test/.clawdstrike/workspace");
+    getDefaultWorkspacePathMock.mockResolvedValue("/Users/test/.clawdstrike/workspace");
+
+    const getCwdSpy = vi.spyOn(terminalService, "getCwd").mockRejectedValue(
+      new Error("getCwd should not be needed"),
+    );
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike/workspace");
+    });
+
+    expect(getCwdSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the default workspace path for Claude spawns when repoRoot is unset", async () => {
+    vi.spyOn(tauriBridge, "isDesktop").mockReturnValue(true);
+    bootstrapDefaultWorkspaceMock.mockResolvedValue("/Users/test/.clawdstrike/workspace");
+    getDefaultWorkspacePathMock.mockResolvedValue("/Users/test/.clawdstrike/workspace");
+
+    const createSpy = vi.spyOn(terminalService, "create").mockResolvedValue({
+      id: "session-123",
+      cwd: "/Users/test/.clawdstrike/workspace",
+      branch: null,
+      created_at: "2026-03-27T12:00:00Z",
+      alive: true,
+      exit_code: null,
+      line_count: 0,
+      shell: "/bin/zsh",
+      persistence_mode: "direct",
+      recovery_state: "fresh",
+      cwd_valid: true,
+    });
+    const getCwdSpy = vi.spyOn(terminalService, "getCwd").mockRejectedValue(
+      new Error("getCwd should not be needed"),
+    );
+    vi.spyOn(terminalService, "onExit").mockResolvedValue(() => {});
+    vi.spyOn(terminalService, "onOutput").mockResolvedValue(() => {});
+
+    render(
+      <SwarmBoardProvider>
+        <SpawnClaudeHarness />
+      </SwarmBoardProvider>,
+    );
+
+    await act(async () => {
+      screen.getByTestId("spawn-claude").click();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(createSpy).toHaveBeenCalledWith(
+        "/Users/test/.clawdstrike/workspace",
+        undefined,
+        undefined,
+        "claude\n",
+      );
+    });
+
+    expect(getCwdSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike/workspace");
   });
 });
 

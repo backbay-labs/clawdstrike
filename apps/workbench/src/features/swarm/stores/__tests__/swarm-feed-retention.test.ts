@@ -85,6 +85,8 @@ import {
 // Factory helpers
 // ---------------------------------------------------------------------------
 
+const ZERO_DIGEST = `0x${"0".repeat(64)}` as const;
+
 function makeFindingRecord(
   swarmId: string,
   feedId: string,
@@ -105,7 +107,7 @@ function makeFindingRecord(
       summary: `Summary for finding ${feedSeq}`,
       severity: "medium",
       confidence: 0.8,
-      status: "open",
+      status: "emerging",
       signalCount: 1,
       tags: [],
       blobRefs: [],
@@ -130,7 +132,7 @@ function makeHeadRecord(
       feedId,
       issuerId,
       headSeq,
-      headEnvelopeHash: { algorithm: "sha256", hex: "0".repeat(64) },
+      headEnvelopeHash: ZERO_DIGEST,
       entryCount: headSeq,
       announcedAt: receivedAt - 50,
     },
@@ -158,7 +160,7 @@ function makeRevocationRecord(
       target: {
         schema: FINDING_ENVELOPE_SCHEMA,
         id: `finding-${swarmId}-${feedId}-${feedSeq}`,
-        digest: { algorithm: "sha256", hex: "0".repeat(64) },
+        digest: ZERO_DIGEST,
       },
       reason: "test revocation",
     },

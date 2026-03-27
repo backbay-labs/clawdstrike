@@ -18,8 +18,6 @@ import {
 import type { FileType } from "@/lib/workbench/file-type-registry";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-const TAURI_FS_SPECIFIER = "@tauri-apps/plugin-fs";
-
 function isDesktop(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -30,7 +28,7 @@ async function readArtifactTextFile(filePath: string): Promise<string | null> {
   }
 
   try {
-    const { readTextFile } = await import(/* @vite-ignore */ TAURI_FS_SPECIFIER);
+    const { readTextFile } = await import("@tauri-apps/plugin-fs");
     return await readTextFile(filePath);
   } catch (err) {
     console.error("[artifact-preview-pane] Failed to read file:", filePath, err);

@@ -5,7 +5,7 @@
  * Information density IS the aesthetic. No decorative elements.
  */
 
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import {
   IconX,
@@ -14,6 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useSwarmBoard } from "@/features/swarm/stores/swarm-board-store";
+import { sanitizeTerminalPreviewLines } from "@/lib/workbench/terminal-preview";
 import { TerminalRenderer } from "../terminal-renderer";
 import type { SwarmBoardNodeData, SessionStatus, RiskLevel } from "@/features/swarm/swarm-board-types";
 import { useZoomTier, type ZoomTier } from "../hooks/use-zoom-tier";
@@ -146,6 +147,10 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
       : null;
   const [statusFlash, setStatusFlash] = useState(false);
   const previousStatusRef = useRef<SessionStatus | null>(null);
+  const previewLines = useMemo(
+    () => sanitizeTerminalPreviewLines(d.previewLines),
+    [d.previewLines],
+  );
 
   const handleClose = useCallback(
     (e: React.MouseEvent) => {
@@ -395,7 +400,7 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
               sessionId={d.sessionId!}
               active={!!selected || maximized}
               fontSize={selected || maximized ? 11 : 8}
-              initialLines={d.previewLines ?? []}
+              initialLines={previewLines}
             />
           ) : (
             /* Fallback: static preview lines — no frills, just output */
@@ -404,7 +409,7 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
               style={{ backgroundColor: "#06070b" }}
             >
               <div className="py-1">
-                {(d.previewLines ?? []).slice(-previewLineLimit).map((line, i) => (
+                {previewLines.slice(-previewLineLimit).map((line, i) => (
                   <div
                     key={i}
                     className="flex hover:bg-[#ffffff02]"
@@ -433,12 +438,14 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
                     </span>
                   </div>
                 ))}
-                {(!d.previewLines || d.previewLines.length === 0) && (
+                {previewLines.length === 0 && (
                   <div className="flex items-center justify-center h-full min-h-[60px]">
                     <span className="text-[9px] font-mono text-[#1a1e28]">
                       {hasSession && !d.terminalAttached
                         ? "select to attach recovered session"
-                        : "awaiting output"}
+                        : hasSession
+                          ? "launching session..."
+                          : "awaiting output"}
                     </span>
                   </div>
                 )}

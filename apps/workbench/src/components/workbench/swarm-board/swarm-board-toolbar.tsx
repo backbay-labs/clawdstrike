@@ -76,6 +76,7 @@ export function SwarmBoardToolbar({
   const { addNode, clearBoard, state, dispatch } = useSwarmBoard();
   const {
     spawnSession,
+    spawnClaude,
     spawnClaudeSession,
     spawnWorktreeSession,
     activeSessionCount,
@@ -136,9 +137,8 @@ export function SwarmBoardToolbar({
     setSpawning(true);
     setSpawnError(null);
     try {
-      const cwd = state.repoRoot || "/tmp";
       const node = await spawnSession({
-        cwd,
+        cwd: state.repoRoot || undefined,
         position: getDropPosition(),
         title: "Terminal",
       });
@@ -146,58 +146,59 @@ export function SwarmBoardToolbar({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSpawnError(`Terminal: ${msg}`);
-      addNode({
-        nodeType: "agentSession",
-        title: "Terminal (offline)",
-        position: getDropPosition(),
-        data: {
-          agentModel: "shell",
-          status: "idle",
-          previewLines: ["~ run npm run tauri:dev for live terminals"],
-          receiptCount: 0,
-          blockedActionCount: 0,
-          changedFilesCount: 0,
-          risk: "low",
-          policyMode: "default",
-        },
-      });
+      if (!desktop) {
+        addNode({
+          nodeType: "agentSession",
+          title: "Terminal (offline)",
+          position: getDropPosition(),
+          data: {
+            agentModel: "shell",
+            status: "idle",
+            previewLines: ["~ run npm run tauri:dev for live terminals"],
+            receiptCount: 0,
+            blockedActionCount: 0,
+            changedFilesCount: 0,
+            risk: "low",
+            policyMode: "default",
+          },
+        });
+      }
     } finally {
       setSpawning(false);
     }
-  }, [spawning, canSpawnMore, state.repoRoot, spawnSession, getDropPosition, dispatch, addNode]);
+  }, [spawning, canSpawnMore, state.repoRoot, spawnSession, getDropPosition, dispatch, addNode, desktop]);
 
   const handleNewClaudeSession = useCallback(async () => {
     if (spawning || !canSpawnMore) return;
     setSpawning(true);
     setSpawnError(null);
     try {
-      const node = await spawnClaudeSession({
-        position: getDropPosition(),
-        worktree: hasRepoRoot,
-      });
+      const node = await spawnClaude(getDropPosition());
       dispatch({ type: "SELECT_NODE", nodeId: node.id });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSpawnError(`Claude: ${msg}`);
-      addNode({
-        nodeType: "agentSession",
-        title: "Claude (offline)",
-        position: getDropPosition(),
-        data: {
-          agentModel: "claude",
-          status: "idle",
-          previewLines: ["~ run npm run tauri:dev for live sessions"],
-          receiptCount: 0,
-          blockedActionCount: 0,
-          changedFilesCount: 0,
-          risk: "low",
-          policyMode: "default",
-        },
-      });
+      if (!desktop) {
+        addNode({
+          nodeType: "agentSession",
+          title: "Claude (offline)",
+          position: getDropPosition(),
+          data: {
+            agentModel: "claude",
+            status: "idle",
+            previewLines: ["~ run npm run tauri:dev for live sessions"],
+            receiptCount: 0,
+            blockedActionCount: 0,
+            changedFilesCount: 0,
+            risk: "low",
+            policyMode: "default",
+          },
+        });
+      }
     } finally {
       setSpawning(false);
     }
-  }, [spawning, canSpawnMore, hasRepoRoot, spawnClaudeSession, getDropPosition, dispatch, addNode]);
+  }, [spawning, canSpawnMore, spawnClaude, getDropPosition, dispatch, addNode, desktop]);
 
   const handleNewWorktreeSession = useCallback(async () => {
     if (spawning || !canSpawnMore || !hasRepoRoot) return;
@@ -613,7 +614,7 @@ function SessionOptionsPopover({
 }) {
   const [shell, setShell] = useState("zsh");
   const [cwd, setCwd] = useState(repoRoot || "");
-  const [useWorktree, setUseWorktree] = useState(true);
+  const [useWorktree, setUseWorktree] = useState(false);
   const [initialCommand, setInitialCommand] = useState("");
   const [branch, setBranch] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -633,7 +634,7 @@ function SessionOptionsPopover({
       });
     } else {
       await onSpawnSession({
-        cwd: cwd || repoRoot || "/tmp",
+        cwd: cwd || repoRoot || undefined,
         position,
         shell: shell === "bash" ? "/bin/bash" : undefined,
         command: initialCommand ? initialCommand + "\n" : undefined,

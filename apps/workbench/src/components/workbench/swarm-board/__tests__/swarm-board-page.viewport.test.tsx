@@ -163,7 +163,7 @@ describe("SwarmBoardPage viewport wiring", () => {
     openAppMock.mockClear();
   });
 
-  it("renders the real page in controlled viewport mode", () => {
+  it("renders the real page in uncontrolled viewport mode", () => {
     render(
       <MemoryRouter initialEntries={["/swarm-board"]}>
         <SwarmBoardPage />
@@ -183,20 +183,20 @@ describe("SwarmBoardPage viewport wiring", () => {
       }),
     );
 
+    // Uncontrolled mode: no viewport prop, no onViewportChange/onMoveStart/onMoveEnd.
+    // React Flow owns viewport state; we read via useViewport() and set imperatively.
     expect(reactFlowProps).toEqual(
       expect.objectContaining({
-        viewport: expect.objectContaining({ x: 0, y: 0, zoom: 1 }),
         zoomOnScroll: false,
         zoomOnPinch: false,
         zoomOnDoubleClick: false,
         panOnScroll: false,
         minZoom: 0.08,
         maxZoom: 2,
-        onViewportChange: expect.any(Function),
-        onMoveStart: expect.any(Function),
-        onMoveEnd: expect.any(Function),
       }),
     );
+    expect(reactFlowProps).not.toHaveProperty("viewport");
+    expect(reactFlowProps).not.toHaveProperty("onViewportChange");
   });
 });
 

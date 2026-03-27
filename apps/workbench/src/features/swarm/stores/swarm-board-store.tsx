@@ -27,6 +27,7 @@ import { useShallow } from "zustand/react/shallow";
 import { createSelectors } from "@/lib/create-selectors";
 import { type Node, type Edge } from "@xyflow/react";
 import { isDesktop } from "@/lib/tauri-bridge";
+import { useProjectStore } from "@/features/project/stores/project-store";
 import type {
   SwarmBoardNodeData,
   SwarmBoardEdge,
@@ -37,6 +38,10 @@ import type {
 } from "@/features/swarm/swarm-board-types";
 import type { Receipt } from "@/lib/workbench/types";
 import { terminalService, worktreeService } from "@/lib/workbench/terminal-service";
+import {
+  appendTerminalPreviewChunk,
+  sanitizeTerminalPreviewLines,
+} from "@/lib/workbench/terminal-preview";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
   SWARM_BOARD_PERSISTENCE_FILE,
@@ -48,6 +53,10 @@ import {
   setSwarmFileWatchScope,
   subscribeSwarmFileWatchEvents,
 } from "./swarm-file-watch";
+import {
+  bootstrapDefaultWorkspace,
+  getDefaultWorkspacePath,
+} from "@/features/project/workspace-bootstrap";
 import {
   createBoardNode,
   toRfEdges,
@@ -71,6 +80,83 @@ import {
 export const MAX_ACTIVE_TERMINALS = 8;
 /** Maximum number of total persistent sessions to keep on the board. */
 export const MAX_TOTAL_SESSIONS = 64;
+const SESSION_PREVIEW_MAX_LINES = 200;
+
+function getPrimaryWorkspaceRoot(): string | undefined {
+  return useProjectStore
+    .getState()
+    .projectRoots
+    .find((root) => typeof root === "string" && root.trim().length > 0)
+    ?.trim();
+}
+
+async function resolveDefaultWorkspaceRoot(): Promise<string | undefined> {
+  if (!isDesktop()) {
+    return undefined;
+  }
+
+  try {
+    return (await bootstrapDefaultWorkspace()) ?? (await getDefaultWorkspacePath());
+  } catch (err) {
+    console.error("[swarm-board-store] Failed to resolve default workspace root:", err);
+    return undefined;
+  }
+}
+
+async function resolveBoardRepoRoot(preferred?: string): Promise<string | undefined> {
+  const preferredRoot = preferred?.trim();
+  if (preferredRoot) {
+    return preferredRoot;
+  }
+
+  const boardRoot = useSwarmBoardStore.getState().repoRoot.trim();
+  if (boardRoot) {
+    return boardRoot;
+  }
+
+  const workspaceRoot = getPrimaryWorkspaceRoot();
+  if (workspaceRoot) {
+    return workspaceRoot;
+  }
+
+  const defaultWorkspaceRoot = await resolveDefaultWorkspaceRoot();
+  if (defaultWorkspaceRoot) {
+    return defaultWorkspaceRoot;
+  }
+
+  try {
+    const cwd = await terminalService.getCwd();
+    return cwd?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberBoardRepoRoot(repoRoot: string | undefined): void {
+  const resolvedRoot = repoRoot?.trim();
+  if (!resolvedRoot) {
+    return;
+  }
+
+  if (useSwarmBoardStore.getState().repoRoot.trim()) {
+    return;
+  }
+
+  useSwarmBoardStore.getState().actions.setRepoRoot(resolvedRoot);
+}
+
+function seedPreviewLines(startupInput?: string): string[] {
+  const trimmed = startupInput?.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  return trimmed
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .slice(-4)
+    .map((line) => (line.startsWith("$") ? line : `$ ${line}`));
+}
 
 // ---------------------------------------------------------------------------
 // Legacy Action type — kept for backward compat type exports
@@ -776,7 +862,7 @@ async function hydrateSwarmBoardFromDisk(force = false): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export interface SpawnSessionOptions {
-  cwd: string;
+  cwd?: string;
   position?: { x: number; y: number };
   launchClaude?: boolean;
   title?: string;
@@ -969,6 +1055,7 @@ export function useSwarmBoard(): SwarmBoardContextValue {
 export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNode; bundlePath?: string }) {
   const boardNodes = useSwarmBoardStore((s) => s.nodes);
   const repoRoot = useSwarmBoardStore((s) => s.repoRoot);
+  const projectRoots = useProjectStore((s) => s.projectRoots);
   const activeBundlePath = useSwarmBoardStore((s) => s.bundlePath);
   const selectedNode = useSwarmBoardStore((s) => s.selectedNode);
   const watchScopeIdRef = useRef(`swarm-board-${Math.random().toString(36).slice(2)}`);
@@ -982,6 +1069,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
   );
   const workspaceWatchSignature = workspaceWatchPaths.join("\n");
   const persistenceWatchSignature = persistenceWatchFilenames.join("\n");
+  const projectRootsSignature = projectRoots.join("\n");
   const recoverableSessionSignature = useMemo(
     () =>
       boardNodes
@@ -1008,21 +1096,23 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
     }
   }, [bundlePath]);
 
-  // Auto-detect repoRoot on mount if empty
+  // Seed repoRoot from the mounted workspace roots, default workspace, or CWD.
   useEffect(() => {
     const state = useSwarmBoardStore.getState();
     if (state.repoRoot) return;
-    terminalService
-      .getCwd()
-      .then((cwd) => {
-        if (cwd) {
-          useSwarmBoardStore.getState().actions.setRepoRoot(cwd);
-        }
-      })
-      .catch(() => {
-        // Not in Tauri or command failed
-      });
-  }, []);
+
+    let cancelled = false;
+    void resolveBoardRepoRoot().then((resolvedRoot) => {
+      if (cancelled || !resolvedRoot) {
+        return;
+      }
+      rememberBoardRepoRoot(resolvedRoot);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectRootsSignature]);
 
   useEffect(() => {
     if (!isDesktop()) {
@@ -1089,6 +1179,8 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
 
   // Track exit listeners and worktree paths for cleanup
   const exitListenersRef = useRef<Map<string, UnlistenFn>>(new Map());
+  const outputListenersRef = useRef<Map<string, UnlistenFn>>(new Map());
+  const previewCarryRef = useRef<Map<string, string>>(new Map());
   const worktreeMapRef = useRef<Map<string, string>>(new Map());
   const closedSessionsRef = useRef<Set<string>>(new Set());
   const killingRef = useRef<Set<string>>(new Set());
@@ -1096,28 +1188,91 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
 
   const cleanupSessionTracking = useCallback((sessionId: string): string | undefined => {
     closedSessionsRef.current.add(sessionId);
-    const unlisten = exitListenersRef.current.get(sessionId);
-    if (unlisten) {
+    const exitUnlisten = exitListenersRef.current.get(sessionId);
+    if (exitUnlisten) {
       try {
-        unlisten();
+        exitUnlisten();
       } catch {
         // best-effort cleanup
       }
     }
     exitListenersRef.current.delete(sessionId);
+    const outputUnlisten = outputListenersRef.current.get(sessionId);
+    if (outputUnlisten) {
+      try {
+        outputUnlisten();
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    outputListenersRef.current.delete(sessionId);
+    previewCarryRef.current.delete(sessionId);
     const wtPath = worktreeMapRef.current.get(sessionId);
     worktreeMapRef.current.delete(sessionId);
     return wtPath;
+  }, []);
+
+  const subscribeSessionOutput = useCallback((nodeId: string, sessionId: string) => {
+    closedSessionsRef.current.delete(sessionId);
+    const subscribe = terminalService.onOutput?.bind(terminalService);
+    if (!subscribe) {
+      return;
+    }
+
+    subscribe(sessionId, (chunk) => {
+      const state = useSwarmBoardStore.getState();
+      const node = state.nodes.find((candidate) => candidate.id === nodeId);
+      if (!node) {
+        return;
+      }
+      const data = node.data as SwarmBoardNodeData;
+      const { lines, carry } = appendTerminalPreviewChunk(data.previewLines, chunk, {
+        carry: previewCarryRef.current.get(sessionId),
+        maxLines: SESSION_PREVIEW_MAX_LINES,
+      });
+
+      if (carry) {
+        previewCarryRef.current.set(sessionId, carry);
+      } else {
+        previewCarryRef.current.delete(sessionId);
+      }
+
+      state.actions.updateNode(nodeId, {
+        previewLines: lines,
+      });
+    })
+      .then((unlisten) => {
+        if (closedSessionsRef.current.has(sessionId)) {
+          unlisten();
+          return;
+        }
+        const existing = outputListenersRef.current.get(sessionId);
+        if (existing) {
+          try {
+            existing();
+          } catch {
+            // best-effort cleanup
+          }
+        }
+        outputListenersRef.current.set(sessionId, unlisten);
+      })
+      .catch((err) => {
+        console.error("[swarm-board-store] Failed to monitor output:", err);
+      });
   }, []);
 
   const refreshSessionPreview = useCallback(
     async (nodeId: string, sessionId: string, fallback?: string[]) => {
       try {
         const previewLines = await terminalService.preview(sessionId, 24);
-        useSwarmBoardStore.getState().actions.updateNode(nodeId, { previewLines });
+        useSwarmBoardStore.getState().actions.updateNode(nodeId, {
+          previewLines: sanitizeTerminalPreviewLines(previewLines, SESSION_PREVIEW_MAX_LINES),
+        });
       } catch {
         if (fallback) {
-          useSwarmBoardStore.getState().actions.updateNode(nodeId, { previewLines: fallback });
+          useSwarmBoardStore.getState().actions.updateNode(nodeId, {
+            previewLines: sanitizeTerminalPreviewLines(fallback, SESSION_PREVIEW_MAX_LINES),
+          });
         }
       }
     },
@@ -1283,6 +1438,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
         }
 
         monitorSessionExit(session.id);
+        subscribeSessionOutput(selectedNode.id, session.id);
         useSwarmBoardStore.getState().actions.updateNode(selectedNode.id, {
           ...buildSessionMetadataPatch(session, {
             manualSession: true,
@@ -1310,27 +1466,20 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
     return () => {
       cancelled = true;
     };
-  }, [monitorSessionExit, refreshSessionPreview, selectedNode]);
+  }, [monitorSessionExit, refreshSessionPreview, selectedNode, subscribeSessionOutput]);
 
   const spawnSession = useCallback(
     async (opts: SpawnSessionOptions): Promise<Node<SwarmBoardNodeData>> => {
-      let cwd = opts.cwd;
-      if (!cwd) {
-        try {
-          cwd = await terminalService.getCwd();
-          if (cwd) {
-            useSwarmBoardStore.getState().actions.setRepoRoot(cwd);
-          }
-        } catch {
-          // Not in Tauri
-        }
-      }
+      let cwd = await resolveBoardRepoRoot(opts.cwd);
+      rememberBoardRepoRoot(cwd);
       if (!cwd) {
         cwd = "/tmp";
         console.warn("[swarm-board-store] No working directory for session; falling back to /tmp");
       }
 
-      const sessionInfo = await terminalService.create(cwd, opts.shell);
+      const startupInput = opts.launchClaude ? "claude\n" : opts.command;
+      const initialPreviewLines = seedPreviewLines(startupInput);
+      const sessionInfo = await terminalService.create(cwd, opts.shell, undefined, startupInput);
       const node = createBoardNode({
         nodeType: "agentSession",
         title: opts.title ?? (opts.launchClaude ? "Claude Session" : "Terminal"),
@@ -1339,7 +1488,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
           agentModel: opts.launchClaude ? "claude" : "shell",
           status: "running",
           sessionId: sessionInfo.id,
-          previewLines: [],
+          previewLines: initialPreviewLines,
           receiptCount: 0,
           blockedActionCount: 0,
           changedFilesCount: 0,
@@ -1354,43 +1503,17 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
 
       useSwarmBoardStore.getState().actions.addNodeDirect(node);
       monitorSessionExit(sessionInfo.id);
-
-      if (opts.launchClaude) {
-        setTimeout(() => {
-          terminalService.write(sessionInfo.id, "claude\n").catch((err) => {
-            console.error("[swarm-board-store] Failed to launch claude:", err);
-          });
-        }, 500);
-      }
-
-      if (opts.command && !opts.launchClaude) {
-        const cmd = opts.command;
-        setTimeout(() => {
-          terminalService.write(sessionInfo.id, cmd).catch((err) => {
-            console.error("[swarm-board-store] Failed to write initial command:", err);
-          });
-        }, 500);
-      }
+      subscribeSessionOutput(node.id, sessionInfo.id);
 
       return node;
     },
-    [monitorSessionExit],
+    [monitorSessionExit, subscribeSessionOutput],
   );
 
   const spawnClaudeSession = useCallback(
     async (opts: SpawnClaudeSessionOptions): Promise<Node<SwarmBoardNodeData>> => {
-      let cwd = opts.cwd || useSwarmBoardStore.getState().repoRoot;
-
-      if (!cwd) {
-        try {
-          cwd = await terminalService.getCwd();
-          if (cwd) {
-            useSwarmBoardStore.getState().actions.setRepoRoot(cwd);
-          }
-        } catch {
-          // Not in Tauri
-        }
-      }
+      let cwd = await resolveBoardRepoRoot(opts.cwd);
+      rememberBoardRepoRoot(cwd);
 
       if (!cwd) {
         cwd = "/tmp";
@@ -1415,7 +1538,8 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
         }
       }
 
-      const sessionInfo = await terminalService.create(cwd);
+      const startupInput = "claude\n";
+      const sessionInfo = await terminalService.create(cwd, undefined, undefined, startupInput);
 
       if (worktreePath) {
         worktreeMapRef.current.set(sessionInfo.id, worktreePath);
@@ -1430,7 +1554,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
           worktreePath,
           status: "running",
           sessionId: sessionInfo.id,
-          previewLines: [],
+          previewLines: seedPreviewLines(startupInput),
           receiptCount: 0,
           blockedActionCount: 0,
           changedFilesCount: 0,
@@ -1451,26 +1575,20 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
 
       useSwarmBoardStore.getState().actions.addNodeDirect(node);
       monitorSessionExit(sessionInfo.id);
+      subscribeSessionOutput(node.id, sessionInfo.id);
 
-      setTimeout(() => {
-        terminalService.write(sessionInfo.id, "claude\n").catch((err) => {
-          console.error("[swarm-board-store] Failed to launch claude:", err);
-          useSwarmBoardStore.getState().actions.setSessionStatus(sessionInfo.id, "failed");
-        });
-
-        if (opts.prompt) {
-          const prompt = opts.prompt;
-          setTimeout(() => {
-            terminalService.write(sessionInfo.id, prompt + "\n").catch((err) => {
-              console.error("[swarm-board-store] Failed to send prompt:", err);
-            });
-          }, 2000);
-        }
-      }, 500);
+      if (opts.prompt) {
+        const prompt = opts.prompt;
+        setTimeout(() => {
+          terminalService.write(sessionInfo.id, prompt + "\n").catch((err) => {
+            console.error("[swarm-board-store] Failed to send prompt:", err);
+          });
+        }, 750);
+      }
 
       return node;
     },
-    [monitorSessionExit],
+    [monitorSessionExit, subscribeSessionOutput],
   );
 
   const spawnWorktreeSession = useCallback(
@@ -1516,10 +1634,11 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
 
       useSwarmBoardStore.getState().actions.addNodeDirect(node);
       monitorSessionExit(sessionInfo.id);
+      subscribeSessionOutput(node.id, sessionInfo.id);
 
       return node;
     },
-    [monitorSessionExit],
+    [monitorSessionExit, subscribeSessionOutput],
   );
 
   const killSession = useCallback(

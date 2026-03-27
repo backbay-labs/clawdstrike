@@ -12,8 +12,6 @@
 import { isDesktop } from "@/lib/tauri-bridge";
 import { BUILTIN_RULESETS } from "@/features/policy/builtin-rulesets";
 
-const TAURI_FS_SPECIFIER = "@tauri-apps/plugin-fs";
-
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -113,7 +111,7 @@ additional directories as workspace roots.
 `;
 
 async function importTauriFs() {
-  return import(/* @vite-ignore */ TAURI_FS_SPECIFIER);
+  return import("@tauri-apps/plugin-fs");
 }
 
 // ---------------------------------------------------------------------------

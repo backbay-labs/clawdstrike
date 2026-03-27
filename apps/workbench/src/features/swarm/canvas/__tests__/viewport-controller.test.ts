@@ -78,8 +78,11 @@ describe("viewport-controller", () => {
   });
 
   it("exposes controlled-sync and label helpers", () => {
+    expect(shouldSyncControlledViewport("pointer")).toBe(true);
     expect(shouldSyncControlledViewport("imperative")).toBe(true);
+    expect(shouldSyncControlledViewport("idle")).toBe(false);
     expect(shouldSyncControlledViewport("wheel")).toBe(false);
+    expect(shouldSyncControlledViewport("snapback")).toBe(false);
     expect(areViewportsEqual(
       { x: 1, y: 2, zoom: 3 },
       { x: 1.00001, y: 2.00001, zoom: 3.00001 },
