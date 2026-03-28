@@ -101,26 +101,17 @@ export const ExplorerTreeItem = forwardRef<HTMLDivElement, ExplorerTreeItemProps
       onContextMenu={onContextMenu}
       style={{ paddingLeft: indent + 4 }}
       className={cn(
-        "w-full flex items-center gap-1.5 pr-2 py-[3px] text-left transition-colors group relative outline-none",
-        "hover:bg-[#131721]/40",
-        isActive && "bg-[#131721]/60",
-        "focus-visible:bg-[#131721]/70 focus-visible:ring-1 focus-visible:ring-[#d4a84b]/50",
+        "relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left transition-colors outline-none",
+        "hover:bg-[#12161f]",
+        isActive && "bg-[#151b25]",
+        "focus-visible:bg-[#151b25] focus-visible:ring-1 focus-visible:ring-[#334156]/80",
       )}
       title={file.path}
     >
-      {/* Active file gold left accent */}
+      {/* Active file accent */}
       {isActive && !file.isDirectory && (
-        <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4a84b]" />
+        <div className="absolute left-0 top-0 bottom-0 w-[2px] rounded-r bg-[#4f6b99]" />
       )}
-
-      {/* Indent guide lines -- one vertical line per ancestor depth level */}
-      {Array.from({ length: file.depth }, (_, i) => (
-        <div
-          key={i}
-          className="absolute top-0 bottom-0 border-l border-[#2d3240]/30 indent-guide"
-          style={{ left: i * 16 + 11 }}
-        />
-      ))}
 
       {/* Chevron (directories) or spacer (files) */}
       {file.isDirectory ? (
@@ -146,13 +137,13 @@ export const ExplorerTreeItem = forwardRef<HTMLDivElement, ExplorerTreeItemProps
           <IconFolderOpen
             size={14}
             stroke={1.5}
-            className="shrink-0 text-[#d4a84b]/80"
+            className="shrink-0 text-[#8fa0bb]"
           />
         ) : (
           <IconFolder
             size={14}
             stroke={1.5}
-            className="shrink-0 text-[#6f7f9a]/70"
+            className="shrink-0 text-[#8fa0bb]"
           />
         )
       ) : (
@@ -171,15 +162,15 @@ export const ExplorerTreeItem = forwardRef<HTMLDivElement, ExplorerTreeItemProps
         <>
           <span
             className={cn(
-              "text-[11px] font-mono truncate",
+              "truncate text-[12px]",
               file.isDirectory
-                ? "text-[#ece7dc]"
+                ? "font-medium text-[#dbe3f2]"
                 : hasError
-                  ? "text-red-400"
+                  ? "text-red-300"
                   : isActive
-                    ? "text-[#ece7dc]"
-                    : "text-[#6f7f9a]",
-              !file.isDirectory && isModified && !hasError && "italic",
+                    ? "text-[#eef3fb]"
+                    : "text-[#b1bccf]",
+              !file.isDirectory && isModified && !hasError && "font-medium",
             )}
           >
             {file.name}
@@ -200,10 +191,10 @@ export const ExplorerTreeItem = forwardRef<HTMLDivElement, ExplorerTreeItemProps
 
           {/* Status indicator dot (files only) */}
           {!file.isDirectory && hasError && (
-            <span className="shrink-0 w-1 h-1 rounded-full bg-red-500 ml-auto" />
+            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" />
           )}
           {!file.isDirectory && isModified && !hasError && (
-            <span className="shrink-0 w-1 h-1 rounded-full bg-[#d4a84b] ml-auto" />
+            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#d4a84b]" />
           )}
         </>
       )}

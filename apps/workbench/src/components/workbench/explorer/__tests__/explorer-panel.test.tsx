@@ -165,7 +165,7 @@ describe("ExplorerPanel", () => {
     );
 
     expect(screen.getByText("Indexing workspace...")).toBeTruthy();
-    expect(screen.getByText("Default")).toBeTruthy();
+    expect(screen.getByText("Workspace")).toBeTruthy();
     expect(screen.getByText("Indexing")).toBeTruthy();
   });
 
@@ -193,9 +193,9 @@ describe("ExplorerPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Workspace refresh failed")).toBeTruthy();
+    expect(screen.getByText("Refresh failed")).toBeTruthy();
     expect(screen.getByText("disk offline")).toBeTruthy();
-    expect(screen.queryByText("No detection files found")).toBeNull();
+    expect(screen.queryByText("No files yet")).toBeNull();
   });
 
   it("surfaces mutation feedback near the affected root and row", () => {
@@ -248,7 +248,7 @@ describe("ExplorerPanel", () => {
     expect(onRevealInFinder).toHaveBeenCalledWith("/workspace/alpha");
   });
 
-  it("curates the default root into workspace-first and revealable system sections", () => {
+  it("curates the default root into a clean workspace-first tree", () => {
     render(
       <ExplorerPanel
         projects={[makeDefaultWorkspaceProject()]}
@@ -276,17 +276,13 @@ describe("ExplorerPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Detection Workspace")).toBeTruthy();
-    expect(screen.getByText("Workbench-managed default workspace root")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show System (1)" })).toBeTruthy();
+    expect(screen.getByText("Workspace")).toBeTruthy();
+    expect(screen.getByText("default.yaml")).toBeTruthy();
     expect(screen.queryByText("workspace-root-registry.v1.json")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Show System (1)" }));
-
-    expect(screen.getByText("workspace-root-registry.v1.json")).toBeTruthy();
+    expect(screen.queryByText("Workbench-managed default workspace root")).toBeNull();
   });
 
-  it("shows mounted-root provenance badges without curating non-default roots", () => {
+  it("keeps non-default roots simple without curated workspace chrome", () => {
     render(
       <ExplorerPanel
         projects={[makeProject("/workspace/alpha", "default.yaml")]}
@@ -314,9 +310,10 @@ describe("ExplorerPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Mounted")).toBeTruthy();
-    expect(screen.getByText("Added")).toBeTruthy();
-    expect(screen.queryByText("Detection Workspace")).toBeNull();
+    expect(screen.getByText("alpha")).toBeTruthy();
+    expect(screen.queryByText("Workspace")).toBeNull();
+    expect(screen.queryByText("Mounted")).toBeNull();
+    expect(screen.queryByText("Added")).toBeNull();
   });
 
   it("exposes tree semantics and roving keyboard navigation across visible rows", () => {
@@ -384,9 +381,6 @@ describe("ExplorerPanel", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Filtered view reveals matching descendants even when their ancestor folders are collapsed."),
-    ).toBeTruthy();
     expect(screen.getByRole("treeitem", { name: /policies, expanded folder/i })).toBeTruthy();
     expect(screen.getByRole("treeitem", { name: /default\.yaml, file/i })).toBeTruthy();
   });

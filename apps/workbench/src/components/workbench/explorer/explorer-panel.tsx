@@ -91,7 +91,6 @@ interface RootRenderModel {
   secondaryHiddenCount: number;
   primaryUnderlyingCount: number;
   secondaryUnderlyingCount: number;
-  showSystemSection: boolean;
 }
 
 type ExplorerVisibleNodeKind = "root" | "directory" | "file";
@@ -145,32 +144,32 @@ function getRootEmptyMessage(
   hasUnderlyingFiles: boolean,
 ): { title: string; detail?: string } {
   if (hasActiveFilter && hasUnderlyingFiles) {
-    return { title: "No files match the current filter" };
+    return { title: "No matching files" };
   }
 
   switch (status) {
     case "loading":
       return {
         title: "Indexing workspace...",
-        detail: "Scanning files from disk before the tree is committed.",
+        detail: "Scanning files from disk.",
       };
     case "refreshing":
       return {
         title: "Refreshing workspace...",
-        detail: "Reconciling the tree with the latest filesystem state.",
+        detail: "Syncing the latest filesystem state.",
       };
     case "stale":
       return {
-        title: "Workspace refresh failed",
-        detail: "The tree may be outdated until the next successful refresh.",
+        title: "Refresh failed",
+        detail: "Showing the last successful tree.",
       };
     case "error":
       return {
         title: "Workspace unavailable",
-        detail: "The explorer could not complete the initial filesystem scan.",
+        detail: "The initial scan did not complete.",
       };
     default:
-      return { title: "No detection files found" };
+      return { title: "No files yet" };
   }
 }
 
@@ -201,66 +200,14 @@ function RootStatusBadge({ rootState }: { rootState?: ExplorerRootState }) {
   return <span className={className}>{label}</span>;
 }
 
-function RootMetaBadge({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: "neutral" | "accent";
-}) {
-  return (
-    <span
-      className={cn(
-        "text-[8px] font-mono uppercase tracking-[0.16em] px-1.5 py-0.5 rounded border",
-        tone === "accent"
-          ? "text-[#d4a84b]/90 border-[#d4a84b]/30 bg-[#d4a84b]/8"
-          : "text-[#6f7f9a]/60 border-[#2d3240] bg-[#0f1218]",
-      )}
-    >
-      {label}
-    </span>
-  );
-}
-
-function getRootKindBadgeLabel(rootState?: ExplorerRootState): string | null {
-  if (!rootState) return null;
-  if (rootState.isDefault || rootState.kind === "default_home") {
-    return "Home";
+function getRootDisplayLabel(
+  project: DetectionProject,
+  rootState?: ExplorerRootState,
+): string {
+  if (rootState?.isDefault || rootState?.kind === "default_home") {
+    return "Workspace";
   }
-  if (rootState.kind === "mounted_folder") {
-    return "Mounted";
-  }
-  return null;
-}
-
-function getRootProvenanceBadgeLabel(rootState?: ExplorerRootState): string | null {
-  switch (rootState?.provenance) {
-    case "bootstrap":
-      return "Bootstrap";
-    case "local_storage_migration":
-      return "Migrated";
-    case "user_added":
-      return "Added";
-    default:
-      return null;
-  }
-}
-
-function getRootTrustCopy(rootState?: ExplorerRootState): string | null {
-  if (!rootState) return null;
-  if (rootState.isDefault || rootState.kind === "default_home") {
-    return "Workbench-managed default workspace root";
-  }
-  if (rootState.provenance === "local_storage_migration") {
-    return "Imported from legacy mounted workspace roots";
-  }
-  if (rootState.provenance === "user_added") {
-    return "User-mounted folder outside the managed home root";
-  }
-  if (rootState.kind === "mounted_folder") {
-    return "Mounted external folder";
-  }
-  return null;
+  return rootState?.label ?? project.name;
 }
 
 function formatMutationVerb(kind: ProjectMutationState["kind"]): string {
@@ -449,17 +396,17 @@ function RootStatusBanner({
 
   if (rootState.status === "refreshing" || rootState.status === "stale" || rootState.status === "error") {
     let toneClass = "border-[#2d3240]/60 bg-[#10131a] text-[#6f7f9a]";
-    let title = "Refreshing workspace...";
-    let detail = "Reconciling the tree with the latest filesystem state.";
+    let title = "Refreshing workspace";
+    let detail = "Syncing the latest filesystem state.";
 
     if (rootState.status === "stale") {
       toneClass = "border-[#f39c6b]/30 bg-[#261910] text-[#f6c7a8]";
-      title = "Refresh failed. Showing the last committed tree.";
-      detail = rootState.error ?? "Retry to sync the explorer with disk.";
+      title = "Refresh failed";
+      detail = rootState.error ?? "Showing the last successful tree.";
     } else if (rootState.status === "error") {
       toneClass = "border-[#e77b72]/30 bg-[#241012] text-[#f2b8b3]";
-      title = "Initial workspace scan failed.";
-      detail = rootState.error ?? "Retry to populate this root.";
+      title = "Workspace unavailable";
+      detail = rootState.error ?? "Try refreshing this root.";
     }
 
     banners.push(
@@ -476,42 +423,6 @@ function RootStatusBanner({
   }
 
   return banners.length > 0 ? <>{banners}</> : null;
-}
-
-function SectionHeader({
-  title,
-  detail,
-  actionLabel,
-  onAction,
-}: {
-  title: string;
-  detail?: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <div className="px-3 pb-1 pt-2">
-      <div className="flex items-center gap-2">
-        <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-[#6f7f9a]/70">
-          {title}
-        </span>
-        {actionLabel && onAction && (
-          <button
-            type="button"
-            onClick={onAction}
-            className="ml-auto text-[8px] font-mono uppercase tracking-[0.16em] text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors"
-          >
-            {actionLabel}
-          </button>
-        )}
-      </div>
-      {detail && (
-        <p className="mt-1 text-[9px] font-mono leading-relaxed text-[#6f7f9a]/45">
-          {detail}
-        </p>
-      )}
-    </div>
-  );
 }
 
 function rebaseProjectFiles(files: ProjectFile[], depthOffset: number): ProjectFile[] {
@@ -556,7 +467,6 @@ function buildRootRenderModel(
   rootState: ExplorerRootState | undefined,
   filter: string,
   formatFilter: FileType | null,
-  systemSectionExpanded: boolean,
 ): RootRenderModel {
   const hasActiveFilter = Boolean(filter || formatFilter);
   const shouldUseCuratedSections = shouldUseCuratedRootSections(project, rootState);
@@ -570,8 +480,6 @@ function buildRootRenderModel(
   const primaryFilteredFiles = filter || formatFilter
     ? filterTree(primaryFiles, filter, formatFilter)
     : primaryFiles;
-  const showSystemSection = shouldUseCuratedSections && (systemSectionExpanded || hasActiveFilter);
-
   return {
     hasActiveFilter,
     shouldUseCuratedSections,
@@ -581,7 +489,6 @@ function buildRootRenderModel(
     secondaryHiddenCount: 0,
     primaryUnderlyingCount: countFiles(primaryFiles),
     secondaryUnderlyingCount: curatedSections.secondaryUnderlyingCount,
-    showSystemSection,
   };
 }
 
@@ -749,9 +656,7 @@ function RootTreeSection({
   onFocusNode,
   onKeyDownNode,
   setTreeNodeRef,
-  onToggleSystemSection,
   onShowMorePrimary,
-  onShowMoreSecondary,
   onRefreshRoot,
   onRevealInFinder,
 }: {
@@ -775,9 +680,7 @@ function RootTreeSection({
   onFocusNode: (nodeId: string) => void;
   onKeyDownNode: (e: React.KeyboardEvent<HTMLDivElement>, nodeId: string) => void;
   setTreeNodeRef: (nodeId: string, element: HTMLDivElement | null) => void;
-  onToggleSystemSection: () => void;
   onShowMorePrimary: () => void;
-  onShowMoreSecondary: () => void;
   onRefreshRoot?: (rootPath: string) => void;
   onRevealInFinder?: (absolutePath: string) => void;
 }) {
@@ -785,12 +688,8 @@ function RootTreeSection({
     hasActiveFilter,
     shouldUseCuratedSections,
     primaryVisibleItems,
-    secondaryVisibleItems,
     primaryHiddenCount,
-    secondaryHiddenCount,
     primaryUnderlyingCount,
-    secondaryUnderlyingCount,
-    showSystemSection,
   } = model;
 
   // Resolve creatingInDir to a relative path for matching against the tree.
@@ -956,7 +855,6 @@ function RootTreeSection({
     hasActiveFilter,
     primaryUnderlyingCount > 0,
   );
-  const hasSystemEntries = secondaryUnderlyingCount > 0;
 
   return (
     <>
@@ -967,16 +865,11 @@ function RootTreeSection({
         onRevealInFinder={onRevealInFinder}
       />
 
-      <SectionHeader
-        title="Detection Workspace"
-        detail="Primary detection content under workspace/ is surfaced first for day-to-day operator work."
-      />
-
       {primaryVisibleItems.length === 0 && creatingInDir === null ? (
-        <div className="flex flex-col items-center justify-center px-3 py-3 text-center">
-          <p className="text-[10px] font-mono text-[#6f7f9a]/60">{workspaceEmptyMessage.title}</p>
+        <div className="flex flex-col items-center justify-center px-3 py-4 text-center">
+          <p className="text-[11px] text-[#9ca9c0]">{workspaceEmptyMessage.title}</p>
           {workspaceEmptyMessage.detail && (
-            <p className="mt-1 max-w-[220px] text-[9px] font-mono leading-relaxed text-[#6f7f9a]/40">
+            <p className="mt-1 max-w-[220px] text-[10px] leading-relaxed text-[#73819a]">
               {rootState?.status === "stale" || rootState?.status === "error"
                 ? rootState.error ?? workspaceEmptyMessage.detail
                 : workspaceEmptyMessage.detail}
@@ -987,31 +880,6 @@ function RootTreeSection({
         <>
           {buildRenderedItems(primaryVisibleItems, 1)}
           {renderShowMoreButton(primaryHiddenCount, onShowMorePrimary)}
-        </>
-      )}
-
-      {hasSystemEntries && (
-        <>
-          <SectionHeader
-            title="Advanced & System"
-            detail="Workbench-managed files and lower-level root artifacts stay available here without taking over the default workspace view."
-            actionLabel={showSystemSection ? "Hide System" : `Show System (${secondaryUnderlyingCount})`}
-            onAction={onToggleSystemSection}
-          />
-          {showSystemSection && (
-            secondaryVisibleItems.length === 0 && creatingInDir === null ? (
-              <div className="px-3 pb-3">
-                <p className="text-[9px] font-mono text-[#6f7f9a]/45">
-                  No system entries match the current filter.
-                </p>
-              </div>
-            ) : (
-              <>
-                {buildRenderedItems(secondaryVisibleItems, 0, false)}
-                {renderShowMoreButton(secondaryHiddenCount, onShowMoreSecondary)}
-              </>
-            )
-          )}
         </>
       )}
     </>
@@ -1059,7 +927,6 @@ export function ExplorerPanel({
   const [expandedRoots, setExpandedRoots] = useState<Set<string>>(
     () => new Set(projects.map((p) => p.rootPath)),
   );
-  const [expandedSystemRoots, setExpandedSystemRoots] = useState<Set<string>>(() => new Set());
   const [sectionRenderLimits, setSectionRenderLimits] = useState<Map<string, number>>(() => new Map());
 
   // Whether initial auto-expand has already been applied.
@@ -1080,18 +947,6 @@ export function ExplorerPanel({
 
   const toggleRootExpanded = useCallback((rootPath: string) => {
     setExpandedRoots((prev) => {
-      const next = new Set(prev);
-      if (next.has(rootPath)) {
-        next.delete(rootPath);
-      } else {
-        next.add(rootPath);
-      }
-      return next;
-    });
-  }, []);
-
-  const toggleSystemRootExpanded = useCallback((rootPath: string) => {
-    setExpandedSystemRoots((prev) => {
       const next = new Set(prev);
       if (next.has(rootPath)) {
         next.delete(rootPath);
@@ -1198,7 +1053,6 @@ export function ExplorerPanel({
         rootState,
         filter,
         formatFilter,
-        expandedSystemRoots.has(project.rootPath),
       );
       const primarySectionKey = getRenderSectionKey(project.rootPath, "primary");
       const secondarySectionKey = getRenderSectionKey(project.rootPath, "secondary");
@@ -1231,14 +1085,12 @@ export function ExplorerPanel({
           secondaryVisibleItems: secondaryBound.renderedItems,
           primaryHiddenCount: primaryBound.hiddenCount,
           secondaryHiddenCount: secondaryBound.hiddenCount,
-          showSystemSection: rawModel.showSystemSection || secondaryImportantIndex >= 0,
         },
       );
     }
     return next;
   }, [
     activeFileKey,
-    expandedSystemRoots,
     filter,
     formatFilter,
     projects,
@@ -1259,10 +1111,10 @@ export function ExplorerPanel({
         id: rootNodeId,
         parentId: null,
         rootPath: project.rootPath,
-        rootName: rootState?.label ?? project.name,
+        rootName: getRootDisplayLabel(project, rootState),
         kind: "root",
         level: 1,
-        label: rootState?.label ?? project.name,
+        label: getRootDisplayLabel(project, rootState),
         isExpanded,
         hasChildren: project.files.length > 0 || Boolean(model?.secondaryUnderlyingCount),
       });
@@ -1280,18 +1132,6 @@ export function ExplorerPanel({
           model.hasActiveFilter,
         ),
       );
-
-      if (model.shouldUseCuratedSections && model.showSystemSection) {
-        nodes.push(
-          ...buildVisibleNodesForItems(
-            project,
-            model.secondaryVisibleItems,
-            rootNodeId,
-            0,
-            model.hasActiveFilter,
-          ),
-        );
-      }
     }
 
     return nodes;
@@ -1597,7 +1437,6 @@ export function ExplorerPanel({
           ref={treeRef}
           role="tree"
           aria-label="Workspace explorer"
-          aria-describedby={hasActiveFilter ? "explorer-filtered-view-copy" : undefined}
           className="py-1"
           onFocusCapture={() => {
             treeHasManagedFocus.current = true;
@@ -1609,30 +1448,15 @@ export function ExplorerPanel({
             }
           }}
         >
-          {hasActiveFilter && (
-            <div
-              id="explorer-filtered-view-copy"
-              role="status"
-              className="mx-3 mb-2 rounded border border-[#2d3240]/60 bg-[#0a0d13] px-2.5 py-2"
-            >
-              <p className="text-[9px] font-mono text-[#6f7f9a]/60">
-                Filtered view reveals matching descendants even when their ancestor folders are collapsed.
-              </p>
-            </div>
-          )}
-
           {projects.map((project) => {
             const isExpanded = expandedRootsResolved.has(project.rootPath);
             const rootState = rootStates?.get(project.rootPath);
             const model = rootModels.get(project.rootPath);
             const rootNodeId = getRootNodeId(project);
-            const rootLabel = rootState?.label ?? project.name;
+            const rootLabel = getRootDisplayLabel(project, rootState);
             const rootAriaLabel = [
               rootLabel,
-              "workspace root",
-              rootState?.isDefault ? "default" : null,
-              getRootKindBadgeLabel(rootState),
-              getRootProvenanceBadgeLabel(rootState),
+              rootState?.isDefault ? "default workspace root" : "workspace root",
               getRootStatusLabel(rootState?.status ?? "ready"),
             ].filter(Boolean).join(", ");
 
@@ -1646,7 +1470,8 @@ export function ExplorerPanel({
                   aria-label={rootAriaLabel}
                   data-explorer-node-id={rootNodeId}
                   tabIndex={focusedNodeId === rootNodeId ? 0 : -1}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[#2d3240]/50 cursor-pointer hover:bg-[#131721]/20 outline-none focus-visible:bg-[#131721]/50 focus-visible:ring-1 focus-visible:ring-[#d4a84b]/50"
+                  title={project.rootPath}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer rounded-sm hover:bg-[#131721]/28 outline-none focus-visible:bg-[#151b25] focus-visible:ring-1 focus-visible:ring-[#334156]/80"
                   onClick={(e) => {
                     treeHasManagedFocus.current = true;
                     e.currentTarget.focus();
@@ -1662,7 +1487,7 @@ export function ExplorerPanel({
                     setContextMenu({
                       targetType: "root",
                       rootPath: project.rootPath,
-                      rootName: project.name,
+                      rootName: rootLabel,
                       x: e.clientX,
                       y: e.clientY,
                     });
@@ -1676,29 +1501,16 @@ export function ExplorerPanel({
                       isExpanded && "rotate-90",
                     )}
                   />
-                  <IconFolder size={12} stroke={1.5} className="text-[#6f7f9a]" />
-                  <span className="text-[10px] font-mono font-semibold text-[#ece7dc]/80 truncate flex-1">
+                  {isExpanded ? (
+                    <IconFolderOpen size={13} stroke={1.5} className="text-[#8fa0bb]" />
+                  ) : (
+                    <IconFolder size={13} stroke={1.5} className="text-[#8fa0bb]" />
+                  )}
+                  <span className="truncate flex-1 text-[12px] font-medium text-[#dbe3f2]">
                     {rootLabel}
                   </span>
-                  {rootState?.isDefault && <RootMetaBadge label="Default" tone="accent" />}
-                  {getRootKindBadgeLabel(rootState) && (
-                    <RootMetaBadge label={getRootKindBadgeLabel(rootState)!} />
-                  )}
-                  {getRootProvenanceBadgeLabel(rootState) && (
-                    <RootMetaBadge label={getRootProvenanceBadgeLabel(rootState)!} />
-                  )}
                   <RootStatusBadge rootState={rootState} />
-                  <span className="text-[9px] font-mono text-[#6f7f9a]/40">
-                    ({countFiles(project.files)})
-                  </span>
                 </div>
-                {isExpanded && getRootTrustCopy(rootState) && (
-                  <div className="px-3 py-1.5 border-b border-[#2d3240]/30 bg-[#0a0d13]">
-                    <p className="text-[9px] font-mono text-[#6f7f9a]/50">
-                      {getRootTrustCopy(rootState)}
-                    </p>
-                  </div>
-                )}
                 {isExpanded && model && (
                   <RootTreeSection
                     rootNodeId={rootNodeId}
@@ -1721,9 +1533,7 @@ export function ExplorerPanel({
                     onFocusNode={focusNode}
                     onKeyDownNode={handleNodeKeyDown}
                     setTreeNodeRef={setTreeNodeRef}
-                    onToggleSystemSection={() => toggleSystemRootExpanded(project.rootPath)}
                     onShowMorePrimary={() => showMoreSectionRows(project.rootPath, "primary")}
-                    onShowMoreSecondary={() => showMoreSectionRows(project.rootPath, "secondary")}
                     onRefreshRoot={onRefreshRoot}
                     onRevealInFinder={onRevealInFinder}
                   />
