@@ -2,6 +2,25 @@ import React from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { App } from "../App";
+import * as tauriBridge from "@/lib/tauri-bridge";
+import { useProjectStore } from "@/features/project/stores/project-store";
+import { usePaneStore } from "@/features/panes/pane-store";
+
+const READY_ROOTS = {
+  ready: true,
+  pendingRootIds: [] as string[],
+  elapsedMs: 0,
+};
+
+const {
+  bootstrapWorkspaceRegistryNativeMock,
+  bootstrapDefaultWorkspaceContentMock,
+  readDetectionDirMock,
+} = vi.hoisted(() => ({
+  bootstrapWorkspaceRegistryNativeMock: vi.fn(),
+  bootstrapDefaultWorkspaceContentMock: vi.fn(),
+  readDetectionDirMock: vi.fn(async () => []),
+}));
 
 // Mock tauri bridge
 vi.mock("@/lib/tauri-bridge", () => ({
@@ -10,6 +29,34 @@ vi.mock("@/lib/tauri-bridge", () => ({
   minimizeWindow: vi.fn(),
   maximizeWindow: vi.fn(),
   closeWindow: vi.fn(),
+}));
+
+vi.mock("@/lib/tauri-commands", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/tauri-commands")>(
+    "@/lib/tauri-commands",
+  );
+  return {
+    ...actual,
+    bootstrapWorkspaceRegistryNative: bootstrapWorkspaceRegistryNativeMock,
+  };
+});
+
+vi.mock("@/features/project/workspace-bootstrap", async () => {
+  const actual = await vi.importActual<typeof import("@/features/project/workspace-bootstrap")>(
+    "@/features/project/workspace-bootstrap",
+  );
+  return {
+    ...actual,
+    bootstrapDefaultWorkspaceContent: bootstrapDefaultWorkspaceContentMock,
+  };
+});
+
+vi.mock("@/lib/workbench/e2e-bridge", () => ({
+  getWorkbenchE2EBridge: () => ({
+    readDetectionDir: readDetectionDirMock,
+    invoke: undefined,
+  }),
+  hasWorkbenchE2EInvoke: () => false,
 }));
 
 // Mock page components to avoid pulling in heavy dependency trees.
@@ -236,10 +283,14 @@ vi.mock("@/features/policy/hooks/use-policy-bootstrap", () => ({
 vi.mock("@/features/panes/pane-session", () => ({
   savePaneSession: vi.fn(),
   loadPaneSession: () => null,
+  loadPaneSessionWithRouteMapper: () => null,
 }));
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
+  vi.mocked(tauriBridge.isDesktop).mockReturnValue(false);
+  localStorage.clear();
   window.location.hash = "";
 });
 
@@ -347,5 +398,238 @@ describe("App", () => {
       expect(screen.getByText("Workbench")).toBeTruthy();
       expect(screen.getByText("Mission Control")).toBeTruthy();
     });
+  });
+
+  it("hydrates the workspace store from the backend registry and clears legacy roots on success", async () => {
+    vi.mocked(tauriBridge.isDesktop).mockReturnValue(true);
+    localStorage.setItem(
+      "clawdstrike_workspace_roots",
+      JSON.stringify(["/Users/test/.clawdstrike/workspace"]),
+    );
+    const originalActions = useProjectStore.getState().actions;
+    const initFromWorkspaceRegistry = vi.fn(async () => {});
+    const waitForRootsReady = vi.fn(async () => READY_ROOTS);
+    const loadRoot = vi.fn(async () => {});
+    useProjectStore.setState({
+      project: null,
+      loading: false,
+      error: null,
+      filter: "",
+      formatFilter: null,
+      fileStatuses: new Map(),
+      defaultRootId: null,
+      orderedRootIds: [],
+      rootsById: new Map(),
+      rootStatusById: new Map(),
+      rootErrorById: new Map(),
+      rootRequestedVersionById: new Map(),
+      rootCommittedVersionById: new Map(),
+      projectsById: new Map(),
+      projectRoots: [],
+      projects: new Map(),
+      actions: {
+        ...originalActions,
+        initFromWorkspaceRegistry,
+        waitForRootsReady,
+        loadRoot,
+      },
+    });
+    bootstrapWorkspaceRegistryNativeMock.mockResolvedValue({
+      snapshot: {
+        version: 1,
+        defaultRootId: "root-default",
+        orderedRootIds: ["root-default"],
+        roots: [
+          {
+            rootId: "root-default",
+            canonicalPath: "/Users/test/.clawdstrike",
+            displayPath: "/Users/test/.clawdstrike",
+            label: ".clawdstrike",
+            kind: "default_home",
+            provenance: "bootstrap",
+            isDefault: true,
+            aliases: ["/Users/test/.clawdstrike/workspace"],
+          },
+        ],
+      },
+      migratedLegacyRoots: ["/Users/test/.clawdstrike/workspace"],
+      droppedLegacyRoots: [],
+    });
+    bootstrapDefaultWorkspaceContentMock.mockResolvedValue(true);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(bootstrapWorkspaceRegistryNativeMock).toHaveBeenCalledWith([
+        "/Users/test/.clawdstrike/workspace",
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(useProjectStore.getState().defaultRootId).toBe("root-default");
+    });
+
+    expect(localStorage.getItem("clawdstrike_workspace_roots")).toBeNull();
+    expect(initFromWorkspaceRegistry).toHaveBeenCalledTimes(1);
+    expect(waitForRootsReady).toHaveBeenCalled();
+    expect(bootstrapDefaultWorkspaceContentMock).toHaveBeenCalledWith(
+      "/Users/test/.clawdstrike",
+    );
+    expect(loadRoot).toHaveBeenCalledWith("/Users/test/.clawdstrike");
+  });
+
+  it("leaves legacy roots intact when backend registry bootstrap fails", async () => {
+    vi.mocked(tauriBridge.isDesktop).mockReturnValue(true);
+    localStorage.setItem(
+      "clawdstrike_workspace_roots",
+      JSON.stringify(["/Users/test/.clawdstrike/workspace"]),
+    );
+    bootstrapWorkspaceRegistryNativeMock.mockResolvedValue(null);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(bootstrapWorkspaceRegistryNativeMock).toHaveBeenCalledWith([
+        "/Users/test/.clawdstrike/workspace",
+      ]);
+    });
+
+    expect(localStorage.getItem("clawdstrike_workspace_roots")).toBe(
+      JSON.stringify(["/Users/test/.clawdstrike/workspace"]),
+    );
+    expect(bootstrapDefaultWorkspaceContentMock).not.toHaveBeenCalled();
+  });
+
+  it("waits for workspace readiness before restoring the pane session", async () => {
+    vi.mocked(tauriBridge.isDesktop).mockReturnValue(true);
+    const originalActions = useProjectStore.getState().actions;
+    let resolveReady: (() => void) | null = null;
+    const readinessGate = new Promise<{ ready: boolean; pendingRootIds: string[]; elapsedMs: number }>((resolve) => {
+      resolveReady = () => resolve({
+        ready: true,
+        pendingRootIds: [],
+        elapsedMs: 25,
+      });
+    });
+    const initFromWorkspaceRegistry = vi.fn(async () => {});
+    const waitForRootsReady = vi.fn(() => readinessGate);
+    const restoreSessionSpy = vi
+      .spyOn(usePaneStore.getState(), "restoreSession")
+      .mockReturnValue(0);
+
+    useProjectStore.setState((state) => ({
+      ...state,
+      actions: {
+        ...originalActions,
+        initFromWorkspaceRegistry,
+        waitForRootsReady,
+        loadRoot: vi.fn(async () => {}),
+      },
+    }));
+    bootstrapWorkspaceRegistryNativeMock.mockResolvedValue({
+      snapshot: {
+        version: 1,
+        defaultRootId: "root-default",
+        orderedRootIds: ["root-default"],
+        roots: [
+          {
+            rootId: "root-default",
+            canonicalPath: "/Users/test/.clawdstrike",
+            displayPath: "/Users/test/.clawdstrike",
+            label: ".clawdstrike",
+            kind: "default_home",
+            provenance: "bootstrap",
+            isDefault: true,
+            aliases: ["/Users/test/.clawdstrike/workspace"],
+          },
+        ],
+      },
+      migratedLegacyRoots: [],
+      droppedLegacyRoots: [],
+    });
+    bootstrapDefaultWorkspaceContentMock.mockResolvedValue(false);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(initFromWorkspaceRegistry).toHaveBeenCalledTimes(1);
+      expect(waitForRootsReady).toHaveBeenCalledTimes(1);
+    });
+    expect(restoreSessionSpy).not.toHaveBeenCalled();
+
+    expect(resolveReady).not.toBeNull();
+    resolveReady!();
+
+    await waitFor(() => {
+      expect(restoreSessionSpy).toHaveBeenCalledTimes(1);
+    });
+    restoreSessionSpy.mockRestore();
+  });
+
+  it("logs a structured timeout when workspace roots never become ready", async () => {
+    vi.mocked(tauriBridge.isDesktop).mockReturnValue(true);
+    const originalActions = useProjectStore.getState().actions;
+    const initFromWorkspaceRegistry = vi.fn(async () => {});
+    const waitForRootsReady = vi.fn(async () => ({
+      ready: false,
+      pendingRootIds: ["root-default"],
+      elapsedMs: 4_000,
+    }));
+    const restoreSessionSpy = vi
+      .spyOn(usePaneStore.getState(), "restoreSession")
+      .mockReturnValue(0);
+    const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    useProjectStore.setState((state) => ({
+      ...state,
+      actions: {
+        ...originalActions,
+        initFromWorkspaceRegistry,
+        waitForRootsReady,
+        loadRoot: vi.fn(async () => {}),
+      },
+    }));
+    bootstrapWorkspaceRegistryNativeMock.mockResolvedValue({
+      snapshot: {
+        version: 1,
+        defaultRootId: "root-default",
+        orderedRootIds: ["root-default"],
+        roots: [
+          {
+            rootId: "root-default",
+            canonicalPath: "/Users/test/.clawdstrike",
+            displayPath: "/Users/test/.clawdstrike",
+            label: ".clawdstrike",
+            kind: "default_home",
+            provenance: "bootstrap",
+            isDefault: true,
+            aliases: [],
+          },
+        ],
+      },
+      migratedLegacyRoots: [],
+      droppedLegacyRoots: [],
+    });
+    bootstrapDefaultWorkspaceContentMock.mockResolvedValue(false);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        "[workspace-bootstrap]",
+        expect.objectContaining({
+          event: "roots_ready_timeout",
+          stage: "initial",
+          pendingRootIds: ["root-default"],
+          elapsedMs: 4_000,
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(restoreSessionSpy).toHaveBeenCalledTimes(1);
+    });
+
+    consoleWarnSpy.mockRestore();
+    restoreSessionSpy.mockRestore();
   });
 });

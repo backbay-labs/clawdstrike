@@ -109,6 +109,16 @@ const syntheticProjectFiles = [
   },
 ];
 
+function makeProject(rootId: string, rootPath: string, files = syntheticProjectFiles) {
+  return {
+    rootId,
+    rootPath,
+    name: rootPath.split("/").pop() ?? rootPath,
+    files,
+    expandedDirs: new Set<string>(),
+  };
+}
+
 describe("SearchPanelConnected", () => {
   beforeEach(() => {
     openFileByPath.mockReset();
@@ -123,24 +133,38 @@ describe("SearchPanelConnected", () => {
     seedOpenDocument("/workspace/project/policies/example.yml", 12, "  name: needle");
     usePaneStore.getState()._reset();
     useProjectStore.setState({
+      defaultRootId: "root-project",
+      orderedRootIds: ["root-project"],
+      rootsById: new Map([
+        [
+          "root-project",
+          {
+            rootId: "root-project",
+            canonicalPath: "/workspace/project",
+            displayPath: "/workspace/project",
+            label: "project",
+            kind: "default_home",
+            provenance: "bootstrap",
+            isDefault: true,
+            aliases: [],
+          },
+        ],
+      ]),
+      rootStatusById: new Map([["root-project", "ready"]]),
+      rootErrorById: new Map([["root-project", null]]),
+      rootRequestedVersionById: new Map([["root-project", 1]]),
+      rootCommittedVersionById: new Map([["root-project", 1]]),
+      projectsById: new Map([
+        ["root-project", makeProject("root-project", "/workspace/project", [])],
+      ]),
       projectRoots: ["/workspace/project"],
       projects: new Map([
         [
           "/workspace/project",
-          {
-            rootPath: "/workspace/project",
-            name: "project",
-            files: [],
-            expandedDirs: new Set<string>(),
-          },
+          makeProject("root-project", "/workspace/project", []),
         ],
       ]),
-      project: {
-        rootPath: "/workspace/project",
-        name: "project",
-        files: [],
-        expandedDirs: new Set<string>(),
-      },
+      project: makeProject("root-project", "/workspace/project", []),
     });
     useSearchStore.setState({
       query: "needle",
@@ -177,12 +201,7 @@ describe("SearchPanelConnected", () => {
 
   it("opens the matched file and queues an editor reveal", async () => {
     useProjectStore.setState({
-      project: {
-        rootPath: "workspace",
-        name: "Workspace",
-        files: [],
-        expandedDirs: new Set<string>(),
-      },
+      project: makeProject("root-workspace", "workspace", []),
     });
 
     render(
@@ -331,12 +350,7 @@ describe("SearchPanelConnected", () => {
 
   it("derives a real search root when the workspace uses a synthetic project path", async () => {
     useProjectStore.setState({
-      project: {
-        rootPath: "workspace",
-        name: "Workspace",
-        files: syntheticProjectFiles,
-        expandedDirs: new Set<string>(),
-      },
+      project: makeProject("root-workspace", "workspace"),
     });
 
     render(
@@ -363,12 +377,7 @@ describe("SearchPanelConnected", () => {
 
   it("keeps the workspace root when only one absolute tab is open", async () => {
     useProjectStore.setState({
-      project: {
-        rootPath: "workspace",
-        name: "Workspace",
-        files: syntheticProjectFiles,
-        expandedDirs: new Set<string>(),
-      },
+      project: makeProject("root-workspace", "workspace"),
     });
 
     render(
@@ -407,6 +416,52 @@ describe("SearchPanelConnected", () => {
         "/workspace/project",
         "needle",
         true,
+        false,
+        false,
+        expect.any(String),
+      );
+    });
+  });
+
+  it("dispatches searches against canonical workspace root paths", async () => {
+    useProjectStore.setState((state) => ({
+      ...state,
+      defaultRootId: "root-project",
+      orderedRootIds: ["root-project"],
+      rootsById: new Map([
+        [
+          "root-project",
+          {
+            rootId: "root-project",
+            canonicalPath: "/Users/test/repo",
+            displayPath: "/Users/test/repo",
+            label: "repo",
+            kind: "mounted_folder",
+            provenance: "user_added",
+            isDefault: true,
+            aliases: ["/private/Users/test/repo"],
+          },
+        ],
+      ]),
+      rootStatusById: new Map([["root-project", "ready"]]),
+      projectRoots: ["/private/Users/test/repo"],
+    }));
+
+    render(
+      <MemoryRouter>
+        <SearchPanelConnected />
+      </MemoryRouter>,
+    );
+
+    const input = screen.getByPlaceholderText("Search files...");
+    await userEvent.click(input);
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(searchInProjectNative).toHaveBeenCalledWith(
+        "/Users/test/repo",
+        "needle",
+        false,
         false,
         false,
         expect.any(String),

@@ -8,4 +8,6 @@ pub mod rpc_socket;
 pub mod stronghold;
 pub mod terminal;
 pub mod workbench;
+pub mod workspace_fs;
+pub mod workspace_registry;
 pub mod worktree;

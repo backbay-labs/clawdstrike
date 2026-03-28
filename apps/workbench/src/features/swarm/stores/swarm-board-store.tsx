@@ -27,7 +27,11 @@ import { useShallow } from "zustand/react/shallow";
 import { createSelectors } from "@/lib/create-selectors";
 import { type Node, type Edge } from "@xyflow/react";
 import { isDesktop } from "@/lib/tauri-bridge";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import {
+  canonicalizeWorkspaceConsumerPath,
+  getDefaultWorkspaceConsumerRootPath,
+  useProjectStore,
+} from "@/features/project/stores/project-store";
 import type {
   SwarmBoardNodeData,
   SwarmBoardEdge,
@@ -54,10 +58,6 @@ import {
   subscribeSwarmFileWatchEvents,
 } from "./swarm-file-watch";
 import {
-  bootstrapDefaultWorkspace,
-  getDefaultWorkspacePath,
-} from "@/features/project/workspace-bootstrap";
-import {
   createBoardNode,
   toRfEdges,
   type CreateNodeConfig,
@@ -83,33 +83,29 @@ export const MAX_TOTAL_SESSIONS = 64;
 const SESSION_PREVIEW_MAX_LINES = 200;
 
 function getPrimaryWorkspaceRoot(): string | undefined {
-  return useProjectStore
-    .getState()
-    .projectRoots
-    .find((root) => typeof root === "string" && root.trim().length > 0)
-    ?.trim();
+  return getDefaultWorkspaceConsumerRootPath(useProjectStore.getState())?.trim() || undefined;
 }
 
-async function resolveDefaultWorkspaceRoot(): Promise<string | undefined> {
-  if (!isDesktop()) {
+function normalizeRepoRootThroughWorkspaceRegistry(
+  repoRoot: string | undefined,
+): string | undefined {
+  const trimmed = repoRoot?.trim();
+  if (!trimmed) {
     return undefined;
   }
 
-  try {
-    return (await bootstrapDefaultWorkspace()) ?? (await getDefaultWorkspacePath());
-  } catch (err) {
-    console.error("[swarm-board-store] Failed to resolve default workspace root:", err);
-    return undefined;
-  }
+  return canonicalizeWorkspaceConsumerPath(useProjectStore.getState(), trimmed);
 }
 
 async function resolveBoardRepoRoot(preferred?: string): Promise<string | undefined> {
-  const preferredRoot = preferred?.trim();
+  const preferredRoot = normalizeRepoRootThroughWorkspaceRegistry(preferred);
   if (preferredRoot) {
     return preferredRoot;
   }
 
-  const boardRoot = useSwarmBoardStore.getState().repoRoot.trim();
+  const boardRoot = normalizeRepoRootThroughWorkspaceRegistry(
+    useSwarmBoardStore.getState().repoRoot,
+  );
   if (boardRoot) {
     return boardRoot;
   }
@@ -117,11 +113,6 @@ async function resolveBoardRepoRoot(preferred?: string): Promise<string | undefi
   const workspaceRoot = getPrimaryWorkspaceRoot();
   if (workspaceRoot) {
     return workspaceRoot;
-  }
-
-  const defaultWorkspaceRoot = await resolveDefaultWorkspaceRoot();
-  if (defaultWorkspaceRoot) {
-    return defaultWorkspaceRoot;
   }
 
   try {
@@ -133,7 +124,7 @@ async function resolveBoardRepoRoot(preferred?: string): Promise<string | undefi
 }
 
 function rememberBoardRepoRoot(repoRoot: string | undefined): void {
-  const resolvedRoot = repoRoot?.trim();
+  const resolvedRoot = normalizeRepoRootThroughWorkspaceRegistry(repoRoot);
   if (!resolvedRoot) {
     return;
   }
@@ -214,7 +205,7 @@ function getInitialState(): SwarmBoardState {
   if (persisted && persisted.nodes && persisted.nodes.length > 0) {
     return {
       boardId: persisted.boardId ?? generateBoardId(),
-      repoRoot: persisted.repoRoot ?? "",
+      repoRoot: normalizeRepoRootThroughWorkspaceRegistry(persisted.repoRoot) ?? "",
       nodes: persisted.nodes as Node<SwarmBoardNodeData>[],
       edges: (persisted.edges ?? []) as SwarmBoardEdge[],
       selectedNodeId: null,
@@ -493,7 +484,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
     },
 
     setRepoRoot: (repoRoot: string): void => {
-      set({ repoRoot });
+      set({ repoRoot: normalizeRepoRootThroughWorkspaceRegistry(repoRoot) ?? repoRoot });
       schedulePersist(get);
     },
 
@@ -504,6 +495,10 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       const selectedNodeIds = partial.selectedNodeIds ?? current.selectedNodeIds;
       set({
         ...partial,
+        repoRoot:
+          normalizeRepoRootThroughWorkspaceRegistry(partial.repoRoot) ??
+          partial.repoRoot ??
+          current.repoRoot,
         nodes,
         edges,
         selectedNodeIds,
@@ -610,7 +605,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         const nodes = (normalized?.nodes ?? []) as Node<SwarmBoardNodeData>[];
         const edges = (normalized?.edges ?? []) as SwarmBoardEdge[];
         const boardId = normalized?.boardId ?? generateBoardId();
-        const repoRoot = normalized?.repoRoot ?? "";
+        const repoRoot = normalizeRepoRootThroughWorkspaceRegistry(normalized?.repoRoot) ?? "";
         set({
           bundlePath,
           boardId,
@@ -830,7 +825,7 @@ async function hydrateSwarmBoardFromDisk(force = false): Promise<void> {
       const nodes = restored.nodes as Node<SwarmBoardNodeData>[];
       useSwarmBoardStoreBase.setState({
         boardId: restored.boardId ?? generateBoardId(),
-        repoRoot: restored.repoRoot ?? "",
+        repoRoot: normalizeRepoRootThroughWorkspaceRegistry(restored.repoRoot) ?? "",
         nodes,
         edges,
         selectedNodeId: null,
@@ -1059,9 +1054,20 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
   const activeBundlePath = useSwarmBoardStore((s) => s.bundlePath);
   const selectedNode = useSwarmBoardStore((s) => s.selectedNode);
   const watchScopeIdRef = useRef(`swarm-board-${Math.random().toString(36).slice(2)}`);
+  const canonicalizeWorkspaceWatchPath = useCallback(
+    (path: string) => normalizeSwarmFileWatchPath(
+      canonicalizeWorkspaceConsumerPath(useProjectStore.getState(), path),
+    ),
+    [],
+  );
   const workspaceWatchPaths = useMemo(
-    () => collectBoardWatchWorkspacePaths(boardNodes, repoRoot, activeBundlePath),
-    [activeBundlePath, boardNodes, repoRoot],
+    () => collectBoardWatchWorkspacePaths(
+      boardNodes,
+      repoRoot,
+      activeBundlePath,
+      canonicalizeWorkspaceWatchPath,
+    ),
+    [activeBundlePath, boardNodes, canonicalizeWorkspaceWatchPath, repoRoot],
   );
   const persistenceWatchFilenames = useMemo(
     () => (activeBundlePath ? [] : [SWARM_BOARD_PERSISTENCE_FILE]),
@@ -1099,6 +1105,11 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
   // Seed repoRoot from the mounted workspace roots, default workspace, or CWD.
   useEffect(() => {
     const state = useSwarmBoardStore.getState();
+    const canonicalRepoRoot = normalizeRepoRootThroughWorkspaceRegistry(state.repoRoot);
+    if (canonicalRepoRoot && canonicalRepoRoot !== state.repoRoot) {
+      state.actions.setRepoRoot(canonicalRepoRoot);
+      return;
+    }
     if (state.repoRoot) return;
 
     let cancelled = false;
@@ -1163,7 +1174,14 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
       }
 
       const watchedPaths = new Set(
-        collectBoardWatchWorkspacePaths(current.nodes, current.repoRoot, current.bundlePath),
+        collectBoardWatchWorkspacePaths(
+          current.nodes,
+          current.repoRoot,
+          current.bundlePath,
+          (path) => normalizeSwarmFileWatchPath(
+            canonicalizeWorkspaceConsumerPath(useProjectStore.getState(), path),
+          ),
+        ),
       );
       const hasRelevantWorkspaceChange = event.paths.some((path) =>
         watchedPaths.has(normalizeSwarmFileWatchPath(path)),

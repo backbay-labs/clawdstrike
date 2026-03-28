@@ -2,9 +2,25 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getActivePaneRoute, usePaneStore } from "../pane-store";
 import { findPaneGroup, getAllPaneGroups, getPaneActiveView } from "../pane-tree";
 import { normalizeWorkbenchRoute } from "@/components/desktop/workbench-routes";
+import { useProjectStore } from "@/features/project/stores/project-store";
 
 describe("pane-store", () => {
   beforeEach(() => {
+    localStorage.clear();
+    useProjectStore.setState((state) => ({
+      ...state,
+      defaultRootId: null,
+      orderedRootIds: [],
+      rootsById: new Map(),
+      rootStatusById: new Map(),
+      rootErrorById: new Map(),
+      rootRequestedVersionById: new Map(),
+      rootCommittedVersionById: new Map(),
+      projectsById: new Map(),
+      projectRoots: [],
+      projects: new Map(),
+      project: null,
+    }));
     usePaneStore.getState()._reset();
   });
 
@@ -290,6 +306,92 @@ describe("pane-store", () => {
         .flatMap((g) => g.views)
         .filter((v) => v.route === "/file/policies/test.yaml");
       expect(allFileViews).toHaveLength(1);
+    });
+
+    it("canonicalizes aliased absolute file routes through the workspace contract", () => {
+      useProjectStore.setState((state) => ({
+        ...state,
+        defaultRootId: "root-project",
+        orderedRootIds: ["root-project"],
+        rootsById: new Map([
+          [
+            "root-project",
+            {
+              rootId: "root-project",
+              canonicalPath: "/Users/test/repo",
+              displayPath: "/Users/test/repo",
+              label: "repo",
+              kind: "mounted_folder",
+              provenance: "user_added",
+              isDefault: true,
+              aliases: ["/private/Users/test/repo"],
+            },
+          ],
+        ]),
+        rootStatusById: new Map([["root-project", "ready"]]),
+        projectRoots: ["/Users/test/repo"],
+      }));
+
+      usePaneStore.getState().openFile(
+        "/private/Users/test/repo/policies/test.yaml",
+        "test.yaml",
+      );
+
+      const state = usePaneStore.getState();
+      const pane = findPaneGroup(state.root, state.activePaneId)!;
+      expect(pane.views[1].route).toBe("/file//Users/test/repo/policies/test.yaml");
+    });
+  });
+
+  describe("restoreSession", () => {
+    it("normalizes saved aliased file routes through the workspace contract", () => {
+      useProjectStore.setState((state) => ({
+        ...state,
+        defaultRootId: "root-project",
+        orderedRootIds: ["root-project"],
+        rootsById: new Map([
+          [
+            "root-project",
+            {
+              rootId: "root-project",
+              canonicalPath: "/Users/test/repo",
+              displayPath: "/Users/test/repo",
+              label: "repo",
+              kind: "mounted_folder",
+              provenance: "user_added",
+              isDefault: true,
+              aliases: ["/private/Users/test/repo"],
+            },
+          ],
+        ]),
+        rootStatusById: new Map([["root-project", "ready"]]),
+        projectRoots: ["/Users/test/repo"],
+      }));
+      localStorage.setItem(
+        "clawdstrike_pane_layout",
+        JSON.stringify({
+          activePaneId: "pane-1",
+          root: {
+            id: "pane-1",
+            type: "group",
+            activeViewId: "view-1",
+            views: [
+              {
+                id: "view-1",
+                route: "/file//private/Users/test/repo/policies/test.yaml",
+                label: "test.yaml",
+              },
+            ],
+          },
+        }),
+      );
+
+      const restored = usePaneStore.getState().restoreSession();
+
+      expect(restored).toBe(1);
+      expect(
+        getActivePaneRoute(usePaneStore.getState().root, usePaneStore.getState().activePaneId),
+      ).toBe("/file//Users/test/repo/policies/test.yaml");
     });
   });
 

@@ -302,7 +302,8 @@ fn write_secure_file(path: &Path, content: &[u8]) -> Result<(), String> {
 
 fn generate_bearer_token() -> Result<String, String> {
     let mut bytes = [0_u8; 32];
-    getrandom(&mut bytes).map_err(|error| format!("Failed to generate RPC bearer token: {error}"))?;
+    getrandom(&mut bytes)
+        .map_err(|error| format!("Failed to generate RPC bearer token: {error}"))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
@@ -335,7 +336,11 @@ async fn forward_frontend_request<R: Runtime>(
 ) -> Result<Value, String> {
     let request_id = Uuid::new_v4().to_string();
     let (sender, receiver) = oneshot::channel();
-    state.pending.lock().await.insert(request_id.clone(), sender);
+    state
+        .pending
+        .lock()
+        .await
+        .insert(request_id.clone(), sender);
 
     let payload = FrontendRpcRequest {
         request_id: request_id.clone(),
@@ -345,7 +350,9 @@ async fn forward_frontend_request<R: Runtime>(
 
     if let Err(error) = app.emit_to("main", RPC_FRONTEND_REQUEST_EVENT, payload) {
         state.pending.lock().await.remove(&request_id);
-        return Err(format!("Failed to dispatch RPC request to frontend: {error}"));
+        return Err(format!(
+            "Failed to dispatch RPC request to frontend: {error}"
+        ));
     }
 
     match timeout(FRONTEND_RPC_TIMEOUT, receiver).await {
@@ -400,7 +407,11 @@ async fn handle_rpc_line<R: Runtime>(
         return invalid_request_response("JSON-RPC id must be a string or number");
     }
     if !is_known_method(&request.method) {
-        return response_with_error(request.id, -32601, format!("Method not found: {}", request.method));
+        return response_with_error(
+            request.id,
+            -32601,
+            format!("Method not found: {}", request.method),
+        );
     }
 
     let expected_token = state.bearer_token.lock().await.clone();
@@ -474,7 +485,11 @@ where
 }
 
 #[cfg(unix)]
-async fn run_unix_server<R: Runtime>(listener: UnixListener, app: AppHandle<R>, state: RpcSocketState) {
+async fn run_unix_server<R: Runtime>(
+    listener: UnixListener,
+    app: AppHandle<R>,
+    state: RpcSocketState,
+) {
     loop {
         match listener.accept().await {
             Ok((stream, _addr)) => {
@@ -493,7 +508,11 @@ async fn run_unix_server<R: Runtime>(listener: UnixListener, app: AppHandle<R>, 
 }
 
 #[cfg(windows)]
-async fn run_tcp_server<R: Runtime>(listener: TcpListener, app: AppHandle<R>, state: RpcSocketState) {
+async fn run_tcp_server<R: Runtime>(
+    listener: TcpListener,
+    app: AppHandle<R>,
+    state: RpcSocketState,
+) {
     loop {
         match listener.accept().await {
             Ok((stream, _addr)) => {
@@ -657,9 +676,8 @@ pub async fn rpc_frontend_respond(
 #[cfg(test)]
 mod tests {
     use super::{
-        discover_payload, is_known_method, parse_bearer_token, response_with_error,
-        default_scopes, RpcMethodRiskTier, RpcMethodScope, RpcRuntimeInfo, RpcTransportKind,
-        RPC_METHODS,
+        default_scopes, discover_payload, is_known_method, parse_bearer_token, response_with_error,
+        RpcMethodRiskTier, RpcMethodScope, RpcRuntimeInfo, RpcTransportKind, RPC_METHODS,
     };
     use serde_json::Value;
 

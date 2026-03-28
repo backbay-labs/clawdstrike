@@ -76,6 +76,17 @@ export function ExplorerContextMenu({
 }: ExplorerContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: target.x, y: target.y });
+  const items: MenuItem[] = buildMenuItems(target, {
+    onNewFile,
+    onOpen,
+    onRename,
+    onDelete,
+    onRevealInFinder,
+    onRemoveRoot,
+    onRefreshRoot,
+    onCollapseChildren,
+    onNewFolder,
+  });
 
   // Viewport clamping: measure the rendered menu and ensure it stays on-screen.
   useLayoutEffect(() => {
@@ -89,6 +100,11 @@ export function ExplorerContextMenu({
       y: Math.min(target.y, vh - rect.height - PADDING),
     });
   }, [target.x, target.y]);
+
+  useLayoutEffect(() => {
+    const firstItem = ref.current?.querySelector<HTMLButtonElement>("[data-context-menu-item]");
+    firstItem?.focus();
+  }, [target]);
 
   // Close on click outside or Escape key.
   useEffect(() => {
@@ -108,22 +124,11 @@ export function ExplorerContextMenu({
     };
   }, [onClose]);
 
-  // Build menu items based on target type.
-  const items: MenuItem[] = buildMenuItems(target, {
-    onNewFile,
-    onOpen,
-    onRename,
-    onDelete,
-    onRevealInFinder,
-    onRemoveRoot,
-    onRefreshRoot,
-    onCollapseChildren,
-    onNewFolder,
-  });
-
   return (
     <div
       ref={ref}
+      role="menu"
+      aria-label="Explorer context menu"
       className="fixed z-[100] min-w-[160px] bg-[#131721] border border-[#2d3240] rounded-md shadow-xl py-1"
       style={{ left: position.x, top: position.y }}
     >
@@ -137,10 +142,12 @@ export function ExplorerContextMenu({
           <button
             key={i}
             type="button"
+            role="menuitem"
+            data-context-menu-item
             className={
               isDanger
-                ? "flex items-center gap-2 w-full px-3 py-1.5 text-[11px] font-mono text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-left"
-                : "flex items-center gap-2 w-full px-3 py-1.5 text-[11px] font-mono text-[#ece7dc] hover:bg-[#d4a84b]/10 hover:text-[#d4a84b] transition-colors text-left"
+                ? "flex items-center gap-2 w-full px-3 py-1.5 text-[11px] font-mono text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-left outline-none focus-visible:bg-red-500/15 focus-visible:text-red-300"
+                : "flex items-center gap-2 w-full px-3 py-1.5 text-[11px] font-mono text-[#ece7dc] hover:bg-[#d4a84b]/10 hover:text-[#d4a84b] transition-colors text-left outline-none focus-visible:bg-[#d4a84b]/10 focus-visible:text-[#d4a84b]"
             }
             onClick={() => {
               if ("action" in item) item.action();

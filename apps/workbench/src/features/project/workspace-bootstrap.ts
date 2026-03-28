@@ -1,12 +1,9 @@
 /**
- * Default workspace bootstrapping for first-launch experience.
+ * Default workspace content scaffolding for first-launch experience.
  *
- * On first launch (no prior workspace), scaffolds ~/.clawdstrike/workspace/
- * with example policies, Sigma rules, YARA rules, and scenarios so the
- * Explorer is never empty.
- *
- * All Tauri API calls are lazily imported so this module can be safely
- * imported in non-Tauri contexts (tests, SSR) without throwing.
+ * The backend-owned workspace registry resolves and mounts the default
+ * workspace root. This module only seeds example content underneath the
+ * provided root path at `${workspaceRootPath}/workspace`.
  */
 
 import { isDesktop } from "@/lib/tauri-bridge";
@@ -16,8 +13,11 @@ import { BUILTIN_RULESETS } from "@/features/policy/builtin-rulesets";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Workspace directory name relative to user home. */
-export const WORKSPACE_DIR_NAME = ".clawdstrike/workspace";
+/** Mounted workspace root directory name relative to user home. */
+export const WORKSPACE_DIR_NAME = ".clawdstrike";
+
+/** Seed content lives under the workspace root in a dedicated folder. */
+export const WORKSPACE_CONTENT_DIR_NAME = "workspace";
 
 /** Subdirectories created inside the default workspace. */
 export const WORKSPACE_SUBDIRS = [
@@ -119,42 +119,26 @@ async function importTauriFs() {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the absolute path to the default workspace directory.
- * Uses the user's home directory from the Tauri path API.
- * Falls back to well-known OS paths if Tauri IPC is unavailable.
- */
-export async function getDefaultWorkspacePath(): Promise<string> {
-  try {
-    const { homeDir } = await import("@tauri-apps/api/path");
-    const home = await homeDir();
-    // Ensure no trailing slash on home before joining.
-    const cleanHome = home.endsWith("/") ? home.slice(0, -1) : home;
-    return `${cleanHome}/${WORKSPACE_DIR_NAME}`;
-  } catch {
-    // Tauri IPC may not be ready yet — derive from environment if possible.
-    return "";
-  }
-}
-
-/**
- * Bootstrap the default workspace if it does not already exist.
+ * Seed the default workspace content if it does not already exist.
  *
- * - Creates ~/.clawdstrike/workspace/ with subdirectories
+ * - Creates `${workspaceRootPath}/workspace/` with subdirectories
  * - Writes editable copies of built-in rulesets into policies/
  * - Writes example Sigma, YARA, and scenario files
  * - Writes a README.md with getting-started guidance
  *
- * Returns the workspace path on success, or null if not running in
- * desktop mode or if the workspace already existed.
+ * Returns `true` on success, or `false` if not running in desktop mode or if
+ * scaffolding failed.
  *
  * Errors are caught and logged -- the app continues to work without
  * a bootstrapped workspace (fail-open for UX).
  */
-export async function bootstrapDefaultWorkspace(): Promise<string | null> {
-  if (!isDesktop()) return null;
+export async function bootstrapDefaultWorkspaceContent(
+  workspaceRootPath: string,
+): Promise<boolean> {
+  if (!isDesktop()) return false;
 
   try {
-    const workspacePath = await getDefaultWorkspacePath();
+    const workspaceContentPath = `${workspaceRootPath}/${WORKSPACE_CONTENT_DIR_NAME}`;
 
     const { exists, mkdir, writeTextFile } = await importTauriFs();
 
@@ -163,18 +147,18 @@ export async function bootstrapDefaultWorkspace(): Promise<string | null> {
     // created by a prior `createDetectionFile` or `mkdir`) without having
     // any of the example content, so checking the directory alone is not
     // sufficient.
-    const sentinelPath = `${workspacePath}/README.md`;
+    const sentinelPath = `${workspaceContentPath}/README.md`;
     const alreadyBootstrapped = await exists(sentinelPath);
     if (alreadyBootstrapped) {
-      return workspacePath;
+      return true;
     }
 
-    // Create root directory.
-    await mkdir(workspacePath, { recursive: true });
+    // Create the seeded content directory.
+    await mkdir(workspaceContentPath, { recursive: true });
 
     // Create subdirectories.
     for (const subdir of WORKSPACE_SUBDIRS) {
-      await mkdir(`${workspacePath}/${subdir}`, { recursive: true });
+      await mkdir(`${workspaceContentPath}/${subdir}`, { recursive: true });
     }
 
     // Write built-in rulesets as editable YAML files.
@@ -183,35 +167,35 @@ export async function bootstrapDefaultWorkspace(): Promise<string | null> {
     );
     for (const ruleset of rulesets) {
       await writeTextFile(
-        `${workspacePath}/policies/${ruleset.id}.yaml`,
+        `${workspaceContentPath}/policies/${ruleset.id}.yaml`,
         ruleset.yaml,
       );
     }
 
     // Write example Sigma rule.
     await writeTextFile(
-      `${workspacePath}/sigma/examples/suspicious-process.yml`,
+      `${workspaceContentPath}/sigma/examples/suspicious-process.yml`,
       EXAMPLE_SIGMA_RULE,
     );
 
     // Write example YARA rule.
     await writeTextFile(
-      `${workspacePath}/yara/examples/suspicious-strings.yar`,
+      `${workspaceContentPath}/yara/examples/suspicious-strings.yar`,
       EXAMPLE_YARA_RULE,
     );
 
     // Write example scenario.
     await writeTextFile(
-      `${workspacePath}/scenarios/basic-file-access.yaml`,
+      `${workspaceContentPath}/scenarios/basic-file-access.yaml`,
       EXAMPLE_SCENARIO,
     );
 
     // Write workspace README.
-    await writeTextFile(`${workspacePath}/README.md`, README_CONTENT);
+    await writeTextFile(`${workspaceContentPath}/README.md`, README_CONTENT);
 
-    return workspacePath;
+    return true;
   } catch (err) {
-    console.error("[workspace-bootstrap] Failed to bootstrap workspace:", err);
-    return null;
+    console.error("[workspace-bootstrap] Failed to bootstrap workspace content:", err);
+    return false;
   }
 }

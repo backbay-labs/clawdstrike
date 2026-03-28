@@ -528,7 +528,9 @@ fn parse_tmux_version(version_str: &str) -> Option<(u32, u32, char)> {
     let major: u32 = s[..dot].parse().ok()?;
     let rest = &s[dot + 1..];
     // Split numeric part from optional suffix character
-    let num_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let num_end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     if num_end == 0 {
         return None;
     }
@@ -602,7 +604,10 @@ fn resolve_tmux_conf<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     if conf_path.exists() {
         Some(conf_path.to_string_lossy().to_string())
     } else {
-        eprintln!("[terminal] tmux.conf not found at {}, using tmux defaults", conf_path.display());
+        eprintln!(
+            "[terminal] tmux.conf not found at {}, using tmux defaults",
+            conf_path.display()
+        );
         None
     }
 }
@@ -1295,7 +1300,9 @@ pub async fn terminal_create<R: Runtime>(
                 {
                     Ok(info) => return Ok(info),
                     Err(err) => {
-                        eprintln!("[terminal] tmux attach failed, falling back to direct PTY: {err}");
+                        eprintln!(
+                            "[terminal] tmux attach failed, falling back to direct PTY: {err}"
+                        );
                         let _ = kill_tmux_session(&app, &metadata.id).await;
                     }
                 }
@@ -1303,7 +1310,9 @@ pub async fn terminal_create<R: Runtime>(
             Err(err) => {
                 // tmux new-session failed — fall back to direct PTY rather than
                 // blocking terminal creation entirely (PR review #221 feedback).
-                eprintln!("[terminal] tmux session creation failed, falling back to direct PTY: {err}");
+                eprintln!(
+                    "[terminal] tmux session creation failed, falling back to direct PTY: {err}"
+                );
             }
         }
     }
@@ -1746,9 +1755,7 @@ pub async fn terminal_detach<R: Runtime>(
 /// Used by the frontend to auto-detect a sensible default for `repoRoot` when
 /// none is configured (e.g. first launch).
 #[tauri::command]
-pub async fn get_cwd<R: Runtime>(
-    window: tauri::Window<R>,
-) -> Result<String, String> {
+pub async fn get_cwd<R: Runtime>(window: tauri::Window<R>) -> Result<String, String> {
     ensure_trusted_window(&window)?;
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
@@ -1799,9 +1806,7 @@ pub async fn kill_all_sessions(state: &TerminalState) {
                 // (tmux attach-session process), which detaches from the tmux
                 // server session. Metadata is preserved so the session can be
                 // rediscovered on next launch.
-                eprintln!(
-                    "[terminal] Preserved tmux session {id} for recovery (detached on exit)"
-                );
+                eprintln!("[terminal] Preserved tmux session {id} for recovery (detached on exit)");
             }
         }
     }

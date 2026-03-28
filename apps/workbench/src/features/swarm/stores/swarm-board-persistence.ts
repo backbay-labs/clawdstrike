@@ -58,6 +58,7 @@ function joinFilePath(root: string, path: string): string {
 export function resolveBoardWatchFilePath(
   filePath: string | undefined,
   repoRoot: string,
+  normalizeAbsolutePath: (path: string) => string = (path) => path,
 ): string | null {
   if (!filePath) {
     return null;
@@ -67,23 +68,24 @@ export function resolveBoardWatchFilePath(
     return null;
   }
   if (isAbsoluteFilePath(trimmed)) {
-    return normalizeSwarmFileWatchPath(trimmed);
+    return normalizeAbsolutePath(normalizeSwarmFileWatchPath(trimmed));
   }
   if (!repoRoot) {
     return null;
   }
-  return normalizeSwarmFileWatchPath(joinFilePath(repoRoot, trimmed));
+  return normalizeAbsolutePath(normalizeSwarmFileWatchPath(joinFilePath(repoRoot, trimmed)));
 }
 
 export function collectBoardWatchWorkspacePaths(
   nodes: Array<Node<SwarmBoardNodeData>>,
   repoRoot: string,
   bundlePath: string,
+  normalizeAbsolutePath: (path: string) => string = (path) => path,
 ): string[] {
   const paths = new Set<string>();
 
   if (bundlePath) {
-    paths.add(normalizeSwarmFileWatchPath(`${bundlePath}/board.json`));
+    paths.add(normalizeAbsolutePath(normalizeSwarmFileWatchPath(`${bundlePath}/board.json`)));
   }
 
   for (const node of nodes) {
@@ -91,6 +93,7 @@ export function collectBoardWatchWorkspacePaths(
     const artifactPath = resolveBoardWatchFilePath(
       typeof data.filePath === "string" ? data.filePath : undefined,
       repoRoot,
+      normalizeAbsolutePath,
     );
     if (artifactPath) {
       paths.add(artifactPath);
@@ -99,6 +102,7 @@ export function collectBoardWatchWorkspacePaths(
     const diffPath = resolveBoardWatchFilePath(
       typeof data.diffPath === "string" ? data.diffPath : undefined,
       repoRoot,
+      normalizeAbsolutePath,
     );
     if (diffPath) {
       paths.add(diffPath);

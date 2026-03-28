@@ -47,6 +47,29 @@ function stripDirtyFlags(node: PaneNode): PaneNode {
   } as PaneSplit;
 }
 
+function mapPaneNodeViews(
+  node: PaneNode,
+  mapRoute: (route: string) => string,
+): PaneNode {
+  if (node.type === "group") {
+    return {
+      ...node,
+      views: node.views.map((view) => ({
+        ...view,
+        route: mapRoute(view.route),
+      })),
+    };
+  }
+
+  return {
+    ...node,
+    children: [
+      mapPaneNodeViews(node.children[0], mapRoute),
+      mapPaneNodeViews(node.children[1], mapRoute),
+    ],
+  } as PaneSplit;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -74,6 +97,12 @@ export function savePaneSession(root: PaneNode, activePaneId: string): void {
  * structure is invalid. Strips any lingering `dirty` flags as a safety net.
  */
 export function loadPaneSession(): SavedSession | null {
+  return loadPaneSessionWithRouteMapper((route) => route);
+}
+
+export function loadPaneSessionWithRouteMapper(
+  mapRoute: (route: string) => string,
+): SavedSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -87,7 +116,7 @@ export function loadPaneSession(): SavedSession | null {
     if (rootType !== "group" && rootType !== "split") return null;
 
     // Strip dirty flags as a safety net.
-    const cleaned = stripDirtyFlags(parsed.root as PaneNode);
+    const cleaned = mapPaneNodeViews(stripDirtyFlags(parsed.root as PaneNode), mapRoute);
 
     return {
       root: cleaned,

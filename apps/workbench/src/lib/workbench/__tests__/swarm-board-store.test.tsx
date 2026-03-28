@@ -1,22 +1,12 @@
 import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const { bootstrapDefaultWorkspaceMock, getDefaultWorkspacePathMock } = vi.hoisted(() => ({
-  bootstrapDefaultWorkspaceMock: vi.fn(),
-  getDefaultWorkspacePathMock: vi.fn(),
-}));
-
-vi.mock("@/features/project/workspace-bootstrap", () => ({
-  bootstrapDefaultWorkspace: bootstrapDefaultWorkspaceMock,
-  getDefaultWorkspacePath: getDefaultWorkspacePathMock,
-  WORKSPACE_DIR_NAME: ".clawdstrike/workspace",
-  WORKSPACE_SUBDIRS: [],
-}));
+import type { TauriWorkspaceRootRecord } from "@/lib/tauri-commands";
 
 import {
   SwarmBoardProvider,
   useSwarmBoard,
+  resolveBoardWatchFilePath,
   createBoardNode,
   generateNodeId,
   createMockBoard,
@@ -30,14 +20,34 @@ import type {
 } from "../swarm-board-types";
 import type { Node } from "@xyflow/react";
 import { terminalService } from "../terminal-service";
-import { useProjectStore } from "@/features/project/stores/project-store";
-import * as tauriBridge from "@/lib/tauri-bridge";
+import {
+  canonicalizeWorkspaceConsumerPath,
+  useProjectStore,
+} from "@/features/project/stores/project-store";
 
 // ---------------------------------------------------------------------------
 // Storage key must match the one in the store
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_workbench_swarm_board";
+
+function makeWorkspaceRoot(
+  rootId: string,
+  displayPath: string,
+  options?: Partial<TauriWorkspaceRootRecord>,
+): TauriWorkspaceRootRecord {
+  return {
+    rootId,
+    canonicalPath: displayPath,
+    displayPath,
+    label: displayPath.split("/").filter(Boolean).pop() ?? displayPath,
+    kind: "mounted_folder",
+    provenance: "user_added",
+    isDefault: false,
+    aliases: [],
+    ...options,
+  };
+}
 
 /**
  * Seeds localStorage with a board that has a single placeholder node.
@@ -387,10 +397,17 @@ function renderWithEmptyBoard(harness: React.ReactElement) {
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
-  bootstrapDefaultWorkspaceMock.mockReset();
-  getDefaultWorkspacePathMock.mockReset();
   useProjectStore.setState({
     project: null,
+    loading: false,
+    error: null,
+    filter: "",
+    formatFilter: null,
+    fileStatuses: new Map(),
+    defaultRootId: null,
+    orderedRootIds: [],
+    rootsById: new Map(),
+    projectsById: new Map(),
     projectRoots: [],
     projects: new Map(),
   });
@@ -401,6 +418,28 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("SwarmBoard initial state", () => {
+  it("canonicalizes watch paths through workspace aliases", () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/repo", {
+      isDefault: true,
+      aliases: ["/private/Users/test/repo"],
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      rootStatusById: new Map([["root-default", "ready"]]),
+      projectRoots: ["/Users/test/repo"],
+    });
+
+    expect(
+      resolveBoardWatchFilePath(
+        "/private/Users/test/repo/policies/example.yml",
+        "/Users/test/repo",
+        (path) => canonicalizeWorkspaceConsumerPath(useProjectStore.getState(), path),
+      ),
+    ).toBe("/Users/test/repo/policies/example.yml");
+  });
+
   it("has a boardId and empty board on first mount (no mock data)", () => {
     render(
       <SwarmBoardProvider>
@@ -462,8 +501,16 @@ describe("SwarmBoard initial state", () => {
   });
 
   it("adopts the first mounted project root when repoRoot is empty", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+    });
     useProjectStore.setState({
-      projectRoots: ["/Users/test/.clawdstrike/workspace"],
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
     });
 
     render(
@@ -473,14 +520,22 @@ describe("SwarmBoard initial state", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike/workspace");
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
     });
   });
 
-  it("falls back to the default workspace path on mount when no project root is available", async () => {
-    vi.spyOn(tauriBridge, "isDesktop").mockReturnValue(true);
-    bootstrapDefaultWorkspaceMock.mockResolvedValue("/Users/test/.clawdstrike/workspace");
-    getDefaultWorkspacePathMock.mockResolvedValue("/Users/test/.clawdstrike/workspace");
+  it("falls back to the registry default root on mount when repoRoot is empty", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
 
     const getCwdSpy = vi.spyOn(terminalService, "getCwd").mockRejectedValue(
       new Error("getCwd should not be needed"),
@@ -493,20 +548,29 @@ describe("SwarmBoard initial state", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike/workspace");
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
     });
 
     expect(getCwdSpy).not.toHaveBeenCalled();
   });
 
-  it("falls back to the default workspace path for Claude spawns when repoRoot is unset", async () => {
-    vi.spyOn(tauriBridge, "isDesktop").mockReturnValue(true);
-    bootstrapDefaultWorkspaceMock.mockResolvedValue("/Users/test/.clawdstrike/workspace");
-    getDefaultWorkspacePathMock.mockResolvedValue("/Users/test/.clawdstrike/workspace");
+  it("falls back to the registry default root for Claude spawns when repoRoot is unset", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+      aliases: ["/Users/test/.clawdstrike/workspace"],
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
 
     const createSpy = vi.spyOn(terminalService, "create").mockResolvedValue({
       id: "session-123",
-      cwd: "/Users/test/.clawdstrike/workspace",
+      cwd: "/Users/test/.clawdstrike",
       branch: null,
       created_at: "2026-03-27T12:00:00Z",
       alive: true,
@@ -536,7 +600,7 @@ describe("SwarmBoard initial state", () => {
 
     await waitFor(() => {
       expect(createSpy).toHaveBeenCalledWith(
-        "/Users/test/.clawdstrike/workspace",
+        "/Users/test/.clawdstrike",
         undefined,
         undefined,
         "claude\n",
@@ -544,7 +608,154 @@ describe("SwarmBoard initial state", () => {
     });
 
     expect(getCwdSpy).not.toHaveBeenCalled();
-    expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike/workspace");
+    expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
+  });
+
+  it("falls back to the first ordered root when defaultRootId is missing", async () => {
+    const repoRoot = makeWorkspaceRoot("root-repo", "/Users/test/repo");
+    useProjectStore.setState({
+      defaultRootId: null,
+      orderedRootIds: ["root-repo"],
+      rootsById: new Map([["root-repo", repoRoot]]),
+      projectRoots: ["/Users/test/repo"],
+    });
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/repo");
+    });
+  });
+
+  it("normalizes persisted workspace aliases through the registry", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+      aliases: ["/Users/test/.clawdstrike/workspace"],
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        boardId: "board-test123",
+        repoRoot: "/Users/test/.clawdstrike/workspace",
+        nodes: [
+          {
+            id: "node-persisted-1",
+            type: "note",
+            position: { x: 0, y: 0 },
+            data: { title: "Persisted", status: "idle", nodeType: "note", createdAt: 1 },
+          },
+        ],
+        edges: [],
+      }),
+    );
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
+    });
+  });
+
+  it("reconciles a persisted repoRoot alias after the workspace registry hydrates", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        boardId: "board-test123",
+        repoRoot: "/Users/test/.clawdstrike/workspace",
+        nodes: [
+          {
+            id: "node-persisted-1",
+            type: "note",
+            position: { x: 0, y: 0 },
+            data: { title: "Persisted", status: "idle", nodeType: "note", createdAt: 1 },
+          },
+        ],
+        edges: [],
+      }),
+    );
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+      aliases: ["/Users/test/.clawdstrike/workspace"],
+    });
+    act(() => {
+      useProjectStore.setState({
+        defaultRootId: "root-default",
+        orderedRootIds: ["root-default"],
+        rootsById: new Map([["root-default", defaultRoot]]),
+        rootStatusById: new Map([["root-default", "ready"]]),
+        projectRoots: ["/Users/test/.clawdstrike"],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
+    });
+  });
+
+  it("keeps unrelated persisted repo roots unchanged", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+      aliases: ["/Users/test/.clawdstrike/workspace"],
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        boardId: "board-test123",
+        repoRoot: "/Users/test/another-repo",
+        nodes: [
+          {
+            id: "node-persisted-1",
+            type: "note",
+            position: { x: 0, y: 0 },
+            data: { title: "Persisted", status: "idle", nodeType: "note", createdAt: 1 },
+          },
+        ],
+        edges: [],
+      }),
+    );
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/another-repo");
+    });
   });
 });
 

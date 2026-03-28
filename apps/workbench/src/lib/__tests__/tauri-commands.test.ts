@@ -14,8 +14,16 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
+  addWorkspaceRootNative,
+  bootstrapWorkspaceRegistryNative,
+  createWorkspaceDirectoryNative,
   configureSwarmFileWatcherNative,
+  deleteWorkspaceEntryNative,
   readAppPersistenceFileNative,
+  readWorkspaceTreeNative,
+  renameWorkspaceEntryNative,
+  revealWorkspaceEntryNative,
+  removeWorkspaceRootNative,
   respondToRpcFrontendRequestNative,
   searchInProjectNative,
   stopSwarmFileWatcherNative,
@@ -57,6 +65,180 @@ describe("app persistence commands", () => {
     invokeMock.mockReset();
     isDesktopMock.mockReset();
     isDesktopMock.mockReturnValue(true);
+  });
+
+  it("bootstraps the workspace registry through the native command surface", async () => {
+    invokeMock.mockResolvedValueOnce({
+      snapshot: {
+        version: 1,
+        defaultRootId: "root-default",
+        orderedRootIds: ["root-default"],
+        roots: [],
+      },
+      migratedLegacyRoots: ["/tmp/legacy"],
+      droppedLegacyRoots: [],
+    });
+
+    await expect(bootstrapWorkspaceRegistryNative(["/tmp/legacy"])).resolves.toMatchObject({
+      snapshot: {
+        defaultRootId: "root-default",
+      },
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("bootstrap_workspace_registry", {
+      request: {
+        legacyRoots: ["/tmp/legacy"],
+      },
+    });
+  });
+
+  it("adds a workspace root through the native command surface", async () => {
+    invokeMock.mockResolvedValueOnce({
+      version: 1,
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default", "root-user"],
+      roots: [],
+    });
+
+    await expect(addWorkspaceRootNative("/tmp/repo")).resolves.toMatchObject({
+      orderedRootIds: ["root-default", "root-user"],
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("add_workspace_root", {
+      request: {
+        path: "/tmp/repo",
+      },
+    });
+  });
+
+  it("removes a workspace root by rootId through the native command surface", async () => {
+    invokeMock.mockResolvedValueOnce({
+      version: 1,
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      roots: [],
+    });
+
+    await expect(removeWorkspaceRootNative("root-123")).resolves.toMatchObject({
+      orderedRootIds: ["root-default"],
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("remove_workspace_root", {
+      request: {
+        rootId: "root-123",
+      },
+    });
+  });
+
+  it("returns null for workspace registry commands outside desktop mode", async () => {
+    isDesktopMock.mockReturnValue(false);
+
+    await expect(bootstrapWorkspaceRegistryNative(["/tmp/legacy"])).resolves.toBeNull();
+    await expect(addWorkspaceRootNative("/tmp/repo")).resolves.toBeNull();
+    await expect(removeWorkspaceRootNative("root-123")).resolves.toBeNull();
+    await expect(readWorkspaceTreeNative("root-123")).resolves.toBeNull();
+    await expect(createWorkspaceDirectoryNative("root-123", "workspace/policies")).resolves.toBeNull();
+    await expect(renameWorkspaceEntryNative("root-123", "old.yaml", "new.yaml")).resolves.toBeNull();
+    await expect(deleteWorkspaceEntryNative("root-123", "old.yaml")).resolves.toBeNull();
+    await expect(revealWorkspaceEntryNative("root-123", "old.yaml")).resolves.toBeNull();
+
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("reads a workspace tree through the native command surface", async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        entries: [{ path: "workspace", kind: "directory" }],
+      },
+    });
+
+    await expect(readWorkspaceTreeNative("root-123")).resolves.toEqual({
+      ok: true,
+      data: {
+        entries: [{ path: "workspace", kind: "directory" }],
+      },
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("read_workspace_tree", {
+      request: {
+        rootId: "root-123",
+      },
+    });
+  });
+
+  it("logs structured diagnostics when a workspace command invoke rejects", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    invokeMock.mockRejectedValueOnce({ message: "ipc unavailable" });
+
+    await expect(readWorkspaceTreeNative("root-123")).resolves.toBeNull();
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[workspace-command]",
+      expect.objectContaining({
+        command: "read_workspace_tree",
+        rootId: "root-123",
+        message: "ipc unavailable",
+      }),
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("routes workspace mutations through the native command surface", async () => {
+    invokeMock
+      .mockResolvedValueOnce({ ok: true, data: { relativePath: "workspace/policies" } })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { oldRelativePath: "workspace/old.yaml", newRelativePath: "workspace/new.yaml" },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { relativePath: "workspace/new.yaml", kind: "file" },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { relativePath: "workspace/new.yaml" },
+      });
+
+    await expect(
+      createWorkspaceDirectoryNative("root-123", "workspace/policies"),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      renameWorkspaceEntryNative("root-123", "workspace/old.yaml", "workspace/new.yaml"),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      deleteWorkspaceEntryNative("root-123", "workspace/new.yaml"),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      revealWorkspaceEntryNative("root-123", "workspace/new.yaml"),
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "create_workspace_directory", {
+      request: {
+        rootId: "root-123",
+        relativePath: "workspace/policies",
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "rename_workspace_entry", {
+      request: {
+        rootId: "root-123",
+        oldRelativePath: "workspace/old.yaml",
+        newRelativePath: "workspace/new.yaml",
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "delete_workspace_entry", {
+      request: {
+        rootId: "root-123",
+        relativePath: "workspace/new.yaml",
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(4, "reveal_workspace_entry", {
+      request: {
+        rootId: "root-123",
+        relativePath: "workspace/new.yaml",
+      },
+    });
   });
 
   it("reads persistence files through the native command surface", async () => {

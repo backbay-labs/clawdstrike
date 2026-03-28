@@ -483,7 +483,10 @@ mod tests {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let workspace_dir = tempdir.path().join("workspace");
         std::fs::create_dir_all(&workspace_dir).expect("create workspace");
-        let nested_target = workspace_dir.join("reports").join("daily").join("artifact.md");
+        let nested_target = workspace_dir
+            .join("reports")
+            .join("daily")
+            .join("artifact.md");
 
         let plan = build_watch_plan(
             tempdir.path(),
@@ -494,9 +497,10 @@ mod tests {
         )
         .expect("plan");
 
-        assert!(plan.watch_roots.iter().any(|(path, mode)| {
-            path == &workspace_dir && *mode == RecursiveMode::Recursive
-        }));
+        assert!(plan
+            .watch_roots
+            .iter()
+            .any(|(path, mode)| { path == &workspace_dir && *mode == RecursiveMode::Recursive }));
     }
 
     #[test]

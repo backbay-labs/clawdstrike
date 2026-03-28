@@ -41,31 +41,10 @@
       ]
     },
     {
-      "identifier": "fs:allow-rename",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$HOME/.clawdstrike/**" },
-        { "path": "$DOWNLOAD/**" },
-        { "path": "$DOCUMENT/**" },
-        { "path": "$DESKTOP/**" }
-      ]
-    },
-    {
-      "identifier": "fs:allow-remove",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$HOME/.clawdstrike/**" },
-        { "path": "$DOWNLOAD/**" },
-        { "path": "$DOCUMENT/**" },
-        { "path": "$DESKTOP/**" }
-      ]
-    },
-    {
       "identifier": "fs:allow-mkdir",
       "allow": [
         { "path": "$HOME/.clawdstrike" },
         { "path": "$HOME/.clawdstrike/**" },
-        { "path": "$HOME/**" },
         { "path": "$DOWNLOAD/**" },
         { "path": "$DOCUMENT/**" },
         { "path": "$DESKTOP/**" }
@@ -82,18 +61,6 @@
         { "path": "$DESKTOP/**" }
       ]
     },
-    {
-      "identifier": "fs:allow-read-dir",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$HOME/.clawdstrike" },
-        { "path": "$HOME/.clawdstrike/**" },
-        { "path": "$DOWNLOAD/**" },
-        { "path": "$DOCUMENT/**" },
-        { "path": "$DESKTOP/**" }
-      ]
-    },
-    "opener:default",
-    "opener:allow-reveal-item-in-dir"
+    "opener:default"
   ]
 }

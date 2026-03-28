@@ -12,10 +12,39 @@ import { usePresenceFileTracking } from "@/features/presence/use-presence-file-t
 import { usePolicyBootstrap } from "@/features/policy/hooks/use-policy-bootstrap";
 import { secureStore, migrateCredentialsToStronghold } from "@/features/settings/secure-store";
 import { bootstrapThreatIntelPlugins } from "@/lib/plugins/threat-intel/bootstrap";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import {
+  clearLegacyWorkspaceRoots,
+  readLegacyWorkspaceRoots,
+  useProjectStore,
+} from "@/features/project/stores/project-store";
 import { useToast } from "@/components/ui/toast";
 import { usePaneStore } from "@/features/panes/pane-store";
 import { useSignalCorrelator } from "@/features/findings/hooks/use-signal-correlator";
+import { bootstrapWorkspaceRegistryNative } from "@/lib/tauri-commands";
+import { bootstrapDefaultWorkspaceContent } from "@/features/project/workspace-bootstrap";
+
+const WORKSPACE_READY_TIMEOUT_MS = 4_000;
+
+function formatDiagnosticError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return "unknown_error";
+}
+
+function logWorkspaceBootstrap(
+  level: "info" | "warn" | "error",
+  event: string,
+  detail: Record<string, unknown>,
+): void {
+  console[level]("[workspace-bootstrap]", {
+    event,
+    ...detail,
+  });
+}
 
 function LoadingFallback() {
   return (
@@ -67,165 +96,75 @@ function LoadingFallback() {
   );
 }
 
-/**
- * Bootstrap the workspace on first launch or restore persisted roots.
- *
- * - Always ensures ~/.clawdstrike/workspace/ exists (creates it if missing).
- * - If persisted roots exist (subsequent launches), restores them. If the
- *   default workspace path is not among the persisted roots it is added
- *   automatically so the Explorer never shows the raw ~/.clawdstrike config
- *   directory.
- * - If no roots exist (first launch), scaffolds the default workspace
- *   at ~/.clawdstrike/workspace/ and mounts it.
- *
- * Fire-and-forget: errors are logged but never thrown.
- */
-/** Guard against StrictMode double-mount firing concurrent inits. */
-let workspaceInitRunning = false;
-
-/**
- * If the projects Map has no entry for `defaultPath`, inject a skeleton
- * DetectionProject directly (no Tauri calls). This guarantees the Explorer
- * always shows the workspace root, even when Tauri IPC is completely broken.
- *
- * Returns `true` if a skeleton was injected, `false` if the project was
- * already loaded normally.
- */
-function ensureSkeletonProject(defaultPath: string): boolean {
-  const { projectRoots, projects } = useProjectStore.getState();
-  if (projects.has(defaultPath)) return false; // already loaded — nothing to do
-
-  const name = defaultPath.split("/").filter(Boolean).pop() ?? "workspace";
-  const skeleton = {
-    rootPath: defaultPath,
-    name,
-    files: [],
-    expandedDirs: new Set<string>(),
-  };
-  const nextRoots = projectRoots.includes(defaultPath) ? projectRoots : [defaultPath, ...projectRoots];
-  const nextProjects = new Map(projects);
-  nextProjects.set(defaultPath, skeleton);
-  useProjectStore.setState({
-    projectRoots: nextRoots,
-    projects: nextProjects,
-    project: skeleton,
-  });
-  console.warn("[workspace-bootstrap] Tauri IPC unavailable, showing skeleton workspace for:", defaultPath);
-  return true;
-}
-
-/** Race a promise against a timeout. Returns the result or `fallback` on timeout. */
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
-  ]);
-}
-
-/**
- * Derive the default workspace path without calling any Tauri APIs.
- * Uses the persisted roots or well-known OS conventions as fallback.
- */
-function inferDefaultWorkspacePath(persistedRoots: string[]): string | null {
-  // Check if any persisted root looks like the default workspace.
-  const match = persistedRoots.find((r) => r.includes(".clawdstrike/workspace"));
-  if (match) return match;
-
-  // macOS/Linux: /Users/<name> or /home/<name>
-  // We can infer from the origin or navigator.
-  if (typeof location !== "undefined" && location.pathname) {
-    // Tauri dev serves from the filesystem; not useful.
-  }
-
-  // Last resort: try to extract from any persisted root.
-  for (const root of persistedRoots) {
-    const homeMatch = root.match(/^(\/(?:Users|home)\/[^/]+)/);
-    if (homeMatch) return `${homeMatch[1]}/.clawdstrike/workspace`;
-  }
-
-  return null;
-}
-
 function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useToast>["toast"] | null>) {
   useEffect(() => {
-    if (workspaceInitRunning) return;
-    workspaceInitRunning = true;
-
     async function init() {
       const { isDesktop } = await import("@/lib/tauri-bridge");
-      const { getWorkbenchE2EBridge } = await import("@/lib/workbench/e2e-bridge");
-      const isWorkbenchE2E = getWorkbenchE2EBridge() !== null;
-      if (!isDesktop() && !isWorkbenchE2E) return;
+      if (!isDesktop()) return;
 
       const store = useProjectStore.getState();
+      if (store.loading) return;
       store.actions.setLoading(true);
+      const startedAt = Date.now();
 
       try {
-        if (!isDesktop()) {
-          if (store.projectRoots.length > 0) {
-            await store.actions.initFromPersistedRoots();
-          }
+        const legacyRoots = readLegacyWorkspaceRoots();
+        logWorkspaceBootstrap("info", "init_started", {
+          legacyRootCount: legacyRoots.length,
+        });
+        const response = await bootstrapWorkspaceRegistryNative(legacyRoots);
+        if (!response) {
+          logWorkspaceBootstrap("warn", "registry_bootstrap_missing_snapshot", {
+            legacyRootCount: legacyRoots.length,
+          });
           return;
         }
 
-        // Resolve the default workspace path. Use the Tauri path API with a
-        // timeout — if Tauri IPC is slow or broken (common during dev mode
-        // startup), fall back to inferring the path from persisted roots or
-        // OS conventions so the Explorer never hangs on "Loading workspace".
-        const { bootstrapDefaultWorkspace, getDefaultWorkspacePath } = await import(
-          "@/features/project/workspace-bootstrap"
-        );
+        logWorkspaceBootstrap("info", "registry_bootstrapped", {
+          rootCount: response.snapshot.roots.length,
+          defaultRootId: response.snapshot.defaultRootId,
+          migratedLegacyRootCount: response.migratedLegacyRoots.length,
+          droppedLegacyRootCount: response.droppedLegacyRoots.length,
+        });
+        store.actions.hydrateWorkspaceRegistry(response.snapshot);
+        await store.actions.initFromWorkspaceRegistry();
+        const initialReadiness = await store.actions.waitForRootsReady(WORKSPACE_READY_TIMEOUT_MS);
+        if (!initialReadiness.ready) {
+          logWorkspaceBootstrap("warn", "roots_ready_timeout", {
+            stage: "initial",
+            pendingRootIds: initialReadiness.pendingRootIds,
+            elapsedMs: initialReadiness.elapsedMs,
+          });
+        }
+        clearLegacyWorkspaceRoots();
 
-        const TAURI_TIMEOUT_MS = 8_000;
-        const workspacePath = await withTimeout(bootstrapDefaultWorkspace(), TAURI_TIMEOUT_MS, null);
-        let defaultPath = workspacePath ?? await withTimeout(getDefaultWorkspacePath(), TAURI_TIMEOUT_MS, "");
-
-        if (!defaultPath) {
-          // Tauri IPC timed out — derive the path without Tauri.
-          defaultPath = inferDefaultWorkspacePath(store.projectRoots) ?? "";
-          if (defaultPath) {
-            console.warn("[workspace-bootstrap] Tauri IPC timed out, using inferred workspace path:", defaultPath);
+        const defaultRoot = response.snapshot.defaultRootId
+          ? response.snapshot.roots.find((root) => root.rootId === response.snapshot.defaultRootId) ?? null
+          : null;
+        if (defaultRoot) {
+          const bootstrapped = await bootstrapDefaultWorkspaceContent(defaultRoot.displayPath);
+          logWorkspaceBootstrap("info", "default_content_bootstrap_complete", {
+            rootId: defaultRoot.rootId,
+            rootPath: defaultRoot.displayPath,
+            bootstrapped,
+          });
+          if (bootstrapped) {
+            await store.actions.loadRoot(defaultRoot.displayPath);
+            const seededReadiness = await store.actions.waitForRootsReady(WORKSPACE_READY_TIMEOUT_MS);
+            if (!seededReadiness.ready) {
+              logWorkspaceBootstrap("warn", "roots_ready_timeout", {
+                stage: "post_seed_refresh",
+                pendingRootIds: seededReadiness.pendingRootIds,
+                elapsedMs: seededReadiness.elapsedMs,
+              });
+            }
           }
         }
-
-        if (!defaultPath) {
-          console.warn("[workspace-bootstrap] Unable to resolve default workspace path");
-          return;
-        }
-
-        const roots = store.projectRoots;
-
-        if (roots.length > 0) {
-          // Restore persisted workspace roots (loadRoot for each).
-          await withTimeout(store.actions.initFromPersistedRoots(), TAURI_TIMEOUT_MS, undefined);
-
-          // If the default workspace path is missing from persisted roots,
-          // add it so the user always sees the workspace.
-          const currentRoots = useProjectStore.getState().projectRoots;
-          if (!currentRoots.includes(defaultPath)) {
-            store.actions.addRoot(defaultPath);
-          }
-        } else {
-          // First launch: mount the default workspace.
-          store.actions.addRoot(defaultPath);
-        }
-
-        // Always ensure the default workspace is loaded in the projects Map.
-        await withTimeout(store.actions.loadRoot(defaultPath), TAURI_TIMEOUT_MS, undefined);
-
-        // Final safety net: if the projects Map is STILL empty (Tauri IPC
-        // completely broken — readDir never resolved), inject a skeleton
-        // project directly so the Explorer shows the workspace root with a
-        // Refresh option instead of "No folder open".
-        const usedSkeleton = ensureSkeletonProject(defaultPath);
-
-        // If we fell back to a skeleton, schedule a deferred rescan once
-        // Tauri IPC likely recovers (stale callbacks clear after a few seconds).
-        if (usedSkeleton) {
-          setTimeout(() => {
-            void useProjectStore.getState().actions.loadRoot(defaultPath);
-          }, 3_000);
-        }
+        logWorkspaceBootstrap("info", "init_complete", {
+          elapsedMs: Date.now() - startedAt,
+          rootCount: response.snapshot.roots.length,
+          defaultRootId: response.snapshot.defaultRootId,
+        });
       } finally {
         useProjectStore.getState().actions.setLoading(false);
       }
@@ -243,10 +182,10 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
       }
     }
     init().catch((err) => {
-      console.warn("[workspace-bootstrap] Init failed:", err);
+      logWorkspaceBootstrap("error", "init_failed", {
+        message: formatDiagnosticError(err),
+      });
       useProjectStore.getState().actions.setLoading(false);
-    }).finally(() => {
-      workspaceInitRunning = false;
     });
   }, []);
 }

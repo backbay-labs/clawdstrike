@@ -29,10 +29,6 @@ async function importTauriFs() {
   return import("@tauri-apps/plugin-fs");
 }
 
-async function importTauriOpener() {
-  return import("@tauri-apps/plugin-opener");
-}
-
 async function importTauriDialog() {
   return import("@tauri-apps/plugin-dialog");
 }
@@ -298,86 +294,12 @@ export async function createDetectionFile(
   }
 }
 
-/**
- * Rename a file on disk.
- *
- * @param oldPath - Current absolute path.
- * @param newPath - Desired absolute path.
- * @returns true on success, false on failure / non-desktop.
- */
-export async function renameDetectionFile(
-  oldPath: string,
-  newPath: string,
-): Promise<boolean> {
-  if (!isDesktop()) return false;
-
-  try {
-    const { rename } = await importTauriFs();
-    await rename(oldPath, newPath);
-    return true;
-  } catch (err) {
-    console.error("[tauri-bridge] Failed to rename file:", oldPath, "->", newPath, err);
-    return false;
-  }
-}
-
-/**
- * Delete a file from disk.
- *
- * @param filePath - Absolute path to remove.
- * @returns true on success, false on failure / non-desktop.
- */
-export async function deleteDetectionFile(
-  filePath: string,
-): Promise<boolean> {
-  if (!isDesktop()) return false;
-
-  try {
-    const { remove } = await importTauriFs();
-    await remove(filePath);
-    return true;
-  } catch (err) {
-    console.error("[tauri-bridge] Failed to delete file:", filePath, err);
-    return false;
-  }
-}
-
 export async function savePolicyFile(
   content: string,
   filePath?: string | null,
   _format?: string,
 ): Promise<string | null> {
   return saveDetectionFile(content, "clawdstrike_policy", filePath, "policy");
-}
-
-/**
- * Reveal a file or directory in the OS file manager (Finder on macOS).
- * Falls back to opening the parent directory if the path cannot be revealed.
- */
-export async function revealInFinder(path: string): Promise<void> {
-  if (!isDesktop()) return;
-  try {
-    const { revealItemInDir } = await importTauriOpener();
-    await revealItemInDir(path);
-  } catch (err) {
-    console.error("[tauri-bridge] Failed to reveal in Finder:", path, err);
-  }
-}
-
-/**
- * Create a directory on disk (recursive).
- * @returns true on success, false on failure / non-desktop.
- */
-export async function createDirectory(dirPath: string): Promise<boolean> {
-  if (!isDesktop()) return false;
-  try {
-    const { mkdir } = await importTauriFs();
-    await mkdir(dirPath, { recursive: true });
-    return true;
-  } catch (err) {
-    console.error("[tauri-bridge] Failed to create directory:", dirPath, err);
-    return false;
-  }
 }
 
 // ---------------------------------------------------------------------------

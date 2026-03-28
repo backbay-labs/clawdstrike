@@ -5,15 +5,15 @@ mod commands;
 
 use capability::CommandCapabilityState;
 use commands::{
-    capability, detection, file_watcher, mcp_sidecar, persistence, repo_roots,
-    rpc_socket, stronghold as stronghold_cmds, terminal, workbench, worktree,
+    capability, detection, file_watcher, mcp_sidecar, persistence, repo_roots, rpc_socket,
+    stronghold as stronghold_cmds, terminal, workbench, workspace_fs, workspace_registry, worktree,
 };
 use mcp_sidecar::McpState;
 use rpc_socket::RpcSocketState;
 use stronghold_cmds::StrongholdState;
+use tauri::Emitter;
 #[allow(unused_imports)]
 use tauri::Manager;
-use tauri::Emitter;
 use terminal::TerminalState;
 
 /// Guard against duplicate ExitRequested events spawning multiple exit threads.
@@ -167,6 +167,14 @@ fn main() {
             detection::convert_sigma_rule,
             persistence::read_app_persistence_file,
             persistence::write_app_persistence_file,
+            workspace_registry::bootstrap_workspace_registry,
+            workspace_registry::add_workspace_root,
+            workspace_registry::remove_workspace_root,
+            workspace_fs::read_workspace_tree,
+            workspace_fs::create_workspace_directory,
+            workspace_fs::rename_workspace_entry,
+            workspace_fs::delete_workspace_entry,
+            workspace_fs::reveal_workspace_entry,
             file_watcher::configure_swarm_file_watcher,
             file_watcher::stop_swarm_file_watcher,
             rpc_socket::rpc_frontend_respond,
@@ -193,11 +201,15 @@ fn main() {
             match event {
                 tauri::RunEvent::ExitRequested { api, .. } => {
                     // Guard: only handle the first ExitRequested event.
-                    if EXIT_PENDING.compare_exchange(
-                        false, true,
-                        std::sync::atomic::Ordering::SeqCst,
-                        std::sync::atomic::Ordering::SeqCst,
-                    ).is_err() {
+                    if EXIT_PENDING
+                        .compare_exchange(
+                            false,
+                            true,
+                            std::sync::atomic::Ordering::SeqCst,
+                            std::sync::atomic::Ordering::SeqCst,
+                        )
+                        .is_err()
+                    {
                         api.prevent_exit();
                         return;
                     }

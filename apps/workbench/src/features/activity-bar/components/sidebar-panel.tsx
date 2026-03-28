@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { useActivityBarStore } from "../stores/activity-bar-store";
-import { ExplorerPanel } from "@/components/workbench/explorer/explorer-panel";
+import {
+  ExplorerPanel,
+  type ExplorerRootState,
+} from "@/components/workbench/explorer/explorer-panel";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { getProjectFileStatusKey } from "@/features/project/stores/project-store";
 import type { DetectionProject, ProjectFile } from "@/features/project/stores/project-store";
@@ -22,6 +25,7 @@ import {
   relativeWorkspacePath,
   resolveWorkspaceRootPath,
 } from "@/lib/workbench/path-utils";
+import { revealWorkspaceEntryNative } from "@/lib/tauri-commands";
 
 // ---------------------------------------------------------------------------
 // SidebarPanel -- Container that renders active panel content.
@@ -35,6 +39,12 @@ import {
 function ExplorerPanelConnected() {
   const projectRoots = useProjectStore.use.projectRoots();
   const projectsMap = useProjectStore.use.projects();
+  const rootsById = useProjectStore.use.rootsById();
+  const orderedRootIds = useProjectStore.use.orderedRootIds();
+  const defaultRootId = useProjectStore.use.defaultRootId();
+  const rootStatusById = useProjectStore.use.rootStatusById();
+  const rootErrorById = useProjectStore.use.rootErrorById();
+  const rootMutationById = useProjectStore.use.rootMutationById();
   const loading = useProjectStore.use.loading();
   const filter = useProjectStore.use.filter();
   const formatFilter = useProjectStore.use.formatFilter();
@@ -51,6 +61,24 @@ function ExplorerPanelConnected() {
       .filter((p): p is DetectionProject => p != null);
   }, [projectRoots, projectsMap]);
 
+  const rootStates = useMemo(() => {
+    const states = new Map<string, ExplorerRootState>();
+    for (const rootId of orderedRootIds) {
+      const root = rootsById.get(rootId);
+      if (!root) continue;
+      states.set(root.displayPath, {
+        status: rootStatusById.get(rootId) ?? "idle",
+        error: rootErrorById.get(rootId) ?? null,
+        mutation: rootMutationById.get(rootId) ?? null,
+        isDefault: rootId === defaultRootId,
+        label: root.label,
+        kind: root.kind,
+        provenance: root.provenance,
+      });
+    }
+    return states;
+  }, [defaultRootId, orderedRootIds, rootErrorById, rootMutationById, rootStatusById, rootsById]);
+
   // Derive active file's relative path from pane store for tree highlighting.
   const paneRoot = usePaneStore((s) => s.root);
   const activePaneId = usePaneStore((s) => s.activePaneId);
@@ -65,17 +93,16 @@ function ExplorerPanelConnected() {
       : null;
   }, [paneRoot, activePaneId, projectRoots]);
 
-  // Show loading indicator briefly while bootstrap scans directories.
-  // 5s timeout prevents indefinite "Loading..." if bootstrap hangs or fails.
+  // Show loading indicator briefly while bootstrap resolves the initial roots.
   const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
     if (!loading) return;
     setTimedOut(false);
-    const timer = setTimeout(() => setTimedOut(true), 30_000);
+    const timer = setTimeout(() => setTimedOut(true), 5_000);
     return () => clearTimeout(timer);
   }, [loading]);
 
-  if (loading && !timedOut && projects.length === 0) {
+  if (loading && !timedOut && projectRoots.length === 0 && projects.length === 0) {
     return (
       <div className="h-full flex flex-col">
         <div className="h-[36px] shrink-0 flex items-center border-b border-[#202531] px-3">
@@ -95,6 +122,7 @@ function ExplorerPanelConnected() {
   return (
     <ExplorerPanel
       projects={projects}
+      rootStates={rootStates}
       activeFileKey={activeFileKey}
       onToggleDir={(rootPath, dirPath) => {
         actions.toggleDirForRoot(rootPath, dirPath);
@@ -114,9 +142,7 @@ function ExplorerPanelConnected() {
       onExpandAll={actions.expandAll}
       onCollapseAll={actions.collapseAll}
       onRefresh={async () => {
-        for (const root of projectRoots) {
-          await actions.loadRoot(root);
-        }
+        await Promise.all(projectRoots.map((root) => actions.loadRoot(root)));
       }}
       filter={filter}
       onFilterChange={actions.setFilter}
@@ -131,7 +157,7 @@ function ExplorerPanelConnected() {
         if (selected && typeof selected === "string") {
           // addRoot internally triggers loadRoot (fire-and-forget).
           const storeActions = useProjectStore.getState().actions;
-          storeActions.addRoot(selected);
+          await storeActions.addRoot(selected);
         }
       }}
       onRemoveRoot={(rootPath) => {
@@ -152,18 +178,15 @@ function ExplorerPanelConnected() {
         await actions.deleteFile(joinWorkspacePath(rootPath, file.path));
       }}
       onRevealInFinder={async (absPath) => {
-        const { revealInFinder } = await import("@/lib/tauri-bridge");
-        await revealInFinder(absPath);
+        const rootPath = resolveWorkspaceRootPath(projectRoots, absPath);
+        if (!rootPath) return;
+        const root = [...rootsById.values()].find((record) => record.displayPath === rootPath);
+        if (!root) return;
+        const relativePath = relativeWorkspacePath(root.displayPath, absPath);
+        await revealWorkspaceEntryNative(root.rootId, relativePath);
       }}
       onCreateFolder={async (parentPath, folderName) => {
-        const { createDirectory } = await import("@/lib/tauri-bridge");
-        const fullPath = joinWorkspacePath(parentPath, folderName);
-        const ok = await createDirectory(fullPath);
-        if (ok) {
-          // Re-scan the root that contains this folder
-          const root = resolveWorkspaceRootPath(projectRoots, parentPath);
-          if (root) await actions.loadRoot(root);
-        }
+        await actions.createDirectory(parentPath, folderName);
       }}
       onCollapseChildren={(rootPath, dirPath) => {
         // Collapse dirPath and all its descendant dirs within the root

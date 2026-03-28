@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   savePaneSession,
   loadPaneSession,
+  loadPaneSessionWithRouteMapper,
   countFileViews,
   clearPaneSession,
 } from "../pane-session";
@@ -125,6 +126,23 @@ describe("pane-session", () => {
       for (const view of restoredGroup.views) {
         expect(view.dirty).toBeFalsy();
       }
+    });
+
+    it("maps restored routes through the provided route mapper", () => {
+      const dirtyView = makeView({
+        route: "/file//private/Users/test/repo/policy.yaml",
+        label: "policy.yaml",
+      });
+      const group = makeGroup([dirtyView]);
+
+      savePaneSession(group, group.id);
+      const restored = loadPaneSessionWithRouteMapper((route) =>
+        route.replace("/private/Users/test/repo", "/Users/test/repo"),
+      );
+
+      expect(restored).not.toBeNull();
+      const restoredGroup = restored!.root as PaneGroup;
+      expect(restoredGroup.views[0].route).toBe("/file//Users/test/repo/policy.yaml");
     });
   });
 
