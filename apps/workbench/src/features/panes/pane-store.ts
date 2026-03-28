@@ -5,6 +5,7 @@ import {
 } from "@/components/desktop/workbench-routes";
 import {
   canonicalizeWorkspaceConsumerPath,
+  isWorkspaceConsumerPathVisible,
   useProjectStore,
 } from "@/features/project/stores/project-store";
 import {
@@ -27,19 +28,23 @@ import { usePolicyTabsStore, pushRecentFile } from "@/features/policy/stores/pol
 import { loadPaneSessionWithRouteMapper, countFileViews } from "./pane-session";
 import type { PaneFocusDirection, PaneGroup, PaneNode, PaneSplitDirection, PaneView } from "./pane-types";
 
-function canonicalizePaneRoute(route: string): string {
+function canonicalizePaneRoute(route: string): string | null {
   const normalized = normalizeWorkbenchRoute(route);
   if (!normalized.startsWith("/file/") || normalized.startsWith("/file/__new__/")) {
     return normalized;
   }
 
   const filePath = normalized.slice("/file/".length);
-  const canonicalPath = canonicalizeWorkspaceConsumerPath(useProjectStore.getState(), filePath);
+  const workspaceState = useProjectStore.getState();
+  const canonicalPath = canonicalizeWorkspaceConsumerPath(workspaceState, filePath);
+  if (!isWorkspaceConsumerPathVisible(workspaceState, canonicalPath)) {
+    return null;
+  }
   return `/file/${canonicalPath}`;
 }
 
 function createPaneView(route: string): PaneView {
-  const normalized = canonicalizePaneRoute(route);
+  const normalized = canonicalizePaneRoute(route) ?? "/home";
   return {
     id: crypto.randomUUID(),
     route: normalized,
@@ -98,6 +103,9 @@ export const usePaneStore = create<PaneStore>((set, get) => ({
 
   syncRoute: (route) => {
     const normalized = canonicalizePaneRoute(route);
+    if (!normalized) {
+      return;
+    }
     const state = get();
     const activePane = getActivePane(state.root, state.activePaneId)
       ?? getFirstPaneGroup(state.root);
@@ -184,6 +192,9 @@ export const usePaneStore = create<PaneStore>((set, get) => ({
 
   openApp: (route, label) => {
     const normalized = canonicalizePaneRoute(route);
+    if (!normalized) {
+      return;
+    }
     const resolvedLabel = label ?? getWorkbenchRouteLabel(normalized);
 
     // Search all pane groups for an existing view with this normalized route
@@ -303,6 +314,9 @@ export const usePaneStore = create<PaneStore>((set, get) => ({
 
   openFile: (filePath, label, _fileType) => {
     const canonicalPath = canonicalizeWorkspaceConsumerPath(useProjectStore.getState(), filePath);
+    if (!isWorkspaceConsumerPathVisible(useProjectStore.getState(), canonicalPath)) {
+      return;
+    }
     const route = `/file/${canonicalPath}`;
     get().openApp(route, label ?? canonicalPath.split("/").pop() ?? "File");
     pushRecentFile(canonicalPath);

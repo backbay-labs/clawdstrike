@@ -331,6 +331,10 @@ fn remove_self_aliases(record: &mut WorkspaceRootRecord) {
     });
 }
 
+fn path_is_same_or_descendant(candidate: &Path, ancestor: &Path) -> bool {
+    candidate == ancestor || candidate.starts_with(ancestor)
+}
+
 fn admit_root(
     registry: &mut PersistedWorkspaceRegistry,
     canonical_path: &Path,
@@ -357,6 +361,7 @@ fn admit_root(
             .roots
             .get_mut(index)
             .expect("index already validated");
+        let next_is_default = root.is_default || is_default;
         root.canonical_path = canonical_string.clone();
         if root.display_path.trim().is_empty() {
             root.display_path = display_string.clone();
@@ -364,17 +369,17 @@ fn admit_root(
         if root.label.trim().is_empty() {
             root.label = label_for_path(display_path);
         }
-        root.kind = if is_default {
+        root.kind = if next_is_default {
             WorkspaceRootKind::DefaultHome
         } else {
             kind
         };
-        root.provenance = if is_default {
+        root.provenance = if next_is_default {
             WorkspaceRootProvenance::Bootstrap
         } else {
             provenance
         };
-        root.is_default = root.is_default || is_default;
+        root.is_default = next_is_default;
         push_unique_alias(&mut root.aliases, display_string);
         for alias in alias_strings {
             push_unique_alias(&mut root.aliases, alias);
@@ -507,6 +512,11 @@ fn bootstrap_registry_at(
                 continue;
             }
 
+            if path_is_same_or_descendant(&canonical, &default_canonical) {
+                dropped_legacy_roots.push(trimmed.to_string());
+                continue;
+            }
+
             migrated_legacy_roots.push(trimmed.to_string());
             admit_root(
                 &mut registry,
@@ -568,6 +578,11 @@ fn bootstrap_registry_at(
                     &[candidate.clone(), default_workspace_alias.clone()],
                     None,
                 );
+                continue;
+            }
+
+            if path_is_same_or_descendant(&canonical, &default_canonical) {
+                dropped_legacy_roots.push(trimmed.to_string());
                 continue;
             }
 
@@ -651,6 +666,16 @@ fn add_workspace_root_at(
     }
 
     let canonical = canonicalize_workspace_root(&candidate)?;
+    let default_canonical = canonicalize_workspace_root(default_root)?;
+    if canonical == default_canonical {
+        return Ok(snapshot_from_registry(&registry));
+    }
+    if path_is_same_or_descendant(&canonical, &default_canonical) {
+        return Err(format!(
+            "Paths inside the managed default workspace cannot be mounted as separate roots: {}",
+            candidate.display()
+        ));
+    }
     admit_root(
         &mut registry,
         &canonical,
@@ -891,5 +916,53 @@ mod tests {
         assert_eq!(second.snapshot.roots.len(), 1);
         assert_eq!(second.snapshot.roots[0].root_id, root.root_id);
         assert_eq!(first.migrated_legacy_roots, second.migrated_legacy_roots);
+    }
+
+    #[test]
+    fn workspace_registry_rejects_nested_managed_default_root_mounts() {
+        let (_tempdir, home, registry_file) = setup_home();
+        let default_root = home.join(".clawdstrike");
+        let receipts_root = default_root.join("receipts");
+        std::fs::create_dir_all(&receipts_root).expect("receipts");
+
+        bootstrap_registry_at(&registry_file, &default_root, &[]).expect("bootstrap");
+
+        let result = add_workspace_root_at(
+            &registry_file,
+            &default_root,
+            &receipts_root.to_string_lossy(),
+        );
+        assert!(result.is_err());
+        let message = result.err().unwrap_or_default();
+        assert!(message.contains("managed default workspace"));
+    }
+
+    #[test]
+    fn workspace_registry_keeps_default_root_identity_when_readding_default_path() {
+        let (_tempdir, home, registry_file) = setup_home();
+        let default_root = home.join(".clawdstrike");
+        std::fs::create_dir_all(default_root.join("workspace")).expect("workspace");
+
+        let bootstrapped =
+            bootstrap_registry_at(&registry_file, &default_root, &[]).expect("bootstrap");
+        let original = bootstrapped
+            .snapshot
+            .roots
+            .iter()
+            .find(|root| root.is_default)
+            .expect("default root")
+            .clone();
+
+        let snapshot = add_workspace_root_at(&registry_file, &default_root, &default_root.to_string_lossy())
+            .expect("re-add default path");
+        assert_eq!(snapshot.roots.len(), 1);
+        let current = snapshot
+            .roots
+            .iter()
+            .find(|root| root.root_id == original.root_id)
+            .expect("default root preserved");
+        assert!(current.is_default);
+        assert_eq!(current.kind, super::WorkspaceRootKind::DefaultHome);
+        assert_eq!(current.provenance, WorkspaceRootProvenance::Bootstrap);
     }
 }

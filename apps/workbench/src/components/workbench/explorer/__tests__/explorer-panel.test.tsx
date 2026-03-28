@@ -1,8 +1,8 @@
+import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ExplorerPanel } from "../explorer-panel";
 import type { DetectionProject, ProjectFile } from "@/features/project/stores/project-store";
-import { getProjectFileStatusKey } from "@/features/project/stores/project-store";
 
 function makeProject(rootPath: string, ...fileNames: string[]): DetectionProject {
   const resolvedFileNames = fileNames.length > 0 ? fileNames : ["default.yaml"];
@@ -109,7 +109,102 @@ function makeLargeProject(rootPath: string, fileCount: number): DetectionProject
   };
 }
 
+function makeEmptyDirectoryRootProject(rootPath: string): DetectionProject {
+  return {
+    rootId: rootPath,
+    rootPath,
+    name: rootPath.split("/").pop() ?? rootPath,
+    expandedDirs: new Set<string>(),
+    files: [
+      {
+        path: "policies",
+        name: "policies",
+        fileType: "clawdstrike_policy",
+        isDirectory: true,
+        depth: 0,
+        children: [],
+      },
+    ],
+  };
+}
+
+function ExplorerHarness({
+  initialProjects,
+  activeFileKey,
+  onCreateFile,
+}: {
+  initialProjects: DetectionProject[];
+  activeFileKey?: string | null;
+  onCreateFile?: (parentPath: string, fileName: string) => void;
+}) {
+  const [projects, setProjects] = React.useState(initialProjects);
+
+  return (
+    <ExplorerPanel
+      projects={projects}
+      activeFileKey={activeFileKey}
+      onToggleDir={(rootId, dirPath) => {
+        setProjects((current) => current.map((project) => {
+          if (project.rootId !== rootId) {
+            return project;
+          }
+          const nextExpandedDirs = new Set(project.expandedDirs);
+          if (nextExpandedDirs.has(dirPath)) {
+            nextExpandedDirs.delete(dirPath);
+          } else {
+            nextExpandedDirs.add(dirPath);
+          }
+          return {
+            ...project,
+            expandedDirs: nextExpandedDirs,
+          };
+        }));
+      }}
+      onOpenFile={() => {}}
+      onExpandAll={() => {}}
+      onCollapseAll={() => {}}
+      filter=""
+      onFilterChange={() => {}}
+      formatFilter={null}
+      onFormatFilterChange={() => {}}
+      onCreateFile={onCreateFile}
+    />
+  );
+}
+
 describe("ExplorerPanel", () => {
+  it("transitions from empty state to a loaded tree without changing hook order", () => {
+    const props = {
+      onToggleDir: () => {},
+      onOpenFile: () => {},
+      onExpandAll: () => {},
+      onCollapseAll: () => {},
+      filter: "",
+      onFilterChange: () => {},
+      formatFilter: null,
+      onFormatFilterChange: () => {},
+    } as const;
+
+    const { rerender } = render(
+      <ExplorerPanel
+        {...props}
+        projects={[]}
+      />,
+    );
+
+    expect(screen.getByText("No folder open")).toBeInTheDocument();
+
+    rerender(
+      <ExplorerPanel
+        {...props}
+        projects={[makeProject("/workspace/alpha", "default.yaml")]}
+      />,
+    );
+
+    expect(screen.getByRole("tree", { name: "Workspace explorer" })).toBeInTheDocument();
+    expect(screen.getByText("alpha")).toBeInTheDocument();
+  });
+
   it("preserves the clicked root when duplicate relative paths exist", () => {
     const onOpenFile = vi.fn();
 
@@ -245,7 +340,7 @@ describe("ExplorerPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
 
     expect(onRefreshRoot).toHaveBeenCalledWith("/workspace/alpha");
-    expect(onRevealInFinder).toHaveBeenCalledWith("/workspace/alpha");
+    expect(onRevealInFinder).toHaveBeenCalledWith("/workspace/alpha", "/workspace/alpha");
   });
 
   it("curates the default root into a clean workspace-first tree", () => {
@@ -254,7 +349,7 @@ describe("ExplorerPanel", () => {
         projects={[makeDefaultWorkspaceProject()]}
         rootStates={new Map([
           [
-            "/Users/test/.clawdstrike",
+            "root-default",
             {
               status: "ready",
               error: null,
@@ -280,6 +375,43 @@ describe("ExplorerPanel", () => {
     expect(screen.getByText("default.yaml")).toBeTruthy();
     expect(screen.queryByText("workspace-root-registry.v1.json")).toBeNull();
     expect(screen.queryByText("Workbench-managed default workspace root")).toBeNull();
+  });
+
+  it("keeps curated default-root descendants at their real tree depth", () => {
+    render(
+      <ExplorerPanel
+        projects={[makeDefaultWorkspaceProject()]}
+        rootStates={new Map([
+          [
+            "root-default",
+            {
+              status: "ready",
+              error: null,
+              isDefault: true,
+              label: ".clawdstrike",
+              kind: "default_home",
+              provenance: "bootstrap",
+            },
+          ],
+        ])}
+        onToggleDir={() => {}}
+        onOpenFile={() => {}}
+        onExpandAll={() => {}}
+        onCollapseAll={() => {}}
+        filter=""
+        onFilterChange={() => {}}
+        formatFilter={null}
+        onFormatFilterChange={() => {}}
+      />,
+    );
+
+    const folderRow = screen.getByRole("treeitem", { name: /policies, expanded folder/i });
+    const fileRow = screen.getByRole("treeitem", { name: /default\.yaml, file/i });
+
+    expect(folderRow.getAttribute("aria-level")).toBe("2");
+    expect(fileRow.getAttribute("aria-level")).toBe("3");
+    expect(folderRow).toHaveStyle({ paddingLeft: "22px" });
+    expect(fileRow).toHaveStyle({ paddingLeft: "40px" });
   });
 
   it("keeps non-default roots simple without curated workspace chrome", () => {
@@ -385,6 +517,107 @@ describe("ExplorerPanel", () => {
     expect(screen.getByRole("treeitem", { name: /default\.yaml, file/i })).toBeTruthy();
   });
 
+  it("auto-reveals the active file even when its ancestors are collapsed", async () => {
+    render(
+      <ExplorerHarness
+        initialProjects={[makeCollapsedProject("/workspace/alpha", "default.yaml")]}
+        activeFileKey="/workspace/alpha::policies/default.yaml"
+      />,
+    );
+
+    expect(await screen.findByRole("treeitem", { name: /policies, expanded folder/i })).toBeTruthy();
+    expect(await screen.findByRole("treeitem", { name: /default\.yaml, file, active/i })).toBeTruthy();
+  });
+
+  it("keeps mutation banners visible for empty non-curated roots", () => {
+    render(
+      <ExplorerPanel
+        projects={[{ ...makeProject("/workspace/alpha", "default.yaml"), files: [] }]}
+        rootStates={new Map([
+          [
+            "/workspace/alpha",
+            {
+              status: "ready",
+              error: null,
+              mutation: {
+                kind: "delete",
+                status: "pending",
+                rootId: "/workspace/alpha",
+                rootPath: "/workspace/alpha",
+                targetRelativePath: "policies/orphan.yaml",
+                targetLabel: "orphan.yaml",
+                message: null,
+                updatedAt: 1,
+              },
+            },
+          ],
+        ])}
+        onToggleDir={() => {}}
+        onOpenFile={() => {}}
+        onExpandAll={() => {}}
+        onCollapseAll={() => {}}
+        filter=""
+        onFilterChange={() => {}}
+        formatFilter={null}
+        onFormatFilterChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Delete pending for orphan.yaml")).toBeTruthy();
+    expect(screen.getByText("No files yet")).toBeTruthy();
+  });
+
+  it("allows manual root collapse after auto-revealing the active file", async () => {
+    render(
+      <ExplorerHarness
+        initialProjects={[makeCollapsedProject("/workspace/alpha", "default.yaml")]}
+        activeFileKey="/workspace/alpha::policies/default.yaml"
+      />,
+    );
+
+    const rootRow = await screen.findByRole("treeitem", { name: /alpha, workspace root/i });
+    expect(await screen.findByRole("treeitem", { name: /policies, expanded folder/i })).toBeTruthy();
+    expect(await screen.findByRole("treeitem", { name: /default\.yaml, file/i })).toBeTruthy();
+
+    fireEvent.click(rootRow);
+
+    expect(screen.queryByRole("treeitem", { name: /default\.yaml, file/i })).toBeNull();
+  });
+
+  it("targets the focused root when creating a new file from the toolbar", () => {
+    const onCreateFile = vi.fn();
+
+    render(
+      <ExplorerPanel
+        projects={[
+          makeProject("/workspace/alpha", "alpha.yaml"),
+          makeProject("/workspace/bravo", "bravo.yaml"),
+        ]}
+        onToggleDir={() => {}}
+        onOpenFile={() => {}}
+        onExpandAll={() => {}}
+        onCollapseAll={() => {}}
+        filter=""
+        onFilterChange={() => {}}
+        formatFilter={null}
+        onFormatFilterChange={() => {}}
+        onCreateFile={onCreateFile}
+      />,
+    );
+
+    const bravoRoot = screen.getByRole("treeitem", { name: /bravo, workspace root/i });
+    bravoRoot.focus();
+    fireEvent.focus(bravoRoot);
+
+    fireEvent.click(screen.getByTitle("New File"));
+
+    const input = screen.getByPlaceholderText("filename.yaml");
+    fireEvent.change(input, { target: { value: "investigate.yaml" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onCreateFile).toHaveBeenCalledWith("/workspace/bravo", "investigate.yaml");
+  });
+
   it("opens the explorer context menu from the keyboard on the focused row", () => {
     render(
       <ExplorerPanel
@@ -407,6 +640,44 @@ describe("ExplorerPanel", () => {
 
     expect(screen.getByRole("menu", { name: "Explorer context menu" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Refresh" })).toBeTruthy();
+  });
+
+  it("preserves mutation banners when a non-curated root becomes empty", () => {
+    render(
+      <ExplorerPanel
+        projects={[{ ...makeProject("/workspace/alpha", "default.yaml"), files: [] }]}
+        rootStates={new Map([
+          [
+            "/workspace/alpha",
+            {
+              status: "ready",
+              error: null,
+              mutation: {
+                kind: "delete",
+                status: "error",
+                rootId: "/workspace/alpha",
+                rootPath: "/workspace/alpha",
+                targetRelativePath: "policies/default.yaml",
+                targetLabel: "default.yaml",
+                message: "delete needs retry",
+                updatedAt: 1,
+              },
+            },
+          ],
+        ])}
+        onToggleDir={() => {}}
+        onOpenFile={() => {}}
+        onExpandAll={() => {}}
+        onCollapseAll={() => {}}
+        filter=""
+        onFilterChange={() => {}}
+        formatFilter={null}
+        onFormatFilterChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Delete needs review for default.yaml")).toBeTruthy();
+    expect(screen.getByText("delete needs retry")).toBeTruthy();
   });
 
   it("falls back focus deterministically when the current row disappears", () => {
@@ -453,6 +724,65 @@ describe("ExplorerPanel", () => {
     expect(document.activeElement).toBe(fallbackRow);
   });
 
+  it("targets the focused root from the toolbar New File action", () => {
+    const onCreateFile = vi.fn();
+
+    render(
+      <ExplorerPanel
+        projects={[
+          makeProject("/workspace/alpha", "default.yaml"),
+          makeProject("/workspace/bravo", "default.yaml"),
+        ]}
+        onToggleDir={() => {}}
+        onOpenFile={() => {}}
+        onExpandAll={() => {}}
+        onCollapseAll={() => {}}
+        filter=""
+        onFilterChange={() => {}}
+        formatFilter={null}
+        onFormatFilterChange={() => {}}
+        onCreateFile={onCreateFile}
+      />,
+    );
+
+    const bravoRoot = screen.getByRole("treeitem", { name: /bravo, workspace root/i });
+    fireEvent.focus(bravoRoot);
+    fireEvent.click(screen.getByRole("button", { name: "New File" }));
+
+    const input = screen.getByPlaceholderText("filename.yaml");
+    fireEvent.change(input, { target: { value: "focused.yaml" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onCreateFile).toHaveBeenCalledWith("/workspace/bravo", "focused.yaml");
+  });
+
+  it("treats directory-only roots as expandable from the keyboard", () => {
+    render(
+      <ExplorerPanel
+        projects={[makeEmptyDirectoryRootProject("/workspace/alpha")]}
+        onToggleDir={() => {}}
+        onOpenFile={() => {}}
+        onExpandAll={() => {}}
+        onCollapseAll={() => {}}
+        filter=""
+        onFilterChange={() => {}}
+        formatFilter={null}
+        onFormatFilterChange={() => {}}
+      />,
+    );
+
+    const rootRow = screen.getByRole("treeitem", { name: /alpha, workspace root/i });
+    expect(screen.getByRole("treeitem", { name: /policies, collapsed folder/i })).toBeTruthy();
+
+    fireEvent.click(rootRow);
+    expect(screen.queryByRole("treeitem", { name: /policies, collapsed folder/i })).toBeNull();
+
+    rootRow.focus();
+    fireEvent.keyDown(rootRow, { key: "ArrowRight" });
+
+    expect(screen.getByRole("treeitem", { name: /policies, collapsed folder/i })).toBeTruthy();
+  });
+
   it("bounds large tree rendering and reveals more rows on demand", () => {
     render(
       <ExplorerPanel
@@ -480,7 +810,7 @@ describe("ExplorerPanel", () => {
     render(
       <ExplorerPanel
         projects={[makeLargeProject("/workspace/alpha", 260)]}
-        activeFileKey={getProjectFileStatusKey("/workspace/alpha", "policies/bulk-259.yaml")}
+        activeFileKey={"/workspace/alpha::policies/bulk-259.yaml"}
         onToggleDir={() => {}}
         onOpenFile={() => {}}
         onExpandAll={() => {}}

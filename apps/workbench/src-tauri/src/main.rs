@@ -172,6 +172,7 @@ fn main() {
             workspace_registry::remove_workspace_root,
             workspace_fs::read_workspace_tree,
             workspace_fs::create_workspace_directory,
+            workspace_fs::create_workspace_file,
             workspace_fs::rename_workspace_entry,
             workspace_fs::delete_workspace_entry,
             workspace_fs::reveal_workspace_entry,

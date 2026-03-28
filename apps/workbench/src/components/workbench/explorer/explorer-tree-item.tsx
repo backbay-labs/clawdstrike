@@ -13,6 +13,15 @@ import { cn } from "@/lib/utils";
 
 const TREE_INDENT_PX = 18;
 const TREE_GUIDE_OFFSET_PX = 13;
+const TREE_ROW_BASE_PADDING_PX = 4;
+
+export function getTreeItemPaddingLeft(level: number): number {
+  return Math.max(0, level - 1) * TREE_INDENT_PX + TREE_ROW_BASE_PADDING_PX;
+}
+
+function getTreeGuideCount(level: number): number {
+  return Math.max(0, level - 2);
+}
 
 interface ExplorerTreeItemProps {
   nodeId: string;
@@ -66,8 +75,8 @@ export const ExplorerTreeItem = forwardRef<HTMLDivElement, ExplorerTreeItemProps
   mutationStatus,
   mutationLabel,
 }, ref) {
-  const indent = Math.max(0, level - 1) * TREE_INDENT_PX;
-  const guideCount = Math.max(0, level - 2);
+  const indent = getTreeItemPaddingLeft(level);
+  const guideCount = getTreeGuideCount(level);
   const accessibilityState = file.isDirectory
     ? `${isExpanded ? "expanded" : "collapsed"} folder`
     : hasError
@@ -103,9 +112,9 @@ export const ExplorerTreeItem = forwardRef<HTMLDivElement, ExplorerTreeItemProps
       onFocus={onFocus}
       onKeyDown={onKeyDown}
       onContextMenu={onContextMenu}
-      style={{ paddingLeft: indent + 4 }}
+      style={{ paddingLeft: indent }}
       className={cn(
-        "relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left transition-colors outline-none",
+        "relative flex min-h-7 w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left transition-colors outline-none",
         "hover:bg-[#12161f]",
         isActive && "bg-[#151b25]",
         "focus-visible:bg-[#151b25] focus-visible:ring-1 focus-visible:ring-[#334156]/80",

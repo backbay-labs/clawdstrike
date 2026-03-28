@@ -17,6 +17,7 @@ import {
   addWorkspaceRootNative,
   bootstrapWorkspaceRegistryNative,
   createWorkspaceDirectoryNative,
+  createWorkspaceFileNative,
   configureSwarmFileWatcherNative,
   deleteWorkspaceEntryNative,
   readAppPersistenceFileNative,
@@ -138,6 +139,7 @@ describe("app persistence commands", () => {
     await expect(removeWorkspaceRootNative("root-123")).resolves.toBeNull();
     await expect(readWorkspaceTreeNative("root-123")).resolves.toBeNull();
     await expect(createWorkspaceDirectoryNative("root-123", "workspace/policies")).resolves.toBeNull();
+    await expect(createWorkspaceFileNative("root-123", "workspace/policies/default.yaml", "x")).resolves.toBeNull();
     await expect(renameWorkspaceEntryNative("root-123", "old.yaml", "new.yaml")).resolves.toBeNull();
     await expect(deleteWorkspaceEntryNative("root-123", "old.yaml")).resolves.toBeNull();
     await expect(revealWorkspaceEntryNative("root-123", "old.yaml")).resolves.toBeNull();
@@ -163,6 +165,30 @@ describe("app persistence commands", () => {
     expect(invokeMock).toHaveBeenCalledWith("read_workspace_tree", {
       request: {
         rootId: "root-123",
+        includeInternalEntries: false,
+      },
+    });
+  });
+
+  it("reads internal workspace entries when explicitly requested", async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        entries: [{ path: "workspace/.clawdstrike", kind: "directory" }],
+      },
+    });
+
+    await expect(readWorkspaceTreeNative("root-123", { includeInternalEntries: true })).resolves.toEqual({
+      ok: true,
+      data: {
+        entries: [{ path: "workspace/.clawdstrike", kind: "directory" }],
+      },
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("read_workspace_tree", {
+      request: {
+        rootId: "root-123",
+        includeInternalEntries: true,
       },
     });
   });
@@ -237,6 +263,60 @@ describe("app persistence commands", () => {
       request: {
         rootId: "root-123",
         relativePath: "workspace/new.yaml",
+      },
+    });
+  });
+
+  it("creates a workspace file through the native command surface", async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        relativePath: "workspace/policies/default.yaml",
+      },
+    });
+
+    await expect(
+      createWorkspaceFileNative("root-123", "workspace/policies/default.yaml", "name: test\n"),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        relativePath: "workspace/policies/default.yaml",
+      },
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("create_workspace_file", {
+      request: {
+        rootId: "root-123",
+        relativePath: "workspace/policies/default.yaml",
+        content: "name: test\n",
+      },
+    });
+  });
+
+  it("creates a workspace file from backend default content when requested", async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        relativePath: "workspace/policies/generated.yaml",
+      },
+    });
+
+    await expect(
+      createWorkspaceFileNative("root-123", "workspace/policies/generated.yaml", {
+        defaultContentFileType: "clawdstrike_policy",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        relativePath: "workspace/policies/generated.yaml",
+      },
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("create_workspace_file", {
+      request: {
+        rootId: "root-123",
+        relativePath: "workspace/policies/generated.yaml",
+        defaultContentFileType: "clawdstrike_policy",
       },
     });
   });

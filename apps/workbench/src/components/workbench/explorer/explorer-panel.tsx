@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState, useRef, useEffect } from "react";
+import React, { useMemo, useCallback, useState, useRef, useEffect, useLayoutEffect } from "react";
 import {
   IconFolderOpen,
   IconRefresh,
@@ -20,7 +20,7 @@ import type {
   ProjectRootStatus,
 } from "@/features/project/stores/project-store";
 import { getProjectFileStatusKey } from "@/features/project/stores/project-store";
-import { ExplorerTreeItem } from "./explorer-tree-item";
+import { ExplorerTreeItem, getTreeItemPaddingLeft } from "./explorer-tree-item";
 import { ExplorerContextMenu, type ContextMenuTarget } from "./explorer-context-menu";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { InlineNameInput } from "./inline-name-input";
@@ -36,8 +36,8 @@ interface ExplorerPanelProps {
   /** Array of mounted workspace roots (multi-root support). */
   projects: DetectionProject[];
   rootStates?: Map<string, ExplorerRootState>;
-  onToggleDir: (rootPath: string, dirPath: string) => void;
-  onOpenFile: (rootPath: string, file: ProjectFile) => void;
+  onToggleDir: (rootId: string, dirPath: string) => void;
+  onOpenFile: (rootId: string, file: ProjectFile) => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
   filter: string;
@@ -48,21 +48,21 @@ interface ExplorerPanelProps {
   /** Callback to open native folder picker and mount a new root. */
   onAddFolder?: () => void;
   /** Callback to remove a mounted root from the workspace. */
-  onRemoveRoot?: (rootPath: string) => void;
+  onRemoveRoot?: (rootId: string) => void;
   activeFileKey?: string | null;
   className?: string;
   onCreateFile?: (parentPath: string, fileName: string) => void;
-  onRenameFile?: (rootPath: string, file: ProjectFile, newName: string) => void;
-  onDeleteFile?: (rootPath: string, file: ProjectFile) => void;
+  onRenameFile?: (rootId: string, file: ProjectFile, newName: string) => void;
+  onDeleteFile?: (rootId: string, file: ProjectFile) => void;
   fileStatuses?: Map<string, FileStatus>;
-  onRevealInFinder?: (absolutePath: string) => void;
+  onRevealInFinder?: (rootId: string, absolutePath: string) => void;
   onCreateFolder?: (parentPath: string, folderName: string) => void;
-  onCollapseChildren?: (rootPath: string, dirPath: string) => void;
-  onRefreshRoot?: (rootPath: string) => void;
+  onCollapseChildren?: (rootId: string, dirPath: string) => void;
+  onRefreshRoot?: (rootId: string) => void;
 }
 
 interface DeleteTarget {
-  rootPath: string;
+  rootId: string;
   file: ProjectFile;
 }
 
@@ -76,21 +76,14 @@ export interface ExplorerRootState {
   provenance?: TauriWorkspaceRootProvenance;
 }
 
-interface CuratedRootSections {
-  primaryFiles: ProjectFile[];
-  secondaryFiles: ProjectFile[];
-  secondaryUnderlyingCount: number;
-}
-
 interface RootRenderModel {
   hasActiveFilter: boolean;
   shouldUseCuratedSections: boolean;
+  effectiveExpandedDirs: Set<string>;
+  forceExpandRoot: boolean;
   primaryVisibleItems: ProjectFile[];
-  secondaryVisibleItems: ProjectFile[];
   primaryHiddenCount: number;
-  secondaryHiddenCount: number;
   primaryUnderlyingCount: number;
-  secondaryUnderlyingCount: number;
 }
 
 type ExplorerVisibleNodeKind = "root" | "directory" | "file";
@@ -98,6 +91,7 @@ type ExplorerVisibleNodeKind = "root" | "directory" | "file";
 interface ExplorerVisibleNode {
   id: string;
   parentId: string | null;
+  rootId: string;
   rootPath: string;
   rootName: string;
   kind: ExplorerVisibleNodeKind;
@@ -120,7 +114,50 @@ const ALL_FILE_TYPES: FileType[] = [
 
 const DEFAULT_RENDERED_TREE_ROWS = 200;
 const RENDERED_TREE_ROW_INCREMENT = 200;
-const TREE_INDENT_PX = 18;
+
+function getExplorerFileKey(rootId: string, relativePath: string): string {
+  return `${rootId}::${relativePath}`;
+}
+
+function parseExplorerFileKey(
+  fileKey?: string | null,
+): { rootId: string; relativePath: string } | null {
+  if (!fileKey) {
+    return null;
+  }
+  const separatorIndex = fileKey.indexOf("::");
+  if (separatorIndex <= 0 || separatorIndex === fileKey.length - 2) {
+    return null;
+  }
+  return {
+    rootId: fileKey.slice(0, separatorIndex),
+    relativePath: fileKey.slice(separatorIndex + 2),
+  };
+}
+
+function collectAncestorDirs(relativePath: string): string[] {
+  const segments = relativePath.split("/").filter(Boolean);
+  if (segments.length <= 1) {
+    return [];
+  }
+  const ancestors: string[] = [];
+  for (let index = 1; index < segments.length; index += 1) {
+    ancestors.push(segments.slice(0, index).join("/"));
+  }
+  return ancestors;
+}
+
+function getTreeItemLevel(fileDepth: number, depthOffset = 0): number {
+  return Math.max(0, fileDepth - depthOffset) + 2;
+}
+
+function getCreationRowLevel(relativeDir: string | null, depthOffset = 0): number {
+  if (!relativeDir) {
+    return 2;
+  }
+  const directoryDepth = relativeDir.split("/").filter(Boolean).length;
+  return getTreeItemLevel(directoryDepth, depthOffset);
+}
 
 function getRootStatusLabel(status: ProjectRootStatus): string | null {
   switch (status) {
@@ -250,8 +287,8 @@ function getMutationRowBadge(mutation: ProjectMutationState): { label: string; t
     : { label: "Retry", tone: "error" };
 }
 
-function getRenderSectionKey(rootPath: string, section: "primary" | "secondary"): string {
-  return `${rootPath}::${section}`;
+function getRenderSectionKey(rootId: string): string {
+  return `${rootId}::primary`;
 }
 
 function resolveImportantVisibleIndex(
@@ -266,7 +303,7 @@ function resolveImportantVisibleIndex(
   let importantIndex = -1;
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
-    const itemKey = getProjectFileStatusKey(project.rootPath, item.path);
+    const itemKey = getExplorerFileKey(project.rootId, item.path);
     if (
       itemKey === options.activeFileKey
       || itemKey === options.renamingFileKey
@@ -319,6 +356,7 @@ function RootBannerCard({
   toneClass,
   title,
   detail,
+  rootId,
   rootPath,
   onRefreshRoot,
   onRevealInFinder,
@@ -326,9 +364,10 @@ function RootBannerCard({
   toneClass: string;
   title: string;
   detail: string;
+  rootId: string;
   rootPath: string;
-  onRefreshRoot?: (rootPath: string) => void;
-  onRevealInFinder?: (absolutePath: string) => void;
+  onRefreshRoot?: (rootId: string) => void;
+  onRevealInFinder?: (rootId: string, absolutePath: string) => void;
 }) {
   return (
     <div className={cn("mx-3 mt-2 rounded border px-2.5 py-2", toneClass)}>
@@ -341,7 +380,7 @@ function RootBannerCard({
           {onRefreshRoot && (
             <button
               type="button"
-              onClick={() => onRefreshRoot(rootPath)}
+              onClick={() => onRefreshRoot(rootId)}
               className="rounded border border-current/20 px-1.5 py-1 text-[8px] font-mono uppercase tracking-[0.16em] opacity-80 transition-opacity hover:opacity-100"
             >
               Refresh
@@ -350,7 +389,7 @@ function RootBannerCard({
           {onRevealInFinder && (
             <button
               type="button"
-              onClick={() => onRevealInFinder(rootPath)}
+              onClick={() => onRevealInFinder(rootId, rootPath)}
               className="rounded border border-current/20 px-1.5 py-1 text-[8px] font-mono uppercase tracking-[0.16em] opacity-80 transition-opacity hover:opacity-100"
             >
               Reveal
@@ -363,15 +402,17 @@ function RootBannerCard({
 }
 
 function RootStatusBanner({
+  rootId,
   rootPath,
   rootState,
   onRefreshRoot,
   onRevealInFinder,
 }: {
+  rootId: string;
   rootPath: string;
   rootState?: ExplorerRootState;
-  onRefreshRoot?: (rootPath: string) => void;
-  onRevealInFinder?: (absolutePath: string) => void;
+  onRefreshRoot?: (rootId: string) => void;
+  onRevealInFinder?: (rootId: string, absolutePath: string) => void;
 }) {
   if (!rootState) return null;
 
@@ -381,6 +422,7 @@ function RootStatusBanner({
     banners.push(
       <RootBannerCard
         key="mutation"
+        rootId={rootId}
         rootPath={rootPath}
         onRefreshRoot={onRefreshRoot}
         onRevealInFinder={onRevealInFinder}
@@ -413,6 +455,7 @@ function RootStatusBanner({
     banners.push(
       <RootBannerCard
         key="root-status"
+        rootId={rootId}
         rootPath={rootPath}
         onRefreshRoot={onRefreshRoot}
         onRevealInFinder={onRevealInFinder}
@@ -426,23 +469,9 @@ function RootStatusBanner({
   return banners.length > 0 ? <>{banners}</> : null;
 }
 
-function rebaseProjectFiles(files: ProjectFile[], depthOffset: number): ProjectFile[] {
-  if (depthOffset <= 0) return files;
-  return files.map((file) => ({
-    ...file,
-    depth: Math.max(0, file.depth - depthOffset),
-    children: file.children ? rebaseProjectFiles(file.children, depthOffset) : undefined,
-  }));
-}
-
-function buildCuratedRootSections(project: DetectionProject): CuratedRootSections {
+function getCuratedPrimaryFiles(project: DetectionProject): ProjectFile[] {
   const workspaceDir = project.files.find((file) => file.isDirectory && file.path === "workspace");
-  const secondaryFiles = project.files.filter((file) => file.path !== "workspace");
-  return {
-    primaryFiles: workspaceDir?.children ? rebaseProjectFiles(workspaceDir.children, 1) : [],
-    secondaryFiles,
-    secondaryUnderlyingCount: countFiles(secondaryFiles),
-  };
+  return workspaceDir?.children ?? [];
 }
 
 function shouldUseCuratedRootSections(
@@ -463,33 +492,51 @@ function getFileNodeId(project: DetectionProject, file: ProjectFile): string {
   return `${getRootNodeId(project)}:entry:${file.path}`;
 }
 
+function findProjectByRootIdentifier(
+  projects: DetectionProject[],
+  rootIdentifier: string | null | undefined,
+): DetectionProject | null {
+  if (!rootIdentifier) {
+    return null;
+  }
+  return projects.find((project) =>
+    project.rootId === rootIdentifier || project.rootPath === rootIdentifier)
+    ?? null;
+}
+
 function buildRootRenderModel(
   project: DetectionProject,
   rootState: ExplorerRootState | undefined,
   filter: string,
   formatFilter: FileType | null,
+  activeFileKey?: string | null,
+  renamingFileKey?: string | null,
 ): RootRenderModel {
   const hasActiveFilter = Boolean(filter || formatFilter);
   const shouldUseCuratedSections = shouldUseCuratedRootSections(project, rootState);
-  const curatedSections = buildCuratedRootSections(project);
-  const primaryFiles = shouldUseCuratedSections ? curatedSections.primaryFiles : project.files;
-  const secondaryFiles = shouldUseCuratedSections
-    ? (filter || formatFilter
-        ? filterTree(curatedSections.secondaryFiles, filter, formatFilter)
-        : curatedSections.secondaryFiles)
-    : [];
+  const primaryFiles = shouldUseCuratedSections ? getCuratedPrimaryFiles(project) : project.files;
+  const renamingFile = parseExplorerFileKey(renamingFileKey);
+  const relevantPaths = [
+    renamingFile?.rootId === project.rootId ? renamingFile.relativePath : null,
+    rootState?.mutation?.targetRelativePath ?? null,
+  ].filter((path): path is string => Boolean(path));
+  const effectiveExpandedDirs = new Set(project.expandedDirs);
+  for (const path of relevantPaths) {
+    for (const ancestor of collectAncestorDirs(path)) {
+      effectiveExpandedDirs.add(ancestor);
+    }
+  }
   const primaryFilteredFiles = filter || formatFilter
     ? filterTree(primaryFiles, filter, formatFilter)
     : primaryFiles;
   return {
     hasActiveFilter,
     shouldUseCuratedSections,
-    primaryVisibleItems: flattenTree(primaryFilteredFiles, project.expandedDirs, hasActiveFilter),
-    secondaryVisibleItems: flattenTree(secondaryFiles, project.expandedDirs, hasActiveFilter),
+    effectiveExpandedDirs,
+    forceExpandRoot: relevantPaths.length > 0,
+    primaryVisibleItems: flattenTree(primaryFilteredFiles, effectiveExpandedDirs, hasActiveFilter),
     primaryHiddenCount: 0,
-    secondaryHiddenCount: 0,
-    primaryUnderlyingCount: countFiles(primaryFiles),
-    secondaryUnderlyingCount: curatedSections.secondaryUnderlyingCount,
+    primaryUnderlyingCount: countTreeEntries(primaryFiles),
   };
 }
 
@@ -499,6 +546,7 @@ function buildVisibleNodesForItems(
   rootNodeId: string,
   depthOffset: number,
   forceExpandAll: boolean,
+  effectiveExpandedDirs: Set<string>,
 ): ExplorerVisibleNode[] {
   const nodes: ExplorerVisibleNode[] = [];
   const directoryStack: Array<{ nodeId: string }> = [];
@@ -515,13 +563,14 @@ function buildVisibleNodesForItems(
     nodes.push({
       id: nodeId,
       parentId,
+      rootId: project.rootId,
       rootPath: project.rootPath,
       rootName: project.name,
       kind: file.isDirectory ? "directory" : "file",
-      level: adjustedDepth + 2,
+      level: getTreeItemLevel(file.depth, depthOffset),
       label: file.name,
       file,
-      isExpanded: file.isDirectory ? (forceExpandAll || project.expandedDirs.has(file.path)) : false,
+      isExpanded: file.isDirectory ? (forceExpandAll || effectiveExpandedDirs.has(file.path)) : false,
       hasChildren: Boolean(file.children?.length),
     });
     if (file.isDirectory) {
@@ -665,12 +714,12 @@ function RootTreeSection({
   project: DetectionProject;
   rootState?: ExplorerRootState;
   model: RootRenderModel;
-  onToggleDir: (rootPath: string, dirPath: string) => void;
-  onOpenFile: (rootPath: string, file: ProjectFile) => void;
+  onToggleDir: (rootId: string, dirPath: string) => void;
+  onOpenFile: (rootId: string, file: ProjectFile) => void;
   activeFileKey?: string | null;
   fileStatuses?: Map<string, FileStatus>;
   onCreateFile?: (parentPath: string, fileName: string) => void;
-  onRenameFile?: (rootPath: string, file: ProjectFile, newName: string) => void;
+  onRenameFile?: (rootId: string, file: ProjectFile, newName: string) => void;
   creatingInDir: string | null;
   setCreatingInDir: (dir: string | null) => void;
   renamingFileKey: string | null;
@@ -682,12 +731,13 @@ function RootTreeSection({
   onKeyDownNode: (e: React.KeyboardEvent<HTMLDivElement>, nodeId: string) => void;
   setTreeNodeRef: (nodeId: string, element: HTMLDivElement | null) => void;
   onShowMorePrimary: () => void;
-  onRefreshRoot?: (rootPath: string) => void;
-  onRevealInFinder?: (absolutePath: string) => void;
+  onRefreshRoot?: (rootId: string) => void;
+  onRevealInFinder?: (rootId: string, absolutePath: string) => void;
 }) {
   const {
     hasActiveFilter,
     shouldUseCuratedSections,
+    effectiveExpandedDirs,
     primaryVisibleItems,
     primaryHiddenCount,
     primaryUnderlyingCount,
@@ -704,15 +754,10 @@ function RootTreeSection({
           : creatingInDir;
 
   const renderInlineInput = (depthOffset = 0) => {
-    const rawDepth = creatingInRelDir === null
-      ? 0
-      : creatingInRelDir === ""
-        ? 0
-        : creatingInRelDir.split("/").filter(Boolean).length;
-    const inputDepth = Math.max(0, rawDepth - depthOffset);
+    const rowLevel = getCreationRowLevel(creatingInRelDir, depthOffset);
 
     return (
-      <div className="py-1" style={{ paddingLeft: inputDepth * TREE_INDENT_PX + 4 }}>
+      <div className="py-1" style={{ paddingLeft: getTreeItemPaddingLeft(rowLevel) }}>
         <InlineNameInput
           placeholder="filename.yaml"
           onSubmit={(name) => {
@@ -743,14 +788,15 @@ function RootTreeSection({
 
     for (let i = 0; i < visibleItems.length; i++) {
       const file = visibleItems[i];
-      const fileKey = getProjectFileStatusKey(project.rootPath, file.path);
-      const status = fileStatuses?.get(fileKey);
+      const fileKey = getExplorerFileKey(project.rootId, file.path);
+      const fileStatusKey = getProjectFileStatusKey(project.rootPath, file.path);
+      const status = fileStatuses?.get(fileStatusKey);
       const rowMutation = rootState?.mutation?.targetRelativePath === file.path
         ? getMutationRowBadge(rootState.mutation)
         : null;
       const nodeId = getFileNodeId(project, file);
-      const treeLevel = Math.max(0, file.depth - depthOffset) + 2;
-      const isExpanded = file.isDirectory ? (hasActiveFilter || project.expandedDirs.has(file.path)) : false;
+      const treeLevel = getTreeItemLevel(file.depth, depthOffset);
+      const isExpanded = file.isDirectory ? (hasActiveFilter || effectiveExpandedDirs.has(file.path)) : false;
       items.push(
         <ExplorerTreeItem
           key={file.path}
@@ -759,8 +805,8 @@ function RootTreeSection({
           level={treeLevel}
           file={file}
           isExpanded={isExpanded}
-          onToggle={() => onToggleDir(project.rootPath, file.path)}
-          onOpen={() => onOpenFile(project.rootPath, file)}
+          onToggle={() => onToggleDir(project.rootId, file.path)}
+          onOpen={() => onOpenFile(project.rootId, file)}
           onFocus={() => onFocusNode(nodeId)}
           onKeyDown={(e) => onKeyDownNode(e, nodeId)}
           isActive={!file.isDirectory && activeFileKey === fileKey}
@@ -770,6 +816,7 @@ function RootTreeSection({
             setContextMenu({
               targetType: file.isDirectory ? "folder" : "file",
               file,
+              rootId: project.rootId,
               rootPath: project.rootPath,
               x: e.clientX,
               y: e.clientY,
@@ -778,7 +825,7 @@ function RootTreeSection({
           tabIndex={focusedNodeId === nodeId ? 0 : -1}
           isRenaming={renamingFileKey === fileKey}
           onRenameSubmit={(newName) => {
-            onRenameFile?.(project.rootPath, file, newName);
+            onRenameFile?.(project.rootId, file, newName);
             setRenamingFileKey(null);
           }}
           onRenameCancel={() => setRenamingFileKey(null)}
@@ -821,25 +868,40 @@ function RootTreeSection({
       hasActiveFilter,
       primaryUnderlyingCount > 0,
     );
+    const shouldShowEmptyCopy = rootState?.status !== "refreshing"
+      && rootState?.status !== "stale"
+      && rootState?.status !== "error";
 
     if (primaryVisibleItems.length === 0 && creatingInDir === null) {
       return (
-        <div className="flex flex-col items-center justify-center py-4 text-center">
-          <p className="text-[10px] font-mono text-[#6f7f9a]/60">{emptyMessage.title}</p>
-          {emptyMessage.detail && (
-            <p className="mt-1 max-w-[220px] text-[9px] font-mono leading-relaxed text-[#6f7f9a]/40">
-              {rootState?.status === "stale" || rootState?.status === "error"
-                ? rootState.error ?? emptyMessage.detail
-                : emptyMessage.detail}
-            </p>
+        <>
+          <RootStatusBanner
+            rootId={project.rootId}
+            rootPath={project.rootPath}
+            rootState={rootState}
+            onRefreshRoot={onRefreshRoot}
+            onRevealInFinder={onRevealInFinder}
+          />
+          {shouldShowEmptyCopy && (
+            <div className="flex flex-col items-center justify-center py-4 text-center">
+              <p className="text-[10px] font-mono text-[#6f7f9a]/60">{emptyMessage.title}</p>
+              {emptyMessage.detail && (
+                <p className="mt-1 max-w-[220px] text-[9px] font-mono leading-relaxed text-[#6f7f9a]/40">
+                  {rootState?.status === "stale" || rootState?.status === "error"
+                    ? rootState.error ?? emptyMessage.detail
+                    : emptyMessage.detail}
+                </p>
+              )}
+            </div>
           )}
-        </div>
+        </>
       );
     }
 
     return (
       <>
         <RootStatusBanner
+          rootId={project.rootId}
           rootPath={project.rootPath}
           rootState={rootState}
           onRefreshRoot={onRefreshRoot}
@@ -860,6 +922,7 @@ function RootTreeSection({
   return (
     <>
       <RootStatusBanner
+        rootId={project.rootId}
         rootPath={project.rootPath}
         rootState={rootState}
         onRefreshRoot={onRefreshRoot}
@@ -924,9 +987,10 @@ export function ExplorerPanel({
   const [renamingFileKey, setRenamingFileKey] = useState<string | null>(null);
   // Delete confirmation dialog state.
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const lastAutoRevealedActiveFileKeyRef = useRef<string | null>(null);
   // Track which root sections are expanded (all expanded by default).
   const [expandedRoots, setExpandedRoots] = useState<Set<string>>(
-    () => new Set(projects.map((p) => p.rootPath)),
+    () => new Set(projects.map((p) => p.rootId)),
   );
   const [sectionRenderLimits, setSectionRenderLimits] = useState<Map<string, number>>(() => new Map());
 
@@ -939,27 +1003,62 @@ export function ExplorerPanel({
       autoExpandApplied.current = true;
       const initial = new Set(expandedRoots);
       for (const p of projects) {
-        initial.add(p.rootPath);
+        initial.add(p.rootId);
       }
       return initial;
     }
     return expandedRoots;
   }, [projects, expandedRoots]);
 
-  const toggleRootExpanded = useCallback((rootPath: string) => {
+  const toggleRootExpanded = useCallback((rootId: string) => {
     setExpandedRoots((prev) => {
       const next = new Set(prev);
-      if (next.has(rootPath)) {
-        next.delete(rootPath);
+      if (next.has(rootId)) {
+        next.delete(rootId);
       } else {
-        next.add(rootPath);
+        next.add(rootId);
       }
       return next;
     });
   }, []);
 
-  const showMoreSectionRows = useCallback((rootPath: string, section: "primary" | "secondary") => {
-    const sectionKey = getRenderSectionKey(rootPath, section);
+  const revealFilePathInTree = useCallback((project: DetectionProject, relativePath: string) => {
+    setExpandedRoots((prev) => {
+      if (prev.has(project.rootId)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(project.rootId);
+      return next;
+    });
+
+    for (const ancestor of collectAncestorDirs(relativePath)) {
+      if (!project.expandedDirs.has(ancestor)) {
+        onToggleDir(project.rootId, ancestor);
+      }
+    }
+  }, [onToggleDir]);
+
+  useLayoutEffect(() => {
+    const parsedActiveFile = parseExplorerFileKey(activeFileKey);
+    if (!parsedActiveFile || activeFileKey == null) {
+      lastAutoRevealedActiveFileKeyRef.current = null;
+      return;
+    }
+    if (lastAutoRevealedActiveFileKeyRef.current === activeFileKey) {
+      return;
+    }
+
+    const project = findProjectByRootIdentifier(projects, parsedActiveFile.rootId);
+    if (project) {
+      revealFilePathInTree(project, parsedActiveFile.relativePath);
+    }
+
+    lastAutoRevealedActiveFileKeyRef.current = activeFileKey;
+  }, [activeFileKey, projects, revealFilePathInTree]);
+
+  const showMoreSectionRows = useCallback((rootId: string) => {
+    const sectionKey = getRenderSectionKey(rootId);
     setSectionRenderLimits((prev) => {
       const next = new Map(prev);
       next.set(
@@ -987,83 +1086,29 @@ export function ExplorerPanel({
     return countFilesByType(projects);
   }, [projects]);
 
-  // ---- Empty state ----
-  if (projects.length === 0) {
-    return (
-      <div
-        className={cn(
-          "flex flex-col h-full bg-[#05060a]",
-          className,
-        )}
-      >
-        {/* Header */}
-        <div className="shrink-0 px-3 py-2.5 border-b border-[#2d3240]">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]">
-              Explorer
-            </span>
-          </div>
-        </div>
-
-        {/* Hero empty state */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-4">
-          <IconFolderOpen
-            size={48}
-            stroke={0.8}
-            className="text-[#6f7f9a]/20"
-          />
-          <div className="space-y-1.5">
-            <p className="text-[13px] font-mono text-[#ece7dc]/70 font-medium">
-              No folder open
-            </p>
-            <p className="text-[10px] font-mono text-[#6f7f9a]/50 leading-relaxed max-w-[180px]">
-              Open a folder containing detection rules to get started.
-            </p>
-          </div>
-          {onAddFolder && (
-            <button
-              type="button"
-              onClick={onAddFolder}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono text-[#6f7f9a]/60 hover:text-[#ece7dc] transition-colors"
-            >
-              <IconPlus size={12} stroke={1.5} />
-              Add Folder to Workspace
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   // Convenience: for single root, use the first project as backward-compat reference.
   const firstProject = projects[0];
   const isMultiRoot = projects.length > 1;
-  const hasActiveFilter = Boolean(filter || formatFilter);
   const treeRef = useRef<HTMLDivElement>(null);
   const treeNodeRefs = useRef(new Map<string, HTMLDivElement>());
-  const treeHasManagedFocus = useRef(false);
   const previousVisibleNodeIdsRef = useRef<string[]>([]);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-
+  const [treeIsFocused, setTreeIsFocused] = useState(false);
   const rootModels = useMemo(() => {
     const next = new Map<string, RootRenderModel>();
     for (const project of projects) {
-      const rootState = rootStates?.get(project.rootPath);
+      const rootState = rootStates?.get(project.rootId);
       const rawModel = buildRootRenderModel(
         project,
         rootState,
         filter,
         formatFilter,
-      );
-      const primarySectionKey = getRenderSectionKey(project.rootPath, "primary");
-      const secondarySectionKey = getRenderSectionKey(project.rootPath, "secondary");
-      const mutationRelativePath = rootState?.mutation?.targetRelativePath ?? null;
-      const primaryImportantIndex = resolveImportantVisibleIndex(project, rawModel.primaryVisibleItems, {
         activeFileKey,
         renamingFileKey,
-        mutationRelativePath,
-      });
-      const secondaryImportantIndex = resolveImportantVisibleIndex(project, rawModel.secondaryVisibleItems, {
+      );
+      const primarySectionKey = getRenderSectionKey(project.rootId);
+      const mutationRelativePath = rootState?.mutation?.targetRelativePath ?? null;
+      const primaryImportantIndex = resolveImportantVisibleIndex(project, rawModel.primaryVisibleItems, {
         activeFileKey,
         renamingFileKey,
         mutationRelativePath,
@@ -1073,19 +1118,12 @@ export function ExplorerPanel({
         sectionRenderLimits.get(primarySectionKey) ?? DEFAULT_RENDERED_TREE_ROWS,
         primaryImportantIndex,
       );
-      const secondaryBound = applyRenderBound(
-        rawModel.secondaryVisibleItems,
-        sectionRenderLimits.get(secondarySectionKey) ?? DEFAULT_RENDERED_TREE_ROWS,
-        secondaryImportantIndex,
-      );
       next.set(
-        project.rootPath,
+        project.rootId,
         {
           ...rawModel,
           primaryVisibleItems: primaryBound.renderedItems,
-          secondaryVisibleItems: secondaryBound.renderedItems,
           primaryHiddenCount: primaryBound.hiddenCount,
-          secondaryHiddenCount: secondaryBound.hiddenCount,
         },
       );
     }
@@ -1104,20 +1142,26 @@ export function ExplorerPanel({
     const nodes: ExplorerVisibleNode[] = [];
 
     for (const project of projects) {
-      const rootState = rootStates?.get(project.rootPath);
+      const rootState = rootStates?.get(project.rootId);
       const rootNodeId = getRootNodeId(project);
-      const model = rootModels.get(project.rootPath);
-      const isExpanded = expandedRootsResolved.has(project.rootPath);
+      const model = rootModels.get(project.rootId);
+      const isExpanded = expandedRootsResolved.has(project.rootId) || Boolean(model?.forceExpandRoot);
       nodes.push({
         id: rootNodeId,
         parentId: null,
+        rootId: project.rootId,
         rootPath: project.rootPath,
         rootName: getRootDisplayLabel(project, rootState),
         kind: "root",
         level: 1,
         label: getRootDisplayLabel(project, rootState),
         isExpanded,
-        hasChildren: project.files.length > 0 || Boolean(model?.secondaryUnderlyingCount),
+        hasChildren: (model?.primaryUnderlyingCount ?? 0) > 0
+          || Boolean(rootState?.mutation)
+          || rootState?.status === "loading"
+          || rootState?.status === "refreshing"
+          || rootState?.status === "stale"
+          || rootState?.status === "error",
       });
 
       if (!isExpanded || !model) {
@@ -1131,6 +1175,7 @@ export function ExplorerPanel({
           rootNodeId,
           model.shouldUseCuratedSections ? 1 : 0,
           model.hasActiveFilter,
+          model.effectiveExpandedDirs,
         ),
       );
     }
@@ -1170,14 +1215,14 @@ export function ExplorerPanel({
   }, [visibleNodeIds]);
 
   useEffect(() => {
-    if (!treeHasManagedFocus.current || !focusedNodeId) {
+    if (!treeIsFocused || !focusedNodeId) {
       return;
     }
     const element = treeNodeRefs.current.get(focusedNodeId);
     if (element && document.activeElement !== element) {
       element.focus();
     }
-  }, [focusedNodeId]);
+  }, [focusedNodeId, treeIsFocused]);
 
   const setTreeNodeRef = useCallback((nodeId: string, element: HTMLDivElement | null) => {
     if (element) {
@@ -1188,7 +1233,7 @@ export function ExplorerPanel({
   }, []);
 
   const focusNode = useCallback((nodeId: string) => {
-    treeHasManagedFocus.current = true;
+    setTreeIsFocused(true);
     setFocusedNodeId((current) => (current === nodeId ? current : nodeId));
     const element = treeNodeRefs.current.get(nodeId);
     if (element && document.activeElement !== element) {
@@ -1198,17 +1243,47 @@ export function ExplorerPanel({
 
   const activateNode = useCallback((node: ExplorerVisibleNode) => {
     if (node.kind === "root") {
-      toggleRootExpanded(node.rootPath);
+      toggleRootExpanded(node.rootId);
       return;
     }
     if (node.kind === "directory" && node.file) {
-      onToggleDir(node.rootPath, node.file.path);
+      onToggleDir(node.rootId, node.file.path);
       return;
     }
     if (node.kind === "file" && node.file) {
-      onOpenFile(node.rootPath, node.file);
+      onOpenFile(node.rootId, node.file);
     }
   }, [onOpenFile, onToggleDir, toggleRootExpanded]);
+
+  const preferredCreateRootPath = useMemo(() => {
+    const focusedRootId = treeIsFocused && focusedNodeId
+      ? visibleNodesById.get(focusedNodeId)?.rootId ?? null
+      : null;
+    const activeRootId = parseExplorerFileKey(activeFileKey)?.rootId ?? null;
+    const preferredRootId = focusedRootId ?? activeRootId ?? firstProject?.rootId ?? null;
+    return findProjectByRootIdentifier(projects, preferredRootId)?.rootPath
+      ?? firstProject?.rootPath
+      ?? null;
+  }, [activeFileKey, firstProject, focusedNodeId, projects, treeIsFocused, visibleNodesById]);
+
+  const beginCreateFile = useCallback((parentPath: string) => {
+    const targetProject = projects.find((project) =>
+      parentPath === project.rootPath || parentPath.startsWith(`${project.rootPath}/`))
+      ?? null;
+
+    if (targetProject) {
+      setExpandedRoots((prev) => {
+        if (prev.has(targetProject.rootId)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.add(targetProject.rootId);
+        return next;
+      });
+    }
+
+    setCreatingInDir(parentPath);
+  }, [projects]);
 
   const openContextMenuForNode = useCallback((nodeId: string) => {
     const node = visibleNodesById.get(nodeId);
@@ -1224,6 +1299,7 @@ export function ExplorerPanel({
     if (node.kind === "root") {
       setContextMenu({
         targetType: "root",
+        rootId: node.rootId,
         rootPath: node.rootPath,
         rootName: node.label,
         x,
@@ -1239,6 +1315,7 @@ export function ExplorerPanel({
     setContextMenu({
       targetType: node.kind === "directory" ? "folder" : "file",
       file: node.file,
+      rootId: node.rootId,
       rootPath: node.rootPath,
       x,
       y,
@@ -1329,7 +1406,7 @@ export function ExplorerPanel({
 
     if (e.key === "F2" && node.kind === "file" && node.file) {
       e.preventDefault();
-      setRenamingFileKey(getProjectFileStatusKey(node.rootPath, node.file.path));
+      setRenamingFileKey(getExplorerFileKey(node.rootId, node.file.path));
       return;
     }
 
@@ -1338,6 +1415,52 @@ export function ExplorerPanel({
       openContextMenuForNode(nodeId);
     }
   }, [activateNode, focusNode, openContextMenuForNode, setRenamingFileKey, visibleNodeIds, visibleNodes, visibleNodesById]);
+
+  // ---- Empty state ----
+  if (projects.length === 0) {
+    return (
+      <div
+        className={cn(
+          "flex flex-col h-full bg-[#05060a]",
+          className,
+        )}
+      >
+        <div className="shrink-0 px-3 py-2.5 border-b border-[#2d3240]">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]">
+              Explorer
+            </span>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-4">
+          <IconFolderOpen
+            size={48}
+            stroke={0.8}
+            className="text-[#6f7f9a]/20"
+          />
+          <div className="space-y-1.5">
+            <p className="text-[13px] font-mono text-[#ece7dc]/70 font-medium">
+              No folder open
+            </p>
+            <p className="text-[10px] font-mono text-[#6f7f9a]/50 leading-relaxed max-w-[180px]">
+              Open a folder containing detection rules to get started.
+            </p>
+          </div>
+          {onAddFolder && (
+            <button
+              type="button"
+              onClick={onAddFolder}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono text-[#6f7f9a]/60 hover:text-[#ece7dc] transition-colors"
+            >
+              <IconPlus size={12} stroke={1.5} />
+              Add Folder to Workspace
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ---- Active project(s) ----
   return (
@@ -1358,7 +1481,7 @@ export function ExplorerPanel({
           <div className="ml-auto flex items-center gap-0.5">
             <button
               type="button"
-              onClick={() => firstProject && setCreatingInDir(firstProject.rootPath)}
+              onClick={() => preferredCreateRootPath && beginCreateFile(preferredCreateRootPath)}
               title="New File"
               className="p-1 rounded text-[#6f7f9a]/60 hover:text-[#ece7dc] hover:bg-[#131721]/40 transition-colors"
             >
@@ -1433,26 +1556,27 @@ export function ExplorerPanel({
       </div>
 
       {/* Tree */}
-      <ScrollArea className="flex-1">
+      <div className="min-h-0 flex-1 flex flex-col">
+      <ScrollArea className="min-h-0 flex-1">
         <div
           ref={treeRef}
           role="tree"
           aria-label="Workspace explorer"
           className="py-1"
           onFocusCapture={() => {
-            treeHasManagedFocus.current = true;
+            setTreeIsFocused(true);
           }}
           onBlurCapture={(e) => {
             const relatedTarget = e.relatedTarget as Node | null;
             if (!e.currentTarget.contains(relatedTarget)) {
-              treeHasManagedFocus.current = false;
+              setTreeIsFocused(false);
             }
           }}
         >
           {projects.map((project) => {
-            const isExpanded = expandedRootsResolved.has(project.rootPath);
-            const rootState = rootStates?.get(project.rootPath);
-            const model = rootModels.get(project.rootPath);
+            const rootState = rootStates?.get(project.rootId);
+            const model = rootModels.get(project.rootId);
+            const isExpanded = expandedRootsResolved.has(project.rootId) || Boolean(model?.forceExpandRoot);
             const rootNodeId = getRootNodeId(project);
             const rootLabel = getRootDisplayLabel(project, rootState);
             const rootAriaLabel = [
@@ -1472,21 +1596,22 @@ export function ExplorerPanel({
                   data-explorer-node-id={rootNodeId}
                   tabIndex={focusedNodeId === rootNodeId ? 0 : -1}
                   title={project.rootPath}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer rounded-sm hover:bg-[#131721]/28 outline-none focus-visible:bg-[#151b25] focus-visible:ring-1 focus-visible:ring-[#334156]/80"
+                  className="flex min-h-7 items-center gap-1.5 rounded-sm px-2 py-1 cursor-pointer hover:bg-[#12161f] outline-none focus-visible:bg-[#151b25] focus-visible:ring-1 focus-visible:ring-[#334156]/80"
                   onClick={(e) => {
-                    treeHasManagedFocus.current = true;
+                    setTreeIsFocused(true);
                     e.currentTarget.focus();
                     focusNode(rootNodeId);
-                    toggleRootExpanded(project.rootPath);
+                    toggleRootExpanded(project.rootId);
                   }}
                   onFocus={() => focusNode(rootNodeId)}
                   onKeyDown={(e) => handleNodeKeyDown(e, rootNodeId)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    treeHasManagedFocus.current = true;
+                    setTreeIsFocused(true);
                     focusNode(rootNodeId);
                     setContextMenu({
                       targetType: "root",
+                      rootId: project.rootId,
                       rootPath: project.rootPath,
                       rootName: rootLabel,
                       x: e.clientX,
@@ -1495,7 +1620,7 @@ export function ExplorerPanel({
                   }}
                 >
                   <IconChevronRight
-                    size={10}
+                    size={11}
                     stroke={1.5}
                     className={cn(
                       "text-[#6f7f9a]/60 transition-transform",
@@ -1507,24 +1632,36 @@ export function ExplorerPanel({
                   ) : (
                     <IconFolder size={13} stroke={1.5} className="text-[#8fa0bb]" />
                   )}
-                  <span className="truncate flex-1 text-[12px] font-medium text-[#dbe3f2]">
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[#dbe3f2]">
                     {rootLabel}
                   </span>
                   <RootStatusBadge rootState={rootState} />
                 </div>
+                {isExpanded && creatingInDir === project.rootPath && (
+                  <div className="py-1" style={{ paddingLeft: getTreeItemPaddingLeft(2) }}>
+                    <InlineNameInput
+                      placeholder="filename.yaml"
+                      onSubmit={(name) => {
+                        onCreateFile?.(project.rootPath, name);
+                        setCreatingInDir(null);
+                      }}
+                      onCancel={() => setCreatingInDir(null)}
+                    />
+                  </div>
+                )}
                 {isExpanded && model && (
                   <RootTreeSection
                     rootNodeId={rootNodeId}
                     project={project}
-                  rootState={rootState}
-                  model={model}
-                  onToggleDir={onToggleDir}
-                  onOpenFile={onOpenFile}
-                  activeFileKey={activeFileKey}
+                    rootState={rootState}
+                    model={model}
+                    onToggleDir={onToggleDir}
+                    onOpenFile={onOpenFile}
+                    activeFileKey={activeFileKey}
                     fileStatuses={fileStatuses}
                     onCreateFile={onCreateFile}
                     onRenameFile={onRenameFile}
-                    creatingInDir={creatingInDir}
+                    creatingInDir={creatingInDir === project.rootPath ? null : creatingInDir}
                     setCreatingInDir={setCreatingInDir}
                     renamingFileKey={renamingFileKey}
                     setRenamingFileKey={setRenamingFileKey}
@@ -1534,7 +1671,7 @@ export function ExplorerPanel({
                     onFocusNode={focusNode}
                     onKeyDownNode={handleNodeKeyDown}
                     setTreeNodeRef={setTreeNodeRef}
-                    onShowMorePrimary={() => showMoreSectionRows(project.rootPath, "primary")}
+                    onShowMorePrimary={() => showMoreSectionRows(project.rootId)}
                     onRefreshRoot={onRefreshRoot}
                     onRevealInFinder={onRevealInFinder}
                   />
@@ -1543,19 +1680,19 @@ export function ExplorerPanel({
             );
           })}
         </div>
-
+      </ScrollArea>
         {/* Add Folder button at bottom of tree area */}
         {onAddFolder && (
           <button
             type="button"
             onClick={onAddFolder}
-            className="flex items-center gap-1.5 w-full px-3 py-2 text-[10px] font-mono text-[#6f7f9a]/60 hover:text-[#ece7dc] hover:bg-[#131721]/40 transition-colors border-t border-[#2d3240]/30"
+            className="shrink-0 flex items-center gap-1.5 w-full px-3 py-2 text-[10px] font-mono text-[#6f7f9a]/60 hover:text-[#ece7dc] hover:bg-[#131721]/40 transition-colors border-t border-[#2d3240]/30"
           >
             <IconPlus size={12} stroke={1.5} />
             Add Folder
           </button>
         )}
-      </ScrollArea>
+      </div>
 
       {/* Context menu overlay */}
       {contextMenu && (
@@ -1563,35 +1700,35 @@ export function ExplorerPanel({
           target={contextMenu}
           onClose={() => setContextMenu(null)}
           onNewFile={(dirPath) => {
-            setCreatingInDir(dirPath);
+            beginCreateFile(dirPath);
             setContextMenu(null);
           }}
           onOpen={(file) => {
-            onOpenFile(contextMenu.rootPath, file);
+            onOpenFile(contextMenu.rootId, file);
             setContextMenu(null);
           }}
           onRename={(file) => {
-            setRenamingFileKey(getProjectFileStatusKey(contextMenu.rootPath, file.path));
+            setRenamingFileKey(getExplorerFileKey(contextMenu.rootId, file.path));
             setContextMenu(null);
           }}
           onDelete={(file) => {
-            setDeleteTarget({ rootPath: contextMenu.rootPath, file });
+            setDeleteTarget({ rootId: contextMenu.rootId, file });
             setContextMenu(null);
           }}
-          onRevealInFinder={(absPath) => {
-            onRevealInFinder?.(absPath);
+          onRevealInFinder={(rootId, absPath) => {
+            onRevealInFinder?.(rootId, absPath);
             setContextMenu(null);
           }}
-          onRemoveRoot={(rootPath) => {
-            onRemoveRoot?.(rootPath);
+          onRemoveRoot={(rootId) => {
+            onRemoveRoot?.(rootId);
             setContextMenu(null);
           }}
-          onRefreshRoot={(rootPath) => {
-            onRefreshRoot?.(rootPath);
+          onRefreshRoot={(rootId) => {
+            onRefreshRoot?.(rootId);
             setContextMenu(null);
           }}
-          onCollapseChildren={(rootPath, dirPath) => {
-            onCollapseChildren?.(rootPath, dirPath);
+          onCollapseChildren={(rootId, dirPath) => {
+            onCollapseChildren?.(rootId, dirPath);
             setContextMenu(null);
           }}
           onNewFolder={(dirPath) => {
@@ -1636,7 +1773,7 @@ export function ExplorerPanel({
         open={deleteTarget !== null}
         onConfirm={() => {
           if (deleteTarget) {
-            onDeleteFile?.(deleteTarget.rootPath, deleteTarget.file);
+            onDeleteFile?.(deleteTarget.rootId, deleteTarget.file);
           }
           setDeleteTarget(null);
         }}
@@ -1654,6 +1791,17 @@ function countFiles(files: ProjectFile[]): number {
       count += f.children ? countFiles(f.children) : 0;
     } else {
       count += 1;
+    }
+  }
+  return count;
+}
+
+function countTreeEntries(files: ProjectFile[]): number {
+  let count = 0;
+  for (const file of files) {
+    count += 1;
+    if (file.isDirectory && file.children) {
+      count += countTreeEntries(file.children);
     }
   }
   return count;

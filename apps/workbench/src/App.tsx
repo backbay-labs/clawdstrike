@@ -16,6 +16,7 @@ import {
   clearLegacyWorkspaceRoots,
   readLegacyWorkspaceRoots,
   useProjectStore,
+  type WorkspaceRootsReadyResult,
 } from "@/features/project/stores/project-store";
 import { useToast } from "@/components/ui/toast";
 import { usePaneStore } from "@/features/panes/pane-store";
@@ -106,6 +107,7 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
       if (store.loading) return;
       store.actions.setLoading(true);
       const startedAt = Date.now();
+      let restoreReadiness: WorkspaceRootsReadyResult | null = null;
 
       try {
         const legacyRoots = readLegacyWorkspaceRoots();
@@ -129,10 +131,12 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
         store.actions.hydrateWorkspaceRegistry(response.snapshot);
         await store.actions.initFromWorkspaceRegistry();
         const initialReadiness = await store.actions.waitForRootsReady(WORKSPACE_READY_TIMEOUT_MS);
+        restoreReadiness = initialReadiness;
         if (!initialReadiness.ready) {
           logWorkspaceBootstrap("warn", "roots_ready_timeout", {
             stage: "initial",
             pendingRootIds: initialReadiness.pendingRootIds,
+            blockedRootIds: initialReadiness.blockedRootIds,
             elapsedMs: initialReadiness.elapsedMs,
           });
         }
@@ -142,19 +146,21 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
           ? response.snapshot.roots.find((root) => root.rootId === response.snapshot.defaultRootId) ?? null
           : null;
         if (defaultRoot) {
-          const bootstrapped = await bootstrapDefaultWorkspaceContent(defaultRoot.displayPath);
+          const bootstrapped = await bootstrapDefaultWorkspaceContent(defaultRoot.rootId);
           logWorkspaceBootstrap("info", "default_content_bootstrap_complete", {
             rootId: defaultRoot.rootId,
             rootPath: defaultRoot.displayPath,
             bootstrapped,
           });
           if (bootstrapped) {
-            await store.actions.loadRoot(defaultRoot.displayPath);
+            await store.actions.loadRoot(defaultRoot.rootId);
             const seededReadiness = await store.actions.waitForRootsReady(WORKSPACE_READY_TIMEOUT_MS);
+            restoreReadiness = seededReadiness;
             if (!seededReadiness.ready) {
               logWorkspaceBootstrap("warn", "roots_ready_timeout", {
                 stage: "post_seed_refresh",
                 pendingRootIds: seededReadiness.pendingRootIds,
+                blockedRootIds: seededReadiness.blockedRootIds,
                 elapsedMs: seededReadiness.elapsedMs,
               });
             }
@@ -167,6 +173,15 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
         });
       } finally {
         useProjectStore.getState().actions.setLoading(false);
+      }
+
+      if (!restoreReadiness?.ready) {
+        logWorkspaceBootstrap("warn", "session_restore_skipped_unready_roots", {
+          pendingRootIds: restoreReadiness?.pendingRootIds ?? [],
+          blockedRootIds: restoreReadiness?.blockedRootIds ?? [],
+          elapsedMs: restoreReadiness?.elapsedMs ?? 0,
+        });
+        return;
       }
 
       // Restore the previous pane session AFTER workspace roots are loaded

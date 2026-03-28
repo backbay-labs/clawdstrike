@@ -8,7 +8,9 @@ import { usePaneStore } from "@/features/panes/pane-store";
 
 const READY_ROOTS = {
   ready: true,
+  settled: true,
   pendingRootIds: [] as string[],
+  blockedRootIds: [] as string[],
   elapsedMs: 0,
 };
 
@@ -473,9 +475,9 @@ describe("App", () => {
     expect(initFromWorkspaceRegistry).toHaveBeenCalledTimes(1);
     expect(waitForRootsReady).toHaveBeenCalled();
     expect(bootstrapDefaultWorkspaceContentMock).toHaveBeenCalledWith(
-      "/Users/test/.clawdstrike",
+      "root-default",
     );
-    expect(loadRoot).toHaveBeenCalledWith("/Users/test/.clawdstrike");
+    expect(loadRoot).toHaveBeenCalledWith("root-default");
   });
 
   it("leaves legacy roots intact when backend registry bootstrap fails", async () => {
@@ -504,10 +506,18 @@ describe("App", () => {
     vi.mocked(tauriBridge.isDesktop).mockReturnValue(true);
     const originalActions = useProjectStore.getState().actions;
     let resolveReady: (() => void) | null = null;
-    const readinessGate = new Promise<{ ready: boolean; pendingRootIds: string[]; elapsedMs: number }>((resolve) => {
+    const readinessGate = new Promise<{
+      ready: boolean;
+      settled: boolean;
+      pendingRootIds: string[];
+      blockedRootIds: string[];
+      elapsedMs: number;
+    }>((resolve) => {
       resolveReady = () => resolve({
         ready: true,
+        settled: true,
         pendingRootIds: [],
+        blockedRootIds: [],
         elapsedMs: 25,
       });
     });
@@ -566,13 +576,15 @@ describe("App", () => {
     restoreSessionSpy.mockRestore();
   });
 
-  it("logs a structured timeout when workspace roots never become ready", async () => {
+  it("skips session restore when workspace roots settle without becoming usable", async () => {
     vi.mocked(tauriBridge.isDesktop).mockReturnValue(true);
     const originalActions = useProjectStore.getState().actions;
     const initFromWorkspaceRegistry = vi.fn(async () => {});
     const waitForRootsReady = vi.fn(async () => ({
       ready: false,
-      pendingRootIds: ["root-default"],
+      settled: true,
+      pendingRootIds: [],
+      blockedRootIds: ["root-default"],
       elapsedMs: 4_000,
     }));
     const restoreSessionSpy = vi
@@ -620,14 +632,24 @@ describe("App", () => {
         expect.objectContaining({
           event: "roots_ready_timeout",
           stage: "initial",
-          pendingRootIds: ["root-default"],
+          pendingRootIds: [],
+          blockedRootIds: ["root-default"],
           elapsedMs: 4_000,
         }),
       );
     });
     await waitFor(() => {
-      expect(restoreSessionSpy).toHaveBeenCalledTimes(1);
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        "[workspace-bootstrap]",
+        expect.objectContaining({
+          event: "session_restore_skipped_unready_roots",
+          pendingRootIds: [],
+          blockedRootIds: ["root-default"],
+          elapsedMs: 4_000,
+        }),
+      );
     });
+    expect(restoreSessionSpy).not.toHaveBeenCalled();
 
     consoleWarnSpy.mockRestore();
     restoreSessionSpy.mockRestore();

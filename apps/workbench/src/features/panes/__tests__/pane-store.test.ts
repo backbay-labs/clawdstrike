@@ -393,6 +393,67 @@ describe("pane-store", () => {
         getActivePaneRoute(usePaneStore.getState().root, usePaneStore.getState().activePaneId),
       ).toBe("/file//Users/test/repo/policies/test.yaml");
     });
+
+    it("drops hidden default-home internal file routes during restore", () => {
+      useProjectStore.setState((state) => ({
+        ...state,
+        defaultRootId: "root-default",
+        orderedRootIds: ["root-default"],
+        rootsById: new Map([
+          [
+            "root-default",
+            {
+              rootId: "root-default",
+              canonicalPath: "/Users/test/.clawdstrike",
+              displayPath: "/Users/test/.clawdstrike",
+              label: "Workspace",
+              kind: "default_home",
+              provenance: "bootstrap",
+              isDefault: true,
+              aliases: ["/Users/test/.clawdstrike/workspace"],
+            },
+          ],
+        ]),
+        rootStatusById: new Map([["root-default", "ready"]]),
+        projectRoots: ["/Users/test/.clawdstrike"],
+      }));
+      localStorage.setItem(
+        "clawdstrike_pane_layout",
+        JSON.stringify({
+          activePaneId: "pane-1",
+          root: {
+            id: "pane-1",
+            type: "group",
+            activeViewId: "view-hidden",
+            views: [
+              {
+                id: "view-hidden",
+                route: "/file//Users/test/.clawdstrike/scan_history.json",
+                label: "scan_history.json",
+              },
+              {
+                id: "view-visible",
+                route: "/file//Users/test/.clawdstrike/workspace/policies/test.yaml",
+                label: "test.yaml",
+              },
+            ],
+          },
+        }),
+      );
+
+      const restored = usePaneStore.getState().restoreSession();
+      const pane = findPaneGroup(
+        usePaneStore.getState().root,
+        usePaneStore.getState().activePaneId,
+      );
+
+      expect(restored).toBe(1);
+      expect(pane?.views).toHaveLength(1);
+      expect(pane?.views[0]?.route).toBe(
+        "/file//Users/test/.clawdstrike/workspace/policies/test.yaml",
+      );
+      expect(pane?.activeViewId).toBe("view-visible");
+    });
   });
 
   describe("setActiveView", () => {

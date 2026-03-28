@@ -21,9 +21,9 @@ import { joinWorkspacePath } from "@/lib/workbench/path-utils";
 // ---------------------------------------------------------------------------
 
 export type ContextMenuTarget =
-  | { targetType: "root"; rootPath: string; rootName: string; x: number; y: number }
-  | { targetType: "file"; file: ProjectFile; rootPath: string; x: number; y: number }
-  | { targetType: "folder"; file: ProjectFile; rootPath: string; x: number; y: number };
+  | { targetType: "root"; rootId: string; rootPath: string; rootName: string; x: number; y: number }
+  | { targetType: "file"; file: ProjectFile; rootId: string; rootPath: string; x: number; y: number }
+  | { targetType: "folder"; file: ProjectFile; rootId: string; rootPath: string; x: number; y: number };
 
 // ---------------------------------------------------------------------------
 // Props
@@ -36,10 +36,10 @@ interface ExplorerContextMenuProps {
   onOpen?: (file: ProjectFile) => void;
   onRename?: (file: ProjectFile) => void;
   onDelete?: (file: ProjectFile) => void;
-  onRevealInFinder?: (absolutePath: string) => void;
-  onRemoveRoot?: (rootPath: string) => void;
-  onRefreshRoot?: (rootPath: string) => void;
-  onCollapseChildren?: (rootPath: string, dirPath: string) => void;
+  onRevealInFinder?: (rootId: string, absolutePath: string) => void;
+  onRemoveRoot?: (rootId: string) => void;
+  onRefreshRoot?: (rootId: string) => void;
+  onCollapseChildren?: (rootId: string, dirPath: string) => void;
   onNewFolder?: (dirPath: string) => void;
 }
 
@@ -179,10 +179,10 @@ function buildMenuItems(
     onOpen?: (file: ProjectFile) => void;
     onRename?: (file: ProjectFile) => void;
     onDelete?: (file: ProjectFile) => void;
-    onRevealInFinder?: (absolutePath: string) => void;
-    onRemoveRoot?: (rootPath: string) => void;
-    onRefreshRoot?: (rootPath: string) => void;
-    onCollapseChildren?: (rootPath: string, dirPath: string) => void;
+    onRevealInFinder?: (rootId: string, absolutePath: string) => void;
+    onRemoveRoot?: (rootId: string) => void;
+    onRefreshRoot?: (rootId: string) => void;
+    onCollapseChildren?: (rootId: string, dirPath: string) => void;
     onNewFolder?: (dirPath: string) => void;
   },
 ): MenuItem[] {
@@ -200,9 +200,9 @@ function buildRootItems(
   target: Extract<ContextMenuTarget, { targetType: "root" }>,
   cb: {
     onNewFile: (dirPath: string) => void;
-    onRevealInFinder?: (absolutePath: string) => void;
-    onRefreshRoot?: (rootPath: string) => void;
-    onRemoveRoot?: (rootPath: string) => void;
+    onRevealInFinder?: (rootId: string, absolutePath: string) => void;
+    onRefreshRoot?: (rootId: string) => void;
+    onRemoveRoot?: (rootId: string) => void;
   },
 ): MenuItem[] {
   return [
@@ -215,18 +215,18 @@ function buildRootItems(
     {
       label: "Open in Finder",
       icon: IconExternalLink,
-      action: () => cb.onRevealInFinder?.(target.rootPath),
+      action: () => cb.onRevealInFinder?.(target.rootId, target.rootPath),
     },
     {
       label: "Refresh",
       icon: IconRefresh,
-      action: () => cb.onRefreshRoot?.(target.rootPath),
+      action: () => cb.onRefreshRoot?.(target.rootId),
     },
     { type: "separator" },
     {
       label: "Remove from Workspace",
       icon: IconX,
-      action: () => cb.onRemoveRoot?.(target.rootPath),
+      action: () => cb.onRemoveRoot?.(target.rootId),
       variant: "danger",
     },
   ];
@@ -238,7 +238,7 @@ function buildFileItems(
     onOpen?: (file: ProjectFile) => void;
     onRename?: (file: ProjectFile) => void;
     onDelete?: (file: ProjectFile) => void;
-    onRevealInFinder?: (absolutePath: string) => void;
+    onRevealInFinder?: (rootId: string, absolutePath: string) => void;
   },
 ): MenuItem[] {
   const absPath = joinWorkspacePath(target.rootPath, target.file.path);
@@ -280,7 +280,7 @@ function buildFileItems(
     {
       label: "Reveal in Finder",
       icon: IconFolderOpen,
-      action: () => cb.onRevealInFinder?.(absPath),
+      action: () => cb.onRevealInFinder?.(target.rootId, absPath),
     },
   ];
 }
@@ -290,8 +290,8 @@ function buildFolderItems(
   cb: {
     onNewFile: (dirPath: string) => void;
     onNewFolder?: (dirPath: string) => void;
-    onCollapseChildren?: (rootPath: string, dirPath: string) => void;
-    onRevealInFinder?: (absolutePath: string) => void;
+    onCollapseChildren?: (rootId: string, dirPath: string) => void;
+    onRevealInFinder?: (rootId: string, absolutePath: string) => void;
   },
 ): MenuItem[] {
   const absPath = joinWorkspacePath(target.rootPath, target.file.path);
@@ -310,13 +310,13 @@ function buildFolderItems(
     {
       label: "Collapse All Children",
       icon: IconArrowsMinimize,
-      action: () => cb.onCollapseChildren?.(target.rootPath, target.file.path),
+      action: () => cb.onCollapseChildren?.(target.rootId, target.file.path),
     },
     { type: "separator" },
     {
       label: "Reveal in Finder",
       icon: IconFolderOpen,
-      action: () => cb.onRevealInFinder?.(absPath),
+      action: () => cb.onRevealInFinder?.(target.rootId, absPath),
     },
   ];
 }

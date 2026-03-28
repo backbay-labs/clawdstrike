@@ -1,8 +1,11 @@
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import { usePolicyTabsStore } from "@/features/policy/stores/policy-tabs-store";
-import type { FileType } from "@/lib/workbench/file-type-registry";
-import { getFileTypeByExtension } from "@/lib/workbench/file-type-registry";
+import {
+  FILE_TYPE_REGISTRY,
+  getFileTypeByExtension,
+  type FileType,
+} from "@/lib/workbench/file-type-registry";
 import { getDocumentIdentityStore } from "@/lib/workbench/detection-workflow/document-identity-store";
 import {
   isAbsoluteWorkspacePath,
@@ -18,6 +21,7 @@ import {
 import {
   addWorkspaceRootNative,
   createWorkspaceDirectoryNative,
+  createWorkspaceFileNative,
   deleteWorkspaceEntryNative,
   readWorkspaceTreeNative,
   renameWorkspaceEntryNative,
@@ -134,11 +138,14 @@ export type WorkspaceConsumerState = Pick<
 >;
 
 const FILE_STATUS_KEY_SEPARATOR = "::";
-const TERMINAL_ROOT_STATUSES = new Set<ProjectRootStatus>(["ready", "empty", "stale", "error"]);
+const SETTLED_ROOT_STATUSES = new Set<ProjectRootStatus>(["ready", "empty", "stale", "error"]);
+const USABLE_ROOT_STATUSES = new Set<ProjectRootStatus>(["ready", "empty"]);
 
 export interface WorkspaceRootsReadyResult {
   ready: boolean;
+  settled: boolean;
   pendingRootIds: string[];
+  blockedRootIds: string[];
   elapsedMs: number;
 }
 
@@ -246,6 +253,21 @@ interface ResolvedWorkspaceConsumerOwnership {
   canonicalRootPath: string;
   absolutePath: string;
   relativePath: string;
+}
+
+function getCanonicalOwnershipRelativePath(
+  ownership: ResolvedWorkspaceConsumerOwnership,
+): string {
+  const matchedRootSuffix = hasWorkspaceRootPrefix(
+    ownership.matchedRootPath,
+    ownership.canonicalRootPath,
+  )
+    ? relativeWorkspacePath(ownership.canonicalRootPath, ownership.matchedRootPath)
+    : "";
+
+  return matchedRootSuffix
+    ? `${matchedRootSuffix}/${ownership.relativePath}`.replace(/^\/+/, "")
+    : ownership.relativePath;
 }
 
 function resolveWorkspaceConsumerOwnership(
@@ -356,17 +378,33 @@ export function canonicalizeWorkspaceConsumerPath(
     return ownership.canonicalRootPath;
   }
 
-  const matchedRootSuffix = hasWorkspaceRootPrefix(
-    ownership.matchedRootPath,
+  return joinWorkspacePath(
     ownership.canonicalRootPath,
-  )
-    ? relativeWorkspacePath(ownership.canonicalRootPath, ownership.matchedRootPath)
-    : "";
-  const canonicalRelativePath = matchedRootSuffix
-    ? `${matchedRootSuffix}/${ownership.relativePath}`.replace(/^\/+/, "")
-    : ownership.relativePath;
+    getCanonicalOwnershipRelativePath(ownership),
+  );
+}
 
-  return joinWorkspacePath(ownership.canonicalRootPath, canonicalRelativePath);
+export function isWorkspaceConsumerPathVisible(
+  state: WorkspaceConsumerState,
+  path: string,
+): boolean {
+  const trimmed = path.trim();
+  if (!trimmed || !isAbsoluteWorkspacePath(trimmed)) {
+    return true;
+  }
+
+  const ownership = resolveWorkspaceConsumerOwnership(state, trimmed);
+  if (!ownership) {
+    return true;
+  }
+
+  if (ownership.root.kind !== "default_home") {
+    return true;
+  }
+
+  const canonicalRelativePath = getCanonicalOwnershipRelativePath(ownership);
+  return canonicalRelativePath === "workspace"
+    || canonicalRelativePath.startsWith("workspace/");
 }
 
 export function getCanonicalWorkspaceRootPaths(
@@ -391,7 +429,19 @@ export function isWorkspaceConsumerRootReady(
     return false;
   }
 
-  return isTerminalRootStatus(state.rootStatusById.get(root.rootId));
+  return isUsableRootStatus(state.rootStatusById.get(root.rootId));
+}
+
+export function isWorkspaceConsumerRootSettled(
+  state: WorkspaceConsumerState,
+  rootIdOrPath?: string | null,
+): boolean {
+  const root = resolveWorkspaceConsumerRoot(state, rootIdOrPath);
+  if (!root) {
+    return false;
+  }
+
+  return isSettledRootStatus(state.rootStatusById.get(root.rootId));
 }
 
 function buildProjectSelectionPatch(
@@ -493,8 +543,12 @@ function applyWorkspaceRegistrySnapshot(
   };
 }
 
-function isTerminalRootStatus(status: ProjectRootStatus | undefined): boolean {
-  return status != null && TERMINAL_ROOT_STATUSES.has(status);
+function isSettledRootStatus(status: ProjectRootStatus | undefined): boolean {
+  return status != null && SETTLED_ROOT_STATUSES.has(status);
+}
+
+function isUsableRootStatus(status: ProjectRootStatus | undefined): boolean {
+  return status != null && USABLE_ROOT_STATUSES.has(status);
 }
 
 function formatWorkspaceError(error: unknown): string {
@@ -939,38 +993,205 @@ function inferFileTypeFromPath(relPath: string, name: string): FileType {
   return "clawdstrike_policy";
 }
 
-function moveFileStatus(
+function isPathWithinSubtree(candidatePath: string, subtreePath: string): boolean {
+  return candidatePath === subtreePath || candidatePath.startsWith(`${subtreePath}/`);
+}
+
+function remapSubtreePath(
+  candidatePath: string,
+  oldPrefix: string,
+  newPrefix: string,
+): string {
+  if (candidatePath === oldPrefix) {
+    return newPrefix;
+  }
+  return `${newPrefix}/${candidatePath.slice(oldPrefix.length + 1)}`;
+}
+
+function renameProjectSubtreePath(
+  file: ProjectFile,
+  oldPrefix: string,
+  newPrefix: string,
+): ProjectFile {
+  const nextPath = remapSubtreePath(file.path, oldPrefix, newPrefix);
+  const nextName = nextPath.split("/").filter(Boolean).pop() ?? file.name;
+  return {
+    ...file,
+    path: nextPath,
+    name: nextName,
+    fileType: inferFileTypeFromPath(nextPath, nextName),
+    depth: nextPath.split("/").filter(Boolean).length - 1,
+    children: file.children?.map((child) => renameProjectSubtreePath(child, oldPrefix, newPrefix)),
+  };
+}
+
+function moveExpandedDirsSubtree(
+  expandedDirs: Set<string>,
+  oldRelPath: string,
+  newRelPath: string,
+): Set<string> {
+  let changed = false;
+  const next = new Set<string>();
+  for (const dirPath of expandedDirs) {
+    if (isPathWithinSubtree(dirPath, oldRelPath)) {
+      next.add(remapSubtreePath(dirPath, oldRelPath, newRelPath));
+      changed = true;
+    } else {
+      next.add(dirPath);
+    }
+  }
+  return changed ? next : expandedDirs;
+}
+
+function deleteExpandedDirsSubtree(
+  expandedDirs: Set<string>,
+  relPath: string,
+): Set<string> {
+  let changed = false;
+  const next = new Set<string>();
+  for (const dirPath of expandedDirs) {
+    if (isPathWithinSubtree(dirPath, relPath)) {
+      changed = true;
+      continue;
+    }
+    next.add(dirPath);
+  }
+  return changed ? next : expandedDirs;
+}
+
+function moveFileStatusSubtree(
   fileStatuses: Map<string, FileStatus>,
   rootPath: string,
   oldRelPath: string,
   newRelPath: string,
 ): Map<string, FileStatus> {
-  const oldKey = getProjectFileStatusKey(rootPath, oldRelPath);
-  const existingStatus = fileStatuses.get(oldKey);
-  if (!existingStatus) {
-    return fileStatuses;
+  const rootPrefix = `${rootPath.replace(/\/+$/, "")}${FILE_STATUS_KEY_SEPARATOR}`;
+  let changed = false;
+  const next = new Map(fileStatuses);
+
+  for (const [key, status] of fileStatuses) {
+    if (!key.startsWith(rootPrefix)) {
+      continue;
+    }
+    const relPath = key.slice(rootPrefix.length);
+    if (!isPathWithinSubtree(relPath, oldRelPath)) {
+      continue;
+    }
+    changed = true;
+    next.delete(key);
+    next.set(
+      getProjectFileStatusKey(rootPath, remapSubtreePath(relPath, oldRelPath, newRelPath)),
+      status,
+    );
   }
 
-  const newKey = getProjectFileStatusKey(rootPath, newRelPath);
-  const next = new Map(fileStatuses);
-  next.delete(oldKey);
-  next.set(newKey, existingStatus);
+  if (!changed) {
+    return fileStatuses;
+  }
   return next;
 }
 
-function deleteFileStatus(
+function deleteFileStatusSubtree(
   fileStatuses: Map<string, FileStatus>,
   rootPath: string,
   relPath: string,
 ): Map<string, FileStatus> {
-  const key = getProjectFileStatusKey(rootPath, relPath);
-  if (!fileStatuses.has(key)) {
-    return fileStatuses;
+  const rootPrefix = `${rootPath.replace(/\/+$/, "")}${FILE_STATUS_KEY_SEPARATOR}`;
+  let changed = false;
+  const next = new Map(fileStatuses);
+
+  for (const key of fileStatuses.keys()) {
+    if (!key.startsWith(rootPrefix)) {
+      continue;
+    }
+    const candidatePath = key.slice(rootPrefix.length);
+    if (!isPathWithinSubtree(candidatePath, relPath)) {
+      continue;
+    }
+    changed = true;
+    next.delete(key);
   }
 
-  const next = new Map(fileStatuses);
-  next.delete(key);
+  if (!changed) {
+    return fileStatuses;
+  }
   return next;
+}
+
+function moveOpenTabsForSubtree(
+  oldAbsolutePath: string,
+  newAbsolutePath: string,
+  renamedBasename: string,
+): void {
+  const tabsStore = usePolicyTabsStore.getState();
+  const previousTabs = [...tabsStore.tabs];
+  const previousBasename = getProjectPathBasename(oldAbsolutePath);
+
+  for (const tab of previousTabs) {
+    if (!tab.filePath || !isPathWithinSubtree(tab.filePath, oldAbsolutePath)) {
+      continue;
+    }
+
+    const nextFilePath = remapSubtreePath(tab.filePath, oldAbsolutePath, newAbsolutePath);
+    tabsStore.setFilePath(tab.id, nextFilePath);
+    if (tab.filePath === oldAbsolutePath && tab.name === previousBasename) {
+      tabsStore.renameTab(tab.id, renamedBasename);
+    }
+  }
+}
+
+function closeOpenTabsForSubtree(absolutePath: string): void {
+  const tabsStore = usePolicyTabsStore.getState();
+  const previousTabs = [...tabsStore.tabs];
+  for (const tab of previousTabs) {
+    if (!tab.filePath || !isPathWithinSubtree(tab.filePath, absolutePath)) {
+      continue;
+    }
+    tabsStore.closeTab(tab.id);
+  }
+}
+
+function moveDocumentIdentitySubtree(oldAbsolutePath: string, newAbsolutePath: string): void {
+  const identityStore = getDocumentIdentityStore();
+  for (const entry of identityStore.entries()) {
+    if (!isPathWithinSubtree(entry.path, oldAbsolutePath)) {
+      continue;
+    }
+    identityStore.move(
+      entry.path,
+      remapSubtreePath(entry.path, oldAbsolutePath, newAbsolutePath),
+    );
+  }
+}
+
+function deleteDocumentIdentitySubtree(absolutePath: string): void {
+  const identityStore = getDocumentIdentityStore();
+  for (const entry of identityStore.entries()) {
+    if (!isPathWithinSubtree(entry.path, absolutePath)) {
+      continue;
+    }
+    identityStore.unregister(entry.path);
+  }
+}
+
+async function closePaneViewsForDeletedSubtree(absolutePath: string): Promise<void> {
+  const { usePaneStore } = await import("@/features/panes/pane-store");
+  const { getAllPaneGroups } = await import("@/features/panes/pane-tree");
+  const paneStore = usePaneStore.getState();
+  const paneGroups = getAllPaneGroups(paneStore.root);
+
+  for (const group of paneGroups) {
+    for (const view of group.views) {
+      if (!view.route.startsWith("/file/")) {
+        continue;
+      }
+      const routePath = view.route.slice("/file/".length);
+      if (!isPathWithinSubtree(routePath, absolutePath)) {
+        continue;
+      }
+      usePaneStore.getState().closeView(group.id, view.id);
+    }
+  }
 }
 
 // ---- Zustand store ----
@@ -1012,15 +1233,15 @@ interface ProjectStoreState extends ProjectState {
     /** Add a root folder to the multi-root workspace. */
     addRoot: (rootPath: string) => Promise<void>;
     /** Remove a root folder from the multi-root workspace. */
-    removeRoot: (rootPath: string) => Promise<void>;
+    removeRoot: (rootIdOrPath: string) => Promise<void>;
     /** Scan a root directory and populate its DetectionProject. */
-    loadRoot: (rootPath: string) => Promise<void>;
+    loadRoot: (rootIdOrPath: string) => Promise<void>;
     /** Kick off scans for the currently hydrated backend workspace registry. */
     initFromWorkspaceRegistry: () => Promise<void>;
-    /** Wait until the current workspace roots reach a terminal state or time out. */
+    /** Wait until the current workspace roots are usable or all settle. */
     waitForRootsReady: (timeoutMs?: number) => Promise<WorkspaceRootsReadyResult>;
     /** Toggle expand/collapse for a directory within a specific root. */
-    toggleDirForRoot: (rootPath: string, dirPath: string) => void;
+    toggleDirForRoot: (rootIdOrPath: string, dirPath: string) => void;
   };
 }
 
@@ -1119,33 +1340,38 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
 
     createFile: async (parentDirPath: string, fileName: string, fileType: FileType): Promise<string | null> => {
       const state = get();
-      const rootPath = resolveOwningRootPath(state, parentDirPath);
-      const project = getProjectForRoot(state, rootPath);
-      const root = rootPath
-        ? findRootRecordByExactPath(state.rootsById, state.orderedRootIds, rootPath)
-        : null;
-      if (!project || !rootPath || !root) return null;
+      const target = resolveWorkspaceTarget(state, parentDirPath);
+      if (!target) return null;
+      const project = getProjectForRoot(state, target.rootPath);
+      if (!project) return null;
 
       const trimmedName = fileName.trim();
       if (!isValidProjectBasename(trimmedName)) {
         return null;
       }
 
-      const parentRelPath = relativePathWithinRoot(rootPath, parentDirPath);
+      const parentRelPath = target.relativePath;
       const optimisticRelPath = parentRelPath ? `${parentRelPath}/${trimmedName}` : trimmedName;
 
-      let savedPath: string | null = null;
+      let response;
       try {
-        const { createDetectionFile } = await import("@/lib/tauri-bridge");
-        savedPath = await createDetectionFile(parentDirPath, trimmedName, fileType);
+        response = await createWorkspaceFileNative(
+          target.root.rootId,
+          optimisticRelPath,
+          {
+            defaultContentFileType: FILE_TYPE_REGISTRY[fileType]
+              ? fileType
+              : undefined,
+          },
+        );
       } catch (error) {
         const message = resolveMutationFailureMessage(error, `Failed to create ${trimmedName}.`);
         set({
           ...buildRootMutationPatch(
             get(),
-            root.rootId,
+            target.root.rootId,
             createRootMutationState(
-              root,
+              target.root,
               "create_file",
               "error",
               optimisticRelPath,
@@ -1156,25 +1382,26 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
         });
         return null;
       }
-      if (!savedPath) {
+      if (!response?.ok) {
         set({
           ...buildRootMutationPatch(
             get(),
-            root.rootId,
+            target.root.rootId,
             createRootMutationState(
-              root,
+              target.root,
               "create_file",
               "error",
               optimisticRelPath,
               trimmedName,
-              `Failed to create ${trimmedName}.`,
+              response?.ok === false ? response.error.message : `Failed to create ${trimmedName}.`,
             ),
           ),
         });
         return null;
       }
 
-      const relPath = relativePathWithinRoot(rootPath, savedPath) || trimmedName;
+      const relPath = response.data.relativePath || optimisticRelPath;
+      const savedPath = joinWorkspacePath(target.rootPath, relPath);
 
       // Compute depth from relative path segments.
       const depth = relPath.split("/").filter(Boolean).length - 1;
@@ -1203,17 +1430,17 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
 
       const nextProject = { ...project, files: newFiles, expandedDirs };
       const nextProjectsById = new Map(get().projectsById);
-      nextProjectsById.set(root.rootId, nextProject);
+      nextProjectsById.set(target.root.rootId, nextProject);
       set({
         ...buildProjectSelectionPatch(get().orderedRootIds, get().rootsById, nextProjectsById),
         ...buildRootMutationPatch(
           get(),
-          root.rootId,
-          createRootMutationState(root, "create_file", "pending", relPath, trimmedName, null),
+          target.root.rootId,
+          createRootMutationState(target.root, "create_file", "pending", relPath, trimmedName, null),
         ),
       });
       // Re-scan from disk to ensure tree is in sync (catches nested dir creation, etc.)
-      void get().actions.loadRoot(rootPath);
+      void get().actions.loadRoot(target.root.rootId);
       return savedPath;
     },
 
@@ -1277,39 +1504,30 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
         return false;
       }
 
-      const tabsStore = usePolicyTabsStore.getState();
-      const previousName = getProjectPathBasename(oldAbsPath);
-      const renamedTabIds = tabsStore.tabs
-        .filter((tab) => tab.filePath === oldAbsPath)
-        .map((tab) => tab.id);
-      for (const tabId of renamedTabIds) {
-        tabsStore.setFilePath(tabId, newAbsPath);
-        const renamedTab = tabsStore.tabs.find((tab) => tab.id === tabId);
-        if (renamedTab?.name === previousName) {
-          tabsStore.renameTab(tabId, trimmedName);
-        }
-      }
-      getDocumentIdentityStore().move(oldAbsPath, newAbsPath);
+      moveOpenTabsForSubtree(oldAbsPath, newAbsPath, trimmedName);
+      moveDocumentIdentitySubtree(oldAbsPath, newAbsPath);
 
       const oldRelPath = target.relativePath;
 
       const newFiles = mutateTree(project.files, oldRelPath, (siblings, idx) => {
         siblings[idx] = {
-          ...siblings[idx],
+          ...renameProjectSubtreePath(siblings[idx], oldRelPath, newRelPath),
           name: trimmedName,
-          path: newRelPath,
-          fileType: inferFileTypeFromPath(newRelPath, trimmedName),
         };
         return sortChildren(siblings);
       });
 
-      const fileStatuses = moveFileStatus(
+      const fileStatuses = moveFileStatusSubtree(
         get().fileStatuses,
         target.rootPath,
         oldRelPath,
         newRelPath,
       );
-      const nextProject = { ...project, files: newFiles };
+      const nextProject = {
+        ...project,
+        files: newFiles,
+        expandedDirs: moveExpandedDirsSubtree(project.expandedDirs, oldRelPath, newRelPath),
+      };
       const nextProjectsById = new Map(get().projectsById);
       nextProjectsById.set(target.root.rootId, nextProject);
       set({
@@ -1322,7 +1540,7 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
         fileStatuses,
       });
       // Re-scan from disk to pick up any side effects of the rename.
-      void get().actions.loadRoot(target.rootPath);
+      void get().actions.loadRoot(target.root.rootId);
       return true;
     },
 
@@ -1385,16 +1603,15 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
         return siblings;
       });
 
-      const tabsStore = usePolicyTabsStore.getState();
-      const tabsToClose = tabsStore.tabs
-        .filter((tab) => tab.filePath === absPath)
-        .map((tab) => tab.id);
-      for (const tabId of tabsToClose) {
-        tabsStore.closeTab(tabId);
-      }
-      getDocumentIdentityStore().unregister(absPath);
-      const fileStatuses = deleteFileStatus(get().fileStatuses, target.rootPath, relPath);
-      const nextProject = { ...project, files: newFiles };
+      closeOpenTabsForSubtree(absPath);
+      await closePaneViewsForDeletedSubtree(absPath);
+      deleteDocumentIdentitySubtree(absPath);
+      const fileStatuses = deleteFileStatusSubtree(get().fileStatuses, target.rootPath, relPath);
+      const nextProject = {
+        ...project,
+        files: newFiles,
+        expandedDirs: deleteExpandedDirsSubtree(project.expandedDirs, relPath),
+      };
       const nextProjectsById = new Map(get().projectsById);
       nextProjectsById.set(target.root.rootId, nextProject);
       set({
@@ -1414,7 +1631,7 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
         fileStatuses,
       });
       // Re-scan from disk to ensure deleted file (and any empty parent dirs) are gone.
-      void get().actions.loadRoot(target.rootPath);
+      void get().actions.loadRoot(target.root.rootId);
       return true;
     },
 
@@ -1506,7 +1723,7 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
           createRootMutationState(target.root, "create_folder", "pending", relativePath, trimmedName, null),
         ),
       });
-      void get().actions.loadRoot(target.rootPath);
+      void get().actions.loadRoot(target.root.rootId);
       return true;
     },
 
@@ -1538,7 +1755,7 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
         normalizedRootPath,
       );
       if (existingRoot) {
-        await get().actions.loadRoot(existingRoot.displayPath);
+        await get().actions.loadRoot(existingRoot.rootId);
         return;
       }
 
@@ -1559,9 +1776,12 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
       }
     },
 
-    loadRoot: async (rootPath: string) => {
-      const root = findRootRecordByExactPath(get().rootsById, get().orderedRootIds, rootPath)
-        ?? resolveRootRecordForAbsolutePath(get().rootsById, get().orderedRootIds, rootPath);
+    loadRoot: async (rootIdOrPath: string) => {
+      const root = findRootRecordByIdOrPath(
+        get().rootsById,
+        get().orderedRootIds,
+        rootIdOrPath,
+      ) ?? resolveRootRecordForAbsolutePath(get().rootsById, get().orderedRootIds, rootIdOrPath);
       if (!root) return;
 
       const skeletonProject = createSkeletonProject(root);
@@ -1726,13 +1946,20 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
       }
     },
 
-    removeRoot: async (rootPath: string) => {
-      const root = findRootRecordByExactPath(get().rootsById, get().orderedRootIds, rootPath);
+    removeRoot: async (rootIdOrPath: string) => {
+      const root = findRootRecordByIdOrPath(
+        get().rootsById,
+        get().orderedRootIds,
+        rootIdOrPath,
+      );
       if (!root) return;
 
       const snapshot = await removeWorkspaceRootNative(root.rootId);
       if (!snapshot) {
-        console.warn("[project-store] Failed to remove root through workspace registry:", rootPath);
+        console.warn(
+          "[project-store] Failed to remove root through workspace registry:",
+          rootIdOrPath,
+        );
         return;
       }
 
@@ -1740,32 +1967,46 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
     },
 
     initFromWorkspaceRegistry: async () => {
-      const roots = get().orderedRootIds
-        .map((rootId) => get().rootsById.get(rootId)?.displayPath ?? null)
-        .filter((rootPath): rootPath is string => rootPath != null);
-      if (roots.length === 0) return;
+      const rootIds = get().orderedRootIds.filter((rootId) => get().rootsById.has(rootId));
+      if (rootIds.length === 0) return;
       // Kick scans off in the background so bootstrap can paint placeholder
       // roots immediately instead of waiting for Tauri FS round-trips.
-      for (const root of roots) {
-        void get().actions.loadRoot(root);
+      for (const rootId of rootIds) {
+        void get().actions.loadRoot(rootId);
       }
     },
 
     waitForRootsReady: async (timeoutMs = 5_000) => {
       const targetRootIds = get().orderedRootIds.filter((rootId) => get().rootsById.has(rootId));
       if (targetRootIds.length === 0) {
-        return { ready: true, pendingRootIds: [], elapsedMs: 0 };
+        return {
+          ready: true,
+          settled: true,
+          pendingRootIds: [],
+          blockedRootIds: [],
+          elapsedMs: 0,
+        };
       }
 
       const startedAt = Date.now();
       while (Date.now() - startedAt < timeoutMs) {
         const state = get();
-        const allReady = targetRootIds.every((rootId) => {
+        const pendingRootIds = targetRootIds.filter((rootId) => {
           const status = state.rootStatusById.get(rootId);
-          return isTerminalRootStatus(status);
+          return !isSettledRootStatus(status);
         });
-        if (allReady) {
-          return { ready: true, pendingRootIds: [], elapsedMs: Date.now() - startedAt };
+        if (pendingRootIds.length === 0) {
+          const blockedRootIds = targetRootIds.filter((rootId) => {
+            const status = state.rootStatusById.get(rootId);
+            return !isUsableRootStatus(status);
+          });
+          return {
+            ready: blockedRootIds.length === 0,
+            settled: true,
+            pendingRootIds: [],
+            blockedRootIds,
+            elapsedMs: Date.now() - startedAt,
+          };
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
@@ -1773,17 +2014,30 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
       const finalState = get();
       const pendingRootIds = targetRootIds.filter((rootId) => {
         const status = finalState.rootStatusById.get(rootId);
-        return !isTerminalRootStatus(status);
+        return !isSettledRootStatus(status);
+      });
+      const blockedRootIds = targetRootIds.filter((rootId) => {
+        if (pendingRootIds.includes(rootId)) {
+          return false;
+        }
+        const status = finalState.rootStatusById.get(rootId);
+        return !isUsableRootStatus(status);
       });
       return {
-        ready: pendingRootIds.length === 0,
+        ready: pendingRootIds.length === 0 && blockedRootIds.length === 0,
+        settled: pendingRootIds.length === 0,
         pendingRootIds,
+        blockedRootIds,
         elapsedMs: Date.now() - startedAt,
       };
     },
 
-    toggleDirForRoot: (rootPath: string, dirPath: string) => {
-      const root = findRootRecordByExactPath(get().rootsById, get().orderedRootIds, rootPath);
+    toggleDirForRoot: (rootIdOrPath: string, dirPath: string) => {
+      const root = findRootRecordByIdOrPath(
+        get().rootsById,
+        get().orderedRootIds,
+        rootIdOrPath,
+      );
       if (!root) return;
       const { projectsById } = get();
       const dp = projectsById.get(root.rootId);

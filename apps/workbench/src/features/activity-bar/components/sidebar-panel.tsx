@@ -1,11 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useActivityBarStore } from "../stores/activity-bar-store";
 import {
   ExplorerPanel,
   type ExplorerRootState,
 } from "@/components/workbench/explorer/explorer-panel";
 import { useProjectStore } from "@/features/project/stores/project-store";
-import { getProjectFileStatusKey } from "@/features/project/stores/project-store";
+import {
+  canonicalizeWorkspaceConsumerPath,
+  resolveWorkspaceConsumerRoot,
+} from "@/features/project/stores/project-store";
 import type { DetectionProject, ProjectFile } from "@/features/project/stores/project-store";
 import { usePaneStore, getActivePaneRoute } from "@/features/panes/pane-store";
 import { useWorkbenchState } from "@/features/policy/hooks/use-policy-actions";
@@ -19,13 +22,15 @@ import { SearchPanelConnected } from "@/features/search/components/search-panel"
 import { AnalystRosterPanel } from "@/features/presence/components/analyst-roster-panel";
 import { ObservatoryMinimapPanel } from "@/features/observatory/panels/observatory-minimap-panel";
 import type { ActivityBarItemId } from "../types";
-import { useMemo } from "react";
 import {
   joinWorkspacePath,
   relativeWorkspacePath,
-  resolveWorkspaceRootPath,
 } from "@/lib/workbench/path-utils";
 import { revealWorkspaceEntryNative } from "@/lib/tauri-commands";
+
+function getExplorerFileKey(rootId: string, relativePath: string): string {
+  return `${rootId}::${relativePath}`;
+}
 
 // ---------------------------------------------------------------------------
 // SidebarPanel -- Container that renders active panel content.
@@ -37,8 +42,8 @@ import { revealWorkspaceEntryNative } from "@/lib/tauri-commands";
 // ---------------------------------------------------------------------------
 
 function ExplorerPanelConnected() {
-  const projectRoots = useProjectStore.use.projectRoots();
-  const projectsMap = useProjectStore.use.projects();
+  const project = useProjectStore.use.project();
+  const projectsById = useProjectStore.use.projectsById();
   const rootsById = useProjectStore.use.rootsById();
   const orderedRootIds = useProjectStore.use.orderedRootIds();
   const defaultRootId = useProjectStore.use.defaultRootId();
@@ -52,21 +57,42 @@ function ExplorerPanelConnected() {
   const actions = useProjectStore.use.actions();
   const { openFileByPath } = useWorkbenchState();
 
-  // Build ordered projects array from roots.
-  // When loading is true, roots may exist but projects Map is not yet populated,
-  // so we include an empty array during loading to avoid flashing "No project open".
+  const workspaceRootPaths = useMemo(
+    () =>
+      orderedRootIds
+        .map((rootId) => rootsById.get(rootId)?.displayPath ?? null)
+        .filter((rootPath): rootPath is string => rootPath != null),
+    [orderedRootIds, rootsById],
+  );
+
+  const workspaceConsumerState = useMemo(
+    () => ({
+      project,
+      defaultRootId,
+      orderedRootIds,
+      rootsById,
+      rootStatusById,
+      projectRoots: workspaceRootPaths,
+    }),
+    [defaultRootId, orderedRootIds, project, rootStatusById, rootsById, workspaceRootPaths],
+  );
+
   const projects = useMemo(() => {
-    return projectRoots
-      .map((root) => projectsMap.get(root))
+    return orderedRootIds
+      .map((rootId) => projectsById.get(rootId))
       .filter((p): p is DetectionProject => p != null);
-  }, [projectRoots, projectsMap]);
+  }, [orderedRootIds, projectsById]);
+
+  const resolveRoot = (rootIdOrPath: string | null | undefined) =>
+    resolveWorkspaceConsumerRoot(workspaceConsumerState, rootIdOrPath);
 
   const rootStates = useMemo(() => {
     const states = new Map<string, ExplorerRootState>();
-    for (const rootId of orderedRootIds) {
-      const root = rootsById.get(rootId);
+    for (const project of projects) {
+      const rootId = project.rootId;
+      const root = rootsById.get(project.rootId);
       if (!root) continue;
-      states.set(root.displayPath, {
+      states.set(rootId, {
         status: rootStatusById.get(rootId) ?? "idle",
         error: rootErrorById.get(rootId) ?? null,
         mutation: rootMutationById.get(rootId) ?? null,
@@ -77,7 +103,7 @@ function ExplorerPanelConnected() {
       });
     }
     return states;
-  }, [defaultRootId, orderedRootIds, rootErrorById, rootMutationById, rootStatusById, rootsById]);
+  }, [defaultRootId, projects, rootErrorById, rootMutationById, rootStatusById, rootsById]);
 
   // Derive active file's relative path from pane store for tree highlighting.
   const paneRoot = usePaneStore((s) => s.root);
@@ -86,12 +112,18 @@ function ExplorerPanelConnected() {
   const activeFileKey = useMemo(() => {
     const route = getActivePaneRoute(paneRoot, activePaneId);
     if (!route.startsWith("/file/")) return null;
-    const absPath = route.slice("/file/".length);
-    const rootPath = resolveWorkspaceRootPath(projectRoots, absPath);
-    return rootPath
-      ? getProjectFileStatusKey(rootPath, relativeWorkspacePath(rootPath, absPath))
+    const canonicalPath = canonicalizeWorkspaceConsumerPath(
+      workspaceConsumerState,
+      route.slice("/file/".length),
+    );
+    const root = resolveWorkspaceConsumerRoot(workspaceConsumerState, canonicalPath);
+    return root
+      ? getExplorerFileKey(
+          root.rootId,
+          relativeWorkspacePath(root.displayPath, canonicalPath),
+        )
       : null;
-  }, [paneRoot, activePaneId, projectRoots]);
+  }, [activePaneId, paneRoot, workspaceConsumerState]);
 
   // Show loading indicator briefly while bootstrap resolves the initial roots.
   const [timedOut, setTimedOut] = useState(false);
@@ -102,7 +134,7 @@ function ExplorerPanelConnected() {
     return () => clearTimeout(timer);
   }, [loading]);
 
-  if (loading && !timedOut && projectRoots.length === 0 && projects.length === 0) {
+  if (loading && !timedOut && workspaceRootPaths.length === 0 && projects.length === 0) {
     return (
       <div className="h-full flex flex-col">
         <div className="h-[36px] shrink-0 flex items-center border-b border-[#202531] px-3">
@@ -124,11 +156,13 @@ function ExplorerPanelConnected() {
       projects={projects}
       rootStates={rootStates}
       activeFileKey={activeFileKey}
-      onToggleDir={(rootPath, dirPath) => {
-        actions.toggleDirForRoot(rootPath, dirPath);
+      onToggleDir={(rootId, dirPath) => {
+        actions.toggleDirForRoot(rootId, dirPath);
       }}
-      onOpenFile={async (rootPath, file) => {
-        const absPath = joinWorkspacePath(rootPath, file.path);
+      onOpenFile={async (rootId, file) => {
+        const root = resolveRoot(rootId);
+        if (!root) return;
+        const absPath = joinWorkspacePath(root.displayPath, file.path);
         if (file.fileType === "swarm_bundle") {
           usePaneStore.getState().openApp(
             `/swarm-board/${encodeURIComponent(absPath)}`,
@@ -142,7 +176,7 @@ function ExplorerPanelConnected() {
       onExpandAll={actions.expandAll}
       onCollapseAll={actions.collapseAll}
       onRefresh={async () => {
-        await Promise.all(projectRoots.map((root) => actions.loadRoot(root)));
+        await Promise.all(orderedRootIds.map((rootId) => actions.loadRoot(rootId)));
       }}
       filter={filter}
       onFilterChange={actions.setFilter}
@@ -160,8 +194,8 @@ function ExplorerPanelConnected() {
           await storeActions.addRoot(selected);
         }
       }}
-      onRemoveRoot={(rootPath) => {
-        actions.removeRoot(rootPath);
+      onRemoveRoot={(rootId) => {
+        actions.removeRoot(rootId);
       }}
       onCreateFile={async (parentPath, fileName) => {
         const savedPath = await actions.createFile(parentPath, fileName, "clawdstrike_policy");
@@ -171,26 +205,29 @@ function ExplorerPanelConnected() {
           usePaneStore.getState().openFile(savedPath, fileName);
         }
       }}
-      onRenameFile={async (rootPath, file, newName) => {
-        await actions.renameFile(joinWorkspacePath(rootPath, file.path), newName);
-      }}
-      onDeleteFile={async (rootPath, file) => {
-        await actions.deleteFile(joinWorkspacePath(rootPath, file.path));
-      }}
-      onRevealInFinder={async (absPath) => {
-        const rootPath = resolveWorkspaceRootPath(projectRoots, absPath);
-        if (!rootPath) return;
-        const root = [...rootsById.values()].find((record) => record.displayPath === rootPath);
+      onRenameFile={async (rootId, file, newName) => {
+        const root = resolveRoot(rootId);
         if (!root) return;
-        const relativePath = relativeWorkspacePath(root.displayPath, absPath);
+        await actions.renameFile(joinWorkspacePath(root.displayPath, file.path), newName);
+      }}
+      onDeleteFile={async (rootId, file) => {
+        const root = resolveRoot(rootId);
+        if (!root) return;
+        await actions.deleteFile(joinWorkspacePath(root.displayPath, file.path));
+      }}
+      onRevealInFinder={async (rootId, absPath) => {
+        const root = resolveRoot(rootId);
+        if (!root) return;
+        const canonicalPath = canonicalizeWorkspaceConsumerPath(workspaceConsumerState, absPath);
+        const relativePath = relativeWorkspacePath(root.displayPath, canonicalPath);
         await revealWorkspaceEntryNative(root.rootId, relativePath);
       }}
       onCreateFolder={async (parentPath, folderName) => {
         await actions.createDirectory(parentPath, folderName);
       }}
-      onCollapseChildren={(rootPath, dirPath) => {
+      onCollapseChildren={(rootId, dirPath) => {
         // Collapse dirPath and all its descendant dirs within the root
-        const project = projectsMap.get(rootPath);
+        const project = projectsById.get(rootId);
         if (!project) return;
         const toCollapse: string[] = [dirPath];
         function collectChildren(files: ProjectFile[]) {
@@ -204,12 +241,12 @@ function ExplorerPanelConnected() {
         collectChildren(project.files);
         for (const p of toCollapse) {
           if (project.expandedDirs.has(p)) {
-            actions.toggleDirForRoot(rootPath, p);
+            actions.toggleDirForRoot(rootId, p);
           }
         }
       }}
-      onRefreshRoot={async (rootPath) => {
-        await actions.loadRoot(rootPath);
+      onRefreshRoot={async (rootId) => {
+        await actions.loadRoot(rootId);
       }}
     />
   );

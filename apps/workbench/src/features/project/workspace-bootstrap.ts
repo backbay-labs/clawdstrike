@@ -3,11 +3,16 @@
  *
  * The backend-owned workspace registry resolves and mounts the default
  * workspace root. This module only seeds example content underneath the
- * provided root path at `${workspaceRootPath}/workspace`.
+ * provided workspace root under `workspace/`.
  */
 
-import { isDesktop } from "@/lib/tauri-bridge";
 import { BUILTIN_RULESETS } from "@/features/policy/builtin-rulesets";
+import { isDesktop } from "@/lib/tauri-bridge";
+import {
+  createWorkspaceDirectoryNative,
+  createWorkspaceFileNative,
+  readWorkspaceTreeNative,
+} from "@/lib/tauri-commands";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -110,8 +115,41 @@ Use the "Add Folder" button at the bottom of the Explorer panel to mount
 additional directories as workspace roots.
 `;
 
-async function importTauriFs() {
-  return import("@tauri-apps/plugin-fs");
+function isAlreadyExistsResult(
+  result:
+    | { ok: true }
+    | { ok: false; error: { code: string; message?: string } }
+    | null,
+): boolean {
+  return Boolean(result && !result.ok && result.error.code === "already_exists");
+}
+
+async function ensureWorkspaceDirectory(rootId: string, relativePath: string): Promise<boolean> {
+  const result = await createWorkspaceDirectoryNative(rootId, relativePath);
+  if (result?.ok) return true;
+  if (isAlreadyExistsResult(result)) return true;
+  console.error("[workspace-bootstrap] Failed to create workspace directory:", {
+    rootId,
+    relativePath,
+    result,
+  });
+  return false;
+}
+
+async function writeWorkspaceFile(
+  rootId: string,
+  relativePath: string,
+  content: string,
+): Promise<boolean> {
+  const result = await createWorkspaceFileNative(rootId, relativePath, content);
+  if (result?.ok) return true;
+  if (isAlreadyExistsResult(result)) return true;
+  console.error("[workspace-bootstrap] Failed to create workspace file:", {
+    rootId,
+    relativePath,
+    result,
+  });
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +159,7 @@ async function importTauriFs() {
 /**
  * Seed the default workspace content if it does not already exist.
  *
- * - Creates `${workspaceRootPath}/workspace/` with subdirectories
+ * - Creates `workspace/` with subdirectories
  * - Writes editable copies of built-in rulesets into policies/
  * - Writes example Sigma, YARA, and scenario files
  * - Writes a README.md with getting-started guidance
@@ -133,32 +171,40 @@ async function importTauriFs() {
  * a bootstrapped workspace (fail-open for UX).
  */
 export async function bootstrapDefaultWorkspaceContent(
-  workspaceRootPath: string,
+  rootId: string,
 ): Promise<boolean> {
   if (!isDesktop()) return false;
 
   try {
-    const workspaceContentPath = `${workspaceRootPath}/${WORKSPACE_CONTENT_DIR_NAME}`;
+    const tree = await readWorkspaceTreeNative(rootId);
+    if (!tree) {
+      console.error("[workspace-bootstrap] Failed to read workspace tree for bootstrap:", {
+        rootId,
+      });
+      return false;
+    }
+    if (!tree.ok) {
+      console.error("[workspace-bootstrap] Workspace tree command failed for bootstrap:", {
+        rootId,
+        error: tree.error,
+      });
+      return false;
+    }
 
-    const { exists, mkdir, writeTextFile } = await importTauriFs();
-
-    // Check if workspace has already been fully scaffolded by looking for
-    // the sentinel file (README.md).  The directory itself may exist (e.g.
-    // created by a prior `createDetectionFile` or `mkdir`) without having
-    // any of the example content, so checking the directory alone is not
-    // sufficient.
-    const sentinelPath = `${workspaceContentPath}/README.md`;
-    const alreadyBootstrapped = await exists(sentinelPath);
-    if (alreadyBootstrapped) {
+    const sentinelPath = `${WORKSPACE_CONTENT_DIR_NAME}/README.md`;
+    if (tree.data.entries.some((entry) => entry.path === sentinelPath)) {
       return true;
     }
 
-    // Create the seeded content directory.
-    await mkdir(workspaceContentPath, { recursive: true });
+    if (!await ensureWorkspaceDirectory(rootId, WORKSPACE_CONTENT_DIR_NAME)) {
+      return false;
+    }
 
     // Create subdirectories.
     for (const subdir of WORKSPACE_SUBDIRS) {
-      await mkdir(`${workspaceContentPath}/${subdir}`, { recursive: true });
+      if (!await ensureWorkspaceDirectory(rootId, `${WORKSPACE_CONTENT_DIR_NAME}/${subdir}`)) {
+        return false;
+      }
     }
 
     // Write built-in rulesets as editable YAML files.
@@ -166,32 +212,50 @@ export async function bootstrapDefaultWorkspaceContent(
       BOOTSTRAP_RULESET_IDS.includes(r.id),
     );
     for (const ruleset of rulesets) {
-      await writeTextFile(
-        `${workspaceContentPath}/policies/${ruleset.id}.yaml`,
+      if (!await writeWorkspaceFile(
+        rootId,
+        `${WORKSPACE_CONTENT_DIR_NAME}/policies/${ruleset.id}.yaml`,
         ruleset.yaml,
-      );
+      )) {
+        return false;
+      }
     }
 
     // Write example Sigma rule.
-    await writeTextFile(
-      `${workspaceContentPath}/sigma/examples/suspicious-process.yml`,
+    if (!await writeWorkspaceFile(
+      rootId,
+      `${WORKSPACE_CONTENT_DIR_NAME}/sigma/examples/suspicious-process.yml`,
       EXAMPLE_SIGMA_RULE,
-    );
+    )) {
+      return false;
+    }
 
     // Write example YARA rule.
-    await writeTextFile(
-      `${workspaceContentPath}/yara/examples/suspicious-strings.yar`,
+    if (!await writeWorkspaceFile(
+      rootId,
+      `${WORKSPACE_CONTENT_DIR_NAME}/yara/examples/suspicious-strings.yar`,
       EXAMPLE_YARA_RULE,
-    );
+    )) {
+      return false;
+    }
 
     // Write example scenario.
-    await writeTextFile(
-      `${workspaceContentPath}/scenarios/basic-file-access.yaml`,
+    if (!await writeWorkspaceFile(
+      rootId,
+      `${WORKSPACE_CONTENT_DIR_NAME}/scenarios/basic-file-access.yaml`,
       EXAMPLE_SCENARIO,
-    );
+    )) {
+      return false;
+    }
 
     // Write workspace README.
-    await writeTextFile(`${workspaceContentPath}/README.md`, README_CONTENT);
+    if (!await writeWorkspaceFile(
+      rootId,
+      `${WORKSPACE_CONTENT_DIR_NAME}/README.md`,
+      README_CONTENT,
+    )) {
+      return false;
+    }
 
     return true;
   } catch (err) {

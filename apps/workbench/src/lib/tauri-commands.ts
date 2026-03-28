@@ -235,6 +235,7 @@ export type TauriWorkspaceCommandErrorCode =
   | "not_found"
   | "symlink_denied"
   | "unsupported_kind"
+  | "already_exists"
   | "io_error";
 
 export interface TauriWorkspaceTreeEntry {
@@ -254,6 +255,7 @@ export type TauriWorkspaceCommandResult<T> =
 
 export interface TauriReadWorkspaceTreeRequest {
   rootId: string;
+  includeInternalEntries?: boolean;
 }
 
 export interface TauriReadWorkspaceTreeResponse {
@@ -267,6 +269,22 @@ export interface TauriCreateWorkspaceDirectoryRequest {
 
 export interface TauriCreateWorkspaceDirectoryResponse {
   relativePath: string;
+}
+
+export interface TauriCreateWorkspaceFileRequest {
+  rootId: string;
+  relativePath: string;
+  content?: string;
+  defaultContentFileType?: string;
+}
+
+export interface TauriCreateWorkspaceFileResponse {
+  relativePath: string;
+}
+
+export interface TauriCreateWorkspaceFileOptions {
+  content?: string;
+  defaultContentFileType?: string;
 }
 
 export interface TauriRenameWorkspaceEntryRequest {
@@ -447,6 +465,7 @@ export async function removeWorkspaceRootNative(
 
 export async function readWorkspaceTreeNative(
   rootId: string,
+  options?: { includeInternalEntries?: boolean },
 ): Promise<TauriWorkspaceCommandResult<TauriReadWorkspaceTreeResponse> | null> {
   if (!isDesktop() && !hasWorkbenchE2EInvoke()) return null;
   try {
@@ -455,11 +474,15 @@ export async function readWorkspaceTreeNative(
       {
         request: {
           rootId,
+          includeInternalEntries: options?.includeInternalEntries ?? false,
         } satisfies TauriReadWorkspaceTreeRequest,
       },
     );
   } catch (err) {
-    logWorkspaceCommandFailure("read_workspace_tree", { rootId }, err);
+    logWorkspaceCommandFailure("read_workspace_tree", {
+      rootId,
+      includeInternalEntries: options?.includeInternalEntries ?? false,
+    }, err);
     return null;
   }
 }
@@ -481,6 +504,45 @@ export async function createWorkspaceDirectoryNative(
     );
   } catch (err) {
     logWorkspaceCommandFailure("create_workspace_directory", { rootId, relativePath }, err);
+    return null;
+  }
+}
+
+export async function createWorkspaceFileNative(
+  rootId: string,
+  relativePath: string,
+  contentOrOptions: string | TauriCreateWorkspaceFileOptions = "",
+): Promise<TauriWorkspaceCommandResult<TauriCreateWorkspaceFileResponse> | null> {
+  if (!isDesktop() && !hasWorkbenchE2EInvoke()) return null;
+  const request: TauriCreateWorkspaceFileRequest = {
+    rootId,
+    relativePath,
+  };
+
+  if (typeof contentOrOptions === "string") {
+    request.content = contentOrOptions;
+  } else {
+    if (contentOrOptions.content !== undefined) {
+      request.content = contentOrOptions.content;
+    }
+    if (contentOrOptions.defaultContentFileType !== undefined) {
+      request.defaultContentFileType = contentOrOptions.defaultContentFileType;
+    }
+  }
+
+  try {
+    return await tauriInvoke<TauriWorkspaceCommandResult<TauriCreateWorkspaceFileResponse>>(
+      "create_workspace_file",
+      {
+        request,
+      },
+    );
+  } catch (err) {
+    logWorkspaceCommandFailure("create_workspace_file", {
+      rootId,
+      relativePath,
+      usedDefaultContentFileType: request.defaultContentFileType ?? null,
+    }, err);
     return null;
   }
 }

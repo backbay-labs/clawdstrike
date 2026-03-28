@@ -10,12 +10,30 @@ import {
   type FileStatus,
 } from "@/features/project/stores/project-store";
 
-const openFileByPath = vi.fn<(...args: [string]) => Promise<void>>();
-const createFile = vi.fn<(...args: [string, string, string]) => Promise<string | null>>();
-const renameFile = vi.fn<(...args: [string, string]) => Promise<boolean>>();
-const deleteFile = vi.fn<(...args: [string]) => Promise<boolean>>();
-const setFileStatus = vi.fn<(...args: [string, FileStatus]) => void>();
-let lastExplorerPanelProps: Record<string, unknown> | null = null;
+const hoisted = vi.hoisted(() => ({
+  openFileByPath: vi.fn<(...args: [string]) => Promise<void>>(),
+  createFile: vi.fn<(...args: [string, string, string]) => Promise<string | null>>(),
+  renameFile: vi.fn<(...args: [string, string]) => Promise<boolean>>(),
+  deleteFile: vi.fn<(...args: [string]) => Promise<boolean>>(),
+  setFileStatus: vi.fn<(...args: [string, FileStatus]) => void>(),
+  loadRoot: vi.fn<(...args: [string]) => Promise<void>>(),
+  removeRoot: vi.fn<(...args: [string]) => Promise<void>>(),
+  toggleDirForRoot: vi.fn<(...args: [string, string]) => void>(),
+  revealWorkspaceEntryNative: vi.fn<(...args: [string, string]) => Promise<void>>(),
+  lastExplorerPanelProps: null as Record<string, unknown> | null,
+}));
+
+const {
+  openFileByPath,
+  createFile,
+  renameFile,
+  deleteFile,
+  setFileStatus,
+  loadRoot,
+  removeRoot,
+  toggleDirForRoot,
+  revealWorkspaceEntryNative,
+} = hoisted;
 
 vi.mock("@/features/policy/hooks/use-policy-actions", () => ({
   useWorkbenchState: () => ({
@@ -23,17 +41,34 @@ vi.mock("@/features/policy/hooks/use-policy-actions", () => ({
   }),
 }));
 
+vi.mock("@/lib/tauri-commands", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/tauri-commands")>(
+    "@/lib/tauri-commands",
+  );
+  return {
+    ...actual,
+    revealWorkspaceEntryNative: hoisted.revealWorkspaceEntryNative,
+  };
+});
+
 vi.mock("@/components/workbench/explorer/explorer-panel", () => ({
   ExplorerPanel: ({
     rootStates,
+    activeFileKey,
+    onToggleDir,
     onOpenFile,
     onCreateFile,
     onRenameFile,
     onDeleteFile,
+    onRefreshRoot,
+    onRemoveRoot,
+    onRevealInFinder,
   }: {
     rootStates?: Map<string, unknown>;
+    activeFileKey?: string | null;
+    onToggleDir: (rootId: string, dirPath: string) => void;
     onOpenFile: (
-      rootPath: string,
+      rootId: string,
       file: {
         path: string;
         name: string;
@@ -44,26 +79,38 @@ vi.mock("@/components/workbench/explorer/explorer-panel", () => ({
     ) => Promise<void>;
     onCreateFile: (parentPath: string, fileName: string) => Promise<void>;
     onRenameFile: (
-      rootPath: string,
+      rootId: string,
       file: {
         path: string;
       },
       newName: string,
     ) => Promise<void>;
     onDeleteFile: (
-      rootPath: string,
+      rootId: string,
       file: {
         path: string;
       },
     ) => Promise<void>;
+    onRefreshRoot?: (rootId: string) => Promise<void>;
+    onRemoveRoot?: (rootId: string) => void;
+    onRevealInFinder?: (rootId: string, absolutePath: string) => Promise<void>;
   }) => {
-    lastExplorerPanelProps = { rootStates };
+    hoisted.lastExplorerPanelProps = {
+      rootStates,
+      activeFileKey,
+    };
     return (
       <div>
         <button
           type="button"
+          onClick={() => onToggleDir("root-project", "policies")}
+        >
+          toggle dir
+        </button>
+        <button
+          type="button"
           onClick={() =>
-            void onOpenFile("/workspace/project", {
+            void onOpenFile("root-project", {
               path: "policies/example.yml",
               name: "example.yml",
               fileType: "clawdstrike_policy",
@@ -82,17 +129,33 @@ vi.mock("@/components/workbench/explorer/explorer-panel", () => ({
         </button>
         <button
           type="button"
-          onClick={() =>
-            void onRenameFile("/workspace/project", { path: "policies/example.yml" }, "renamed.yml")
-          }
+          onClick={() => void onRenameFile("root-project", { path: "policies/example.yml" }, "renamed.yml")}
         >
           rename file
         </button>
         <button
           type="button"
-          onClick={() => void onDeleteFile("/workspace/project", { path: "policies/example.yml" })}
+          onClick={() => void onDeleteFile("root-project", { path: "policies/example.yml" })}
         >
           delete file
+        </button>
+        <button
+          type="button"
+          onClick={() => void onRefreshRoot?.("root-project")}
+        >
+          refresh root
+        </button>
+        <button
+          type="button"
+          onClick={() => onRemoveRoot?.("root-project")}
+        >
+          remove root
+        </button>
+        <button
+          type="button"
+          onClick={() => void onRevealInFinder?.("root-project", "/workspace/project/policies/example.yml")}
+        >
+          reveal file
         </button>
       </div>
     );
@@ -114,7 +177,14 @@ describe("SidebarPanel explorer wiring", () => {
     deleteFile.mockReset();
     deleteFile.mockResolvedValue(true);
     setFileStatus.mockReset();
-    lastExplorerPanelProps = null;
+    loadRoot.mockReset();
+    loadRoot.mockResolvedValue();
+    removeRoot.mockReset();
+    removeRoot.mockResolvedValue();
+    toggleDirForRoot.mockReset();
+    revealWorkspaceEntryNative.mockReset();
+    revealWorkspaceEntryNative.mockResolvedValue();
+    hoisted.lastExplorerPanelProps = null;
 
     usePaneStore.getState()._reset();
     useActivityBarStore.setState({
@@ -184,6 +254,9 @@ describe("SidebarPanel explorer wiring", () => {
         renameFile,
         deleteFile,
         setFileStatus,
+        loadRoot,
+        removeRoot,
+        toggleDirForRoot,
       },
     }));
   });
@@ -426,6 +499,100 @@ describe("SidebarPanel explorer wiring", () => {
     });
   });
 
+  it("routes root refresh, removal, reveal, and directory toggles through root ids", async () => {
+    render(
+      <MemoryRouter>
+        <SidebarPanel />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "toggle dir" }));
+    await userEvent.click(screen.getByRole("button", { name: "refresh root" }));
+    await userEvent.click(screen.getByRole("button", { name: "remove root" }));
+    await userEvent.click(screen.getByRole("button", { name: "reveal file" }));
+
+    expect(toggleDirForRoot).toHaveBeenCalledWith("root-project", "policies");
+    expect(loadRoot).toHaveBeenCalledWith("root-project");
+    expect(removeRoot).toHaveBeenCalledWith("root-project");
+    expect(revealWorkspaceEntryNative).toHaveBeenCalledWith(
+      "root-project",
+      "policies/example.yml",
+    );
+  });
+
+  it("derives the explorer highlight key from the canonical owning root", () => {
+    usePaneStore.getState().openFile(
+      "/Users/test/.clawdstrike/workspace/policies/default.yaml",
+      "default.yaml",
+    );
+    useProjectStore.setState((state) => ({
+      ...state,
+      defaultRootId: "root-project",
+      orderedRootIds: ["root-project"],
+      rootsById: new Map([
+        [
+          "root-project",
+          {
+            rootId: "root-project",
+            canonicalPath: "/Users/test/.clawdstrike",
+            displayPath: "/Users/test/.clawdstrike",
+            label: ".clawdstrike",
+            kind: "default_home",
+            provenance: "bootstrap",
+            isDefault: true,
+            aliases: ["/Users/test/.clawdstrike/workspace"],
+          },
+        ],
+      ]),
+      rootStatusById: new Map([["root-project", "ready"]]),
+      rootErrorById: new Map([["root-project", null]]),
+      rootRequestedVersionById: new Map([["root-project", 1]]),
+      rootCommittedVersionById: new Map([["root-project", 1]]),
+      projectsById: new Map([
+        [
+          "root-project",
+          {
+            rootId: "root-project",
+            rootPath: "/Users/test/.clawdstrike",
+            name: ".clawdstrike",
+            files: [],
+            expandedDirs: new Set<string>(),
+          },
+        ],
+      ]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+      projects: new Map([
+        [
+          "/Users/test/.clawdstrike",
+          {
+            rootId: "root-project",
+            rootPath: "/Users/test/.clawdstrike",
+            name: ".clawdstrike",
+            files: [],
+            expandedDirs: new Set<string>(),
+          },
+        ],
+      ]),
+      project: {
+        rootId: "root-project",
+        rootPath: "/Users/test/.clawdstrike",
+        name: ".clawdstrike",
+        files: [],
+        expandedDirs: new Set<string>(),
+      },
+    }));
+
+    render(
+      <MemoryRouter>
+        <SidebarPanel />
+      </MemoryRouter>,
+    );
+
+    expect(hoisted.lastExplorerPanelProps?.activeFileKey).toBe(
+      "root-project::workspace/policies/default.yaml",
+    );
+  });
+
   it("renders the findings panel for the hunt activity-bar entry", () => {
     useActivityBarStore.setState({
       activeItem: "hunt",
@@ -558,13 +725,13 @@ describe("SidebarPanel explorer wiring", () => {
       </MemoryRouter>,
     );
 
-    const rootStates = lastExplorerPanelProps?.rootStates as Map<string, {
+    const rootStates = hoisted.lastExplorerPanelProps?.rootStates as Map<string, {
       label?: string;
       kind?: string;
       provenance?: string;
       isDefault?: boolean;
     }> | null;
-    const state = rootStates?.get("/workspace/project");
+    const state = rootStates?.get("root-project");
 
     expect(state).toMatchObject({
       label: ".clawdstrike",
@@ -600,10 +767,10 @@ describe("SidebarPanel explorer wiring", () => {
       </MemoryRouter>,
     );
 
-    const rootStates = lastExplorerPanelProps?.rootStates as Map<string, {
+    const rootStates = hoisted.lastExplorerPanelProps?.rootStates as Map<string, {
       mutation?: { kind?: string; status?: string; message?: string } | null;
     }> | null;
-    const state = rootStates?.get("/workspace/project");
+    const state = rootStates?.get("root-project");
 
     expect(state?.mutation).toMatchObject({
       kind: "delete",

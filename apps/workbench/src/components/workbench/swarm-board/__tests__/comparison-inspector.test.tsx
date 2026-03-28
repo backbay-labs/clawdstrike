@@ -142,7 +142,6 @@ function ComparisonHarness({ withInspector = false }: { withInspector?: boolean 
   const {
     state,
     addNode,
-    selectNode,
     selectedNodes,
     comparisonMode,
   } = useSwarmBoard();

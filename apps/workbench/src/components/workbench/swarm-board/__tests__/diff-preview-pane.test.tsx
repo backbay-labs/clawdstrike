@@ -21,8 +21,6 @@ vi.mock("../codemirror-theme", () => ({
 }));
 
 import { DiffPreviewPane } from "../diff-preview-pane";
-import { resolveParser, highlightLine, extractDiffFilePath } from "../diff-highlight";
-import { diffHighlightStyle } from "../codemirror-theme";
 
 const SAMPLE_DIFF = `diff --git a/src/auth.rs b/src/auth.rs
 --- a/src/auth.rs

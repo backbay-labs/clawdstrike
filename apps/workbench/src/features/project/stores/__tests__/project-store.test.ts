@@ -20,10 +20,7 @@ import {
 
 const originalProjectActions = useProjectStore.getState().actions;
 
-const { tauriBridgeMocks, tauriCommandMocks } = vi.hoisted(() => ({
-  tauriBridgeMocks: {
-    createDetectionFile: vi.fn(),
-  },
+const { tauriCommandMocks } = vi.hoisted(() => ({
   tauriCommandMocks: {
     addWorkspaceRootNative: vi.fn(),
     removeWorkspaceRootNative: vi.fn(),
@@ -31,10 +28,9 @@ const { tauriBridgeMocks, tauriCommandMocks } = vi.hoisted(() => ({
     renameWorkspaceEntryNative: vi.fn(),
     deleteWorkspaceEntryNative: vi.fn(),
     createWorkspaceDirectoryNative: vi.fn(),
+    createWorkspaceFileNative: vi.fn(),
   },
 }));
-
-vi.mock("@/lib/tauri-bridge", () => tauriBridgeMocks);
 
 vi.mock("@/lib/tauri-commands", async () => {
   const actual = await vi.importActual<typeof import("@/lib/tauri-commands")>(
@@ -48,6 +44,7 @@ vi.mock("@/lib/tauri-commands", async () => {
     renameWorkspaceEntryNative: tauriCommandMocks.renameWorkspaceEntryNative,
     deleteWorkspaceEntryNative: tauriCommandMocks.deleteWorkspaceEntryNative,
     createWorkspaceDirectoryNative: tauriCommandMocks.createWorkspaceDirectoryNative,
+    createWorkspaceFileNative: tauriCommandMocks.createWorkspaceFileNative,
   };
 });
 
@@ -108,6 +105,49 @@ function makeProject(rootId: string, rootPath: string): DetectionProject {
   };
 }
 
+function makeNestedProject(rootId: string, rootPath: string): DetectionProject {
+  return {
+    rootId,
+    rootPath,
+    name: rootPath.split("/").pop() ?? rootPath,
+    expandedDirs: new Set(["policies", "policies/scenarios"]),
+    files: [
+      {
+        path: "policies",
+        name: "policies",
+        fileType: "clawdstrike_policy",
+        isDirectory: true,
+        depth: 0,
+        children: [
+          {
+            path: "policies/scenarios",
+            name: "scenarios",
+            fileType: "clawdstrike_policy",
+            isDirectory: true,
+            depth: 1,
+            children: [
+              {
+                path: "policies/scenarios/child.yaml",
+                name: "child.yaml",
+                fileType: "clawdstrike_policy",
+                isDirectory: false,
+                depth: 2,
+              },
+            ],
+          },
+          {
+            path: "policies/root.yaml",
+            name: "root.yaml",
+            fileType: "clawdstrike_policy",
+            isDirectory: false,
+            depth: 1,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function hasPath(files: ProjectFile[], targetPath: string): boolean {
   return files.some((file) => {
     if (file.path === targetPath) return true;
@@ -140,6 +180,12 @@ describe("useProjectStore", () => {
       ok: true,
       data: {
         relativePath: "workspace/new-folder",
+      },
+    });
+    tauriCommandMocks.createWorkspaceFileNative.mockResolvedValue({
+      ok: true,
+      data: {
+        relativePath: "policies/new.yml",
       },
     });
     tauriCommandMocks.readWorkspaceTreeNative.mockResolvedValue({
@@ -325,6 +371,179 @@ describe("useProjectStore", () => {
     ).toBe(false);
     expect(getDocumentIdentityStore().resolve(targetPath)).toBeNull();
   });
+
+  it("renames directory descendants across tabs, pane routes, identities, and file statuses", async () => {
+    tauriCommandMocks.renameWorkspaceEntryNative.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        oldRelativePath: "policies/scenarios",
+        newRelativePath: "policies/incidents",
+      },
+    });
+
+    const nestedBravo = makeNestedProject("root-bravo", "/workspace/bravo");
+    useProjectStore.setState((state) => {
+      const nextProjectsById = new Map(state.projectsById);
+      nextProjectsById.set("root-bravo", nestedBravo);
+      const nextProjects = new Map(state.projects);
+      nextProjects.set("/workspace/bravo", nestedBravo);
+      return {
+        ...state,
+        projectsById: nextProjectsById,
+        projects: nextProjects,
+      };
+    });
+
+    const actions = useProjectStore.getState().actions;
+    const originalDir = "/workspace/bravo/policies/scenarios";
+    const originalChild = "/workspace/bravo/policies/scenarios/child.yaml";
+    const renamedDir = "/workspace/bravo/policies/incidents";
+    const renamedChild = "/workspace/bravo/policies/incidents/child.yaml";
+
+    actions.setFileStatus(originalChild, { modified: true, hasError: true });
+    getDocumentIdentityStore().register(originalChild, "doc-folder-rename");
+    usePolicyTabsStore
+      .getState()
+      .openTabOrSwitch(
+        originalChild,
+        "clawdstrike_policy",
+        'name: "Nested"\nversion: "1.0.0"\n',
+        "child.yaml",
+      );
+    usePaneStore.getState().openFile(originalChild, "child.yaml");
+
+    const renamed = await actions.renameFile(originalDir, "incidents");
+
+    expect(renamed).toBe(true);
+    expect(tauriCommandMocks.renameWorkspaceEntryNative).toHaveBeenCalledWith(
+      "root-bravo",
+      "policies/scenarios",
+      "policies/incidents",
+    );
+    expect(
+      hasPath(
+        useProjectStore.getState().projects.get("/workspace/bravo")?.files ?? [],
+        "policies/incidents/child.yaml",
+      ),
+    ).toBe(true);
+    expect(
+      hasPath(
+        useProjectStore.getState().projects.get("/workspace/bravo")?.files ?? [],
+        "policies/scenarios/child.yaml",
+      ),
+    ).toBe(false);
+    expect(
+      useProjectStore.getState().fileStatuses.get(
+        getProjectFileStatusKey("/workspace/bravo", "policies/incidents/child.yaml"),
+      ),
+    ).toEqual({ modified: true, hasError: true });
+    expect(
+      useProjectStore.getState().fileStatuses.has(
+        getProjectFileStatusKey("/workspace/bravo", "policies/scenarios/child.yaml"),
+      ),
+    ).toBe(false);
+    expect(usePolicyTabsStore.getState().tabs.some((tab) => tab.filePath === renamedChild)).toBe(true);
+    expect(getDocumentIdentityStore().resolve(originalChild)).toBeNull();
+    expect(getDocumentIdentityStore().resolve(renamedChild)).toBe("doc-folder-rename");
+    expect(
+      getActivePaneRoute(usePaneStore.getState().root, usePaneStore.getState().activePaneId),
+    ).toBe(`/file/${renamedChild}`);
+    expect(
+      useProjectStore.getState().projects.get("/workspace/bravo")?.expandedDirs.has("policies/incidents"),
+    ).toBe(true);
+    expect(
+      useProjectStore.getState().projects.get("/workspace/bravo")?.expandedDirs.has("policies/scenarios"),
+    ).toBe(false);
+    expect(
+      useProjectStore.getState().rootMutationById.get("root-bravo")?.targetRelativePath,
+    ).toBe("policies/incidents");
+    expect(renamedDir.endsWith("/incidents")).toBe(true);
+  });
+
+  it("deletes directory descendants across tabs, pane routes, identities, and file statuses", async () => {
+    tauriCommandMocks.deleteWorkspaceEntryNative.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        relativePath: "policies/scenarios",
+        kind: "directory",
+      },
+    });
+
+    const nestedBravo = makeNestedProject("root-bravo", "/workspace/bravo");
+    useProjectStore.setState((state) => {
+      const nextProjectsById = new Map(state.projectsById);
+      nextProjectsById.set("root-bravo", nestedBravo);
+      const nextProjects = new Map(state.projects);
+      nextProjects.set("/workspace/bravo", nestedBravo);
+      return {
+        ...state,
+        projectsById: nextProjectsById,
+        projects: nextProjects,
+      };
+    });
+
+    const actions = useProjectStore.getState().actions;
+    const targetDir = "/workspace/bravo/policies/scenarios";
+    const targetChild = "/workspace/bravo/policies/scenarios/child.yaml";
+
+    actions.setFileStatus(targetChild, { modified: true });
+    getDocumentIdentityStore().register(targetChild, "doc-folder-delete");
+    usePolicyTabsStore
+      .getState()
+      .openTabOrSwitch(
+        targetChild,
+        "clawdstrike_policy",
+        'name: "Nested"\nversion: "1.0.0"\n',
+        "child.yaml",
+      );
+    usePaneStore.getState().openFile(targetChild, "child.yaml");
+
+    const deleted = await actions.deleteFile(targetDir);
+
+    expect(deleted).toBe(true);
+    expect(tauriCommandMocks.deleteWorkspaceEntryNative).toHaveBeenCalledWith(
+      "root-bravo",
+      "policies/scenarios",
+    );
+    expect(
+      hasPath(
+        useProjectStore.getState().projects.get("/workspace/bravo")?.files ?? [],
+        "policies/scenarios/child.yaml",
+      ),
+    ).toBe(false);
+    expect(
+      useProjectStore.getState().fileStatuses.has(
+        getProjectFileStatusKey("/workspace/bravo", "policies/scenarios/child.yaml"),
+      ),
+    ).toBe(false);
+    expect(
+      usePolicyTabsStore.getState().tabs.some((tab) => tab.filePath === targetChild),
+    ).toBe(false);
+    expect(getDocumentIdentityStore().resolve(targetChild)).toBeNull();
+    expect(
+      getActivePaneRoute(usePaneStore.getState().root, usePaneStore.getState().activePaneId),
+    ).not.toBe(`/file/${targetChild}`);
+    expect(
+      useProjectStore.getState().projects.get("/workspace/bravo")?.expandedDirs.has("policies/scenarios"),
+    ).toBe(false);
+  });
+
+  it("routes file creation through the workspace command boundary", async () => {
+    const savedPath = await useProjectStore.getState().actions.createFile(
+      "/workspace/bravo/policies",
+      "new.yml",
+      "clawdstrike_policy",
+    );
+
+    expect(savedPath).toBe("/workspace/bravo/policies/new.yml");
+    expect(tauriCommandMocks.createWorkspaceFileNative).toHaveBeenCalledWith(
+      "root-bravo",
+      "policies/new.yml",
+      {
+        defaultContentFileType: "clawdstrike_policy",
+      },
+    );
+  });
 });
 
 describe("workspace root loading", () => {
@@ -420,6 +639,21 @@ describe("workspace root loading", () => {
     expect(result.ready).toBe(false);
     expect(result.pendingRootIds).toEqual(["root-default"]);
     expect(result.elapsedMs).toBeGreaterThanOrEqual(10);
+  });
+
+  it("treats settled error roots as blocked rather than still pending", async () => {
+    useProjectStore.setState((state) => ({
+      ...state,
+      rootStatusById: new Map([["root-default", "error"]]),
+      rootErrorById: new Map([["root-default", "disk offline"]]),
+    }));
+
+    const result = await useProjectStore.getState().actions.waitForRootsReady(10);
+
+    expect(result.ready).toBe(false);
+    expect(result.settled).toBe(true);
+    expect(result.pendingRootIds).toEqual([]);
+    expect(result.blockedRootIds).toEqual(["root-default"]);
   });
 
   it("ignores stale scan results when a newer request completes first", async () => {
@@ -651,6 +885,58 @@ describe("workspace registry hydration", () => {
     expect(state.project?.rootId).toBe("root-default");
   });
 
+  it("migrates compatibility views when a root keeps the same id but changes displayPath", () => {
+    const legacyPath = "/Users/test/.clawdstrike/workspace";
+    const legacyProject = makeProject("root-default", legacyPath);
+
+    useProjectStore.setState((state) => ({
+      ...state,
+      project: legacyProject,
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([
+        [
+          "root-default",
+          makeRootRecord("root-default", legacyPath, {
+            isDefault: true,
+            kind: "default_home",
+            provenance: "local_storage_migration",
+          }),
+        ],
+      ]),
+      rootStatusById: new Map([["root-default", "ready"]]),
+      rootErrorById: new Map([["root-default", null]]),
+      rootRequestedVersionById: new Map([["root-default", 1]]),
+      rootCommittedVersionById: new Map([["root-default", 1]]),
+      rootMutationById: new Map([["root-default", null]]),
+      projectsById: new Map([["root-default", legacyProject]]),
+      projectRoots: [legacyPath],
+      projects: new Map([[legacyPath, legacyProject]]),
+    }));
+
+    useProjectStore.getState().actions.hydrateWorkspaceRegistry(
+      makeSnapshot([
+        makeRootRecord("root-default", "/Users/test/.clawdstrike", {
+          isDefault: true,
+          kind: "default_home",
+          provenance: "bootstrap",
+          aliases: [legacyPath],
+        }),
+      ], "root-default"),
+    );
+
+    const state = useProjectStore.getState();
+    expect(state.projectsById.get("root-default")).toMatchObject({
+      rootId: "root-default",
+      rootPath: "/Users/test/.clawdstrike",
+    });
+    expect(hasPath(state.projectsById.get("root-default")?.files ?? [], "policies/default.yaml")).toBe(true);
+    expect(state.projectRoots).toEqual(["/Users/test/.clawdstrike"]);
+    expect(state.projects.has(legacyPath)).toBe(false);
+    expect(state.projects.get("/Users/test/.clawdstrike")?.rootId).toBe("root-default");
+    expect(state.project?.rootPath).toBe("/Users/test/.clawdstrike");
+  });
+
   it("adds and removes roots by hydrating backend registry snapshots", async () => {
     const initialSnapshot = makeSnapshot([
       makeRootRecord("root-default", "/Users/test/.clawdstrike", {
@@ -755,7 +1041,7 @@ describe("workspace registry hydration", () => {
     );
   });
 
-  it("reports root readiness from the per-root terminal-state contract", () => {
+  it("reports workspace consumer readiness from usable root states", () => {
     const snapshot = makeSnapshot([
       makeRootRecord("root-default", "/Users/test/.clawdstrike", {
         isDefault: true,
@@ -768,6 +1054,24 @@ describe("workspace registry hydration", () => {
     useProjectStore.setState((state) => ({
       ...state,
       rootStatusById: new Map([["root-default", "loading"]]),
+    }));
+    expect(isWorkspaceConsumerRootReady(useProjectStore.getState(), "root-default")).toBe(false);
+
+    useProjectStore.setState((state) => ({
+      ...state,
+      rootStatusById: new Map([["root-default", "empty"]]),
+    }));
+    expect(isWorkspaceConsumerRootReady(useProjectStore.getState(), "root-default")).toBe(true);
+
+    useProjectStore.setState((state) => ({
+      ...state,
+      rootStatusById: new Map([["root-default", "stale"]]),
+    }));
+    expect(isWorkspaceConsumerRootReady(useProjectStore.getState(), "root-default")).toBe(false);
+
+    useProjectStore.setState((state) => ({
+      ...state,
+      rootStatusById: new Map([["root-default", "error"]]),
     }));
     expect(isWorkspaceConsumerRootReady(useProjectStore.getState(), "root-default")).toBe(false);
 
