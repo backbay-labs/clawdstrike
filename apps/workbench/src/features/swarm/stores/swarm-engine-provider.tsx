@@ -32,6 +32,8 @@ import {
   TaskGraph,
   TopologyManager,
   type GuardedAction,
+  type GuardEvaluationResult,
+  type Receipt,
   type SwarmEngineEventMap,
   type SwarmEngineState,
   type SwarmOrchestratorConfig,
@@ -220,6 +222,43 @@ function buildSpawnGuardAction(
   };
 }
 
+function buildFailClosedGuardResult(
+  action: GuardedAction,
+  error: unknown,
+): GuardEvaluationResult {
+  const message = error instanceof Error ? error.message : String(error);
+  const evaluatedAt = Date.now();
+  const receipt: Receipt = {
+    id: `rct_fail_closed_${evaluatedAt}`,
+    timestamp: new Date(evaluatedAt).toISOString(),
+    verdict: "deny",
+    guard: "fail-closed",
+    policyName: "guard-evaluation-error",
+    action: { type: action.actionType, target: action.target },
+    evidence: { error: message },
+    signature: "",
+    publicKey: "",
+    valid: false,
+  };
+
+  return {
+    verdict: "deny",
+    allowed: false,
+    guardResults: [
+      {
+        guardId: "fail-closed",
+        guard: "fail-closed",
+        verdict: "deny",
+        duration_ms: 0,
+        details: { error: message },
+      },
+    ],
+    receipt,
+    durationMs: 0,
+    evaluatedAt,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -354,15 +393,16 @@ export function SwarmEngineProvider({
         return spawnFn(opts);
       }
 
+      const guardAction = buildSpawnGuardAction(kind, opts);
       let result: Awaited<ReturnType<SwarmOrchestrator["evaluateGuard"]>>;
       try {
-        result = await engine.evaluateGuard(buildSpawnGuardAction(kind, opts));
+        result = await engine.evaluateGuard(guardAction);
       } catch (guardErr) {
         console.warn(
-          "[SwarmEngineProvider] Guard evaluation failed, falling back to manual spawn:",
+          "[SwarmEngineProvider] Guard evaluation failed; denying spawn fail-closed:",
           guardErr instanceof Error ? guardErr.message : String(guardErr),
         );
-        return spawnFn(opts);
+        result = buildFailClosedGuardResult(guardAction, guardErr);
       }
 
       if (!result.allowed) {

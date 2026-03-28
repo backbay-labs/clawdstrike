@@ -331,10 +331,10 @@ export class TaskGraph {
       throw new Error(`Task ${taskId} is blocked by dependencies`);
     }
 
+    this.agentRegistry.assignTask(agentId, taskId);
+
     task.assignedTo = agentId;
     this.updateTaskStatus(taskId, "assigned");
-
-    this.agentRegistry.assignTask(agentId, taskId);
 
     this.events.emit("task.assigned", {
       kind: "task.assigned",
@@ -495,6 +495,10 @@ export class TaskGraph {
   timeoutTask(taskId: string): void {
     const task = this.getTaskOrThrow(taskId);
 
+    if (task.status !== "running") {
+      return;
+    }
+
     if (task.assignedTo) {
       const session = this.agentRegistry.getAgentSession(task.assignedTo);
       if (session && session.currentTaskId === taskId) {
@@ -653,7 +657,7 @@ export class TaskGraph {
    * Get all tasks as a JSON-serializable Record.
    */
   getState(): Record<string, Task> {
-    return Object.fromEntries(this.tasks);
+    return structuredClone(Object.fromEntries(this.tasks));
   }
 
   /**
