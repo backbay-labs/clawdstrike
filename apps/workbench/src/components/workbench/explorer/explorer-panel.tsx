@@ -120,6 +120,7 @@ const ALL_FILE_TYPES: FileType[] = [
 
 const DEFAULT_RENDERED_TREE_ROWS = 200;
 const RENDERED_TREE_ROW_INCREMENT = 200;
+const TREE_INDENT_PX = 18;
 
 function getRootStatusLabel(status: ProjectRootStatus): string | null {
   switch (status) {
@@ -711,7 +712,7 @@ function RootTreeSection({
     const inputDepth = Math.max(0, rawDepth - depthOffset);
 
     return (
-      <div className="py-1" style={{ paddingLeft: inputDepth * 16 + 4 }}>
+      <div className="py-1" style={{ paddingLeft: inputDepth * TREE_INDENT_PX + 4 }}>
         <InlineNameInput
           placeholder="filename.yaml"
           onSubmit={(name) => {

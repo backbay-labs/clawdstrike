@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 
 // ---- Props ----
 
+const TREE_INDENT_PX = 18;
+const TREE_GUIDE_OFFSET_PX = 13;
+
 interface ExplorerTreeItemProps {
   nodeId: string;
   level: number;
@@ -63,7 +66,8 @@ export const ExplorerTreeItem = forwardRef<HTMLDivElement, ExplorerTreeItemProps
   mutationStatus,
   mutationLabel,
 }, ref) {
-  const indent = Math.max(0, level - 1) * 16;
+  const indent = Math.max(0, level - 1) * TREE_INDENT_PX;
+  const guideCount = Math.max(0, level - 2);
   const accessibilityState = file.isDirectory
     ? `${isExpanded ? "expanded" : "collapsed"} folder`
     : hasError
@@ -111,6 +115,18 @@ export const ExplorerTreeItem = forwardRef<HTMLDivElement, ExplorerTreeItemProps
       {/* Active file accent */}
       {isActive && !file.isDirectory && (
         <div className="absolute left-0 top-0 bottom-0 w-[2px] rounded-r bg-[#4f6b99]" />
+      )}
+
+      {guideCount > 0 && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0">
+          {Array.from({ length: guideCount }, (_, index) => (
+            <span
+              key={`${nodeId}-guide-${index}`}
+              className="absolute inset-y-0 w-px bg-[#273244]/85"
+              style={{ left: TREE_GUIDE_OFFSET_PX + index * TREE_INDENT_PX }}
+            />
+          ))}
+        </div>
       )}
 
       {/* Chevron (directories) or spacer (files) */}
