@@ -454,6 +454,56 @@ fn delete_session_metadata<R: Runtime>(app: &AppHandle<R>, session_id: &str) -> 
     Ok(())
 }
 
+fn list_session_metadata_in_dir(
+    metadata_dir: &Path,
+) -> Result<Vec<PersistedSessionMetadata>, String> {
+    if !metadata_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut entries = Vec::new();
+    let read_dir = std::fs::read_dir(metadata_dir)
+        .map_err(|e| format!("Failed to list session metadata dir: {e}"))?;
+
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                eprintln!("[terminal] Skipping unreadable session metadata entry: {err}");
+                continue;
+            }
+        };
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let contents = match std::fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(err) => {
+                eprintln!(
+                    "[terminal] Skipping unreadable session metadata file {}: {err}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        let metadata = match serde_json::from_str::<PersistedSessionMetadata>(&contents) {
+            Ok(metadata) => metadata,
+            Err(err) => {
+                eprintln!(
+                    "[terminal] Skipping malformed session metadata file {}: {err}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        entries.push(metadata);
+    }
+
+    entries.sort_by(|left, right| left.created_at.cmp(&right.created_at));
+    Ok(entries)
+}
+
 fn list_session_metadata<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Vec<PersistedSessionMetadata>, String> {
@@ -462,29 +512,7 @@ fn list_session_metadata<R: Runtime>(
         .app_data_dir()
         .map_err(|e| format!("Failed to resolve app data dir: {e}"))?
         .join(SESSION_METADATA_DIRNAME);
-    if !metadata_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut entries = Vec::new();
-    let read_dir = std::fs::read_dir(&metadata_dir)
-        .map_err(|e| format!("Failed to list session metadata dir: {e}"))?;
-
-    for entry in read_dir {
-        let entry = entry.map_err(|e| format!("Failed to read session metadata entry: {e}"))?;
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let contents = std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read session metadata file: {e}"))?;
-        let metadata = serde_json::from_str::<PersistedSessionMetadata>(&contents)
-            .map_err(|e| format!("Failed to parse session metadata file: {e}"))?;
-        entries.push(metadata);
-    }
-
-    entries.sort_by(|left, right| left.created_at.cmp(&right.created_at));
-    Ok(entries)
+    list_session_metadata_in_dir(&metadata_dir)
 }
 
 fn tmux_session_info(
@@ -512,6 +540,15 @@ fn tmux_session_info(
         recovery_state,
         cwd_valid,
     }
+}
+
+fn attach_cwd_for_metadata(metadata: &PersistedSessionMetadata) -> Option<&str> {
+    let cwd = metadata.cwd.trim();
+    if cwd.is_empty() {
+        return None;
+    }
+
+    Path::new(cwd).exists().then_some(metadata.cwd.as_str())
 }
 
 fn supports_tmux_persistence() -> bool {
@@ -1187,7 +1224,14 @@ async fn connect_tmux_session<R: Runtime>(
         capture_tmux_scrollback(&tmux_bin, &metadata.id, MAX_PREVIEW_LINES).await?;
 
     let mut cmd = CommandBuilder::new(&tmux_bin);
-    cmd.cwd(&metadata.cwd);
+    if let Some(attach_cwd) = attach_cwd_for_metadata(&metadata) {
+        cmd.cwd(attach_cwd);
+    } else {
+        eprintln!(
+            "[terminal] Reconnecting tmux session {} without cwd because saved path is unavailable: {}",
+            metadata.id, metadata.cwd
+        );
+    }
     cmd.env("TERM", "xterm-256color");
     // Socket isolation
     cmd.arg("-L");
@@ -1815,10 +1859,14 @@ pub async fn kill_all_sessions(state: &TerminalState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_to_ring_buffer, build_tmux_shell_command, normalize_shell, parse_tmux_version,
-        shell_quote, tmux_socket_args, tmux_version_supports_passthrough, RING_BUFFER_MAX_LINES,
+        append_to_ring_buffer, attach_cwd_for_metadata, build_tmux_shell_command,
+        list_session_metadata_in_dir, normalize_shell, parse_tmux_version,
+        shell_quote, tmux_socket_args, tmux_version_supports_passthrough, PersistedSessionMetadata,
+        SessionPersistenceMode, SESSION_METADATA_DIRNAME, RING_BUFFER_MAX_LINES,
     };
     use std::collections::HashMap;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn normalize_shell_rejects_relative_path_components() {
@@ -1954,5 +2002,66 @@ mod tests {
     #[test]
     fn test_tmux_version_supports_passthrough_40() {
         assert!(tmux_version_supports_passthrough("4.0"));
+    }
+
+    #[test]
+    fn attach_cwd_for_metadata_returns_none_when_path_is_missing() {
+        let metadata = PersistedSessionMetadata {
+            id: "session-missing".to_string(),
+            cwd: "/definitely/missing/path".to_string(),
+            branch: None,
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            shell: "zsh".to_string(),
+            persistence_mode: SessionPersistenceMode::Tmux,
+        };
+
+        assert_eq!(attach_cwd_for_metadata(&metadata), None);
+    }
+
+    #[test]
+    fn attach_cwd_for_metadata_returns_existing_path() {
+        let dir = tempdir().unwrap();
+        let metadata = PersistedSessionMetadata {
+            id: "session-existing".to_string(),
+            cwd: dir.path().to_string_lossy().into_owned(),
+            branch: None,
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            shell: "zsh".to_string(),
+            persistence_mode: SessionPersistenceMode::Tmux,
+        };
+
+        assert_eq!(
+            attach_cwd_for_metadata(&metadata),
+            Some(metadata.cwd.as_str())
+        );
+    }
+
+    #[test]
+    fn list_session_metadata_in_dir_skips_malformed_json_files() {
+        let dir = tempdir().unwrap();
+        let metadata_dir = dir.path().join(SESSION_METADATA_DIRNAME);
+        fs::create_dir_all(&metadata_dir).unwrap();
+
+        let valid = PersistedSessionMetadata {
+            id: "session-valid".to_string(),
+            cwd: "/tmp".to_string(),
+            branch: Some("main".to_string()),
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            shell: "zsh".to_string(),
+            persistence_mode: SessionPersistenceMode::Tmux,
+        };
+
+        fs::write(
+            metadata_dir.join("valid.json"),
+            serde_json::to_string(&valid).unwrap(),
+        )
+        .unwrap();
+        fs::write(metadata_dir.join("corrupt.json"), "{not valid json").unwrap();
+        fs::write(metadata_dir.join("ignored.txt"), "ignore").unwrap();
+
+        let discovered = list_session_metadata_in_dir(&metadata_dir).unwrap();
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].id, valid.id);
+        assert_eq!(discovered[0].cwd, valid.cwd);
     }
 }
