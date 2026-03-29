@@ -107,7 +107,18 @@ let mockPathname = "/editor";
 vi.mock("react-router-dom", () => ({
   useLocation: () => ({ pathname: mockPathname }),
   Link: ({ children, to, onClick, ...rest }: any) =>
-    createElement("a", { href: to, onClick, ...rest }, children),
+    createElement(
+      "a",
+      {
+        href: to,
+        onClick: (event: MouseEvent) => {
+          event.preventDefault();
+          onClick?.(event);
+        },
+        ...rest,
+      },
+      children,
+    ),
 }));
 
 // ---------------------------------------------------------------------------

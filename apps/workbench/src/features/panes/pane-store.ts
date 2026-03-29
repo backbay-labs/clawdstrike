@@ -4,6 +4,11 @@ import {
   normalizeWorkbenchRoute,
 } from "@/components/desktop/workbench-routes";
 import {
+  canonicalizeWorkspaceConsumerPath,
+  isWorkspaceConsumerPathVisible,
+  useProjectStore,
+} from "@/features/project/stores/project-store";
+import {
   addViewToGroup,
   closePane as closePaneNode,
   createPaneGroup,
@@ -20,11 +25,26 @@ import {
   updatePaneSizes,
 } from "./pane-tree";
 import { usePolicyTabsStore, pushRecentFile } from "@/features/policy/stores/policy-tabs-store";
-import { loadPaneSession, countFileViews } from "./pane-session";
+import { loadPaneSessionWithRouteMapper, countFileViews } from "./pane-session";
 import type { PaneFocusDirection, PaneGroup, PaneNode, PaneSplitDirection, PaneView } from "./pane-types";
 
-function createPaneView(route: string): PaneView {
+function canonicalizePaneRoute(route: string): string | null {
   const normalized = normalizeWorkbenchRoute(route);
+  if (!normalized.startsWith("/file/") || normalized.startsWith("/file/__new__/")) {
+    return normalized;
+  }
+
+  const filePath = normalized.slice("/file/".length);
+  const workspaceState = useProjectStore.getState();
+  const canonicalPath = canonicalizeWorkspaceConsumerPath(workspaceState, filePath);
+  if (!isWorkspaceConsumerPathVisible(workspaceState, canonicalPath)) {
+    return null;
+  }
+  return `/file/${canonicalPath}`;
+}
+
+function createPaneView(route: string): PaneView {
+  const normalized = canonicalizePaneRoute(route) ?? "/home";
   return {
     id: crypto.randomUUID(),
     route: normalized,
@@ -74,18 +94,18 @@ export interface PaneStore {
   _reset: () => void;
 }
 
-// Attempt to restore a saved session at store creation time so the tree is
-// immediately available (no flash of default Home before React hydrates).
-const savedSession = loadPaneSession();
-const initialRoot = savedSession?.root ?? createInitialRoot();
-const initialActivePaneId = savedSession?.activePaneId ?? (initialRoot as PaneGroup).id;
+const initialRoot = createInitialRoot();
+const initialActivePaneId = initialRoot.id;
 
 export const usePaneStore = create<PaneStore>((set, get) => ({
   root: initialRoot,
   activePaneId: initialActivePaneId,
 
   syncRoute: (route) => {
-    const normalized = normalizeWorkbenchRoute(route);
+    const normalized = canonicalizePaneRoute(route);
+    if (!normalized) {
+      return;
+    }
     const state = get();
     const activePane = getActivePane(state.root, state.activePaneId)
       ?? getFirstPaneGroup(state.root);
@@ -171,7 +191,10 @@ export const usePaneStore = create<PaneStore>((set, get) => ({
   paneCount: () => getAllPaneGroups(get().root).length,
 
   openApp: (route, label) => {
-    const normalized = normalizeWorkbenchRoute(route);
+    const normalized = canonicalizePaneRoute(route);
+    if (!normalized) {
+      return;
+    }
     const resolvedLabel = label ?? getWorkbenchRouteLabel(normalized);
 
     // Search all pane groups for an existing view with this normalized route
@@ -290,13 +313,17 @@ export const usePaneStore = create<PaneStore>((set, get) => ({
   },
 
   openFile: (filePath, label, _fileType) => {
-    const route = `/file/${filePath}`;
-    get().openApp(route, label ?? filePath.split("/").pop() ?? "File");
-    pushRecentFile(filePath);
+    const canonicalPath = canonicalizeWorkspaceConsumerPath(useProjectStore.getState(), filePath);
+    if (!isWorkspaceConsumerPathVisible(useProjectStore.getState(), canonicalPath)) {
+      return;
+    }
+    const route = `/file/${canonicalPath}`;
+    get().openApp(route, label ?? canonicalPath.split("/").pop() ?? "File");
+    pushRecentFile(canonicalPath);
   },
 
   restoreSession: () => {
-    const session = loadPaneSession();
+    const session = loadPaneSessionWithRouteMapper(canonicalizePaneRoute);
     if (!session) return 0;
     set({ root: session.root, activePaneId: session.activePaneId });
     return countFileViews(session.root);

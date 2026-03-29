@@ -3,7 +3,7 @@
  * node positioning based on topology type.
  */
 import { describe, it, expect } from "vitest";
-import { computeLayout } from "../topology-layout";
+import { computeLayout, computeTaskDagLayout } from "../topology-layout";
 import type { LayoutResult } from "../topology-layout";
 import type { SwarmBoardNodeData, SwarmBoardEdge } from "@/features/swarm/swarm-board-types";
 
@@ -289,6 +289,84 @@ describe("computeLayout -- hybrid", () => {
 
     expect(agentY).toBeLessThan(task1Y);
     expect(task1Y).toBeLessThan(artifactY);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task DAG layout
+// ---------------------------------------------------------------------------
+
+describe("computeTaskDagLayout", () => {
+  it("lays out dependency chains across deeper task layers", () => {
+    const nodes = [
+      {
+        ...mockNode("agent", "agentSession"),
+        data: {
+          ...mockNode("agent", "agentSession").data,
+          engineManaged: true,
+        } as SwarmBoardNodeData,
+      },
+      {
+        ...mockNode("task-a", "terminalTask"),
+        data: {
+          ...mockNode("task-a", "terminalTask").data,
+          engineManaged: true,
+        } as SwarmBoardNodeData,
+      },
+      {
+        ...mockNode("task-b", "terminalTask"),
+        data: {
+          ...mockNode("task-b", "terminalTask").data,
+          engineManaged: true,
+        } as SwarmBoardNodeData,
+      },
+    ];
+    const edges = [
+      mockEdge("agent", "task-a", "spawned"),
+      mockEdge("task-a", "task-b", "dependency"),
+    ];
+
+    const result = computeTaskDagLayout(nodes, edges, viewport);
+
+    expect(result.positions.size).toBe(3);
+    expect(result.positions.get("agent")!.y).toBeLessThan(
+      result.positions.get("task-a")!.y,
+    );
+    expect(result.positions.get("task-a")!.y).toBeLessThan(
+      result.positions.get("task-b")!.y,
+    );
+  });
+
+  it("ignores non-engine artifacts and receipt edges", () => {
+    const nodes = [
+      {
+        ...mockNode("agent", "agentSession"),
+        data: {
+          ...mockNode("agent", "agentSession").data,
+          engineManaged: true,
+        } as SwarmBoardNodeData,
+      },
+      {
+        ...mockNode("task", "terminalTask"),
+        data: {
+          ...mockNode("task", "terminalTask").data,
+          engineManaged: true,
+        } as SwarmBoardNodeData,
+      },
+      mockNode("artifact", "artifact"),
+      mockNode("receipt", "receipt"),
+    ];
+    const edges = [
+      mockEdge("agent", "task", "spawned"),
+      mockEdge("task", "artifact", "artifact"),
+      mockEdge("task", "receipt", "receipt"),
+    ];
+
+    const result = computeTaskDagLayout(nodes, edges, viewport);
+
+    expect(result.positions.size).toBe(2);
+    expect(result.positions.has("artifact")).toBe(false);
+    expect(result.positions.has("receipt")).toBe(false);
   });
 });
 

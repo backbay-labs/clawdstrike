@@ -12,10 +12,40 @@ import { usePresenceFileTracking } from "@/features/presence/use-presence-file-t
 import { usePolicyBootstrap } from "@/features/policy/hooks/use-policy-bootstrap";
 import { secureStore, migrateCredentialsToStronghold } from "@/features/settings/secure-store";
 import { bootstrapThreatIntelPlugins } from "@/lib/plugins/threat-intel/bootstrap";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import {
+  clearLegacyWorkspaceRoots,
+  readLegacyWorkspaceRoots,
+  useProjectStore,
+  type WorkspaceRootsReadyResult,
+} from "@/features/project/stores/project-store";
 import { useToast } from "@/components/ui/toast";
 import { usePaneStore } from "@/features/panes/pane-store";
 import { useSignalCorrelator } from "@/features/findings/hooks/use-signal-correlator";
+import { bootstrapWorkspaceRegistryNative } from "@/lib/tauri-commands";
+import { bootstrapDefaultWorkspaceContent } from "@/features/project/workspace-bootstrap";
+
+const WORKSPACE_READY_TIMEOUT_MS = 4_000;
+
+function formatDiagnosticError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return "unknown_error";
+}
+
+function logWorkspaceBootstrap(
+  level: "info" | "warn" | "error",
+  event: string,
+  detail: Record<string, unknown>,
+): void {
+  console[level]("[workspace-bootstrap]", {
+    event,
+    ...detail,
+  });
+}
 
 function LoadingFallback() {
   return (
@@ -67,76 +97,91 @@ function LoadingFallback() {
   );
 }
 
-/**
- * Bootstrap the workspace on first launch or restore persisted roots.
- *
- * - Always ensures ~/.clawdstrike/workspace/ exists (creates it if missing).
- * - If persisted roots exist (subsequent launches), restores them. If the
- *   default workspace path is not among the persisted roots it is added
- *   automatically so the Explorer never shows the raw ~/.clawdstrike config
- *   directory.
- * - If no roots exist (first launch), scaffolds the default workspace
- *   at ~/.clawdstrike/workspace/ and mounts it.
- *
- * Fire-and-forget: errors are logged but never thrown.
- */
 function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useToast>["toast"] | null>) {
   useEffect(() => {
     async function init() {
       const { isDesktop } = await import("@/lib/tauri-bridge");
-      const { getWorkbenchE2EBridge } = await import("@/lib/workbench/e2e-bridge");
-      const isWorkbenchE2E = getWorkbenchE2EBridge() !== null;
-      if (!isDesktop() && !isWorkbenchE2E) return;
+      if (!isDesktop()) return;
 
       const store = useProjectStore.getState();
+      if (store.loading) return;
       store.actions.setLoading(true);
+      const startedAt = Date.now();
+      let restoreReadiness: WorkspaceRootsReadyResult | null = null;
 
       try {
-        if (!isDesktop()) {
-          if (store.projectRoots.length > 0) {
-            await store.actions.initFromPersistedRoots();
-          }
+        const legacyRoots = readLegacyWorkspaceRoots();
+        logWorkspaceBootstrap("info", "init_started", {
+          legacyRootCount: legacyRoots.length,
+        });
+        const response = await bootstrapWorkspaceRegistryNative(legacyRoots);
+        if (!response) {
+          logWorkspaceBootstrap("warn", "registry_bootstrap_missing_snapshot", {
+            legacyRootCount: legacyRoots.length,
+          });
           return;
         }
 
-        // Always ensure the default workspace directory structure exists.
-        const { bootstrapDefaultWorkspace, getDefaultWorkspacePath } = await import(
-          "@/features/project/workspace-bootstrap"
-        );
-        const workspacePath = await bootstrapDefaultWorkspace();
-        const defaultPath = workspacePath ?? await getDefaultWorkspacePath();
-
-        const roots = store.projectRoots;
-
-        if (roots.length > 0) {
-          // Restore persisted workspace roots.
-          await store.actions.initFromPersistedRoots();
-
-          // If the default workspace path is missing from persisted roots,
-          // add it so the user always sees the workspace (not the raw config dir).
-          const currentRoots = useProjectStore.getState().projectRoots;
-          if (!currentRoots.includes(defaultPath)) {
-            store.actions.addRoot(defaultPath);
-          }
-        } else {
-          // First launch: mount the default workspace.
-          store.actions.addRoot(defaultPath);
-          await store.actions.loadRoot(defaultPath);
+        logWorkspaceBootstrap("info", "registry_bootstrapped", {
+          rootCount: response.snapshot.roots.length,
+          defaultRootId: response.snapshot.defaultRootId,
+          migratedLegacyRootCount: response.migratedLegacyRoots.length,
+          droppedLegacyRootCount: response.droppedLegacyRoots.length,
+        });
+        store.actions.hydrateWorkspaceRegistry(response.snapshot);
+        await store.actions.initFromWorkspaceRegistry();
+        const initialReadiness = await store.actions.waitForRootsReady(WORKSPACE_READY_TIMEOUT_MS);
+        restoreReadiness = initialReadiness;
+        if (!initialReadiness.ready) {
+          logWorkspaceBootstrap("warn", "roots_ready_timeout", {
+            stage: "initial",
+            pendingRootIds: initialReadiness.pendingRootIds,
+            blockedRootIds: initialReadiness.blockedRootIds,
+            elapsedMs: initialReadiness.elapsedMs,
+          });
         }
+        clearLegacyWorkspaceRoots();
 
-        // Safety net: if after all bootstrap paths the projects Map is still
-        // empty (e.g. stale persisted roots pointing to deleted directories),
-        // ensure the default workspace is loaded as a fallback.
-        const finalProjects = useProjectStore.getState().projects;
-        if (finalProjects.size === 0) {
-          const finalRoots = useProjectStore.getState().projectRoots;
-          if (!finalRoots.includes(defaultPath)) {
-            store.actions.addRoot(defaultPath);
+        const defaultRoot = response.snapshot.defaultRootId
+          ? response.snapshot.roots.find((root) => root.rootId === response.snapshot.defaultRootId) ?? null
+          : null;
+        if (defaultRoot) {
+          const bootstrapped = await bootstrapDefaultWorkspaceContent(defaultRoot.rootId);
+          logWorkspaceBootstrap("info", "default_content_bootstrap_complete", {
+            rootId: defaultRoot.rootId,
+            rootPath: defaultRoot.displayPath,
+            bootstrapped,
+          });
+          if (bootstrapped) {
+            await store.actions.loadRoot(defaultRoot.rootId);
+            const seededReadiness = await store.actions.waitForRootsReady(WORKSPACE_READY_TIMEOUT_MS);
+            restoreReadiness = seededReadiness;
+            if (!seededReadiness.ready) {
+              logWorkspaceBootstrap("warn", "roots_ready_timeout", {
+                stage: "post_seed_refresh",
+                pendingRootIds: seededReadiness.pendingRootIds,
+                blockedRootIds: seededReadiness.blockedRootIds,
+                elapsedMs: seededReadiness.elapsedMs,
+              });
+            }
           }
-          await store.actions.loadRoot(defaultPath);
         }
+        logWorkspaceBootstrap("info", "init_complete", {
+          elapsedMs: Date.now() - startedAt,
+          rootCount: response.snapshot.roots.length,
+          defaultRootId: response.snapshot.defaultRootId,
+        });
       } finally {
         useProjectStore.getState().actions.setLoading(false);
+      }
+
+      if (!restoreReadiness?.ready) {
+        logWorkspaceBootstrap("warn", "session_restore_skipped_unready_roots", {
+          pendingRootIds: restoreReadiness?.pendingRootIds ?? [],
+          blockedRootIds: restoreReadiness?.blockedRootIds ?? [],
+          elapsedMs: restoreReadiness?.elapsedMs ?? 0,
+        });
+        return;
       }
 
       // Restore the previous pane session AFTER workspace roots are loaded
@@ -152,7 +197,9 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
       }
     }
     init().catch((err) => {
-      console.warn("[workspace-bootstrap] Init failed:", err);
+      logWorkspaceBootstrap("error", "init_failed", {
+        message: formatDiagnosticError(err),
+      });
       useProjectStore.getState().actions.setLoading(false);
     });
   }, []);

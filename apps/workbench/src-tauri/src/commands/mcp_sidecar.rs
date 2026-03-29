@@ -394,7 +394,7 @@ fn build_enriched_path(existing_path: Option<OsString>, home_dir: Option<PathBuf
         .unwrap_or_else(|_| OsString::from(std::env::var("PATH").unwrap_or_default()))
 }
 
-fn enriched_path() -> OsString {
+pub(crate) fn enriched_path() -> OsString {
     build_enriched_path(std::env::var_os("PATH"), dirs_next::home_dir())
 }
 

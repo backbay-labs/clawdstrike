@@ -34,10 +34,12 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
+    "@clawdstrike/swarm-engine": "file:../../packages/swarm-engine",
     "@codemirror/autocomplete": "^6.20.1",
     "@codemirror/lang-javascript": "^6.2.2",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-rust": "^6.0.2",
     "@codemirror/lang-yaml": "^6.1.2",
     "@codemirror/language": "^6.12.2",
     "@codemirror/lint": "^6.9.5",
@@ -55,7 +57,7 @@
     "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-http": "^2.5.7",
     "@tauri-apps/plugin-opener": "^2.5.3",
-    "@xyflow/react": "^12.10.1",
+    "@xyflow/react": "~12.10.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "codemirror": "^6.0.2",
@@ -79,8 +81,7 @@
     "three": "^0.183.2",
     "wawa-vfx": "^1.2.10",
     "yaml": "^2.7.0",
-    "zustand": "^5.0.12",
-    "@clawdstrike/swarm-engine": "file:../../packages/swarm-engine"
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

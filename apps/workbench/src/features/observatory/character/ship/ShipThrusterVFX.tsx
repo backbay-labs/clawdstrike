@@ -19,6 +19,7 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { VFXEmitter, type VFXEmitterSettings } from "wawa-vfx";
 import * as THREE from "three";
+import type { VFXEmitterRef } from "../../vfx/wawa-vfx-types";
 import { SHIP_THRUSTER_LAYOUT } from "./flight-types";
 
 // ---------------------------------------------------------------------------
@@ -60,16 +61,6 @@ const BOOST_THRUST_SETTINGS: VFXEmitterSettings = {
   directionMax: [0.2, 0.2, 1.0],
   speed: [6.0, 10.0],
 };
-
-// ---------------------------------------------------------------------------
-// VFXEmitter ref type (matches CharacterVFX.tsx pattern)
-// ---------------------------------------------------------------------------
-
-interface VFXEmitterRef extends THREE.Object3D {
-  startEmitting: (reset?: boolean) => void;
-  stopEmitting: () => void;
-  emitAtPos: (position: THREE.Vector3 | null, reset?: boolean) => void;
-}
 
 // ---------------------------------------------------------------------------
 // Props

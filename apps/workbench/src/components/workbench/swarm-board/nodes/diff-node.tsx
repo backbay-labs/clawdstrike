@@ -5,18 +5,84 @@
  * No rounded card wrapper — sharp, asymmetric, code-native.
  */
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
-import { IconFileDiff } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
+import { summarizeUnifiedDiff } from "../diff-preview";
+import { DiffPreviewPane } from "../diff-preview-pane";
+import { useZoomTier } from "../hooks/use-zoom-tier";
 
 function DiffNodeInner({ data, selected }: NodeProps) {
   const d = data as SwarmBoardNodeData;
-  const summary = d.diffSummary;
+  const tier = useZoomTier();
+  const summary = useMemo(
+    () => d.diffSummary ?? summarizeUnifiedDiff(d.diffContent ?? ""),
+    [d.diffContent, d.diffSummary],
+  );
   const added = summary?.added ?? 0;
   const removed = summary?.removed ?? 0;
   const files = summary?.files ?? [];
+  const hasPreviewSource = Boolean(d.diffContent?.trim() || d.diffPath);
+  const fileCount = files.length;
+  const netColor = added >= removed ? "#38a876" : "#b85450";
+
+  // ---------------------------------------------------------------------------
+  // Dot tier — small rectangle with green/red split indicator
+  // ---------------------------------------------------------------------------
+  if (tier === "dot") {
+    return (
+      <div
+        className="rounded-none"
+        style={{
+          backgroundColor: "#0a0c11",
+          width: "100%",
+          height: "100%",
+          minWidth: 40,
+          minHeight: 20,
+          borderLeft: `2px solid ${netColor}`,
+        }}
+      >
+        <Handle type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent" />
+        <Handle type="source" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chip tier — +N / -N with filename truncated, single line
+  // ---------------------------------------------------------------------------
+  if (tier === "chip") {
+    return (
+      <div
+        className="rounded-none flex items-center gap-1.5 px-2"
+        style={{
+          backgroundColor: "#0a0c11",
+          minWidth: 100,
+          minHeight: 22,
+        }}
+      >
+        <Handle type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent" />
+        <span className="text-[8px] font-mono font-bold" style={{ color: "#38a876", fontVariantNumeric: "tabular-nums" }}>
+          +{added}
+        </span>
+        <span className="text-[8px] font-mono font-bold" style={{ color: "#b85450", fontVariantNumeric: "tabular-nums" }}>
+          -{removed}
+        </span>
+        {d.diffPath && (
+          <span className="text-[7px] font-mono text-[#4a5568] truncate flex-1">
+            {d.diffPath.split("/").pop()}
+          </span>
+        )}
+        <Handle type="source" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compact tier — +/- summary and files count, no DiffPreviewPane
+  // Full tier — unchanged
+  // ---------------------------------------------------------------------------
 
   return (
     <div
@@ -31,88 +97,79 @@ function DiffNodeInner({ data, selected }: NodeProps) {
         backgroundColor: selected ? "#0e1018" : "#0a0c11",
         width: "100%",
         height: "100%",
-        minWidth: 200,
-        minHeight: 100,
+        minWidth: tier === "compact" ? 140 : 200,
+        minHeight: tier === "compact" ? 60 : (selected && hasPreviewSource ? 144 : 88),
       }}
     >
-      <NodeResizer
-        minWidth={200}
-        minHeight={100}
-        isVisible={selected}
-        lineClassName="!border-[#c49a3c]/25"
-        handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
-      />
+      {tier === "full" && (
+        <NodeResizer
+          minWidth={200}
+          minHeight={88}
+          isVisible={selected}
+          lineClassName="!border-[#c49a3c]/25"
+          handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
+        />
+      )}
       <Handle
         type="target"
         position={Position.Top}
         className="!w-1.5 !h-1.5 !bg-[#2a2f3a] !border-[#0a0c11] !border-2 hover:!bg-[#c49a3c] transition-colors"
       />
 
-      {/* Split +/- hero — asymmetric, the numbers dominate */}
+      {/* Split +/- hero — the counts stay board-visible, but quieter */}
       <div className="flex">
         {/* Additions side */}
         <div
-          className="flex-1 py-2.5 px-3"
+          className="flex-1 py-2 px-3"
           style={{ borderRight: '1px solid #1a1e2830' }}
         >
           <span
-            className="text-[22px] font-bold leading-none tracking-tight block"
+            className="text-[14px] font-bold leading-none tracking-tight block"
             style={{ color: '#38a876', fontVariantNumeric: 'tabular-nums' }}
           >
             +{added}
           </span>
-          <span className="text-[8px] font-mono text-[#38a876]/40 uppercase mt-1 block" style={{ letterSpacing: '0.1em' }}>
-            added
-          </span>
         </div>
         {/* Deletions side */}
-        <div className="flex-1 py-2.5 px-3">
+        <div className="flex-1 py-2 px-3">
           <span
-            className="text-[22px] font-bold leading-none tracking-tight block"
+            className="text-[14px] font-bold leading-none tracking-tight block"
             style={{ color: '#b85450', fontVariantNumeric: 'tabular-nums' }}
           >
             -{removed}
           </span>
-          <span className="text-[8px] font-mono text-[#b85450]/40 uppercase mt-1 block" style={{ letterSpacing: '0.1em' }}>
-            removed
-          </span>
         </div>
       </div>
 
-      {/* File list — monospace, compact, left-aligned with gutter dots */}
-      {files.length > 0 && (
-        <div
-          className="px-2.5 pb-2 pt-1.5 flex flex-col gap-px"
-          style={{ borderTop: '1px solid #1a1e2830' }}
+      <div
+        className="flex items-center justify-between px-3 py-1.5"
+        style={{ borderTop: "1px solid #1a1e2830" }}
+      >
+        <span
+          className="text-[8px] font-mono text-[#4a5568]"
+          style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          {files.slice(0, 5).map((file, i) => (
-            <div key={i} className="flex items-center gap-1.5 min-w-0">
-              <IconFileDiff size={9} stroke={1.5} className="text-[#2a2f3a] shrink-0" />
-              <span className="text-[9px] text-[#4a5568] font-mono truncate">
-                {file}
-              </span>
-            </div>
-          ))}
-          {files.length > 5 && (
-            <span
-              className="text-[8px] text-[#2a2f3a] ml-4 font-mono"
-              style={{ fontVariantNumeric: 'tabular-nums' }}
-            >
-              +{files.length - 5} more
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Minimal file count — bottom right, like a git stat line */}
-      {files.length > 0 && (
-        <div className="flex justify-end px-2.5 pb-1.5">
-          <span
-            className="text-[8px] font-mono text-[#2a2f3a]"
-            style={{ fontVariantNumeric: 'tabular-nums' }}
-          >
-            {files.length} file{files.length !== 1 ? "s" : ""}
+          {fileCount} file{fileCount !== 1 ? "s" : ""}
+        </span>
+        {d.diffPath && (
+          <span className="text-[8px] font-mono text-[#2a2f3a] truncate max-w-[120px]" title={d.diffPath}>
+            {d.diffPath.split("/").pop()}
           </span>
+        )}
+      </div>
+
+      {tier === "full" && selected && hasPreviewSource && (
+        <div className="px-2.5 pb-2" style={{ borderTop: "1px solid #1a1e2830" }}>
+          <div className="py-1.5 text-[8px] font-mono uppercase tracking-[0.14em] text-[#4a5568]">
+            preview
+          </div>
+          <DiffPreviewPane
+            diffContent={d.diffContent}
+            diffPath={d.diffPath}
+            maxLines={10}
+            maxHeight={132}
+            emptyMessage="Diff preview unavailable"
+          />
         </div>
       )}
 

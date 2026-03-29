@@ -2,14 +2,15 @@
  * ReceiptNode — legal document stamp aesthetic.
  *
  * The verdict (ALLOW/DENY) is the dominant visual element — large, bold,
- * impossible to miss. Guard details are secondary, quieter.
+ * impossible to miss. Secondary verification detail lives in the inspector.
  */
 
-import { memo } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import { IconCheck, IconX, IconAlertTriangle, IconShieldCheck, IconShieldOff, IconShieldQuestion } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
+import { useZoomTier } from "../hooks/use-zoom-tier";
 
 // ---------------------------------------------------------------------------
 // Verdict styling — the verdict IS the node
@@ -45,17 +46,36 @@ const VERDICT_STYLE: Record<
 
 function ReceiptNodeInner({ data, selected }: NodeProps) {
   const d = data as SwarmBoardNodeData;
+  const tier = useZoomTier();
   const verdict = d.verdict ?? "allow";
   const vs = VERDICT_STYLE[verdict];
   const VerdictIcon = vs.icon;
   const guards = d.guardResults ?? [];
 
-  const sigHash = d.sessionId
-    ? `0x${d.sessionId.replace(/[^a-f0-9]/gi, "").padEnd(40, "0").slice(0, 40)}`
-    : "0x" + "0".repeat(40);
+  const [verdictFlash, setVerdictFlash] = useState(false);
+  const previousVerdictRef = useRef<string | null>(null);
 
-  const timeStr = d.createdAt
-    ? new Date(d.createdAt).toLocaleTimeString(undefined, {
+  useEffect(() => {
+    if (previousVerdictRef.current == null) {
+      previousVerdictRef.current = verdict;
+      return;
+    }
+    if (previousVerdictRef.current === verdict) return;
+    previousVerdictRef.current = verdict;
+    setVerdictFlash(true);
+    const timeout = window.setTimeout(() => setVerdictFlash(false), 500);
+    return () => window.clearTimeout(timeout);
+  }, [verdict]);
+
+  const rawTimeSource = d.receiptData?.timestamp
+    ? Date.parse(d.receiptData.timestamp)
+    : d.createdAt;
+  const timeSource =
+    typeof rawTimeSource === "number" && Number.isFinite(rawTimeSource)
+      ? rawTimeSource
+      : null;
+  const timeStr = timeSource != null
+    ? new Date(timeSource).toLocaleTimeString(undefined, {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
@@ -64,6 +84,66 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
 
   const passedCount = guards.filter(g => g.allowed).length;
   const failedCount = guards.filter(g => !g.allowed).length;
+
+  // ---------------------------------------------------------------------------
+  // Dot tier — colored rectangle with verdict accent border
+  // ---------------------------------------------------------------------------
+  if (tier === "dot") {
+    return (
+      <div
+        className="rounded-sm"
+        style={{
+          backgroundColor: "#0a0c11",
+          width: "100%",
+          height: "100%",
+          minWidth: 40,
+          minHeight: 20,
+          borderTop: `2px solid ${vs.accent}`,
+          boxShadow: verdictFlash
+            ? `0 0 0 1px ${vs.accent}40, 0 0 12px ${vs.accent}18`
+            : undefined,
+        }}
+      >
+        <Handle type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent" />
+        <Handle type="source" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chip tier — verdict icon + verdict label + guard count
+  // ---------------------------------------------------------------------------
+  if (tier === "chip") {
+    return (
+      <div
+        className="rounded-sm flex items-center gap-1.5 px-2"
+        style={{
+          backgroundColor: "#0a0c11",
+          borderTop: `2px solid ${vs.accent}30`,
+          minWidth: 100,
+          minHeight: 22,
+          boxShadow: verdictFlash
+            ? `0 0 0 1px ${vs.accent}40, 0 0 12px ${vs.accent}18`
+            : undefined,
+        }}
+      >
+        <Handle type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent" />
+        <VerdictIcon size={12} stroke={2.5} style={{ color: vs.accent }} />
+        <span className="text-[7px] font-mono font-bold uppercase shrink-0" style={{ color: vs.accent, letterSpacing: "0.1em" }}>
+          {vs.label}
+        </span>
+        <span className="text-[7px] font-mono text-[#4a5568]" style={{ fontVariantNumeric: "tabular-nums" }}>
+          {guards.length}g
+        </span>
+        <Handle type="source" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compact tier — condensed verdict hero, no verification footer
+  // Full tier — unchanged
+  // ---------------------------------------------------------------------------
 
   return (
     <div
@@ -77,36 +157,41 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
         backgroundColor: selected ? "#0e1018" : "#0a0c11",
         width: "100%",
         height: "100%",
-        minWidth: 240,
-        minHeight: 160,
+        minWidth: tier === "compact" ? 160 : 220,
+        minHeight: tier === "compact" ? 52 : 96,
         // Thin top accent line — the "seal" color
         borderTop: `2px solid ${vs.accent}30`,
+        boxShadow: verdictFlash
+          ? `0 0 0 1px ${vs.accent}40, 0 0 12px ${vs.accent}18`
+          : undefined,
       }}
     >
-      <NodeResizer
-        minWidth={240}
-        minHeight={160}
-        isVisible={selected}
-        lineClassName="!border-[#c49a3c]/25"
-        handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
-      />
+      {tier === "full" && (
+        <NodeResizer
+          minWidth={220}
+          minHeight={96}
+          isVisible={selected}
+          lineClassName="!border-[#c49a3c]/25"
+          handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
+        />
+      )}
       <Handle
         type="target"
         position={Position.Top}
         className="!w-1.5 !h-1.5 !bg-[#2a2f3a] !border-[#0a0c11] !border-2 hover:!bg-[#c49a3c] transition-colors"
       />
 
-      {/* Verdict hero — the FIRST thing you see */}
-      <div className="flex items-center gap-3 px-3 pt-3 pb-2">
+      {/* Verdict hero — condensed in compact (smaller icon/text), full in full tier */}
+      <div className={cn("flex items-center gap-3 px-3", tier === "compact" ? "pt-2 pb-1.5" : "pt-3 pb-2")}>
         <div
-          className="shrink-0 flex items-center justify-center w-9 h-9 rounded"
+          className={cn("shrink-0 flex items-center justify-center rounded", tier === "compact" ? "w-6 h-6" : "w-9 h-9")}
           style={{ backgroundColor: vs.accentMuted }}
         >
-          <VerdictIcon size={20} stroke={2.5} style={{ color: vs.accent }} />
+          <VerdictIcon size={tier === "compact" ? 14 : 20} stroke={2.5} style={{ color: vs.accent }} />
         </div>
         <div className="min-w-0">
           <div
-            className="text-[18px] font-bold tracking-tight leading-none"
+            className={cn("font-bold tracking-tight leading-none", tier === "compact" ? "text-[13px]" : "text-[18px]")}
             style={{ color: vs.accent, letterSpacing: '0.04em' }}
           >
             {vs.label}
@@ -118,75 +203,46 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
             {passedCount} passed{failedCount > 0 && <> / <span style={{ color: '#b85450' }}>{failedCount} failed</span></>}
           </div>
         </div>
-        {timeStr && (
+        {tier === "full" && timeStr && (
           <span
             className="ml-auto text-[8px] font-mono text-[#2a2f3a] self-start mt-0.5"
             style={{ fontVariantNumeric: 'tabular-nums' }}
           >
-            {timeStr}
+            {formatReceiptNodeTime(timeSource, timeStr)}
           </span>
         )}
       </div>
 
-      {/* Guard results — secondary, compact */}
-      {guards.length > 0 && (
-        <div className="px-3 py-1.5">
-          {guards.slice(0, 6).map((gr, i) => (
-            <div key={i} className="flex items-center gap-1.5 py-[2px]">
-              <span
-                className="w-1 h-1 rounded-full shrink-0"
-                style={{ backgroundColor: gr.allowed ? "#38a876" : "#b85450" }}
-              />
-              <span className="text-[9px] text-[#4a5568] font-mono truncate flex-1">
-                {gr.guard}
-              </span>
-              {gr.duration_ms != null && (
-                <span
-                  className="text-[8px] text-[#2a2f3a] font-mono shrink-0"
-                  style={{ fontVariantNumeric: 'tabular-nums' }}
-                >
-                  {gr.duration_ms}ms
-                </span>
-              )}
-            </div>
-          ))}
-          {guards.length > 6 && (
-            <span className="text-[8px] text-[#2a2f3a] ml-2.5">
-              +{guards.length - 6} more
+      {/* Verification footer — full tier only */}
+      {tier === "full" && (
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 mt-auto"
+          style={{ borderTop: '1px solid #1a1e2820' }}
+        >
+          <span
+            className="text-[8px] text-[#4a5568] font-mono"
+            style={{ fontVariantNumeric: "tabular-nums" }}
+          >
+            {guards.length} guard{guards.length !== 1 ? "s" : ""}
+          </span>
+          {d.signatureVerified === true ? (
+            <span className="flex items-center gap-0.5 shrink-0 ml-auto" title="Signature verified">
+              <IconShieldCheck size={10} stroke={2} style={{ color: '#38a876' }} />
+              <span className="text-[7px] font-mono" style={{ color: '#38a876' }}>Verified</span>
             </span>
-          )}
+          ) : d.signatureVerified === false ? (
+            <span className="flex items-center gap-0.5 shrink-0 ml-auto" title="Signature verification failed">
+              <IconShieldOff size={10} stroke={2} style={{ color: '#b85450' }} />
+              <span className="text-[7px] font-mono" style={{ color: '#b85450' }}>Unverified</span>
+            </span>
+          ) : d.signature && d.publicKey ? (
+            <span className="flex items-center gap-0.5 shrink-0 ml-auto" title="Verification pending">
+              <IconShieldQuestion size={10} stroke={2} style={{ color: '#4a5568' }} />
+              <span className="text-[7px] font-mono" style={{ color: '#4a5568' }}>Pending</span>
+            </span>
+          ) : null}
         </div>
       )}
-
-      {/* Signature footer — like a stamp seal */}
-      <div
-        className="flex items-center gap-1.5 px-3 py-1.5 mt-auto"
-        style={{ borderTop: '1px solid #1a1e2820' }}
-      >
-        <span
-          className="text-[7px] text-[#2a2f3a] font-mono truncate flex-1"
-          style={{ fontVariantNumeric: 'tabular-nums' }}
-          title={sigHash}
-        >
-          sig {sigHash.slice(0, 18)}...
-        </span>
-        {d.signatureVerified === true ? (
-          <span className="flex items-center gap-0.5 shrink-0" title="Signature verified">
-            <IconShieldCheck size={10} stroke={2} style={{ color: '#38a876' }} />
-            <span className="text-[7px] font-mono" style={{ color: '#38a876' }}>Verified</span>
-          </span>
-        ) : d.signatureVerified === false ? (
-          <span className="flex items-center gap-0.5 shrink-0" title="Signature verification failed">
-            <IconShieldOff size={10} stroke={2} style={{ color: '#b85450' }} />
-            <span className="text-[7px] font-mono" style={{ color: '#b85450' }}>Unverified</span>
-          </span>
-        ) : d.signature && d.publicKey ? (
-          <span className="flex items-center gap-0.5 shrink-0" title="Verification pending">
-            <IconShieldQuestion size={10} stroke={2} style={{ color: '#4a5568' }} />
-            <span className="text-[7px] font-mono" style={{ color: '#4a5568' }}>Pending</span>
-          </span>
-        ) : null}
-      </div>
 
       <Handle
         type="source"
@@ -198,3 +254,15 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
 }
 
 export const ReceiptNode = memo(ReceiptNodeInner);
+
+function formatReceiptNodeTime(timeSource: number | null, fallback: string): string {
+  if (timeSource == null) {
+    return fallback;
+  }
+
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - timeSource) / 1000));
+  if (deltaSeconds < 60) return `${deltaSeconds}s ago`;
+  if (deltaSeconds < 3600) return `${Math.floor(deltaSeconds / 60)}m ago`;
+  if (deltaSeconds < 86_400) return `${Math.floor(deltaSeconds / 3600)}h ago`;
+  return `${Math.floor(deltaSeconds / 86_400)}d ago`;
+}

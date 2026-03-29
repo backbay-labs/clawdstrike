@@ -1,10 +1,12 @@
 // Swarm Store — Zustand store for swarm CRUD & coordination
 //
 // Converted from Context+useReducer to Zustand with createSelectors.
-// Preserves localStorage persistence with debounced writes.
-import { useLayoutEffect } from "react";
+// Uses app-data persistence on desktop with localStorage retained as a
+// migration source and web/test fallback.
+import { useLayoutEffect, useRef } from "react";
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
+import { isDesktop } from "@/lib/tauri-bridge";
 import type {
   Swarm,
   SwarmType,
@@ -17,12 +19,28 @@ import type {
   SpeakeasyRef,
 } from "@/lib/workbench/sentinel-types";
 import { generateId } from "@/lib/workbench/sentinel-types";
+import {
+  SWARMS_PERSISTENCE_FILE,
+  readSwarmPersistencePayload,
+  writeSwarmPersistencePayload,
+} from "./swarm-persistence";
+import {
+  setSwarmFileWatchScope,
+  clearSwarmFileWatchScope,
+  subscribeSwarmFileWatchEvents,
+} from "./swarm-file-watch";
 
 
 export interface SwarmState {
   swarms: Swarm[];
   activeSwarmId: string | null;
   loading: boolean;
+  invitationTracking: Record<string, { active: string[]; used: string[]; revoked: string[] }>;
+}
+
+interface PersistedSwarmStatePayload {
+  swarms: Swarm[];
+  activeSwarmId: string | null;
   invitationTracking: Record<string, { active: string[]; used: string[]; revoked: string[] }>;
 }
 
@@ -48,6 +66,8 @@ function recomputeStats(swarm: Swarm): SwarmStats {
 const STORAGE_KEY = "clawdstrike_workbench_swarms";
 let lastSwarmStorageSnapshot =
   typeof window === "undefined" ? null : readSwarmStorageSnapshot();
+let swarmPersistenceReady = typeof window === "undefined" || !isDesktop();
+let swarmHydratePromise: Promise<void> | null = null;
 
 function readSwarmStorageSnapshot(): string | null {
   try {
@@ -57,33 +77,24 @@ function readSwarmStorageSnapshot(): string | null {
   }
 }
 
-function persistSwarms(state: SwarmState): void {
-  try {
-    const persisted = {
-      swarms: state.swarms,
-      activeSwarmId: state.activeSwarmId,
-      invitationTracking: state.invitationTracking,
-    };
-    const raw = JSON.stringify(persisted);
-    localStorage.setItem(STORAGE_KEY, raw);
-    lastSwarmStorageSnapshot = raw;
-  } catch (e) {
-    console.error("[swarm-store] persistSwarms failed:", e);
-  }
+function serializePersistedSwarms(state: SwarmState): PersistedSwarmStatePayload {
+  return {
+    swarms: state.swarms,
+    activeSwarmId: state.activeSwarmId,
+    invitationTracking: state.invitationTracking,
+  };
 }
 
-function loadPersistedSwarms(): SwarmState | null {
+function normalizePersistedSwarms(parsed: unknown): SwarmState | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.swarms)) {
+    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { swarms?: unknown }).swarms)) {
       console.warn("[swarm-store] Invalid persisted swarm data, using defaults");
       return null;
     }
 
-    // Validate each entry has required fields
-    const validSwarms: Swarm[] = parsed.swarms.filter(
+    const record = parsed as PersistedSwarmStatePayload;
+
+    const validSwarms: Swarm[] = record.swarms.filter(
       (s: unknown): s is Swarm =>
         typeof s === "object" &&
         s !== null &&
@@ -96,23 +107,22 @@ function loadPersistedSwarms(): SwarmState | null {
     if (validSwarms.length === 0) return null;
 
     const activeSwarmId =
-      typeof parsed.activeSwarmId === "string" &&
-      validSwarms.some((s) => s.id === parsed.activeSwarmId)
-        ? parsed.activeSwarmId
+      typeof record.activeSwarmId === "string" &&
+      validSwarms.some((s) => s.id === record.activeSwarmId)
+        ? record.activeSwarmId
         : validSwarms[0].id;
 
     const rawTracking =
-      parsed.invitationTracking &&
-      typeof parsed.invitationTracking === "object"
-        ? (parsed.invitationTracking as Record<string, { active?: string[]; used: string[]; revoked: string[] }>)
+      record.invitationTracking &&
+      typeof record.invitationTracking === "object"
+        ? record.invitationTracking
         : {};
-    // Migrate old entries that lack `active`
     const invitationTracking: Record<string, { active: string[]; used: string[]; revoked: string[] }> = {};
     for (const [key, val] of Object.entries(rawTracking)) {
       invitationTracking[key] = {
-        active: val.active ?? [],
-        used: val.used ?? [],
-        revoked: val.revoked ?? [],
+        active: Array.isArray(val.active) ? val.active : [],
+        used: Array.isArray(val.used) ? val.used : [],
+        revoked: Array.isArray(val.revoked) ? val.revoked : [],
       };
     }
 
@@ -123,6 +133,36 @@ function loadPersistedSwarms(): SwarmState | null {
       invitationTracking,
     };
   } catch (e) {
+    console.warn("[swarm-store] normalizePersistedSwarms failed:", e);
+    return null;
+  }
+}
+
+function persistSwarms(state: SwarmState): void {
+  try {
+    const persisted = serializePersistedSwarms(state);
+    if (isDesktop()) {
+      void writeSwarmPersistencePayload(SWARMS_PERSISTENCE_FILE, persisted).then((ok) => {
+        if (!ok) {
+          console.error("[swarm-store] disk persist failed");
+        }
+      });
+      return;
+    }
+    const raw = JSON.stringify(persisted);
+    localStorage.setItem(STORAGE_KEY, raw);
+    lastSwarmStorageSnapshot = raw;
+  } catch (e) {
+    console.error("[swarm-store] persistSwarms failed:", e);
+  }
+}
+
+function loadPersistedSwarms(): SwarmState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return normalizePersistedSwarms(JSON.parse(raw));
+  } catch (e) {
     console.warn("[swarm-store] loadPersistedSwarms failed:", e);
     return null;
   }
@@ -131,17 +171,27 @@ function loadPersistedSwarms(): SwarmState | null {
 
 function getInitialState(): SwarmState {
   const restored = loadPersistedSwarms();
-  if (restored) return restored;
+  if (restored) {
+    return {
+      ...restored,
+      loading: isDesktop() ? true : restored.loading,
+    };
+  }
 
   return {
     swarms: [],
     activeSwarmId: null,
-    loading: false,
+    loading: isDesktop(),
     invitationTracking: {},
   };
 }
 
 function syncSwarmStoreWithStorage(): void {
+  if (isDesktop()) {
+    void hydrateSwarmStoreFromDisk(true);
+    return;
+  }
+
   const snapshot = readSwarmStorageSnapshot();
   if (snapshot === lastSwarmStorageSnapshot) {
     return;
@@ -224,6 +274,9 @@ export function createSwarm(config: CreateSwarmConfig): Swarm {
 let _persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function schedulePersist(state: SwarmState): void {
+  if (!swarmPersistenceReady) {
+    return;
+  }
   if (_persistTimer) clearTimeout(_persistTimer);
   _persistTimer = setTimeout(() => {
     persistSwarms(state);
@@ -564,6 +617,51 @@ const useSwarmStoreBase = create<SwarmStoreState>()((set, get) => ({
   },
 }));
 
+async function hydrateSwarmStoreFromDisk(force = false): Promise<void> {
+  if (!isDesktop()) {
+    swarmPersistenceReady = true;
+    return;
+  }
+  if (swarmHydratePromise && !force) {
+    return swarmHydratePromise;
+  }
+
+  swarmHydratePromise = (async () => {
+    useSwarmStoreBase.setState({ loading: true });
+
+    const legacy = loadPersistedSwarms();
+    const payload = await readSwarmPersistencePayload(SWARMS_PERSISTENCE_FILE);
+    const restored = normalizePersistedSwarms(payload) ?? legacy;
+
+    if (restored) {
+      useSwarmStoreBase.setState({
+        swarms: restored.swarms,
+        activeSwarmId: restored.activeSwarmId,
+        activeSwarm: deriveActiveSwarm(restored.swarms, restored.activeSwarmId),
+        invitationTracking: restored.invitationTracking,
+        loading: false,
+      });
+    } else {
+      const current = useSwarmStoreBase.getState();
+      useSwarmStoreBase.setState({
+        ...current,
+        activeSwarm: deriveActiveSwarm(current.swarms, current.activeSwarmId),
+        loading: false,
+      });
+    }
+
+    swarmPersistenceReady = true;
+
+    if (!payload && legacy) {
+      schedulePersist(useSwarmStoreBase.getState());
+    }
+  })().finally(() => {
+    swarmHydratePromise = null;
+  });
+
+  return swarmHydratePromise;
+}
+
 export const useSwarmStore = createSelectors(useSwarmStoreBase);
 
 // ---------------------------------------------------------------------------
@@ -599,8 +697,32 @@ interface SwarmContextValue {
 
 /** @deprecated Use useSwarmStore directly */
 export function useSwarms(): SwarmContextValue {
+  const watchScopeIdRef = useRef(`swarm-store-${Math.random().toString(36).slice(2)}`);
+
   useLayoutEffect(() => {
     syncSwarmStoreWithStorage();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isDesktop()) return;
+
+    const scopeId = watchScopeIdRef.current;
+    void setSwarmFileWatchScope(scopeId, {
+      persistenceFilenames: [SWARMS_PERSISTENCE_FILE],
+    });
+    const unsubscribe = subscribeSwarmFileWatchEvents((event) => {
+      if (
+        event.category === "persistence" &&
+        event.filenames.includes(SWARMS_PERSISTENCE_FILE)
+      ) {
+        void hydrateSwarmStoreFromDisk(true);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      void clearSwarmFileWatchScope(scopeId);
+    };
   }, []);
 
   const swarms = useSwarmStore((s) => s.swarms);

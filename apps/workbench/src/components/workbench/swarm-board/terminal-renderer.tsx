@@ -8,7 +8,7 @@
  * nodes) and a passive live-output view (unselected nodes with smaller font).
  */
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { init as initGhostty, Terminal, FitAddon } from "ghostty-web";
 import { terminalService } from "@/lib/workbench/terminal-service";
 
@@ -21,13 +21,18 @@ let ghosttyFailed = false;
 function ensureGhosttyInit(): Promise<void> {
   if (ghosttyFailed) return Promise.reject(new Error("ghostty-web init failed"));
   if (!ghosttyReady) {
-    ghosttyReady = initGhostty().catch((err) => {
+    ghosttyReady = initGhostty().catch((err: unknown) => {
       ghosttyFailed = true;
       ghosttyReady = null;
       throw err;
     });
   }
-  return ghosttyReady;
+  return ghosttyReady ?? Promise.reject(new Error("ghostty-web init failed"));
+}
+
+function resetGhosttyInit(): void {
+  ghosttyFailed = false;
+  ghosttyReady = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,6 +52,8 @@ export interface TerminalRendererProps {
   onReady?: () => void;
   /** Font size override (defaults to 11 when active, 8 when passive) */
   fontSize?: number;
+  /** Preview lines to seed before live output catches up. */
+  initialLines?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +95,7 @@ export function TerminalRenderer({
   height,
   onReady,
   fontSize,
+  initialLines,
 }: TerminalRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -96,14 +104,24 @@ export function TerminalRenderer({
   const onDataDisposeRef = useRef<{ dispose: () => void } | null>(null);
   const isDisposedRef = useRef(false);
   const mountedSessionRef = useRef<string | null>(null);
+  const seededRef = useRef(false);
+  const [fatalError, setFatalError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // Resolved font size
   const resolvedFontSize = fontSize ?? (active ? 11 : 8);
 
+  const handleRetry = useCallback(() => {
+    resetGhosttyInit();
+    seededRef.current = false;
+    setFatalError(null);
+    setRetryNonce((current) => current + 1);
+  }, []);
+
   // --- Mount terminal ---
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !sessionId) return;
+    if (!container || !sessionId || fatalError) return;
 
     isDisposedRef.current = false;
     mountedSessionRef.current = sessionId;
@@ -131,6 +149,11 @@ export function TerminalRenderer({
         term.open(container);
         termRef.current = term;
         fitAddonRef.current = fitAddon;
+
+        if (!seededRef.current && initialLines && initialLines.length > 0) {
+          term.write(`${initialLines.join("\r\n")}\r\n`);
+          seededRef.current = true;
+        }
 
         // Initial fit
         requestAnimationFrame(() => {
@@ -177,6 +200,7 @@ export function TerminalRenderer({
           })
           .catch((err) => {
             console.error("[TerminalRenderer] Failed to subscribe to output:", err);
+            setFatalError("Failed to subscribe to PTY output");
           });
 
         // Forward user input to PTY stdin
@@ -190,12 +214,14 @@ export function TerminalRenderer({
       })
       .catch((err) => {
         console.error("[TerminalRenderer] Failed to initialize ghostty-web:", err);
+        setFatalError(err instanceof Error ? err.message : "ghostty-web init failed");
       });
 
     // Cleanup
     return () => {
       cancelled = true;
       isDisposedRef.current = true;
+      seededRef.current = false;
       if (mountedSessionRef.current === sessionId) {
         mountedSessionRef.current = null;
       }
@@ -216,7 +242,10 @@ export function TerminalRenderer({
     // We intentionally only run this effect once per sessionId mount.
     // active/fontSize changes are handled by separate effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  // Keep the renderer mount stable across active/font-size churn; retryNonce
+  // is the explicit recycle trigger when the terminal surface needs recovery.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fatalError, retryNonce, sessionId]);
 
   // --- Update font size and cursor when active changes ---
   useEffect(() => {
@@ -268,6 +297,29 @@ export function TerminalRenderer({
   useEffect(() => {
     handleResize();
   }, [width, height, handleResize]);
+
+  if (fatalError) {
+    return (
+      <div
+        className="nodrag nowheel flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center"
+        style={{ backgroundColor: "#06070b" }}
+      >
+        <p className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#b85450]">
+          terminal surface isolated
+        </p>
+        <p className="text-[10px] font-mono text-[#7f8aa0]">
+          {fatalError}
+        </p>
+        <button
+          type="button"
+          className="rounded-sm border border-[#2a3040] px-2 py-1 text-[9px] font-mono uppercase tracking-[0.12em] text-[#d4a84b] hover:border-[#d4a84b]/40 hover:text-[#e8c06a]"
+          onClick={handleRetry}
+        >
+          Reload terminal surface
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div

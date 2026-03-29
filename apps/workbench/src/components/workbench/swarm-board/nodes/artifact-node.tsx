@@ -18,6 +18,7 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
+import { useZoomTier } from "../hooks/use-zoom-tier";
 
 // ---------------------------------------------------------------------------
 // File type config
@@ -66,12 +67,58 @@ function getFileColor(fileType?: string): string {
 
 function ArtifactNodeInner({ data, selected }: NodeProps) {
   const d = data as SwarmBoardNodeData;
+  const tier = useZoomTier();
   const FileIcon = getFileIcon(d.fileType);
   const fileColor = getFileColor(d.fileType);
 
   const filename = d.filePath
     ? d.filePath.split("/").pop() ?? d.filePath
     : d.title;
+
+  // ---------------------------------------------------------------------------
+  // Dot tier — tiny file-colored dot
+  // ---------------------------------------------------------------------------
+  if (tier === "dot") {
+    return (
+      <div
+        className="rounded-sm"
+        style={{
+          backgroundColor: "#0e1018",
+          width: "100%",
+          height: "100%",
+          minWidth: 20,
+          minHeight: 20,
+          borderLeft: `2px solid ${fileColor}`,
+        }}
+      >
+        <Handle type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent" />
+        <Handle type="source" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chip tier — file icon + filename truncated, single row
+  // ---------------------------------------------------------------------------
+  if (tier === "chip") {
+    return (
+      <div
+        className="flex items-center gap-1 px-1.5"
+        style={{ minWidth: 60, minHeight: 22 }}
+      >
+        <Handle type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent" />
+        <FileIcon size={12} stroke={1.2} style={{ color: fileColor }} />
+        <span className="text-[7px] font-mono text-[#5c6a80] truncate flex-1">
+          {filename}
+        </span>
+        <Handle type="source" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compact/Full — artifact nodes are already tiny and iconic, render same
+  // ---------------------------------------------------------------------------
 
   return (
     <div
@@ -108,16 +155,6 @@ function ArtifactNodeInner({ data, selected }: NodeProps) {
       >
         {filename}
       </span>
-
-      {/* File type — tiny, only if present */}
-      {d.fileType && (
-        <span
-          className="text-[7px] font-mono uppercase"
-          style={{ color: `${fileColor}80`, letterSpacing: '0.1em' }}
-        >
-          {d.fileType}
-        </span>
-      )}
 
       <Handle
         type="source"

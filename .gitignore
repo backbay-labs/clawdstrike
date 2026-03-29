@@ -70,6 +70,7 @@ apps/agent/src-tauri/resources/bin/
 # Cursor
 .cursor/
 .claude/worktrees/
+.swarm-worktrees/
 .planning/
 **/.planning/
 

@@ -1,6 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SwarmBoardNodeData, SessionStatus, RiskLevel } from "@/features/swarm/swarm-board-types";
 
@@ -14,6 +14,8 @@ vi.mock("@xyflow/react", () => ({
   ),
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
   NodeResizer: () => null,
+  // useStore: selector receives mock state; default zoom=1.0 -> "full" tier
+  useStore: (selector: (s: any) => any) => selector({ transform: [0, 0, 1] }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -23,6 +25,9 @@ vi.mock("@xyflow/react", () => ({
 const mockUpdateNode = vi.fn();
 const mockRemoveNode = vi.fn();
 const mockKillSession = vi.fn().mockResolvedValue(undefined);
+const { terminalRendererShouldThrow } = vi.hoisted(() => ({
+  terminalRendererShouldThrow: { current: false },
+}));
 
 vi.mock("@/features/swarm/stores/swarm-board-store", () => ({
   useSwarmBoard: () => ({
@@ -37,9 +42,12 @@ vi.mock("@/features/swarm/stores/swarm-board-store", () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock("../terminal-renderer", () => ({
-  TerminalRenderer: ({ sessionId }: { sessionId: string }) => (
-    <div data-testid="terminal-renderer">{sessionId}</div>
-  ),
+  TerminalRenderer: ({ sessionId }: { sessionId: string }) => {
+    if (terminalRendererShouldThrow.current) {
+      throw new Error("ghostty exploded");
+    }
+    return <div data-testid="terminal-renderer">{sessionId}</div>;
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -99,6 +107,13 @@ function renderNode(data: Partial<SwarmBoardNodeData>, selected = false) {
 // ---------------------------------------------------------------------------
 
 describe("AgentSessionNode", () => {
+  beforeEach(() => {
+    terminalRendererShouldThrow.current = false;
+    mockUpdateNode.mockReset();
+    mockRemoveNode.mockReset();
+    mockKillSession.mockClear();
+  });
+
   it("renders agent model in the title bar", () => {
     renderNode({ agentModel: "opus-4.6" });
     expect(screen.getByText("opus-4.6")).toBeInTheDocument();
@@ -142,8 +157,47 @@ describe("AgentSessionNode", () => {
     expect(screen.getByText("test validate_token ... ok")).toBeInTheDocument();
   });
 
-  it("shows TerminalRenderer when sessionId is present", () => {
-    renderNode({ sessionId: "sess-123" });
+  it("shows static preview when a live session is not foregrounded", () => {
+    renderNode({
+      sessionId: "sess-123",
+      terminalAttached: true,
+      previewLines: ["$ cargo test -p auth", "test validate_token ... ok"],
+    });
+    expect(screen.queryByTestId("terminal-renderer")).toBeNull();
+    expect(screen.getByText("$ cargo test -p auth")).toBeInTheDocument();
+  });
+
+  it("sanitizes ANSI escape sequences in unfocused preview lines", () => {
+    renderNode({
+      sessionId: "sess-123",
+      terminalAttached: true,
+      previewLines: [
+        "\u001b[38;2;136;136;136mClaude Code v2.1.85\u001b[39m",
+        "\u001b[1mOpus 4.6\u001b[22m",
+      ],
+    });
+
+    expect(screen.getByText("Claude Code v2.1.85")).toBeInTheDocument();
+    expect(screen.getByText("Opus 4.6")).toBeInTheDocument();
+    expect(screen.queryByText(/\[38;2;136;136;136m/)).toBeNull();
+  });
+
+  it("shows TerminalRenderer when the attached session is selected", () => {
+    renderNode({ sessionId: "sess-123", terminalAttached: true }, true);
+    expect(screen.getByTestId("terminal-renderer")).toBeInTheDocument();
+    expect(screen.getByTestId("terminal-renderer").textContent).toBe("sess-123");
+  });
+
+  it("isolates terminal renderer crashes to the tile and allows retry", () => {
+    terminalRendererShouldThrow.current = true;
+    renderNode({ sessionId: "sess-123", terminalAttached: true }, true);
+
+    expect(screen.getByText("terminal tile isolated")).toBeInTheDocument();
+    expect(screen.getByText("ghostty exploded")).toBeInTheDocument();
+
+    terminalRendererShouldThrow.current = false;
+    fireEvent.click(screen.getByRole("button", { name: "Reload terminal surface" }));
+
     expect(screen.getByTestId("terminal-renderer")).toBeInTheDocument();
     expect(screen.getByTestId("terminal-renderer").textContent).toBe("sess-123");
   });
@@ -151,6 +205,17 @@ describe("AgentSessionNode", () => {
   it("shows awaiting output when no previewLines and no session", () => {
     renderNode({ sessionId: undefined, previewLines: [] });
     expect(screen.getByText("awaiting output")).toBeInTheDocument();
+  });
+
+  it("prompts the operator to attach a recovered session when detached", () => {
+    renderNode({
+      sessionId: "sess-123",
+      terminalAttached: false,
+      sessionPersistence: "tmux",
+      sessionRecoveryState: "recoverable",
+      previewLines: [],
+    });
+    expect(screen.getByText("select to attach recovered session")).toBeInTheDocument();
   });
 
   it("shows receipt count in footer metrics", () => {
@@ -190,9 +255,9 @@ describe("AgentSessionNode", () => {
     expect(maxBtn).toBeInTheDocument();
   });
 
-  it("shows policy mode when provided", () => {
+  it("moves policy mode out of node chrome when provided", () => {
     renderNode({ policyMode: "strict" });
-    expect(screen.getByText("strict")).toBeInTheDocument();
+    expect(screen.queryByText("strict")).toBeNull();
   });
 
   it("shows exit code for non-running statuses", () => {

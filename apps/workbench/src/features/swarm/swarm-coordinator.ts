@@ -143,6 +143,7 @@ export function sentinelStatusTopic(sentinelId: string): string {
 
 /** Valid swarm topic channel names. */
 export type SwarmChannel = "intel" | "signals" | "detections" | "coordination";
+export type SwarmPublishChannel = "intel" | "signal" | "detection" | "coordination";
 
 /** Parsed swarm topic information. */
 export interface ParsedSwarmTopic {
@@ -671,6 +672,40 @@ export class SwarmCoordinator {
     const topic = swarmDetectionTopic(swarm.id);
     const envelope = createSwarmEnvelope("detection", detection, DEFAULT_INTEL_TTL);
     await this.safePublish(topic, envelope);
+  }
+
+  /**
+   * Publish a raw payload to a swarm channel without requiring a fully
+   * materialized Swarm object. Used by the local RPC automation surface.
+   */
+  async publishMessage(
+    swarmId: string,
+    channel: SwarmPublishChannel,
+    payload: unknown,
+  ): Promise<void> {
+    let topic: string;
+    let envelopeType: SwarmEnvelope["type"];
+    let ttl: number;
+
+    if (channel === "intel") {
+      topic = swarmIntelTopic(swarmId);
+      envelopeType = "intel";
+      ttl = DEFAULT_INTEL_TTL;
+    } else if (channel === "signal") {
+      topic = swarmSignalTopic(swarmId);
+      envelopeType = "signal";
+      ttl = DEFAULT_SIGNAL_TTL;
+    } else if (channel === "detection") {
+      topic = swarmDetectionTopic(swarmId);
+      envelopeType = "detection";
+      ttl = DEFAULT_INTEL_TTL;
+    } else {
+      topic = swarmCoordinationTopic(swarmId);
+      envelopeType = "coordination";
+      ttl = DEFAULT_COORDINATION_TTL;
+    }
+
+    await this.safePublish(topic, createSwarmEnvelope(envelopeType, payload, ttl));
   }
 
 

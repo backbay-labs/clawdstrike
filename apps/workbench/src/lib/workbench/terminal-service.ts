@@ -58,6 +58,11 @@ export interface SessionInfo {
   alive: boolean;
   exit_code: number | null;
   line_count: number;
+  shell: string;
+  persistence_mode: "direct" | "tmux";
+  recovery_state: "fresh" | "recoverable" | "recovered";
+  /** Whether the session's original CWD still exists on disk. */
+  cwd_valid: boolean;
 }
 
 export interface WorktreeInfo {
@@ -89,8 +94,21 @@ export const terminalService = {
     cwd: string,
     shell?: string,
     env?: Record<string, string>,
+    startupInput?: string,
   ): Promise<SessionInfo> =>
-    invokeSensitive<SessionInfo>("terminal_create", { cwd, shell, env }),
+    invokeSensitive<SessionInfo>("terminal_create", { cwd, shell, env, startupInput }),
+
+  /**
+   * Discover recoverable tmux-backed sessions persisted across app restarts.
+   */
+  discover: (): Promise<SessionInfo[]> =>
+    invokeSensitive<SessionInfo[]>("terminal_discover"),
+
+  /**
+   * Reattach a previously discovered tmux-backed session.
+   */
+  reconnect: (sessionId: string): Promise<SessionInfo> =>
+    invokeSensitive<SessionInfo>("terminal_reconnect", { sessionId }),
 
   /**
    * Write data (keystrokes, paste, etc.) to a session's PTY stdin.
@@ -164,6 +182,13 @@ export const terminalService = {
     listen<number | null>(`terminal:exit:${sessionId}`, (event) =>
       callback(event.payload),
     ),
+
+  /**
+   * Detach a tmux-backed session without destroying it.
+   * The session remains alive in tmux and can be reconnected later.
+   */
+  detach: (sessionId: string): Promise<void> =>
+    invokeSensitive<void>("terminal_detach", { sessionId }),
 };
 
 // ---------------------------------------------------------------------------

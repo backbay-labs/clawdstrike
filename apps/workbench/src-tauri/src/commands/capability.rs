@@ -13,25 +13,13 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::Mutex;
 
 const TRUSTED_WINDOW_LABEL: &str = "main";
-const TERMINAL_READ_TTL_SECS: i64 = 60;
-const TERMINAL_READ_MAX_USES: u32 = 128;
-const TERMINAL_LIFECYCLE_TTL_SECS: i64 = 30;
-const TERMINAL_LIFECYCLE_MAX_USES: u32 = 8;
-const TERMINAL_WRITE_TTL_SECS: i64 = 30;
-const TERMINAL_WRITE_MAX_USES: u32 = 256;
-const REPO_READ_TTL_SECS: i64 = 60;
-const REPO_READ_MAX_USES: u32 = 128;
-const WORKTREE_WRITE_TTL_SECS: i64 = 15;
-const WORKTREE_WRITE_MAX_USES: u32 = 1;
+const WORKSPACE_CONTROL_TTL_SECS: i64 = 8 * 60 * 60;
+const WORKSPACE_CONTROL_MAX_USES: u32 = 10_000;
 const DENIAL_COOLDOWN_SECS: i64 = 5;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum AuthorizationScope {
-    TerminalRead,
-    TerminalLifecycle,
-    TerminalWrite,
-    RepoRead,
-    WorktreeWrite,
+    WorkspaceControl,
 }
 
 struct ScopePolicy {
@@ -139,7 +127,7 @@ impl CommandCapabilityManager {
     }
 }
 
-fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
+pub(crate) fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
     if window.label() != TRUSTED_WINDOW_LABEL {
         return Err("Rejecting command from untrusted window".to_string());
     }
@@ -148,45 +136,13 @@ fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), St
 
 fn policy_for_command(command: &str) -> Result<ScopePolicy, String> {
     match command.trim() {
-        "terminal_list" | "terminal_preview" => Ok(ScopePolicy {
-            scope: AuthorizationScope::TerminalRead,
-            ttl_secs: TERMINAL_READ_TTL_SECS,
-            max_uses: TERMINAL_READ_MAX_USES,
-            title: "Approve Terminal Inspection",
+        "worktree_list" | "worktree_status" | "worktree_create" | "worktree_remove" => Ok(ScopePolicy {
+            scope: AuthorizationScope::WorkspaceControl,
+            ttl_secs: WORKSPACE_CONTROL_TTL_SECS,
+            max_uses: WORKSPACE_CONTROL_MAX_USES,
+            title: "Approve Workspace Control",
             message:
-                "Allow this window to list and preview terminal sessions for the next 60 seconds?",
-        }),
-        "terminal_create" | "terminal_kill" | "terminal_resize" => Ok(ScopePolicy {
-            scope: AuthorizationScope::TerminalLifecycle,
-            ttl_secs: TERMINAL_LIFECYCLE_TTL_SECS,
-            max_uses: TERMINAL_LIFECYCLE_MAX_USES,
-            title: "Approve Terminal Lifecycle",
-            message:
-                "Allow this window to create, resize, or kill terminal sessions for the next 30 seconds?",
-        }),
-        "terminal_write" => Ok(ScopePolicy {
-            scope: AuthorizationScope::TerminalWrite,
-            ttl_secs: TERMINAL_WRITE_TTL_SECS,
-            max_uses: TERMINAL_WRITE_MAX_USES,
-            title: "Approve Terminal Input",
-            message:
-                "Allow this window to send input to running terminal sessions for the next 30 seconds?",
-        }),
-        "get_cwd" | "worktree_list" | "worktree_status" => Ok(ScopePolicy {
-            scope: AuthorizationScope::RepoRead,
-            ttl_secs: REPO_READ_TTL_SECS,
-            max_uses: REPO_READ_MAX_USES,
-            title: "Approve Repository Inspection",
-            message:
-                "Allow this window to inspect local repository metadata for the next 60 seconds?",
-        }),
-        "worktree_create" | "worktree_remove" => Ok(ScopePolicy {
-            scope: AuthorizationScope::WorktreeWrite,
-            ttl_secs: WORKTREE_WRITE_TTL_SECS,
-            max_uses: WORKTREE_WRITE_MAX_USES,
-            title: "Approve Worktree Mutation",
-            message:
-                "Allow this window to create or remove a git worktree? This approval is single-use.",
+                "Allow this window to inspect repositories and manage worktrees for the next 8 hours?",
         }),
         _ => Err("Unsupported sensitive command".to_string()),
     }
@@ -224,6 +180,11 @@ pub async fn authorize_sensitive_command<R: Runtime>(
     command: &str,
 ) -> Result<(), String> {
     ensure_trusted_window(window)?;
+    // Terminal control is a first-class local workbench feature; gate it on
+    // the trusted main window only, not on per-command native approval.
+    if command.trim().starts_with("terminal_") {
+        return Ok(());
+    }
     let policy = policy_for_command(command)?;
     let now_epoch = Utc::now().timestamp();
 
@@ -234,17 +195,12 @@ pub async fn authorize_sensitive_command<R: Runtime>(
         }
     }
 
+    // Visibility is a hard requirement — the window must be on-screen.
     if !window
         .is_visible()
         .map_err(|e| format!("Failed to inspect window visibility: {e}"))?
     {
         return Err("Sensitive command requires a visible trusted window".to_string());
-    }
-    if !window
-        .is_focused()
-        .map_err(|e| format!("Failed to inspect window focus: {e}"))?
-    {
-        return Err("Sensitive command requires the trusted window to be focused".to_string());
     }
 
     {
@@ -316,30 +272,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn terminal_permissions_are_split_by_scope() {
-        let Ok(list) = policy_for_command("terminal_list") else {
-            panic!("missing terminal_list policy");
-        };
-        let Ok(write) = policy_for_command("terminal_write") else {
-            panic!("missing terminal_write policy");
-        };
-        let Ok(create) = policy_for_command("terminal_create") else {
-            panic!("missing terminal_create policy");
-        };
-
-        assert_eq!(list.scope, AuthorizationScope::TerminalRead);
-        assert_eq!(write.scope, AuthorizationScope::TerminalWrite);
-        assert_eq!(create.scope, AuthorizationScope::TerminalLifecycle);
+    fn terminal_commands_bypass_native_capability_prompts() {
+        assert!(policy_for_command("terminal_list").is_err());
+        assert!(policy_for_command("terminal_write").is_err());
+        assert!(policy_for_command("terminal_create").is_err());
     }
 
     #[test]
-    fn single_use_grant_does_not_authorize_a_second_call() {
+    fn one_use_grant_is_consumed_immediately() {
         let mut manager = CommandCapabilityManager::new();
         let now = 1_700_000_000;
 
-        manager.issue_grant("main", AuthorizationScope::WorktreeWrite, now, 15, 1);
+        manager.issue_grant("main", AuthorizationScope::WorkspaceControl, now, 15, 1);
 
-        assert!(!manager.consume_active_grant("main", AuthorizationScope::WorktreeWrite, now));
+        assert!(!manager.consume_active_grant("main", AuthorizationScope::WorkspaceControl, now));
     }
 
     #[test]
@@ -347,10 +293,10 @@ mod tests {
         let mut manager = CommandCapabilityManager::new();
         let now = 1_700_000_000;
 
-        manager.issue_grant("main", AuthorizationScope::TerminalWrite, now, 30, 3);
+        manager.issue_grant("main", AuthorizationScope::WorkspaceControl, now, 30, 3);
 
-        assert!(manager.consume_active_grant("main", AuthorizationScope::TerminalWrite, now));
-        assert!(manager.consume_active_grant("main", AuthorizationScope::TerminalWrite, now));
-        assert!(!manager.consume_active_grant("main", AuthorizationScope::TerminalWrite, now));
+        assert!(manager.consume_active_grant("main", AuthorizationScope::WorkspaceControl, now));
+        assert!(manager.consume_active_grant("main", AuthorizationScope::WorkspaceControl, now));
+        assert!(!manager.consume_active_grant("main", AuthorizationScope::WorkspaceControl, now));
     }
 }

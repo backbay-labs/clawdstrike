@@ -14,6 +14,8 @@ import {
   createBoardNode,
   createMockBoard,
   MAX_ACTIVE_TERMINALS,
+  summarizeGuardPolicyHeatmap,
+  summarizeReceiptPosture,
   type CreateNodeConfig,
 } from "../swarm-board-store";
 
@@ -21,7 +23,22 @@ import {
 vi.mock("@/lib/workbench/terminal-service", () => ({
   terminalService: {
     getCwd: vi.fn().mockResolvedValue("/mock/cwd"),
-    create: vi.fn().mockResolvedValue({ id: "mock-session", branch: "main" }),
+    create: vi.fn().mockResolvedValue({
+      id: "mock-session",
+      branch: "main",
+      shell: "zsh",
+      persistence_mode: "tmux",
+      recovery_state: "fresh",
+    }),
+    discover: vi.fn().mockResolvedValue([]),
+    reconnect: vi.fn().mockResolvedValue({
+      id: "mock-session",
+      branch: "main",
+      shell: "zsh",
+      persistence_mode: "tmux",
+      recovery_state: "recovered",
+    }),
+    preview: vi.fn().mockResolvedValue([]),
     write: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
     onExit: vi.fn().mockResolvedValue(() => {}),
@@ -79,6 +96,135 @@ beforeEach(() => {
 });
 
 describe("SwarmBoardStore (Zustand)", () => {
+  it("summarizes receipt posture from explicit verdicts", () => {
+    const summary = summarizeReceiptPosture([
+      createBoardNode({
+        nodeType: "receipt",
+        title: "Allow",
+        data: { verdict: "allow" },
+      }),
+      createBoardNode({
+        nodeType: "receipt",
+        title: "Warn",
+        data: { verdict: "warn" },
+      }),
+      createBoardNode({
+        nodeType: "receipt",
+        title: "Deny",
+        data: { verdict: "deny" },
+      }),
+    ]);
+
+    expect(summary).toMatchObject({
+      totalReceipts: 3,
+      totalSignals: 3,
+      allowCount: 1,
+      warnCount: 1,
+      denyCount: 1,
+      dominantState: "deny",
+    });
+  });
+
+  it("infers receipt posture from guard results when verdict is absent", () => {
+    const summary = summarizeReceiptPosture([
+      createBoardNode({
+        nodeType: "receipt",
+        title: "Implicit allow",
+        data: {
+          guardResults: [{ guard: "PolicyGuard", allowed: true }],
+        },
+      }),
+      createBoardNode({
+        nodeType: "receipt",
+        title: "Implicit deny",
+        data: {
+          guardResults: [{ guard: "PolicyGuard", allowed: false }],
+        },
+      }),
+    ]);
+
+    expect(summary.allowCount).toBe(1);
+    expect(summary.denyCount).toBe(1);
+    expect(summary.warnCount).toBe(0);
+    expect(summary.totalSignals).toBe(2);
+  });
+
+  it("aggregates guard posture and latency across receipt nodes", () => {
+    const summary = summarizeGuardPolicyHeatmap([
+      createBoardNode({
+        nodeType: "receipt",
+        title: "Allow receipt",
+        data: {
+          verdict: "allow",
+          guardResults: [
+            { guard: "ForbiddenPathGuard", allowed: true, duration_ms: 2 },
+            { guard: "PatchIntegrityGuard", allowed: true, duration_ms: 10 },
+          ],
+        },
+      }),
+      createBoardNode({
+        nodeType: "receipt",
+        title: "Warn receipt",
+        data: {
+          verdict: "warn",
+          guardResults: [
+            { guard: "ForbiddenPathGuard", allowed: true, duration_ms: 6 },
+            { guard: "SpiderSenseGuard", allowed: true, duration_ms: 9 },
+          ],
+        },
+      }),
+      createBoardNode({
+        nodeType: "receipt",
+        title: "Deny receipt",
+        data: {
+          verdict: "deny",
+          guardResults: [
+            { guard: "ForbiddenPathGuard", allowed: false, duration_ms: 4 },
+            { guard: "PatchIntegrityGuard", allowed: false, duration_ms: 8 },
+            { guard: "SpiderSenseGuard", allowed: true, duration_ms: 1 },
+          ],
+        },
+      }),
+    ]);
+
+    expect(summary).toMatchObject({
+      totalReceipts: 3,
+      receiptsWithGuards: 3,
+      totalEvaluations: 7,
+      uniqueGuards: 3,
+      allowCount: 3,
+      warnCount: 2,
+      denyCount: 2,
+    });
+
+    expect(summary.guards.map((guard) => guard.guard)).toEqual([
+      "ForbiddenPathGuard",
+      "PatchIntegrityGuard",
+      "SpiderSenseGuard",
+    ]);
+
+    expect(summary.guards[0]).toMatchObject({
+      guard: "ForbiddenPathGuard",
+      receiptCount: 3,
+      totalEvaluations: 3,
+      allowCount: 1,
+      warnCount: 1,
+      denyCount: 1,
+      averageLatencyMs: 4,
+      maxLatencyMs: 6,
+    });
+    expect(summary.guards[1]).toMatchObject({
+      guard: "PatchIntegrityGuard",
+      receiptCount: 2,
+      totalEvaluations: 2,
+      allowCount: 1,
+      warnCount: 0,
+      denyCount: 1,
+      averageLatencyMs: 9,
+      maxLatencyMs: 10,
+    });
+  });
+
   // Test 1
   it("getState() returns SwarmBoardState shape", () => {
     const state = useSwarmBoardStore.getState();
@@ -516,7 +662,7 @@ describe("SwarmBoardStore (Zustand)", () => {
       data: { filePath: "src/test-file.rs", fileType: "rust" },
     });
 
-    expect(node.id).toMatch(/^artifact-/);
+    expect(node.id).toMatch(/^node-/);
     expect(node.type).toBe("artifact");
     expect(node.position).toEqual({ x: 50, y: 50 });
     expect(node.data.title).toBe("test-file.rs");

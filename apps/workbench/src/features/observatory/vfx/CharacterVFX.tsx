@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { VFXEmitter, type VFXEmitterSettings } from "wawa-vfx";
 import * as THREE from "three";
+import type { VFXEmitterRef } from "./wawa-vfx-types";
 
 // Pre-allocated vector — never re-created inside useFrame
 const _backpackWorldPos = new THREE.Vector3();
@@ -35,13 +36,6 @@ const THRUSTER_EXHAUST_SETTINGS: VFXEmitterSettings = {
   directionMax: [0, -1, 0],
   speed: [2.0, 2.0],
 };
-
-// VFXEmitter ref type (forwarded ref exposes emitAtPos, startEmitting, stopEmitting)
-interface VFXEmitterRef extends THREE.Object3D {
-  startEmitting: (reset?: boolean) => void;
-  stopEmitting: () => void;
-  emitAtPos: (position: THREE.Vector3 | null, reset?: boolean) => void;
-}
 
 export interface CharacterVFXProps {
   /** Character world position from runtime.state.position */

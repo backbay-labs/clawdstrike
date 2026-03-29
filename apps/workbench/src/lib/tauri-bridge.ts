@@ -12,10 +12,7 @@ import {
   sanitizeFilenameStem,
   type FileType,
 } from "@/lib/workbench/file-type-registry";
-import { getWorkbenchE2EBridge } from "@/lib/workbench/e2e-bridge";
-
-const TAURI_FS_SPECIFIER = "@tauri-apps/plugin-fs";
-const TAURI_OPENER_SPECIFIER = "@tauri-apps/plugin-opener";
+import { markSwarmFileWatchSelfWrite } from "@/features/swarm/stores/swarm-file-watch";
 
 /** Returns true when running inside a Tauri webview. */
 export function isDesktop(): boolean {
@@ -29,11 +26,11 @@ export function isMacOS(): boolean {
 }
 
 async function importTauriFs() {
-  return import(/* @vite-ignore */ TAURI_FS_SPECIFIER);
+  return import("@tauri-apps/plugin-fs");
 }
 
-async function importTauriOpener() {
-  return import(/* @vite-ignore */ TAURI_OPENER_SPECIFIER);
+async function importTauriDialog() {
+  return import("@tauri-apps/plugin-dialog");
 }
 
 async function getWindow() {
@@ -85,14 +82,9 @@ export interface OpenFileResult {
  * Returns null if the user cancels.
  */
 export async function openDetectionFile(): Promise<OpenFileResult | null> {
-  const e2eBridge = getWorkbenchE2EBridge();
-  if (e2eBridge?.openDetectionFile) {
-    return e2eBridge.openDetectionFile();
-  }
-
   if (!isDesktop()) return null;
 
-  const { open } = await import("@tauri-apps/plugin-dialog");
+  const { open } = await importTauriDialog();
 
   const selected = await open({
     multiple: false,
@@ -129,11 +121,6 @@ export async function openDetectionFile(): Promise<OpenFileResult | null> {
  * Returns null if not in desktop mode or if the file cannot be read.
  */
 export async function readDetectionFileByPath(filePath: string): Promise<OpenFileResult | null> {
-  const e2eBridge = getWorkbenchE2EBridge();
-  if (e2eBridge?.readDetectionFileByPath) {
-    return e2eBridge.readDetectionFileByPath(filePath);
-  }
-
   if (!isDesktop()) return null;
 
   try {
@@ -151,6 +138,22 @@ export async function readDetectionFileByPath(filePath: string): Promise<OpenFil
   }
 }
 
+/**
+ * Read a UTF-8 text file directly from disk.
+ * Returns null when not in desktop mode or when the file cannot be read.
+ */
+export async function readTextFileFromDisk(filePath: string): Promise<string | null> {
+  if (!isDesktop()) return null;
+
+  try {
+    const { readTextFile } = await importTauriFs();
+    return await readTextFile(filePath);
+  } catch (err) {
+    console.error("[tauri-bridge] Failed to read text file:", filePath, err);
+    return null;
+  }
+}
+
 /** File dialog filter configs per workbench file type. */
 const FILE_TYPE_FILTERS: Record<FileType, { name: string; extensions: string[] }> = {
   clawdstrike_policy: { name: "ClawdStrike Policy", extensions: ["yaml", "yml"] },
@@ -158,7 +161,6 @@ const FILE_TYPE_FILTERS: Record<FileType, { name: string; extensions: string[] }
   yara_rule: { name: "YARA Rule", extensions: ["yar", "yara"] },
   ocsf_event: { name: "OCSF Event", extensions: ["json"] },
   swarm_bundle: { name: "Swarm Bundle", extensions: ["swarm"] },
-  receipt: { name: "Receipt / Evidence", extensions: ["receipt", "hush"] },
 };
 
 function resolveLegacySaveType(value: FileType | string): FileType {
@@ -192,7 +194,7 @@ export async function pickSavePath(
 ): Promise<string | null> {
   if (!isDesktop()) return null;
 
-  const { save } = await import("@tauri-apps/plugin-dialog");
+  const { save } = await importTauriDialog();
   const resolvedFileType = resolveLegacySaveType(fileType);
   const filterCfg = FILE_TYPE_FILTERS[resolvedFileType] ?? FILE_TYPE_FILTERS.clawdstrike_policy;
   const defaultExt = getPrimaryExtension(resolvedFileType).replace(/^\./, "");
@@ -230,11 +232,6 @@ export async function saveDetectionFile(
   filePath?: string | null,
   suggestedName?: string,
 ): Promise<string | null> {
-  const e2eBridge = getWorkbenchE2EBridge();
-  if (e2eBridge?.saveDetectionFile) {
-    return e2eBridge.saveDetectionFile(content, fileType, filePath, suggestedName);
-  }
-
   if (!isDesktop()) return null;
 
   let targetPath = filePath;
@@ -260,6 +257,14 @@ export async function openPolicyFile(): Promise<OpenFileResult | null> {
   return openDetectionFile();
 }
 
+export async function pickDirectoryPath(title: string = "Select Directory"): Promise<string | null> {
+  if (!isDesktop()) return null;
+
+  const { open } = await importTauriDialog();
+  const selected = await open({ directory: true, title });
+  return typeof selected === "string" ? selected : null;
+}
+
 export async function readPolicyFileByPath(filePath: string): Promise<OpenFileResult | null> {
   return readDetectionFileByPath(filePath);
 }
@@ -277,11 +282,6 @@ export async function createDetectionFile(
   fileName: string,
   fileType: FileType,
 ): Promise<string | null> {
-  const e2eBridge = getWorkbenchE2EBridge();
-  if (e2eBridge?.createDetectionFile) {
-    return e2eBridge.createDetectionFile(dirPath, fileName, fileType);
-  }
-
   if (!isDesktop()) return null;
 
   try {
@@ -294,96 +294,12 @@ export async function createDetectionFile(
   }
 }
 
-/**
- * Rename a file on disk.
- *
- * @param oldPath - Current absolute path.
- * @param newPath - Desired absolute path.
- * @returns true on success, false on failure / non-desktop.
- */
-export async function renameDetectionFile(
-  oldPath: string,
-  newPath: string,
-): Promise<boolean> {
-  const e2eBridge = getWorkbenchE2EBridge();
-  if (e2eBridge?.renameDetectionFile) {
-    return e2eBridge.renameDetectionFile(oldPath, newPath);
-  }
-
-  if (!isDesktop()) return false;
-
-  try {
-    const { rename } = await importTauriFs();
-    await rename(oldPath, newPath);
-    return true;
-  } catch (err) {
-    console.error("[tauri-bridge] Failed to rename file:", oldPath, "->", newPath, err);
-    return false;
-  }
-}
-
-/**
- * Delete a file from disk.
- *
- * @param filePath - Absolute path to remove.
- * @returns true on success, false on failure / non-desktop.
- */
-export async function deleteDetectionFile(
-  filePath: string,
-): Promise<boolean> {
-  const e2eBridge = getWorkbenchE2EBridge();
-  if (e2eBridge?.deleteDetectionFile) {
-    return e2eBridge.deleteDetectionFile(filePath);
-  }
-
-  if (!isDesktop()) return false;
-
-  try {
-    const { remove } = await importTauriFs();
-    await remove(filePath);
-    return true;
-  } catch (err) {
-    console.error("[tauri-bridge] Failed to delete file:", filePath, err);
-    return false;
-  }
-}
-
 export async function savePolicyFile(
   content: string,
   filePath?: string | null,
   _format?: string,
 ): Promise<string | null> {
   return saveDetectionFile(content, "clawdstrike_policy", filePath, "policy");
-}
-
-/**
- * Reveal a file or directory in the OS file manager (Finder on macOS).
- * Falls back to opening the parent directory if the path cannot be revealed.
- */
-export async function revealInFinder(path: string): Promise<void> {
-  if (!isDesktop()) return;
-  try {
-    const { revealItemInDir } = await importTauriOpener();
-    await revealItemInDir(path);
-  } catch (err) {
-    console.error("[tauri-bridge] Failed to reveal in Finder:", path, err);
-  }
-}
-
-/**
- * Create a directory on disk (recursive).
- * @returns true on success, false on failure / non-desktop.
- */
-export async function createDirectory(dirPath: string): Promise<boolean> {
-  if (!isDesktop()) return false;
-  try {
-    const { mkdir } = await importTauriFs();
-    await mkdir(dirPath, { recursive: true });
-    return true;
-  } catch (err) {
-    console.error("[tauri-bridge] Failed to create directory:", dirPath, err);
-    return false;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -427,10 +343,12 @@ export async function writeSwarmBoardJson(
   if (!isDesktop()) return false;
   try {
     const { writeTextFile } = await importTauriFs();
+    const boardPath = `${bundlePath}/board.json`;
     await writeTextFile(
-      `${bundlePath}/board.json`,
+      boardPath,
       JSON.stringify(board, null, 2),
     );
+    markSwarmFileWatchSelfWrite(boardPath);
     return true;
   } catch (err) {
     console.error("[tauri-bridge] writeSwarmBoardJson failed:", bundlePath, err);
@@ -525,6 +443,7 @@ export async function createSwarmBundleFromPolicy(
       `${bundlePath}/board.json`,
       JSON.stringify(board, null, 2),
     );
+    markSwarmFileWatchSelfWrite(`${bundlePath}/board.json`);
 
     return bundlePath;
   } catch (err) {
@@ -571,6 +490,7 @@ export async function createSwarmBundle(
       `${bundlePath}/board.json`,
       JSON.stringify(board, null, 2),
     );
+    markSwarmFileWatchSelfWrite(`${bundlePath}/board.json`);
 
     return bundlePath;
   } catch (err) {

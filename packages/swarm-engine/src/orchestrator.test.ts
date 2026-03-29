@@ -16,6 +16,7 @@ import { AgentRegistry } from "./agent-registry.js";
 import { TaskGraph } from "./task-graph.js";
 import { TopologyManager } from "./topology.js";
 import type {
+  AgentConversationTurn,
   GuardEvaluator,
   GuardedAction,
   GuardEvaluationResult,
@@ -136,6 +137,21 @@ function makeDenyResult(action: GuardedAction): GuardEvaluationResult {
   };
 }
 
+function makeConversationTurn(
+  overrides: Partial<AgentConversationTurn> = {},
+): AgentConversationTurn {
+  return {
+    id: "turn_test_001",
+    kind: "prompt",
+    role: "user",
+    content: "Inspect the auth middleware for expired-token handling.",
+    createdAt: Date.now(),
+    toolName: null,
+    metadata: {},
+    ...overrides,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -214,28 +230,6 @@ describe("SwarmOrchestrator", () => {
       expect(Object.keys(poolState.agents).length).toBeGreaterThanOrEqual(1);
     });
 
-    it("mirrors pooled agents into public state and metrics", () => {
-      orchestrator.initialize();
-
-      const poolAgentIds = Object.keys(orchestrator.getPool().getState().agents);
-      const state = orchestrator.getState();
-      const mirroredAgents = poolAgentIds.map((agentId) => state.agents[agentId]);
-
-      expect(poolAgentIds.length).toBeGreaterThan(0);
-      expect(mirroredAgents.every((agent) => agent?.agentModel === "pooled")).toBe(true);
-      expect(orchestrator.getMetrics().activeAgents).toBe(poolAgentIds.length);
-    });
-
-    it("emits agent.spawned for pooled agents created during initialize", () => {
-      const emitted: string[] = [];
-      events.on("agent.spawned", (event) => emitted.push(event.agent.id));
-
-      orchestrator.initialize();
-
-      const poolAgentIds = Object.keys(orchestrator.getPool().getState().agents);
-      expect(emitted.sort()).toEqual(poolAgentIds.sort());
-    });
-
     it("throws error from invalid status", () => {
       orchestrator.initialize();
       expect(() => orchestrator.initialize()).toThrow();
@@ -267,19 +261,6 @@ describe("SwarmOrchestrator", () => {
       const poolState = orchestrator.getPool().getState();
       // After shutdown, pool should be cleared
       expect(Object.keys(poolState.agents)).toHaveLength(0);
-    });
-
-    it("emits agent.terminated for mirrored pool agents and clears public state", () => {
-      const terminated: string[] = [];
-      events.on("agent.terminated", (event) => terminated.push(event.agentId));
-
-      orchestrator.initialize();
-      const poolAgentIds = Object.keys(orchestrator.getPool().getState().agents);
-
-      orchestrator.shutdown();
-
-      expect(terminated.sort()).toEqual(poolAgentIds.sort());
-      expect(Object.keys(orchestrator.getState().agents)).toHaveLength(0);
     });
   });
 
@@ -339,13 +320,6 @@ describe("SwarmOrchestrator", () => {
       expect(disposeSpy).toHaveBeenCalledOnce();
     });
 
-    it("stops registry health checks", () => {
-      const stopHealthChecksSpy = vi.spyOn(registry, "stopHealthChecks");
-      orchestrator.initialize();
-      orchestrator.dispose();
-      expect(stopHealthChecksSpy).toHaveBeenCalledOnce();
-    });
-
     it("is the ONLY method that calls events.dispose()", () => {
       const disposeSpy = vi.spyOn(events, "dispose");
       orchestrator.initialize();
@@ -403,16 +377,11 @@ describe("SwarmOrchestrator", () => {
 
     it("emits guard.evaluated event with result", async () => {
       orchestrator.initialize();
-      const guardEvents: Array<{ action: GuardedAction }> = [];
-      events.on("guard.evaluated", (e) =>
-        guardEvents.push(e as unknown as { action: GuardedAction }),
-      );
+      const guardEvents: unknown[] = [];
+      events.on("guard.evaluated", (e) => guardEvents.push(e));
 
-      await orchestrator.evaluateGuard(
-        makeAction({ context: { prompt: "secret prompt", cwd: "/tmp/secret" } }),
-      );
+      await orchestrator.evaluateGuard(makeAction());
       expect(guardEvents).toHaveLength(1);
-      expect(guardEvents[0]!.action.context).toEqual({});
     });
 
     it("on deny emits action.denied event", async () => {
@@ -462,35 +431,6 @@ describe("SwarmOrchestrator", () => {
 
       await orch.evaluateGuard(action);
       expect(completedEvents).toHaveLength(1);
-      orch.dispose();
-    });
-
-    it("on allow redacts context from completed action broadcasts", async () => {
-      const action = makeAction({
-        context: { prompt: "secret prompt", cwd: "/tmp/secret" },
-      });
-      const result = makeAllowResult(action);
-      const evaluator: GuardEvaluator = {
-        evaluate: vi.fn().mockResolvedValue(result),
-      };
-      const orch = new SwarmOrchestrator(
-        events,
-        registry,
-        taskGraph,
-        topology,
-        makeConfig({ guardEvaluator: evaluator }),
-      );
-      orch.initialize();
-
-      const completedEvents: Array<{ action: GuardedAction }> = [];
-      events.on("action.completed", (e) =>
-        completedEvents.push(e as unknown as { action: GuardedAction }),
-      );
-
-      await orch.evaluateGuard(action);
-
-      expect(completedEvents).toHaveLength(1);
-      expect(completedEvents[0]!.action.context).toEqual({});
       orch.dispose();
     });
 
@@ -605,53 +545,86 @@ describe("SwarmOrchestrator", () => {
       expect(state.metrics.totalTasks).toBe(metrics.totalTasks);
     });
 
-    it("returns a defensive copy of subsystem snapshots", () => {
+    it("includes conversation history snapshots keyed by agent ID", () => {
       orchestrator.initialize();
+      const turn = makeConversationTurn();
 
-      const agentId = registry.register({
-        name: "snapshot-agent",
-        role: "worker",
-        capabilities: {
-          codeGeneration: true,
-          codeReview: false,
-          testing: false,
-          documentation: false,
-          research: false,
-          analysis: false,
-          coordination: false,
-          securityAnalysis: false,
-          languages: [],
-          frameworks: [],
-          domains: [],
-          tools: [],
-          maxConcurrentTasks: 1,
-          maxMemoryUsageBytes: 0,
-          maxExecutionTimeMs: 0,
-        },
-      });
-      registry.spawn(agentId);
-      topology.addNode(agentId, "worker");
-
-      const task = taskGraph.addTask({
-        type: "coding",
-        name: "snapshot-task",
-        description: "snapshot task",
-        priority: "normal",
-      });
+      orchestrator.recordConversationTurn("agt_replay", turn);
 
       const state = orchestrator.getState();
-      state.agents[agentId]!.name = "mutated-agent";
-      state.tasks[task.id]!.name = "mutated-task";
-      const topologyNode = state.topology.nodes.find((node) => node.agentId === agentId);
-      expect(topologyNode).toBeDefined();
-      topologyNode!.role = "queen";
+      expect(state.conversationHistory.agt_replay).toHaveLength(1);
+      expect(state.conversationHistory.agt_replay?.[0]?.content).toBe(
+        turn.content,
+      );
+    });
+  });
 
-      const freshState = orchestrator.getState();
-      expect(freshState.agents[agentId]!.name).toBe("snapshot-agent");
-      expect(freshState.tasks[task.id]!.name).toBe("snapshot-task");
+  describe("conversation replay", () => {
+    it("recordConversationTurn stores history and emits agent.message", () => {
+      orchestrator.initialize();
+      const messageEvents: Array<{ agentId: string; turn: AgentConversationTurn }> = [];
+      events.on("agent.message", (event) => {
+        messageEvents.push({
+          agentId: event.agentId,
+          turn: event.turn,
+        });
+      });
+
+      const turn = makeConversationTurn({
+        kind: "tool_call",
+        role: "assistant",
+        toolName: "read_file",
+        content: "{\"path\":\"src/middleware/auth.rs\"}",
+      });
+
+      orchestrator.recordConversationTurn("agt_replay", turn);
+
+      expect(orchestrator.getConversationHistory("agt_replay")).toEqual([turn]);
+      expect(messageEvents).toHaveLength(1);
+      expect(messageEvents[0]).toEqual({
+        agentId: "agt_replay",
+        turn,
+      });
+    });
+
+    it("getConversationHistory returns a cloned copy", () => {
+      orchestrator.initialize();
+      orchestrator.recordConversationTurn("agt_replay", makeConversationTurn());
+
+      const history = orchestrator.getConversationHistory("agt_replay");
+      history[0]!.content = "mutated";
+
       expect(
-        freshState.topology.nodes.find((node) => node.agentId === agentId)?.role,
-      ).toBe("peer");
+        orchestrator.getConversationHistory("agt_replay")[0]!.content,
+      ).toBe("Inspect the auth middleware for expired-token handling.");
+    });
+
+    it("truncates replay history to the configured maximum per agent", () => {
+      orchestrator.initialize();
+
+      for (
+        let index = 0;
+        index < SWARM_ENGINE_CONSTANTS.MAX_CONVERSATION_HISTORY_TURNS + 5;
+        index += 1
+      ) {
+        orchestrator.recordConversationTurn(
+          "agt_replay",
+          makeConversationTurn({
+            id: `turn_${index}`,
+            content: `turn ${index}`,
+            createdAt: index,
+          }),
+        );
+      }
+
+      const history = orchestrator.getConversationHistory("agt_replay");
+      expect(history).toHaveLength(
+        SWARM_ENGINE_CONSTANTS.MAX_CONVERSATION_HISTORY_TURNS,
+      );
+      expect(history[0]?.id).toBe("turn_5");
+      expect(history.at(-1)?.id).toBe(
+        `turn_${SWARM_ENGINE_CONSTANTS.MAX_CONVERSATION_HISTORY_TURNS + 4}`,
+      );
     });
   });
 

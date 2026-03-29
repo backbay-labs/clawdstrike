@@ -46,6 +46,7 @@ vi.mock("@/features/swarm/stores/swarm-feed-store", () => ({
 // Mock topology layout (needed by useEngineBoardBridge)
 vi.mock("@/features/swarm/layout/topology-layout", () => ({
   computeLayout: vi.fn().mockReturnValue({ positions: new Map() }),
+  computeTaskDagLayout: vi.fn().mockReturnValue({ positions: new Map() }),
 }));
 
 function resetStore(): void {

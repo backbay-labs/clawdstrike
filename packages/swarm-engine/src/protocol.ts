@@ -59,6 +59,7 @@ export const EVENT_TO_CHANNEL: Record<string, SwarmEngineEnvelope["type"]> = {
   "agent.terminated": "agent_lifecycle",
   "agent.status_changed": "agent_lifecycle",
   "agent.heartbeat": "agent_lifecycle",
+  "agent.message": "agent_lifecycle",
   "task.created": "task_orchestration",
   "task.assigned": "task_orchestration",
   "task.status_changed": "task_orchestration",

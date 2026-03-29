@@ -14,6 +14,7 @@ vi.mock("@xyflow/react", () => ({
   ),
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
   NodeResizer: () => null,
+  useStore: (selector: (s: any) => any) => selector({ transform: [0, 0, 1] }),
 }));
 
 // Import the real component after mock
@@ -109,12 +110,19 @@ describe("TerminalTaskNode", () => {
       expect(screen.getByText("No task description")).toBeInTheDocument();
     });
 
-    it("truncates long prompts via line-clamp CSS class", () => {
+    it("uses the compact one-line clamp by default", () => {
       const longPrompt = "A".repeat(500);
       renderNode({ taskPrompt: longPrompt });
 
-      // The text still renders in the DOM, but line-clamp CSS truncates visually.
-      // We verify the full text is in the DOM (CSS handles visual truncation).
+      const el = screen.getByText(longPrompt);
+      expect(el).toBeInTheDocument();
+      expect(el.className).toContain("line-clamp-1");
+    });
+
+    it("expands to the longer clamp when selected", () => {
+      const longPrompt = "B".repeat(500);
+      renderNode({ taskPrompt: longPrompt }, true);
+
       const el = screen.getByText(longPrompt);
       expect(el).toBeInTheDocument();
       expect(el.className).toContain("line-clamp-2");
@@ -157,13 +165,8 @@ describe("TerminalTaskNode", () => {
   });
 
   describe("session ID", () => {
-    it("shows session ID when present", () => {
+    it("does not show session ID in compact chrome even when present", () => {
       renderNode({ sessionId: "sess-task-1" });
-      expect(screen.getByText("sess-task-1")).toBeInTheDocument();
-    });
-
-    it("does not show session ID when absent", () => {
-      renderNode({ sessionId: undefined });
       expect(screen.queryByText(/sess-/)).toBeNull();
     });
   });

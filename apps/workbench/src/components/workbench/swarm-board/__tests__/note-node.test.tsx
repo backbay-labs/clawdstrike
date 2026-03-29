@@ -1,43 +1,74 @@
-import React, { useState } from "react";
-import { render, screen } from "@testing-library/react";
+/**
+ * NoteNode unit tests — tests the real NoteNode component's rendering,
+ * editing workflow, and keyboard handling.
+ *
+ * NOTE: The existing note-node.test.tsx uses a stub component. This file
+ * tests the actual NoteNode import with proper mocks.
+ */
+import React from "react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
-
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
 
 // ---------------------------------------------------------------------------
-// Stub component exercising the note node contract.
-// Replace with real component import when available.
+// Mocks
 // ---------------------------------------------------------------------------
 
-function NoteNode({
-  data,
-  onContentChange,
-}: {
-  data: SwarmBoardNodeData;
-  onContentChange?: (content: string) => void;
-}) {
-  const [content, setContent] = useState(data.content ?? "");
+const mockUpdateNode = vi.fn();
 
-  const handleBlur = () => {
-    onContentChange?.(content);
+vi.mock("@xyflow/react", () => ({
+  NodeResizer: () => null,
+  useStore: (selector: (s: any) => any) => selector({ transform: [0, 0, 1] }),
+}));
+
+vi.mock("@/features/swarm/stores/swarm-board-store", () => ({
+  useSwarmBoard: () => ({
+    updateNode: mockUpdateNode,
+  }),
+}));
+
+vi.mock("../../hooks/use-zoom-tier", () => ({
+  useZoomTier: () => "full",
+}));
+
+// ---------------------------------------------------------------------------
+// Import after mocks
+// ---------------------------------------------------------------------------
+
+import { NoteNode } from "../nodes/note-node";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function renderNoteNode(dataOverrides: Partial<SwarmBoardNodeData> = {}, selected = false) {
+  const data: SwarmBoardNodeData = {
+    title: "My Note",
+    status: "idle",
+    nodeType: "note",
+    content: "Some content here",
+    ...dataOverrides,
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setContent(e.target.value);
-  };
-
-  return (
-    <div data-testid="note-node">
-      <h3 data-testid="node-title">{data.title}</h3>
-      <textarea
-        data-testid="note-textarea"
-        value={content}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        placeholder="Add a note..."
-      />
-    </div>
+  return render(
+    <NoteNode
+      {...({
+        id: "note-1",
+        data,
+        selected,
+        type: "note",
+        isConnectable: true,
+        positionAbsoluteX: 0,
+        positionAbsoluteY: 0,
+        zIndex: 0,
+        dragging: false,
+        deletable: true,
+        selectable: true,
+        width: 200,
+        height: 150,
+      } as any)}
+    />,
   );
 }
 
@@ -46,165 +77,95 @@ function NoteNode({
 // ---------------------------------------------------------------------------
 
 describe("NoteNode", () => {
-  it("renders an editable text area", () => {
-    render(
-      <NoteNode
-        data={{
-          title: "Notes",
-          status: "idle",
-          nodeType: "note",
-          content: "Initial content",
-        }}
-      />,
-    );
-
-    const textarea = screen.getByTestId("note-textarea") as HTMLTextAreaElement;
-    expect(textarea.tagName).toBe("TEXTAREA");
-    expect(textarea.value).toBe("Initial content");
+  beforeEach(() => {
+    mockUpdateNode.mockClear();
   });
 
-  it("content is preserved on blur", async () => {
-    const onContentChange = vi.fn();
-    const user = userEvent.setup();
-
-    render(
-      <NoteNode
-        data={{
-          title: "Notes",
-          status: "idle",
-          nodeType: "note",
-          content: "Original",
-        }}
-        onContentChange={onContentChange}
-      />,
-    );
-
-    const textarea = screen.getByTestId("note-textarea") as HTMLTextAreaElement;
-
-    await user.clear(textarea);
-    await user.type(textarea, "Updated content");
-
-    // Trigger blur
-    await user.tab();
-
-    expect(onContentChange).toHaveBeenCalledWith("Updated content");
+  it("renders title and content", () => {
+    renderNoteNode({ title: "Test Title", content: "Test body text" });
+    expect(screen.getByText("Test Title")).toBeInTheDocument();
+    expect(screen.getByText("Test body text")).toBeInTheDocument();
   });
 
-  it("renders with empty content when content is undefined", () => {
-    render(
-      <NoteNode
-        data={{
-          title: "Empty Note",
-          status: "idle",
-          nodeType: "note",
-        }}
-      />,
-    );
-
-    const textarea = screen.getByTestId("note-textarea") as HTMLTextAreaElement;
-    expect(textarea.value).toBe("");
+  it("shows placeholder when content is empty", () => {
+    renderNoteNode({ content: "" });
+    expect(screen.getByText("Click to add notes...")).toBeInTheDocument();
   });
 
-  it("renders with empty string content", () => {
-    render(
-      <NoteNode
-        data={{
-          title: "Blank Note",
-          status: "idle",
-          nodeType: "note",
-          content: "",
-        }}
-      />,
-    );
-
-    const textarea = screen.getByTestId("note-textarea") as HTMLTextAreaElement;
-    expect(textarea.value).toBe("");
+  it("shows placeholder when content is undefined", () => {
+    renderNoteNode({ content: undefined });
+    expect(screen.getByText("Click to add notes...")).toBeInTheDocument();
   });
 
-  it("shows placeholder text", () => {
-    render(
-      <NoteNode
-        data={{
-          title: "Note",
-          status: "idle",
-          nodeType: "note",
-        }}
-      />,
-    );
-
-    const textarea = screen.getByTestId("note-textarea");
-    expect(textarea.getAttribute("placeholder")).toBe("Add a note...");
+  it("falls back to 'Note' when title is empty", () => {
+    renderNoteNode({ title: "" });
+    expect(screen.getByText("Note")).toBeInTheDocument();
   });
 
-  it("renders node title", () => {
-    render(
-      <NoteNode
-        data={{
-          title: "My Custom Note",
-          status: "idle",
-          nodeType: "note",
-          content: "some text",
-        }}
-      />,
-    );
-
-    expect(screen.getByTestId("node-title").textContent).toBe("My Custom Note");
+  it("enters editing mode on edit button click", () => {
+    renderNoteNode();
+    const editButton = screen.getByRole("button", { name: "Edit note" });
+    fireEvent.click(editButton);
+    // After clicking edit, a textarea should appear
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("allows typing multiline content", async () => {
-    const user = userEvent.setup();
+  it("saves on save button click", () => {
+    renderNoteNode({ content: "original" });
 
-    render(
-      <NoteNode
-        data={{
-          title: "Multiline",
-          status: "idle",
-          nodeType: "note",
-          content: "",
-        }}
-      />,
-    );
+    // Enter edit mode
+    const editButton = screen.getByRole("button", { name: "Edit note" });
+    fireEvent.click(editButton);
 
-    const textarea = screen.getByTestId("note-textarea") as HTMLTextAreaElement;
-    await user.type(textarea, "Line 1{enter}Line 2{enter}Line 3");
+    // Modify the textarea
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "updated content" } });
 
-    expect(textarea.value).toContain("Line 1");
-    expect(textarea.value).toContain("Line 2");
-    expect(textarea.value).toContain("Line 3");
+    // Click save button (the same button now shows "Save note")
+    const saveButton = screen.getByRole("button", { name: "Save note" });
+    fireEvent.click(saveButton);
+
+    expect(mockUpdateNode).toHaveBeenCalledWith("note-1", { content: "updated content" });
   });
 
-  it("preserves content across multiple edits without blur", async () => {
-    const user = userEvent.setup();
-    const onContentChange = vi.fn();
+  it("saves on Ctrl+Enter", () => {
+    renderNoteNode({ content: "before" });
 
-    render(
-      <NoteNode
-        data={{
-          title: "Multi-edit",
-          status: "idle",
-          nodeType: "note",
-          content: "Start",
-        }}
-        onContentChange={onContentChange}
-      />,
+    // Enter edit mode
+    fireEvent.click(screen.getByRole("button", { name: "Edit note" }));
+
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "ctrl-enter save" } });
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+
+    expect(mockUpdateNode).toHaveBeenCalledWith("note-1", { content: "ctrl-enter save" });
+  });
+
+  it("cancels on Escape without saving", () => {
+    renderNoteNode({ content: "original" });
+
+    // Enter edit mode
+    fireEvent.click(screen.getByRole("button", { name: "Edit note" }));
+
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "should be discarded" } });
+    fireEvent.keyDown(textarea, { key: "Escape" });
+
+    // Should not save the changed content
+    expect(mockUpdateNode).not.toHaveBeenCalledWith(
+      "note-1",
+      expect.objectContaining({ content: "should be discarded" }),
     );
 
-    const textarea = screen.getByTestId("note-textarea") as HTMLTextAreaElement;
+    // Should exit editing mode (textarea gone, content text back)
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByText("original")).toBeInTheDocument();
+  });
 
-    await user.clear(textarea);
-    await user.type(textarea, "Edit 1");
-    expect(textarea.value).toBe("Edit 1");
-
-    // No blur yet, so onContentChange should not have been called
-    expect(onContentChange).not.toHaveBeenCalled();
-
-    await user.clear(textarea);
-    await user.type(textarea, "Edit 2");
-    expect(textarea.value).toBe("Edit 2");
-
-    // Blur to commit
-    await user.tab();
-    expect(onContentChange).toHaveBeenCalledWith("Edit 2");
-    expect(onContentChange).toHaveBeenCalledTimes(1);
+  it("enters editing mode when clicking on content text", () => {
+    renderNoteNode({ content: "click me" });
+    const contentDiv = screen.getByText("click me");
+    fireEvent.click(contentDiv);
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 });

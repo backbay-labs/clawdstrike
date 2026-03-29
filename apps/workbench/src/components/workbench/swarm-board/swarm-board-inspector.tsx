@@ -8,6 +8,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
+import { useShallow } from "zustand/react/shallow";
+import type { AgentConversationTurn } from "@clawdstrike/swarm-engine";
 import {
   IconX,
   IconTerminal2,
@@ -22,13 +24,19 @@ import {
   IconFileCode,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { useSwarmBoard } from "@/features/swarm/stores/swarm-board-store";
+import { useSwarmBoard, useSwarmBoardStore } from "@/features/swarm/stores/swarm-board-store";
 import type { SwarmBoardNodeData, SwarmNodeType, DetectionArtifactKind } from "@/features/swarm/swarm-board-types";
+import { ComparisonInspector } from "./comparison-inspector";
+import { usePaneStore } from "@/features/panes/pane-store";
 import { FILE_TYPE_REGISTRY, type FileType } from "@/lib/workbench/file-type-registry";
 import type { EvidencePack, LabRun, PublicationManifest } from "@/lib/workbench/detection-workflow/shared-types";
 import { getEvidencePackStore } from "@/lib/workbench/detection-workflow/evidence-pack-store";
 import { getLabRunStore } from "@/lib/workbench/detection-workflow/lab-run-store";
 import { getPublicationStore } from "@/lib/workbench/detection-workflow/publication-store";
+import { verifyReceiptSignature } from "@/lib/workbench/receipt-signature";
+import { ArtifactPreviewPane } from "./artifact-preview-pane";
+import { DiffPreviewPane } from "./diff-preview-pane";
+import { summarizeUnifiedDiff } from "./diff-preview";
 import {
   countDatasetItems,
   verifyPublishState,
@@ -39,8 +47,9 @@ import {
 // ---------------------------------------------------------------------------
 
 const INSPECTOR_WIDTH = 340;
+const COMPARISON_INSPECTOR_WIDTH = 680;
 
-const NODE_TYPE_META: Record<
+export const NODE_TYPE_META: Record<
   SwarmNodeType,
   { icon: typeof IconTerminal2; label: string; color: string }
 > = {
@@ -58,11 +67,26 @@ const NODE_TYPE_META: Record<
 
 export function SwarmBoardInspector() {
   const { state, selectNode, selectedNode } = useSwarmBoard();
-  const open = state.inspectorOpen && selectedNode != null;
+  const { selectedNodes, comparisonMode } = useSwarmBoardStore(
+    useShallow((s) => ({
+      selectedNodes: s.selectedNodes,
+      comparisonMode: s.comparisonMode,
+    })),
+  );
+
+  const open = comparisonMode
+    ? selectedNodes.length > 1
+    : state.inspectorOpen && selectedNode != null;
+
+  const width = comparisonMode ? COMPARISON_INSPECTOR_WIDTH : INSPECTOR_WIDTH;
 
   const handleClose = useCallback(() => {
-    selectNode(null);
-  }, [selectNode]);
+    if (comparisonMode) {
+      useSwarmBoardStore.getState().actions.setSelectedNodeIds([]);
+    } else {
+      selectNode(null);
+    }
+  }, [comparisonMode, selectNode]);
 
   useEffect(() => {
     if (!open) return;
@@ -75,21 +99,30 @@ export function SwarmBoardInspector() {
 
   return (
     <AnimatePresence>
-      {open && selectedNode && (
+      {open && (
         <motion.aside
-          initial={{ x: INSPECTOR_WIDTH, opacity: 0 }}
+          key={comparisonMode ? "comparison" : "single"}
+          initial={{ x: width, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          exit={{ x: INSPECTOR_WIDTH, opacity: 0 }}
+          exit={{ x: width, opacity: 0 }}
           transition={{ type: "spring", damping: 30, stiffness: 280 }}
           className="fixed top-0 right-0 h-full z-50 flex flex-col border-l border-[#14181f]"
-          style={{ backgroundColor: "#08090e", width: INSPECTOR_WIDTH }}
-          aria-label="Node inspector"
+          style={{ backgroundColor: "#08090e", width }}
+          aria-label={comparisonMode ? "Node comparison" : "Node inspector"}
           role="complementary"
         >
-          <InspectorContent
-            data={selectedNode.data as SwarmBoardNodeData}
-            onClose={handleClose}
-          />
+          {comparisonMode ? (
+            <ComparisonInspector nodes={selectedNodes} onClose={handleClose} />
+          ) : (
+            selectedNode && (
+              <InspectorContent
+                nodeId={selectedNode.id}
+                data={selectedNode.data as SwarmBoardNodeData}
+                fileWatchRevision={state.fileWatchRevision}
+                onClose={handleClose}
+              />
+            )
+          )}
         </motion.aside>
       )}
     </AnimatePresence>
@@ -101,10 +134,14 @@ export function SwarmBoardInspector() {
 // ---------------------------------------------------------------------------
 
 function InspectorContent({
+  nodeId,
   data,
+  fileWatchRevision,
   onClose,
 }: {
+  nodeId: string;
   data: SwarmBoardNodeData;
+  fileWatchRevision: number;
   onClose: () => void;
 }) {
   const nodeType = data.nodeType ?? "agentSession";
@@ -141,15 +178,17 @@ function InspectorContent({
         {nodeType === "agentSession" && <AgentSessionDetail data={data} />}
         {nodeType === "terminalTask" && <TerminalTaskDetail data={data} />}
         {nodeType === "receipt" && <ReceiptDetail data={data} />}
-        {nodeType === "diff" && <DiffDetail data={data} />}
-        {nodeType === "artifact" && <ArtifactDetail data={data} />}
+        {nodeType === "diff" && <DiffDetail data={data} fileWatchRevision={fileWatchRevision} />}
+        {nodeType === "artifact" && (
+          <ArtifactDetail data={data} fileWatchRevision={fileWatchRevision} />
+        )}
         {nodeType === "note" && <NoteDetail data={data} />}
         {/* Detection workflow artifact inspectors */}
         {data.artifactKind && <DetectionArtifactDetail data={data} />}
       </div>
 
       {/* Footer actions — hierarchy: one primary, rest as text links */}
-      <InspectorFooter nodeType={nodeType} data={data} />
+      <InspectorFooter nodeId={nodeId} nodeType={nodeType} data={data} />
     </>
   );
 }
@@ -170,8 +209,42 @@ function buildEditorUrl(opts: { filePath?: string; documentId?: string }): strin
   return qs ? `/editor?${qs}` : "/editor";
 }
 
-function InspectorFooter({ nodeType, data }: { nodeType: SwarmNodeType; data?: SwarmBoardNodeData }) {
+function InspectorFooter({
+  nodeId,
+  nodeType,
+  data,
+}: {
+  nodeId: string;
+  nodeType: SwarmNodeType;
+  data?: SwarmBoardNodeData;
+}) {
   const navigate = useNavigate();
+  const { updateNode } = useSwarmBoard();
+  const [isVerifying, setIsVerifying] = useState(false);
+  const canVerify = Boolean(data?.receiptData && data.signature && data.publicKey);
+  const verifyReceiptTitle = canVerify
+    ? "Verify the stored receipt signature"
+    : "Exact receipt payload unavailable for verification";
+
+  const handleVerifyReceipt = useCallback(async () => {
+    if (!data?.receiptData) {
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      const verified = await verifyReceiptSignature(data.receiptData);
+      updateNode(nodeId, { signatureVerified: verified });
+    } finally {
+      setIsVerifying(false);
+    }
+  }, [data?.receiptData, nodeId, updateNode]);
+
+  const handleOpenFullReceipt = useCallback(() => {
+    usePaneStore
+      .getState()
+      .openApp(`/receipt/${nodeId}`, `Receipt ${nodeId.slice(0, 8)}`);
+  }, [nodeId]);
 
   // Detection artifact footers
   if (data?.artifactKind) {
@@ -203,20 +276,37 @@ function InspectorFooter({ nodeType, data }: { nodeType: SwarmNodeType; data?: S
       return (
         <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
           <button
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[9px] font-mono font-semibold bg-[#7c5cbf] text-[#050609] hover:bg-[#8e6ed0] transition-colors"
+            onClick={() => {
+              void handleVerifyReceipt();
+            }}
+            disabled={!canVerify || isVerifying}
+            title={verifyReceiptTitle}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[9px] font-mono font-semibold transition-colors",
+              canVerify && !isVerifying
+                ? "bg-[#7c5cbf] text-[#050609] hover:bg-[#8e6ed0]"
+                : "bg-[#1a1e28] text-[#4a5568] cursor-not-allowed",
+            )}
             aria-label="Verify Signature"
           >
             <IconCertificate size={10} stroke={1.5} />
-            Verify
+            {isVerifying ? "Verifying" : "Verify"}
           </button>
-          <TextAction label="Full Receipt" />
+          <TextAction label="Full Receipt" onClick={handleOpenFullReceipt} />
         </div>
       );
     case "diff": {
-      const firstDiffFile = data?.diffSummary?.files?.[0];
+      const diffSummary = data ? data.diffSummary ?? summarizeUnifiedDiff(data.diffContent ?? "") : undefined;
+      const diffSourcePath = data?.diffPath;
+      const firstDiffFile = diffSummary?.files?.[0];
       return (
         <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
-          <TextAction label="Open Diff View" />
+          {diffSourcePath && (
+            <TextAction
+              label="Open Patch"
+              onClick={() => navigate(buildEditorUrl({ filePath: diffSourcePath }))}
+            />
+          )}
           {firstDiffFile && (
             <TextAction
               label="Open in Editor"
@@ -380,6 +470,7 @@ function AgentSessionDetail({ data }: { data: SwarmBoardNodeData }) {
   const blocked = data.blockedActionCount ?? 0;
   const events = data.toolBoundaryEvents;
   const confidence = data.confidence;
+  const conversationHistory = data.conversationHistory ?? [];
 
   return (
     <>
@@ -418,7 +509,15 @@ function AgentSessionDetail({ data }: { data: SwarmBoardNodeData }) {
         <InfoRow label="branch" value={data.branch} />
         <InfoRow label="worktree" value={data.worktreePath} />
         <InfoRow label="model" value={data.agentModel} />
+        <InfoRow label="shell" value={data.sessionShell} />
+        <InfoRow label="persistence" value={data.sessionPersistence} />
+        <InfoRow
+          label="mode"
+          value={data.manualSession ? "manual" : data.engineManaged ? "engine" : "local"}
+        />
+        <InfoRow label="recovery" value={data.sessionRecoveryState} />
         <InfoRow label="policy" value={data.policyMode} />
+        <InfoRow label="risk" value={data.risk} />
         <InfoRow label="id" value={data.sessionId} />
       </Section>
 
@@ -435,6 +534,38 @@ function AgentSessionDetail({ data }: { data: SwarmBoardNodeData }) {
           </div>
         </Section>
       )}
+
+      <Section title="conversation">
+        {conversationHistory.length > 0 ? (
+          <div className="flex flex-col gap-1.5">
+            {conversationHistory.map((turn) => (
+              <details
+                key={turn.id}
+                open
+                className="rounded-sm border border-[#11151d] bg-[#050609]"
+              >
+                <summary className="cursor-pointer list-none px-2 py-1.5 font-mono text-[9px] text-[#8a93a6]">
+                  <span className="text-[#ece7dc]">{describeConversationTurn(turn)}</span>
+                  <Dot />
+                  <span>{formatConversationTurnTime(turn.createdAt)}</span>
+                </summary>
+                <div className="border-t border-[#11151d] px-2 py-2">
+                  {turn.toolName && (
+                    <div className="mb-1 text-[8px] font-mono uppercase tracking-[0.14em] text-[#2a2f3a]">
+                      {turn.toolName}
+                    </div>
+                  )}
+                  <pre className="whitespace-pre-wrap break-words font-mono text-[9px] leading-[1.6] text-[#5c6a80]">
+                    {turn.content || "no content recorded"}
+                  </pre>
+                </div>
+              </details>
+            ))}
+          </div>
+        ) : (
+          <span className="text-[9px] text-[#1a1e28] font-mono">no conversation yet</span>
+        )}
+      </Section>
 
       {/* Terminal output */}
       <Section title="output">
@@ -488,6 +619,16 @@ function ReceiptDetail({ data }: { data: SwarmBoardNodeData }) {
   const guards = data.guardResults ?? [];
   const passed = guards.filter((g) => g.allowed).length;
   const totalMs = guards.reduce((s, g) => s + (g.duration_ms ?? 0), 0);
+  const receiptCreatedAt = data.receiptData?.timestamp
+    ? formatAbsoluteNodeTime(Date.parse(data.receiptData.timestamp))
+    : formatAbsoluteNodeTime(data.createdAt);
+  const signatureState = data.signatureVerified === true
+    ? "verified"
+    : data.signatureVerified === false
+      ? "unverified"
+      : data.signature && data.publicKey
+        ? "pending"
+        : "not attached";
 
   return (
     <>
@@ -503,6 +644,11 @@ function ReceiptDetail({ data }: { data: SwarmBoardNodeData }) {
           {totalMs}ms
         </span>
       </div>
+
+      <Section title="receipt">
+        <InfoRow label="created" value={receiptCreatedAt} />
+        <InfoRow label="signature" value={signatureState} />
+      </Section>
 
       <Section title="guards">
         <div className="flex flex-col gap-0.5">
@@ -536,17 +682,21 @@ function ReceiptDetail({ data }: { data: SwarmBoardNodeData }) {
           className="font-mono text-[8px] text-[#2a2f3a] break-all leading-[1.5]"
           style={{ fontVariantNumeric: 'tabular-nums' }}
         >
-          {data.sessionId
-            ? `ed25519:${data.sessionId.replace(/[^a-f0-9]/gi, "").padEnd(64, "0").slice(0, 64)}`
-            : "no signature available"}
+          {data.signature ? `ed25519:${data.signature}` : "no signature available"}
         </div>
       </Section>
     </>
   );
 }
 
-function DiffDetail({ data }: { data: SwarmBoardNodeData }) {
-  const summary = data.diffSummary;
+function DiffDetail({
+  data,
+  fileWatchRevision,
+}: {
+  data: SwarmBoardNodeData;
+  fileWatchRevision: number;
+}) {
+  const summary = data.diffSummary ?? summarizeUnifiedDiff(data.diffContent ?? "");
   return (
     <>
       {/* Compact diff stat — matching diff node's split treatment */}
@@ -575,11 +725,34 @@ function DiffDetail({ data }: { data: SwarmBoardNodeData }) {
           )}
         </div>
       </Section>
+
+      {data.diffPath && (
+        <Section title="source">
+          <InfoRow label="path" value={data.diffPath} />
+        </Section>
+      )}
+
+      <Section title="preview">
+        <DiffPreviewPane
+          diffContent={data.diffContent}
+          diffPath={data.diffPath}
+          refreshToken={fileWatchRevision}
+          maxHeight={280}
+          showLineNumbers={true}
+          emptyMessage="No diff body attached"
+        />
+      </Section>
     </>
   );
 }
 
-function ArtifactDetail({ data }: { data: SwarmBoardNodeData }) {
+function ArtifactDetail({
+  data,
+  fileWatchRevision,
+}: {
+  data: SwarmBoardNodeData;
+  fileWatchRevision: number;
+}) {
   // If this is a detection artifact, skip the generic preview —
   // the DetectionArtifactDetail component handles the detail view.
   if (data.artifactKind) {
@@ -599,12 +772,11 @@ function ArtifactDetail({ data }: { data: SwarmBoardNodeData }) {
         <InfoRow label="type" value={data.fileType} />
       </Section>
       <Section title="preview">
-        <div
-          className="rounded-sm p-2 font-mono text-[8px] text-[#1a1e28] leading-[1.7]"
-          style={{ backgroundColor: "#050609", minHeight: 48 }}
-        >
-          preview available when connected to PTY backend
-        </div>
+        <ArtifactPreviewPane
+          filePath={data.filePath}
+          fileType={data.fileType}
+          refreshToken={fileWatchRevision}
+        />
       </Section>
     </>
   );
@@ -1044,6 +1216,37 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       {children}
     </div>
   );
+}
+
+function describeConversationTurn(turn: AgentConversationTurn): string {
+  switch (turn.kind) {
+    case "prompt":
+      return "prompt";
+    case "tool_call":
+      return turn.toolName ? `tool call: ${turn.toolName}` : "tool call";
+    case "tool_result":
+      return turn.toolName ? `tool result: ${turn.toolName}` : "tool result";
+    case "response":
+      return "response";
+    case "system":
+      return "system";
+    default:
+      return turn.kind;
+  }
+}
+
+function formatConversationTurnTime(createdAt: number): string {
+  if (!Number.isFinite(createdAt)) {
+    return "--:--:--";
+  }
+  return new Date(createdAt).toISOString().slice(11, 19);
+}
+
+function formatAbsoluteNodeTime(value?: number | null): string | undefined {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+  return new Date(value as number).toISOString();
 }
 
 function InfoRow({

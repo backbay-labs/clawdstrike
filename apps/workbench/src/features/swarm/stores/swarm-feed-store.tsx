@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
+import { isDesktop } from "@/lib/tauri-bridge";
 import {
   FINDING_ENVELOPE_SCHEMA,
   hashProtocolPayload,
@@ -35,11 +36,26 @@ import {
   type FindingTrustPolicyDecision,
   type FindingTrustPolicyRejectionReason,
 } from "@/features/swarm/swarm-trust-policy";
+import {
+  SWARM_FEED_PERSISTENCE_FILE,
+  readSwarmPersistencePayload,
+  writeArchivePayload,
+  writeSwarmPersistencePayload,
+} from "./swarm-persistence";
+import {
+  clearSwarmFileWatchScope,
+  setSwarmFileWatchScope,
+  subscribeSwarmFileWatchEvents,
+} from "./swarm-file-watch";
 
+/** Used only for web/non-desktop localStorage fallback. Desktop uses disk persistence. */
 export const SWARM_FEED_STORAGE_KEY = "clawdstrike_workbench_swarm_feed";
-let lastSwarmFeedStorageSnapshot =
-  typeof window === "undefined" ? null : readSwarmFeedStorageSnapshot();
+/** Lazy-initialized: only read on first web-path access, not eagerly at module load. */
+let lastSwarmFeedStorageSnapshot: string | null = null;
+let swarmFeedPersistenceReady = typeof window === "undefined" || !isDesktop();
+let swarmFeedHydratePromise: Promise<void> | null = null;
 
+/** Read localStorage snapshot. Used only for web/non-desktop environments. */
 function readSwarmFeedStorageSnapshot(): string | null {
   try {
     return localStorage.getItem(SWARM_FEED_STORAGE_KEY);
@@ -118,6 +134,34 @@ export interface SwarmFeedState {
 
 type MaybePromise<T> = T | Promise<T>;
 
+// ---------------------------------------------------------------------------
+// Retention policy configuration
+// ---------------------------------------------------------------------------
+
+export const RETENTION_MAX_FINDINGS = 500;
+export const RETENTION_MAX_HEADS = 200;
+export const RETENTION_MAX_REVOCATIONS = 200;
+
+/** Maps swarmId -> feedId -> max feedSeq ever observed. */
+export type HighWaterMarkMap = Record<string, Record<string, number>>;
+
+interface PersistedSwarmFeedPayload extends SwarmFeedState {
+  highWaterMarks?: HighWaterMarkMap;
+}
+
+/** Module-level high-water marks, same lifetime pattern as _persistTimer. */
+let _highWaterMarks: HighWaterMarkMap = {};
+
+/** @internal Expose high-water marks for test inspection. */
+export function _getHighWaterMarks(): HighWaterMarkMap {
+  return _highWaterMarks;
+}
+
+/** @internal Set high-water marks for testing. */
+export function _setHighWaterMarks(marks: HighWaterMarkMap): void {
+  _highWaterMarks = marks;
+}
+
 const INITIAL_SWARM_FEED_STATE: SwarmFeedState = {
   findingEnvelopes: [],
   headAnnouncements: [],
@@ -180,6 +224,103 @@ function sortRevocationEnvelopes(
     }
     return right.receivedAt - left.receivedAt;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Retention policy helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Trim each of the 6 feed arrays to bounded limits before disk persistence.
+ * Arrays are expected to be pre-sorted descending (newest first).
+ * Returns retained state + overflow (null if nothing was trimmed).
+ */
+export function applyRetentionPolicy(state: SwarmFeedState): {
+  retained: SwarmFeedState;
+  overflow: SwarmFeedState | null;
+} {
+  let hasOverflow = false;
+
+  const trimArray = <T,>(arr: T[], max: number): { kept: T[]; overflow: T[] } => {
+    if (arr.length <= max) {
+      return { kept: arr, overflow: [] };
+    }
+    hasOverflow = true;
+    return { kept: arr.slice(0, max), overflow: arr.slice(max) };
+  };
+
+  const findings = trimArray(state.findingEnvelopes, RETENTION_MAX_FINDINGS);
+  const heads = trimArray(state.headAnnouncements, RETENTION_MAX_HEADS);
+  const revocations = trimArray(state.revocationEnvelopes, RETENTION_MAX_REVOCATIONS);
+  const qFindings = trimArray(state.quarantinedFindingEnvelopes, RETENTION_MAX_FINDINGS);
+  const qHeads = trimArray(state.quarantinedHeadAnnouncements, RETENTION_MAX_HEADS);
+  const qRevocations = trimArray(state.quarantinedRevocationEnvelopes, RETENTION_MAX_REVOCATIONS);
+
+  const retained: SwarmFeedState = {
+    findingEnvelopes: findings.kept,
+    headAnnouncements: heads.kept,
+    revocationEnvelopes: revocations.kept,
+    quarantinedFindingEnvelopes: qFindings.kept,
+    quarantinedHeadAnnouncements: qHeads.kept,
+    quarantinedRevocationEnvelopes: qRevocations.kept,
+    defaultTrustPolicy: state.defaultTrustPolicy,
+    trustPolicies: state.trustPolicies,
+  };
+
+  if (!hasOverflow) {
+    return { retained, overflow: null };
+  }
+
+  const overflow: SwarmFeedState = {
+    findingEnvelopes: findings.overflow,
+    headAnnouncements: heads.overflow,
+    revocationEnvelopes: revocations.overflow,
+    quarantinedFindingEnvelopes: qFindings.overflow,
+    quarantinedHeadAnnouncements: qHeads.overflow,
+    quarantinedRevocationEnvelopes: qRevocations.overflow,
+    defaultTrustPolicy: state.defaultTrustPolicy,
+    trustPolicies: state.trustPolicies,
+  };
+
+  return { retained, overflow };
+}
+
+/**
+ * Scan finding and revocation envelopes to track the maximum feedSeq per
+ * (swarmId, feedId) key. Returns a new map (immutable update pattern).
+ */
+export function updateHighWaterMarks(
+  current: HighWaterMarkMap,
+  state: SwarmFeedState,
+): HighWaterMarkMap {
+  const next: HighWaterMarkMap = {};
+
+  // Deep clone current
+  for (const [swarmId, feeds] of Object.entries(current)) {
+    next[swarmId] = { ...feeds };
+  }
+
+  const trackSeq = (swarmId: string, feedId: string, feedSeq: number) => {
+    if (!next[swarmId]) {
+      next[swarmId] = {};
+    }
+    const existing = next[swarmId]![feedId];
+    if (existing === undefined || feedSeq > existing) {
+      next[swarmId]![feedId] = feedSeq;
+    }
+  };
+
+  // Scan findings
+  for (const record of state.findingEnvelopes) {
+    trackSeq(record.swarmId, record.envelope.feedId, record.envelope.feedSeq);
+  }
+
+  // Scan revocations (they also have feedSeq)
+  for (const record of state.revocationEnvelopes) {
+    trackSeq(record.swarmId, record.envelope.feedId, record.envelope.feedSeq);
+  }
+
+  return next;
 }
 
 function findingEnvelopeReplayKey(
@@ -722,12 +863,8 @@ function normalizeRevocationEnvelopeRecord(value: unknown): SwarmRevocationEnvel
   };
 }
 
-function loadPersistedSwarmFeed(): SwarmFeedState | null {
+function normalizePersistedSwarmFeed(parsed: unknown): SwarmFeedState | null {
   try {
-    const raw = localStorage.getItem(SWARM_FEED_STORAGE_KEY);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
     if (!isRecord(parsed)) {
       return FAIL_CLOSED_SWARM_FEED_STATE;
     }
@@ -873,6 +1010,17 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
       ),
     };
   } catch (error) {
+    console.warn("[swarm-feed-store] normalizePersistedSwarmFeed failed:", error);
+    return FAIL_CLOSED_SWARM_FEED_STATE;
+  }
+}
+
+function loadPersistedSwarmFeed(): SwarmFeedState | null {
+  try {
+    const raw = localStorage.getItem(SWARM_FEED_STORAGE_KEY);
+    if (!raw) return null;
+    return normalizePersistedSwarmFeed(JSON.parse(raw));
+  } catch (error) {
     console.warn("[swarm-feed-store] loadPersistedSwarmFeed failed:", error);
     return FAIL_CLOSED_SWARM_FEED_STATE;
   }
@@ -882,18 +1030,56 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
 // plaintext localStorage. Quarantined data should be treated as untrusted on
 // reload and must be re-evaluated against the active trust policy before
 // restoration.
+let _lastOverflow: SwarmFeedState | null = null;
+
+/** @internal Test helper: returns the last overflow from applyRetentionPolicy. */
+export function _getOverflowForArchive(): SwarmFeedState | null {
+  return _lastOverflow;
+}
+
 function persistSwarmFeed(state: SwarmFeedState): void {
   try {
-    const raw = JSON.stringify({
-      findingEnvelopes: state.findingEnvelopes,
-      headAnnouncements: state.headAnnouncements,
-      revocationEnvelopes: state.revocationEnvelopes,
-      quarantinedFindingEnvelopes: state.quarantinedFindingEnvelopes,
-      quarantinedHeadAnnouncements: state.quarantinedHeadAnnouncements,
-      quarantinedRevocationEnvelopes: state.quarantinedRevocationEnvelopes,
-      defaultTrustPolicy: state.defaultTrustPolicy,
-      trustPolicies: state.trustPolicies,
-    });
+    // Update high-water marks before retention trim so max seqs are captured
+    _highWaterMarks = updateHighWaterMarks(_highWaterMarks, state);
+
+    // Apply retention policy: trim arrays to bounded limits
+    const { retained, overflow } = applyRetentionPolicy(state);
+    _lastOverflow = overflow;
+
+    if (overflow !== null) {
+      const trimmedCount =
+        overflow.findingEnvelopes.length +
+        overflow.headAnnouncements.length +
+        overflow.revocationEnvelopes.length +
+        overflow.quarantinedFindingEnvelopes.length +
+        overflow.quarantinedHeadAnnouncements.length +
+        overflow.quarantinedRevocationEnvelopes.length;
+      console.log(`[swarm-feed-store] retention trimmed ${trimmedCount} records`);
+
+      // Archive overflow to monthly file (fire-and-forget)
+      const overflowCount =
+        (overflow.findingEnvelopes?.length ?? 0) +
+        (overflow.headAnnouncements?.length ?? 0) +
+        (overflow.revocationEnvelopes?.length ?? 0);
+      console.log(`[swarm-feed-store] archiving ${overflowCount} overflow records`);
+      void writeArchivePayload(overflow);
+    }
+
+    const payload: PersistedSwarmFeedPayload = {
+      ...retained,
+      highWaterMarks: _highWaterMarks,
+    };
+
+    if (isDesktop()) {
+      void writeSwarmPersistencePayload(SWARM_FEED_PERSISTENCE_FILE, payload).then((ok) => {
+        if (!ok) {
+          console.error("[swarm-feed-store] disk persist failed");
+        }
+      });
+      return;
+    }
+
+    const raw = JSON.stringify(payload);
     localStorage.setItem(SWARM_FEED_STORAGE_KEY, raw);
     lastSwarmFeedStorageSnapshot = raw;
   } catch (error) {
@@ -909,6 +1095,13 @@ function syncSwarmFeedStoreWithStorage(options?: {
   force?: boolean;
   persistHydratedState?: boolean;
 }): void {
+  // Desktop: canonical path -- hydrate from disk file, skip localStorage entirely.
+  if (isDesktop()) {
+    void hydrateSwarmFeedStoreFromDisk(options?.force ?? false);
+    return;
+  }
+
+  // Web/non-desktop: localStorage fallback for test and browser environments only.
   const force = options?.force ?? false;
   const snapshot = readSwarmFeedStorageSnapshot();
   if (!force && snapshot === lastSwarmFeedStorageSnapshot) {
@@ -1466,12 +1659,23 @@ export function getSwarmFeedSyncState(
   issuerId: string,
 ): SwarmFeedSyncState {
   const replayProgress = selectReplayProgress(state, swarmId, feedId, issuerId);
+
+  // Fall back to high-water marks when the array no longer contains the max seq
+  // (e.g., after retention trimming removed older records).
+  let localMaxFindingSeq = replayProgress.highestSeenSeq;
+  if (localMaxFindingSeq === null) {
+    const hwm = _highWaterMarks[swarmId]?.[feedId];
+    if (hwm !== undefined) {
+      localMaxFindingSeq = hwm;
+    }
+  }
+
   return {
     swarmId,
     feedId,
     issuerId,
     localFindingSeq: replayProgress.contiguousSeq,
-    localMaxFindingSeq: replayProgress.highestSeenSeq,
+    localMaxFindingSeq,
     localHeadSeq: selectLatestHeadSeq(state, swarmId, feedId, issuerId),
   };
 }
@@ -1633,6 +1837,9 @@ let _pendingPersistState: SwarmFeedState | null = null;
 let _persistDeadlineMs: number | null = null;
 
 function schedulePersist(state: SwarmFeedState): void {
+  if (!swarmFeedPersistenceReady) {
+    return;
+  }
   _pendingPersistState = state;
 
   const now = Date.now();
@@ -1654,17 +1861,43 @@ function schedulePersist(state: SwarmFeedState): void {
   }, delay);
 }
 
-// Flush on beforeunload to avoid data loss
+// Flush pending feed state before app exit.
 if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
-    if (_persistTimer) {
-      clearTimeout(_persistTimer);
-      _persistTimer = null;
-      persistSwarmFeed(_pendingPersistState ?? useSwarmFeedStoreBase.getState());
-      _pendingPersistState = null;
-      _persistDeadlineMs = null;
-    }
-  });
+  if (isDesktop()) {
+    // Reliable exit flush via Rust ExitRequested event.
+    // Replaces beforeunload which is unreliable in Tauri webviews
+    // because the async writeSwarmPersistencePayload invoke may not
+    // complete before the page unloads.
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      void listen("swarm:flush-requested", () => {
+        if (_persistTimer) {
+          clearTimeout(_persistTimer);
+          _persistTimer = null;
+        }
+        // Synchronous path: serialize and fire invoke.
+        // The Rust side sleeps 250ms to wait for this.
+        persistSwarmFeed(
+          _pendingPersistState ?? useSwarmFeedStoreBase.getState(),
+        );
+        _pendingPersistState = null;
+        _persistDeadlineMs = null;
+      });
+    });
+  } else {
+    // Web fallback: beforeunload is acceptable for localStorage
+    // since localStorage.setItem is synchronous.
+    window.addEventListener("beforeunload", () => {
+      if (_persistTimer) {
+        clearTimeout(_persistTimer);
+        _persistTimer = null;
+        persistSwarmFeed(
+          _pendingPersistState ?? useSwarmFeedStoreBase.getState(),
+        );
+        _pendingPersistState = null;
+        _persistDeadlineMs = null;
+      }
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1965,6 +2198,53 @@ const useSwarmFeedStoreBase = create<SwarmFeedStoreState>()((set, get) => ({
   },
 }));
 
+async function hydrateSwarmFeedStoreFromDisk(force = false): Promise<void> {
+  if (!isDesktop()) {
+    swarmFeedPersistenceReady = true;
+    return;
+  }
+  if (swarmFeedHydratePromise && !force) {
+    return swarmFeedHydratePromise;
+  }
+
+  swarmFeedHydratePromise = (async () => {
+    const legacy = loadPersistedSwarmFeed();
+    const payload = await readSwarmPersistencePayload(SWARM_FEED_PERSISTENCE_FILE);
+    const restored = normalizePersistedSwarmFeed(payload) ?? legacy ?? INITIAL_SWARM_FEED_STATE;
+
+    // Restore high-water marks from persisted payload (if present)
+    if (isRecord(payload) && isRecord(payload.highWaterMarks)) {
+      const restoredMarks: HighWaterMarkMap = {};
+      for (const [swarmId, feeds] of Object.entries(payload.highWaterMarks)) {
+        if (isRecord(feeds)) {
+          restoredMarks[swarmId] = {};
+          for (const [feedId, seq] of Object.entries(feeds)) {
+            if (typeof seq === "number") {
+              restoredMarks[swarmId]![feedId] = seq;
+            }
+          }
+        }
+      }
+      _highWaterMarks = restoredMarks;
+    }
+
+    replaceSwarmFeedStoreState(restored);
+    for (const record of restored.findingEnvelopes) {
+      queueFindingDigestHydration(record);
+    }
+
+    swarmFeedPersistenceReady = true;
+
+    if (!payload && legacy) {
+      schedulePersist(useSwarmFeedStoreBase.getState());
+    }
+  })().finally(() => {
+    swarmFeedHydratePromise = null;
+  });
+
+  return swarmFeedHydratePromise;
+}
+
 // Hydrate digests for all initial finding envelopes
 for (const record of initialFeedState.findingEnvelopes) {
   queueFindingDigestHydration(record);
@@ -2079,14 +2359,19 @@ export function useSwarmFeed(): SwarmFeedContextValue {
 /** @deprecated No-op wrapper. The store is now global via Zustand. */
 export function SwarmFeedProvider({ children }: { children: ReactNode }) {
   const initialized = useRef(false);
+  const watchScopeIdRef = useRef(`swarm-feed-${Math.random().toString(36).slice(2)}`);
   if (!initialized.current) {
     initialized.current = true;
     resetDigestHydrationTracker();
-    const restored = loadPersistedSwarmFeed() ?? INITIAL_SWARM_FEED_STATE;
-    lastSwarmFeedStorageSnapshot = readSwarmFeedStorageSnapshot();
-    replaceSwarmFeedStoreState(restored);
-    for (const record of restored.findingEnvelopes) {
-      queueFindingDigestHydration(record);
+    // On desktop the subsequent syncSwarmFeedStoreWithStorage call (useLayoutEffect
+    // below) handles hydration from disk -- skip the localStorage read entirely.
+    if (!isDesktop()) {
+      const restored = loadPersistedSwarmFeed() ?? INITIAL_SWARM_FEED_STATE;
+      lastSwarmFeedStorageSnapshot = readSwarmFeedStorageSnapshot();
+      replaceSwarmFeedStoreState(restored);
+      for (const record of restored.findingEnvelopes) {
+        queueFindingDigestHydration(record);
+      }
     }
   }
 
@@ -2095,6 +2380,30 @@ export function SwarmFeedProvider({ children }: { children: ReactNode }) {
       force: true,
       persistHydratedState: true,
     });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isDesktop()) {
+      return;
+    }
+
+    const scopeId = watchScopeIdRef.current;
+    void setSwarmFileWatchScope(scopeId, {
+      persistenceFilenames: [SWARM_FEED_PERSISTENCE_FILE],
+    });
+    const unsubscribe = subscribeSwarmFileWatchEvents((event) => {
+      if (
+        event.category === "persistence" &&
+        event.filenames.includes(SWARM_FEED_PERSISTENCE_FILE)
+      ) {
+        void hydrateSwarmFeedStoreFromDisk(true);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      void clearSwarmFileWatchScope(scopeId);
+    };
   }, []);
 
   return children;

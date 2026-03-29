@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { IconSearch } from "@tabler/icons-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -8,7 +8,11 @@ import type {
   SearchOptions,
   SearchResultGroup,
 } from "@/features/search/stores/search-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import {
+  canonicalizeWorkspaceConsumerPath,
+  getCanonicalWorkspaceRootPaths,
+  useProjectStore,
+} from "@/features/project/stores/project-store";
 import { resolveProjectPath } from "@/features/project/utils/resolve-project-path";
 import { usePaneStore } from "@/features/panes/pane-store";
 import { useWorkbenchState } from "@/features/policy/hooks/use-policy-actions";
@@ -343,9 +347,26 @@ export function SearchPanelConnected() {
   const loading = useSearchStore.use.loading();
   const error = useSearchStore.use.error();
   const actions = useSearchStore.use.actions();
+  const defaultRootId = useProjectStore.use.defaultRootId();
+  const orderedRootIds = useProjectStore.use.orderedRootIds();
+  const rootsById = useProjectStore.use.rootsById();
+  const rootStatusById = useProjectStore.use.rootStatusById();
+  const project = useProjectStore.use.project();
   const projectRoots = useProjectStore.use.projectRoots();
   const { openFileByPath } = useWorkbenchState();
   const latestResultClickTokenRef = useRef(0);
+  const workspaceConsumerState = useMemo(() => ({
+    defaultRootId,
+    orderedRootIds,
+    rootsById,
+    rootStatusById,
+    projectRoots,
+    project,
+  }), [defaultRootId, orderedRootIds, project, projectRoots, rootStatusById, rootsById]);
+  const searchRootPaths = useMemo(
+    () => getCanonicalWorkspaceRootPaths(workspaceConsumerState),
+    [workspaceConsumerState],
+  );
 
   return (
     <SearchPanel
@@ -358,12 +379,15 @@ export function SearchPanelConnected() {
       loading={loading}
       error={error}
       onQueryChange={actions.setQuery}
-      onOptionToggle={(key) => actions.setOption(key, !options[key], projectRoots)}
-      onSearch={() => actions.performSearch(projectRoots)}
+      onOptionToggle={(key) => actions.setOption(key, !options[key], searchRootPaths)}
+      onSearch={() => actions.performSearch(searchRootPaths)}
       onResultClick={async (match) => {
         latestResultClickTokenRef.current += 1;
         const clickToken = latestResultClickTokenRef.current;
-        const filePath = resolveProjectPath(match.rootPath, match.filePath);
+        const filePath = canonicalizeWorkspaceConsumerPath(
+          workspaceConsumerState,
+          resolveProjectPath(match.rootPath, match.filePath),
+        );
         await openFileByPath(filePath, {
           shouldApply: () => latestResultClickTokenRef.current === clickToken,
         });

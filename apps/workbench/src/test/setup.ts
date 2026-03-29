@@ -1,16 +1,18 @@
 import "@testing-library/jest-dom/vitest";
-import { beforeEach } from "vitest";
+import "fake-indexeddb/auto";
+import { beforeEach, expect as vitestExpect } from "vitest";
+import * as matchers from "@testing-library/jest-dom/matchers";
 
-// jsdom does not implement ResizeObserver. Provide a minimal stub so
-// components that rely on it (e.g. PaneTabBar overflow detection) don't
-// throw and trip the ErrorBoundary during tests.
-// jsdom does not implement Element.getAnimations (Web Animations API).
-// @base-ui/react ScrollAreaViewport calls it on a deferred timer, causing
-// unhandled exceptions that make vitest exit non-zero despite all tests passing.
-if (typeof Element.prototype.getAnimations === "undefined") {
-  Element.prototype.getAnimations = () => [];
-}
+const matcherExpect =
+  vitestExpect ??
+  (globalThis as typeof globalThis & {
+    expect?: { extend: (extensions: typeof matchers) => void };
+  }).expect;
 
+matcherExpect?.extend(matchers);
+
+// ResizeObserver polyfill for jsdom — prevents "ResizeObserver is not defined"
+// crashes in any test that renders components using ResizablePanelGroup.
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class ResizeObserver {
     observe() {}
@@ -22,6 +24,25 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 if (typeof Element !== "undefined" && !Element.prototype.getAnimations) {
   Element.prototype.getAnimations = () => [];
 }
+
+if (typeof URL.createObjectURL !== "function") {
+  URL.createObjectURL = () => "blob:mock-url";
+}
+
+if (typeof URL.revokeObjectURL !== "function") {
+  URL.revokeObjectURL = () => {};
+}
+
+if (typeof HTMLAnchorElement !== "undefined") {
+  const originalClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function click(this: HTMLAnchorElement) {
+    if (this.hasAttribute("download") || this.href.startsWith("blob:")) {
+      return;
+    }
+    return originalClick.call(this);
+  };
+}
+
 function createStorageMock(): Storage {
   let store: Record<string, string> = {};
 

@@ -29,7 +29,7 @@ test("empty board renders with heading, subtext, and stats", async ({ page }) =>
   await expect(page.getByText("0 nodes")).toBeVisible();
 
   // Keyboard hints in the stats bar
-  await expect(page.getByText("1-6 add / F fit / Space follow")).toBeVisible();
+  await expect(page.getByText("1-6 add / arrows nudge / F fit / G follow")).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

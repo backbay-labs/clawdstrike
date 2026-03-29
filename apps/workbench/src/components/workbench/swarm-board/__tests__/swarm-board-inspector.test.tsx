@@ -55,6 +55,23 @@ vi.mock("motion/react", () => {
 
 const STORAGE_KEY = "clawdstrike_workbench_swarm_board";
 
+vi.mock("../artifact-preview-pane", () => ({
+  ArtifactPreviewPane: () => <div data-testid="artifact-preview-pane">artifact-preview</div>,
+}));
+
+vi.mock("@/lib/tauri-bridge", () => ({
+  isDesktop: vi.fn(() => false),
+  readTextFileFromDisk: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("react-syntax-highlighter", () => ({
+  Prism: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock("react-syntax-highlighter/dist/cjs/styles/prism", () => ({
+  atomDark: {},
+}));
+
 // ---------------------------------------------------------------------------
 // Import the real component after mocks are set up
 // ---------------------------------------------------------------------------
@@ -101,6 +118,30 @@ function InspectorHarness() {
               sessionId: "sess-abc123",
               toolBoundaryEvents: 15,
               confidence: 72,
+              conversationHistory: [
+                {
+                  id: "turn-1",
+                  kind: "prompt",
+                  role: "user",
+                  content: "Audit the auth middleware.",
+                  createdAt: Date.parse("2026-03-25T14:01:00Z"),
+                },
+                {
+                  id: "turn-2",
+                  kind: "tool_call",
+                  role: "assistant",
+                  toolName: "read_file",
+                  content: "{\"path\":\"src/middleware/auth.rs\"}",
+                  createdAt: Date.parse("2026-03-25T14:01:05Z"),
+                },
+                {
+                  id: "turn-3",
+                  kind: "response",
+                  role: "assistant",
+                  content: "Found an expired-token branch without test coverage.",
+                  createdAt: Date.parse("2026-03-25T14:01:08Z"),
+                },
+              ],
             },
           })
         }
@@ -118,6 +159,8 @@ function InspectorHarness() {
             data: {
               status: "completed",
               verdict: "allow",
+              signature: "abc123",
+              publicKey: "pub-abc123",
               guardResults: [
                 { guard: "ForbiddenPathGuard", allowed: true, duration_ms: 2 },
                 { guard: "SecretLeakGuard", allowed: false, duration_ms: 8 },
@@ -140,10 +183,17 @@ function InspectorHarness() {
             data: {
               status: "idle",
               diffSummary: {
-                added: 47,
-                removed: 12,
+                added: 2,
+                removed: 1,
                 files: ["src/auth.rs", "Cargo.toml"],
               },
+              diffContent: `diff --git a/src/auth.rs b/src/auth.rs
+--- a/src/auth.rs
++++ b/src/auth.rs
+@@ -1,2 +1,3 @@
+ export const auth = true;
+-export const stale = false;
++export const stale = true;`,
             },
           })
         }
@@ -393,6 +443,7 @@ describe("SwarmBoardInspector", () => {
       expect(inspector).toHaveTextContent("feat/test");
       expect(inspector).toHaveTextContent("opus-4.6");
       expect(inspector).toHaveTextContent("strict");
+      expect(inspector).toHaveTextContent("medium");
       expect(inspector).toHaveTextContent("sess-abc123");
 
       // Inline metrics (new format: "3 files . 5 receipts . 2 blocked . 15 events . 72% conf")
@@ -416,6 +467,24 @@ describe("SwarmBoardInspector", () => {
       const inspector = screen.getByLabelText("Node inspector");
       expect(inspector).toHaveTextContent("$ cargo test");
       expect(inspector).toHaveTextContent("running 5 tests...");
+    });
+
+    it("shows conversation replay turns for agent sessions", () => {
+      renderInspector();
+
+      act(() => {
+        screen.getByTestId("add-agent").click();
+      });
+      act(() => {
+        screen.getByTestId("select-first").click();
+      });
+
+      const inspector = screen.getByLabelText("Node inspector");
+      expect(inspector).toHaveTextContent("conversation");
+      expect(inspector).toHaveTextContent("Audit the auth middleware.");
+      expect(inspector).toHaveTextContent("tool call: read_file");
+      expect(inspector).toHaveTextContent("Found an expired-token branch without test coverage.");
+      expect(inspector).toHaveTextContent("14:01:08");
     });
 
     it("shows action buttons for agent sessions", () => {
@@ -475,6 +544,7 @@ describe("SwarmBoardInspector", () => {
 
       const inspector = screen.getByLabelText("Node inspector");
       expect(inspector).toHaveTextContent("signature");
+      expect(inspector).toHaveTextContent("pending");
       // Signature uses ed25519 prefix with hex hash
       expect(inspector).toHaveTextContent(/ed25519:/);
     });
@@ -506,10 +576,12 @@ describe("SwarmBoardInspector", () => {
       });
 
       const inspector = screen.getByLabelText("Node inspector");
-      expect(inspector).toHaveTextContent("+47");
-      expect(inspector).toHaveTextContent("-12");
+      expect(inspector).toHaveTextContent("+2");
+      expect(inspector).toHaveTextContent("-1");
       expect(inspector).toHaveTextContent("src/auth.rs");
       expect(inspector).toHaveTextContent("Cargo.toml");
+      expect(inspector).toHaveTextContent("@@ -1,2 +1,3 @@");
+      expect(inspector).toHaveTextContent("+export const stale = true;");
     });
 
     it("shows action button for diff nodes", () => {
@@ -522,7 +594,7 @@ describe("SwarmBoardInspector", () => {
         screen.getByTestId("select-first").click();
       });
 
-      expect(screen.getByLabelText("Open Diff View")).toBeInTheDocument();
+      expect(screen.getByLabelText("Open in Editor")).toBeInTheDocument();
     });
   });
 

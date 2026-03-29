@@ -171,6 +171,152 @@ export interface TauriChainVerificationResponse {
   summary: string;
 }
 
+export type TauriSwarmFileWatchCategory = "persistence" | "workspace";
+
+export interface TauriSwarmFileWatchEvent {
+  category: TauriSwarmFileWatchCategory;
+  paths: string[];
+  filenames: string[];
+}
+
+export interface TauriConfigureSwarmFileWatcherRequest {
+  persistence_filenames?: string[];
+  workspace_paths?: string[];
+}
+
+export type TauriWorkspaceRootKind = "default_home" | "mounted_folder";
+
+export type TauriWorkspaceRootProvenance =
+  | "bootstrap"
+  | "local_storage_migration"
+  | "user_added";
+
+export interface TauriWorkspaceRootRecord {
+  rootId: string;
+  canonicalPath: string;
+  displayPath: string;
+  label: string;
+  kind: TauriWorkspaceRootKind;
+  provenance: TauriWorkspaceRootProvenance;
+  isDefault: boolean;
+  aliases: string[];
+}
+
+export interface TauriWorkspaceRegistrySnapshot {
+  version: number;
+  defaultRootId: string | null;
+  orderedRootIds: string[];
+  roots: TauriWorkspaceRootRecord[];
+}
+
+export interface TauriBootstrapWorkspaceRegistryRequest {
+  legacyRoots: string[];
+}
+
+export interface TauriBootstrapWorkspaceRegistryResponse {
+  snapshot: TauriWorkspaceRegistrySnapshot;
+  migratedLegacyRoots: string[];
+  droppedLegacyRoots: string[];
+}
+
+export interface TauriAddWorkspaceRootRequest {
+  path: string;
+}
+
+export interface TauriRemoveWorkspaceRootRequest {
+  rootId: string;
+}
+
+export type TauriWorkspaceEntryKind = "file" | "directory";
+
+export type TauriWorkspaceCommandErrorCode =
+  | "unknown_root"
+  | "path_escape"
+  | "not_found"
+  | "symlink_denied"
+  | "unsupported_kind"
+  | "already_exists"
+  | "io_error";
+
+export interface TauriWorkspaceTreeEntry {
+  path: string;
+  kind: TauriWorkspaceEntryKind;
+}
+
+export interface TauriWorkspaceCommandError {
+  code: TauriWorkspaceCommandErrorCode;
+  message: string;
+  path?: string | null;
+}
+
+export type TauriWorkspaceCommandResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: TauriWorkspaceCommandError };
+
+export interface TauriReadWorkspaceTreeRequest {
+  rootId: string;
+  includeInternalEntries?: boolean;
+}
+
+export interface TauriReadWorkspaceTreeResponse {
+  entries: TauriWorkspaceTreeEntry[];
+}
+
+export interface TauriCreateWorkspaceDirectoryRequest {
+  rootId: string;
+  relativePath: string;
+}
+
+export interface TauriCreateWorkspaceDirectoryResponse {
+  relativePath: string;
+}
+
+export interface TauriCreateWorkspaceFileRequest {
+  rootId: string;
+  relativePath: string;
+  content?: string;
+  defaultContentFileType?: string;
+}
+
+export interface TauriCreateWorkspaceFileResponse {
+  relativePath: string;
+}
+
+export interface TauriCreateWorkspaceFileOptions {
+  content?: string;
+  defaultContentFileType?: string;
+}
+
+export interface TauriRenameWorkspaceEntryRequest {
+  rootId: string;
+  oldRelativePath: string;
+  newRelativePath: string;
+}
+
+export interface TauriRenameWorkspaceEntryResponse {
+  oldRelativePath: string;
+  newRelativePath: string;
+}
+
+export interface TauriDeleteWorkspaceEntryRequest {
+  rootId: string;
+  relativePath: string;
+}
+
+export interface TauriDeleteWorkspaceEntryResponse {
+  relativePath: string;
+  kind: TauriWorkspaceEntryKind;
+}
+
+export interface TauriRevealWorkspaceEntryRequest {
+  rootId: string;
+  relativePath: string;
+}
+
+export interface TauriRevealWorkspaceEntryResponse {
+  relativePath: string;
+}
+
 
 async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const e2eInvoke = getWorkbenchE2EBridge()?.invoke;
@@ -210,6 +356,19 @@ function normalizeTauriCommandError(command: string, err: unknown): Error {
   return new Error(`${command} failed`);
 }
 
+function logWorkspaceCommandFailure(
+  command: string,
+  context: Record<string, unknown>,
+  err: unknown,
+): void {
+  const normalized = normalizeTauriCommandError(command, err);
+  console.error("[workspace-command]", {
+    command,
+    ...context,
+    message: normalized.message,
+  });
+}
+
 
 /**
  * Validate policy YAML via the Rust policy engine.
@@ -222,6 +381,281 @@ export async function validatePolicyNative(yaml: string): Promise<TauriValidatio
   } catch (err) {
     console.error("[tauri-commands] validate_policy failed:", err);
     return null;
+  }
+}
+
+export async function readAppPersistenceFileNative(
+  filename: string,
+): Promise<string | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<string | null>("read_app_persistence_file", { filename });
+  } catch (err) {
+    console.error("[tauri-commands] read_app_persistence_file failed:", err);
+    return null;
+  }
+}
+
+export async function writeAppPersistenceFileNative(
+  filename: string,
+  content: string,
+): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await tauriInvoke<void>("write_app_persistence_file", { filename, content });
+    return true;
+  } catch (err) {
+    console.error("[tauri-commands] write_app_persistence_file failed:", err);
+    return false;
+  }
+}
+
+export async function bootstrapWorkspaceRegistryNative(
+  legacyRoots: string[],
+): Promise<TauriBootstrapWorkspaceRegistryResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriBootstrapWorkspaceRegistryResponse>(
+      "bootstrap_workspace_registry",
+      {
+        request: {
+          legacyRoots,
+        } satisfies TauriBootstrapWorkspaceRegistryRequest,
+      },
+    );
+  } catch (err) {
+    logWorkspaceCommandFailure("bootstrap_workspace_registry", {
+      legacyRootCount: legacyRoots.length,
+    }, err);
+    return null;
+  }
+}
+
+export async function addWorkspaceRootNative(
+  path: string,
+): Promise<TauriWorkspaceRegistrySnapshot | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriWorkspaceRegistrySnapshot>("add_workspace_root", {
+      request: {
+        path,
+      } satisfies TauriAddWorkspaceRootRequest,
+    });
+  } catch (err) {
+    console.error("[tauri-commands] add_workspace_root failed:", err);
+    return null;
+  }
+}
+
+export async function removeWorkspaceRootNative(
+  rootId: string,
+): Promise<TauriWorkspaceRegistrySnapshot | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriWorkspaceRegistrySnapshot>("remove_workspace_root", {
+      request: {
+        rootId,
+      } satisfies TauriRemoveWorkspaceRootRequest,
+    });
+  } catch (err) {
+    console.error("[tauri-commands] remove_workspace_root failed:", err);
+    return null;
+  }
+}
+
+export async function readWorkspaceTreeNative(
+  rootId: string,
+  options?: { includeInternalEntries?: boolean },
+): Promise<TauriWorkspaceCommandResult<TauriReadWorkspaceTreeResponse> | null> {
+  if (!isDesktop() && !hasWorkbenchE2EInvoke()) return null;
+  try {
+    return await tauriInvoke<TauriWorkspaceCommandResult<TauriReadWorkspaceTreeResponse>>(
+      "read_workspace_tree",
+      {
+        request: {
+          rootId,
+          includeInternalEntries: options?.includeInternalEntries ?? false,
+        } satisfies TauriReadWorkspaceTreeRequest,
+      },
+    );
+  } catch (err) {
+    logWorkspaceCommandFailure("read_workspace_tree", {
+      rootId,
+      includeInternalEntries: options?.includeInternalEntries ?? false,
+    }, err);
+    return null;
+  }
+}
+
+export async function createWorkspaceDirectoryNative(
+  rootId: string,
+  relativePath: string,
+): Promise<TauriWorkspaceCommandResult<TauriCreateWorkspaceDirectoryResponse> | null> {
+  if (!isDesktop() && !hasWorkbenchE2EInvoke()) return null;
+  try {
+    return await tauriInvoke<TauriWorkspaceCommandResult<TauriCreateWorkspaceDirectoryResponse>>(
+      "create_workspace_directory",
+      {
+        request: {
+          rootId,
+          relativePath,
+        } satisfies TauriCreateWorkspaceDirectoryRequest,
+      },
+    );
+  } catch (err) {
+    logWorkspaceCommandFailure("create_workspace_directory", { rootId, relativePath }, err);
+    return null;
+  }
+}
+
+export async function createWorkspaceFileNative(
+  rootId: string,
+  relativePath: string,
+  contentOrOptions: string | TauriCreateWorkspaceFileOptions = "",
+): Promise<TauriWorkspaceCommandResult<TauriCreateWorkspaceFileResponse> | null> {
+  if (!isDesktop() && !hasWorkbenchE2EInvoke()) return null;
+  const request: TauriCreateWorkspaceFileRequest = {
+    rootId,
+    relativePath,
+  };
+
+  if (typeof contentOrOptions === "string") {
+    request.content = contentOrOptions;
+  } else {
+    if (contentOrOptions.content !== undefined) {
+      request.content = contentOrOptions.content;
+    }
+    if (contentOrOptions.defaultContentFileType !== undefined) {
+      request.defaultContentFileType = contentOrOptions.defaultContentFileType;
+    }
+  }
+
+  try {
+    return await tauriInvoke<TauriWorkspaceCommandResult<TauriCreateWorkspaceFileResponse>>(
+      "create_workspace_file",
+      {
+        request,
+      },
+    );
+  } catch (err) {
+    logWorkspaceCommandFailure("create_workspace_file", {
+      rootId,
+      relativePath,
+      usedDefaultContentFileType: request.defaultContentFileType ?? null,
+    }, err);
+    return null;
+  }
+}
+
+export async function renameWorkspaceEntryNative(
+  rootId: string,
+  oldRelativePath: string,
+  newRelativePath: string,
+): Promise<TauriWorkspaceCommandResult<TauriRenameWorkspaceEntryResponse> | null> {
+  if (!isDesktop() && !hasWorkbenchE2EInvoke()) return null;
+  try {
+    return await tauriInvoke<TauriWorkspaceCommandResult<TauriRenameWorkspaceEntryResponse>>(
+      "rename_workspace_entry",
+      {
+        request: {
+          rootId,
+          oldRelativePath,
+          newRelativePath,
+        } satisfies TauriRenameWorkspaceEntryRequest,
+      },
+    );
+  } catch (err) {
+    logWorkspaceCommandFailure("rename_workspace_entry", {
+      rootId,
+      oldRelativePath,
+      newRelativePath,
+    }, err);
+    return null;
+  }
+}
+
+export async function deleteWorkspaceEntryNative(
+  rootId: string,
+  relativePath: string,
+): Promise<TauriWorkspaceCommandResult<TauriDeleteWorkspaceEntryResponse> | null> {
+  if (!isDesktop() && !hasWorkbenchE2EInvoke()) return null;
+  try {
+    return await tauriInvoke<TauriWorkspaceCommandResult<TauriDeleteWorkspaceEntryResponse>>(
+      "delete_workspace_entry",
+      {
+        request: {
+          rootId,
+          relativePath,
+        } satisfies TauriDeleteWorkspaceEntryRequest,
+      },
+    );
+  } catch (err) {
+    logWorkspaceCommandFailure("delete_workspace_entry", { rootId, relativePath }, err);
+    return null;
+  }
+}
+
+export async function revealWorkspaceEntryNative(
+  rootId: string,
+  relativePath: string,
+): Promise<TauriWorkspaceCommandResult<TauriRevealWorkspaceEntryResponse> | null> {
+  if (!isDesktop() && !hasWorkbenchE2EInvoke()) return null;
+  try {
+    return await tauriInvoke<TauriWorkspaceCommandResult<TauriRevealWorkspaceEntryResponse>>(
+      "reveal_workspace_entry",
+      {
+        request: {
+          rootId,
+          relativePath,
+        } satisfies TauriRevealWorkspaceEntryRequest,
+      },
+    );
+  } catch (err) {
+    logWorkspaceCommandFailure("reveal_workspace_entry", { rootId, relativePath }, err);
+    return null;
+  }
+}
+
+export async function configureSwarmFileWatcherNative(
+  request: TauriConfigureSwarmFileWatcherRequest,
+): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await tauriInvoke<void>("configure_swarm_file_watcher", { request });
+    return true;
+  } catch (err) {
+    console.error("[tauri-commands] configure_swarm_file_watcher failed:", err);
+    return false;
+  }
+}
+
+export async function stopSwarmFileWatcherNative(): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await tauriInvoke<void>("stop_swarm_file_watcher");
+    return true;
+  } catch (err) {
+    console.error("[tauri-commands] stop_swarm_file_watcher failed:", err);
+    return false;
+  }
+}
+
+export async function respondToRpcFrontendRequestNative(
+  requestId: string,
+  payload?: unknown,
+  error?: string,
+): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await tauriInvoke<void>("rpc_frontend_respond", {
+      requestId,
+      payload: payload ?? null,
+      error: error ?? null,
+    });
+    return true;
+  } catch (err) {
+    console.error("[tauri-commands] rpc_frontend_respond failed:", err);
+    return false;
   }
 }
 

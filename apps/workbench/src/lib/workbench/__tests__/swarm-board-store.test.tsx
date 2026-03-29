@@ -1,10 +1,12 @@
 import React from "react";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TauriWorkspaceRootRecord } from "@/lib/tauri-commands";
 
 import {
   SwarmBoardProvider,
   useSwarmBoard,
+  resolveBoardWatchFilePath,
   createBoardNode,
   generateNodeId,
   createMockBoard,
@@ -17,12 +19,35 @@ import type {
   SwarmNodeType,
 } from "../swarm-board-types";
 import type { Node } from "@xyflow/react";
+import { terminalService } from "../terminal-service";
+import {
+  canonicalizeWorkspaceConsumerPath,
+  useProjectStore,
+} from "@/features/project/stores/project-store";
 
 // ---------------------------------------------------------------------------
 // Storage key must match the one in the store
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_workbench_swarm_board";
+
+function makeWorkspaceRoot(
+  rootId: string,
+  displayPath: string,
+  options?: Partial<TauriWorkspaceRootRecord>,
+): TauriWorkspaceRootRecord {
+  return {
+    rootId,
+    canonicalPath: displayPath,
+    displayPath,
+    label: displayPath.split("/").filter(Boolean).pop() ?? displayPath,
+    kind: "mounted_folder",
+    provenance: "user_added",
+    isDefault: false,
+    aliases: [],
+    ...options,
+  };
+}
 
 /**
  * Seeds localStorage with a board that has a single placeholder node.
@@ -334,6 +359,25 @@ function DynamicHarness() {
   );
 }
 
+function SpawnClaudeHarness() {
+  const { state, spawnClaudeSession } = useSwarmBoard();
+
+  return (
+    <div>
+      <pre data-testid="repo-root">{state.repoRoot}</pre>
+      <button
+        type="button"
+        data-testid="spawn-claude"
+        onClick={() => {
+          void spawnClaudeSession({ title: "Claude Session" });
+        }}
+      >
+        spawn-claude
+      </button>
+    </div>
+  );
+}
+
 /**
  * Renders a harness with a clean empty board. Seeds localStorage with a
  * placeholder node (needed because the store falls back to mock data when
@@ -352,6 +396,21 @@ function renderWithEmptyBoard(harness: React.ReactElement) {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.restoreAllMocks();
+  useProjectStore.setState({
+    project: null,
+    loading: false,
+    error: null,
+    filter: "",
+    formatFilter: null,
+    fileStatuses: new Map(),
+    defaultRootId: null,
+    orderedRootIds: [],
+    rootsById: new Map(),
+    projectsById: new Map(),
+    projectRoots: [],
+    projects: new Map(),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -359,6 +418,28 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("SwarmBoard initial state", () => {
+  it("canonicalizes watch paths through workspace aliases", () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/repo", {
+      isDefault: true,
+      aliases: ["/private/Users/test/repo"],
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      rootStatusById: new Map([["root-default", "ready"]]),
+      projectRoots: ["/Users/test/repo"],
+    });
+
+    expect(
+      resolveBoardWatchFilePath(
+        "/private/Users/test/repo/policies/example.yml",
+        "/Users/test/repo",
+        (path) => canonicalizeWorkspaceConsumerPath(useProjectStore.getState(), path),
+      ),
+    ).toBe("/Users/test/repo/policies/example.yml");
+  });
+
   it("has a boardId and empty board on first mount (no mock data)", () => {
     render(
       <SwarmBoardProvider>
@@ -417,6 +498,264 @@ describe("SwarmBoard initial state", () => {
     // Board starts empty — no mock data seeded
     expect(Number(screen.getByTestId("node-count").textContent)).toBe(0);
     expect(Number(screen.getByTestId("edge-count").textContent)).toBe(0);
+  });
+
+  it("adopts the first mounted project root when repoRoot is empty", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
+    });
+  });
+
+  it("falls back to the registry default root on mount when repoRoot is empty", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
+
+    const getCwdSpy = vi.spyOn(terminalService, "getCwd").mockRejectedValue(
+      new Error("getCwd should not be needed"),
+    );
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
+    });
+
+    expect(getCwdSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the registry default root for Claude spawns when repoRoot is unset", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+      aliases: ["/Users/test/.clawdstrike/workspace"],
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
+
+    const createSpy = vi.spyOn(terminalService, "create").mockResolvedValue({
+      id: "session-123",
+      cwd: "/Users/test/.clawdstrike",
+      branch: null,
+      created_at: "2026-03-27T12:00:00Z",
+      alive: true,
+      exit_code: null,
+      line_count: 0,
+      shell: "/bin/zsh",
+      persistence_mode: "direct",
+      recovery_state: "fresh",
+      cwd_valid: true,
+    });
+    const getCwdSpy = vi.spyOn(terminalService, "getCwd").mockRejectedValue(
+      new Error("getCwd should not be needed"),
+    );
+    vi.spyOn(terminalService, "onExit").mockResolvedValue(() => {});
+    vi.spyOn(terminalService, "onOutput").mockResolvedValue(() => {});
+
+    render(
+      <SwarmBoardProvider>
+        <SpawnClaudeHarness />
+      </SwarmBoardProvider>,
+    );
+
+    await act(async () => {
+      screen.getByTestId("spawn-claude").click();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(createSpy).toHaveBeenCalledWith(
+        "/Users/test/.clawdstrike",
+        undefined,
+        undefined,
+        "claude\n",
+      );
+    });
+
+    expect(getCwdSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
+  });
+
+  it("falls back to the first ordered root when defaultRootId is missing", async () => {
+    const repoRoot = makeWorkspaceRoot("root-repo", "/Users/test/repo");
+    useProjectStore.setState({
+      defaultRootId: null,
+      orderedRootIds: ["root-repo"],
+      rootsById: new Map([["root-repo", repoRoot]]),
+      projectRoots: ["/Users/test/repo"],
+    });
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/repo");
+    });
+  });
+
+  it("normalizes persisted workspace aliases through the registry", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+      aliases: ["/Users/test/.clawdstrike/workspace"],
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        boardId: "board-test123",
+        repoRoot: "/Users/test/.clawdstrike/workspace",
+        nodes: [
+          {
+            id: "node-persisted-1",
+            type: "note",
+            position: { x: 0, y: 0 },
+            data: { title: "Persisted", status: "idle", nodeType: "note", createdAt: 1 },
+          },
+        ],
+        edges: [],
+      }),
+    );
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
+    });
+  });
+
+  it("reconciles a persisted repoRoot alias after the workspace registry hydrates", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        boardId: "board-test123",
+        repoRoot: "/Users/test/.clawdstrike/workspace",
+        nodes: [
+          {
+            id: "node-persisted-1",
+            type: "note",
+            position: { x: 0, y: 0 },
+            data: { title: "Persisted", status: "idle", nodeType: "note", createdAt: 1 },
+          },
+        ],
+        edges: [],
+      }),
+    );
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+      aliases: ["/Users/test/.clawdstrike/workspace"],
+    });
+    act(() => {
+      useProjectStore.setState({
+        defaultRootId: "root-default",
+        orderedRootIds: ["root-default"],
+        rootsById: new Map([["root-default", defaultRoot]]),
+        rootStatusById: new Map([["root-default", "ready"]]),
+        projectRoots: ["/Users/test/.clawdstrike"],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/.clawdstrike");
+    });
+  });
+
+  it("keeps unrelated persisted repo roots unchanged", async () => {
+    const defaultRoot = makeWorkspaceRoot("root-default", "/Users/test/.clawdstrike", {
+      isDefault: true,
+      kind: "default_home",
+      provenance: "bootstrap",
+      aliases: ["/Users/test/.clawdstrike/workspace"],
+    });
+    useProjectStore.setState({
+      defaultRootId: "root-default",
+      orderedRootIds: ["root-default"],
+      rootsById: new Map([["root-default", defaultRoot]]),
+      projectRoots: ["/Users/test/.clawdstrike"],
+    });
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        boardId: "board-test123",
+        repoRoot: "/Users/test/another-repo",
+        nodes: [
+          {
+            id: "node-persisted-1",
+            type: "note",
+            position: { x: 0, y: 0 },
+            data: { title: "Persisted", status: "idle", nodeType: "note", createdAt: 1 },
+          },
+        ],
+        edges: [],
+      }),
+    );
+
+    render(
+      <SwarmBoardProvider>
+        <Harness />
+      </SwarmBoardProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-root").textContent).toBe("/Users/test/another-repo");
+    });
   });
 });
 
@@ -1122,18 +1461,18 @@ describe("createBoardNode", () => {
 // ---------------------------------------------------------------------------
 
 describe("generateNodeId", () => {
-  it("generates unique IDs with the given prefix", () => {
-    const id1 = generateNodeId("test");
-    const id2 = generateNodeId("test");
+  it("generates unique IDs with node- prefix", () => {
+    const id1 = generateNodeId();
+    const id2 = generateNodeId();
 
     expect(id1).not.toBe(id2);
-    expect(id1).toMatch(/^test-/);
-    expect(id2).toMatch(/^test-/);
+    expect(id1).toMatch(/^node-/);
+    expect(id2).toMatch(/^node-/);
   });
 
-  it("uses default prefix when none provided", () => {
+  it("generates valid UUID-based IDs", () => {
     const id = generateNodeId();
-    expect(id).toMatch(/^sbn-/);
+    expect(id).toMatch(/^node-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 });
 

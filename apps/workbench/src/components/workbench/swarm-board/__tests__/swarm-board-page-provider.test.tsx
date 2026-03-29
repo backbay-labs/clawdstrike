@@ -12,14 +12,22 @@ vi.mock("@xyflow/react", () => {
   return {
     ReactFlow: ReactFlowMock,
     ReactFlowProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Background: () => null,
+    BackgroundVariant: { Dots: "dots" },
     MiniMap: () => <div data-testid="react-flow-minimap" />,
+    Panel: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
     useReactFlow: () => ({
       getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+      getNodes: () => [],
       fitView: vi.fn(),
       setViewport: vi.fn(),
       zoomIn: vi.fn(),
       zoomOut: vi.fn(),
     }),
+    useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+    useStore: (selector: (s: Record<string, unknown>) => unknown) =>
+      selector({ transform: [0, 0, 1], nodeLookup: new Map() }),
+    useOnSelectionChange: vi.fn(),
     applyNodeChanges: (_changes: unknown[], nodes: unknown[]) => nodes,
     applyEdgeChanges: (_changes: unknown[], edges: unknown[]) => edges,
     MarkerType: { ArrowClosed: "arrowclosed" },
@@ -57,6 +65,7 @@ vi.mock("@/features/swarm/coordinator-instance", () => ({
 
 vi.mock("@/features/swarm/stores/swarm-engine-provider", () => ({
   SwarmEngineProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useSwarmEngine: () => ({ engine: null, taskGraph: null }),
   useOptionalSwarmEngine: () => null,
 }));
 

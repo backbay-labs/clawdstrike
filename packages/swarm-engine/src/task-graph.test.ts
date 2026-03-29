@@ -197,6 +197,22 @@ describe("TaskGraph", () => {
       expect(graph.getDependencies(t2.id)).toEqual([]);
       expect(graph.getDependents(t1.id)).toEqual([]);
     });
+
+    it("getDependencyEdges returns source->target pairs for the DAG", () => {
+      const a = graph.addTask(makeSubmission({ name: "A" }));
+      const b = graph.addTask(
+        makeSubmission({ name: "B", dependencies: [a.id] }),
+      );
+      const c = graph.addTask(
+        makeSubmission({ name: "C", dependencies: [a.id, b.id] }),
+      );
+
+      expect(graph.getDependencyEdges()).toEqual([
+        { sourceTaskId: a.id, targetTaskId: b.id },
+        { sourceTaskId: a.id, targetTaskId: c.id },
+        { sourceTaskId: b.id, targetTaskId: c.id },
+      ]);
+    });
   });
 
   // =========================================================================

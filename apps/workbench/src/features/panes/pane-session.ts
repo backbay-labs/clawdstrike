@@ -47,6 +47,53 @@ function stripDirtyFlags(node: PaneNode): PaneNode {
   } as PaneSplit;
 }
 
+function mapPaneNodeViews(
+  node: PaneNode,
+  mapRoute: (route: string) => string | null,
+): PaneNode | null {
+  if (node.type === "group") {
+    const views = node.views
+      .map((view) => {
+        const nextRoute = mapRoute(view.route);
+        if (nextRoute == null) {
+          return null;
+        }
+        return {
+          ...view,
+          route: nextRoute,
+        };
+      })
+      .filter((view): view is PaneGroup["views"][number] => view != null);
+    if (views.length === 0) {
+      return null;
+    }
+    return {
+      ...node,
+      views,
+      activeViewId: views.some((view) => view.id === node.activeViewId)
+        ? node.activeViewId
+        : views[0]?.id ?? null,
+    };
+  }
+
+  const left = mapPaneNodeViews(node.children[0], mapRoute);
+  const right = mapPaneNodeViews(node.children[1], mapRoute);
+  if (!left && !right) {
+    return null;
+  }
+  if (!left) {
+    return right;
+  }
+  if (!right) {
+    return left;
+  }
+
+  return {
+    ...node,
+    children: [left, right],
+  } as PaneSplit;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -74,6 +121,12 @@ export function savePaneSession(root: PaneNode, activePaneId: string): void {
  * structure is invalid. Strips any lingering `dirty` flags as a safety net.
  */
 export function loadPaneSession(): SavedSession | null {
+  return loadPaneSessionWithRouteMapper((route) => route);
+}
+
+export function loadPaneSessionWithRouteMapper(
+  mapRoute: (route: string) => string | null,
+): SavedSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -87,7 +140,10 @@ export function loadPaneSession(): SavedSession | null {
     if (rootType !== "group" && rootType !== "split") return null;
 
     // Strip dirty flags as a safety net.
-    const cleaned = stripDirtyFlags(parsed.root as PaneNode);
+    const cleaned = mapPaneNodeViews(stripDirtyFlags(parsed.root as PaneNode), mapRoute);
+    if (!cleaned) {
+      return null;
+    }
 
     return {
       root: cleaned,

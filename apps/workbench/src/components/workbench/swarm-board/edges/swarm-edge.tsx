@@ -4,6 +4,7 @@
  * Renders differently based on the edge's `data.edgeType`:
  * - handoff:  Solid line with arrow, warm gold
  * - spawned:  Dashed line with arrow, steel blue (subtle pulse)
+ * - dependency: Dashed slate line with arrow, for task-to-task prerequisites
  * - artifact: Dotted line, muted green
  * - receipt:  Thin dotted line, dim gray
  *
@@ -48,7 +49,7 @@ const ACTIVITY_RECENCY_MS = 3000;
 // Edge type visual config — restrained, functional colors
 // ---------------------------------------------------------------------------
 
-type SwarmEdgeType = "handoff" | "spawned" | "artifact" | "receipt" | "topology";
+type SwarmEdgeType = "handoff" | "spawned" | "dependency" | "artifact" | "receipt" | "topology";
 
 interface EdgeStyleConfig {
   color: string;
@@ -71,6 +72,13 @@ const EDGE_STYLES: Record<SwarmEdgeType, EdgeStyleConfig> = {
     strokeDasharray: "6 4",
     animated: true,
     dotSize: 6,
+  },
+  dependency: {
+    color: "#7085ad",
+    strokeWidth: 1,
+    strokeDasharray: "4 4",
+    animated: false,
+    dotSize: 5,
   },
   artifact: {
     color: "#38a876",

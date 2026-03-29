@@ -18,6 +18,7 @@ import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import { VFXEmitter, type VFXEmitterSettings } from "wawa-vfx";
 import * as THREE from "three";
+import type { VFXEmitterRef } from "../../vfx/wawa-vfx-types";
 import {
   OBSERVATORY_STATION_POSITIONS,
   buildLanePoints,
@@ -94,13 +95,6 @@ interface LaneData {
   curve: THREE.CatmullRomCurve3;
   geometry: THREE.TubeGeometry;
   materialRef: React.RefObject<THREE.ShaderMaterial | null>;
-}
-
-// Emitter ref interface (matches ShipThrusterVFX.tsx pattern)
-interface VFXEmitterRef extends THREE.Object3D {
-  startEmitting: (reset?: boolean) => void;
-  stopEmitting: () => void;
-  emitAtPos: (position: THREE.Vector3 | null, reset?: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------

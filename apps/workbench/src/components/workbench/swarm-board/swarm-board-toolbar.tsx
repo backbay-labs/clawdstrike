@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useReactFlow } from "@xyflow/react";
+import type { Node, Viewport } from "@xyflow/react";
 import {
   IconTerminal2,
   IconLayoutDistributeHorizontal,
@@ -26,14 +26,16 @@ import {
   IconNote,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { isDesktop } from "@/lib/tauri-bridge";
+import { isDesktop, pickDirectoryPath } from "@/lib/tauri-bridge";
 import {
   useSwarmBoard,
   MAX_ACTIVE_TERMINALS,
+  MAX_TOTAL_SESSIONS,
   type SpawnSessionOptions,
   type SpawnClaudeSessionOptions,
 } from "@/features/swarm/stores/swarm-board-store";
-import { useTerminalSessionsFromBoard } from "@/lib/workbench/use-terminal-sessions";
+import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
+import { useTerminalSessions } from "@/lib/workbench/use-terminal-sessions";
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -56,18 +58,32 @@ const LAYOUT_SETTLE_MS = 50;
 // Component
 // ---------------------------------------------------------------------------
 
-export function SwarmBoardToolbar() {
-  const board = useSwarmBoard();
-  const { addNode, clearBoard, state, dispatch } = board;
+export interface SwarmBoardToolbarViewportController {
+  viewport: Viewport;
+  fitBoard: (options?: { padding?: number; duration?: number }) => void;
+  fitNodes: (
+    nodes: Array<Node<SwarmBoardNodeData>>,
+    options?: { padding?: number; duration?: number },
+  ) => void;
+  zoomByFactor: (factor: number, options?: { duration?: number }) => void;
+}
+
+export function SwarmBoardToolbar({
+  viewportController,
+}: {
+  viewportController: SwarmBoardToolbarViewportController;
+}) {
+  const { addNode, clearBoard, state, dispatch } = useSwarmBoard();
   const {
     spawnSession,
+    spawnClaude,
     spawnClaudeSession,
     spawnWorktreeSession,
     activeSessionCount,
+    totalSessionCount,
     canSpawnMore,
     hasRepoRoot,
-  } = useTerminalSessionsFromBoard(board);
-  const reactFlow = useReactFlow();
+  } = useTerminalSessions();
   const [spawning, setSpawning] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [spawnError, setSpawnError] = useState<string | null>(null);
@@ -79,9 +95,8 @@ export function SwarmBoardToolbar() {
 
   const getDropPosition = useCallback(() => {
     try {
-      const viewport = reactFlow.getViewport();
-      const centerX = (-viewport.x + window.innerWidth / 2) / viewport.zoom;
-      const centerY = (-viewport.y + window.innerHeight / 2) / viewport.zoom;
+      const centerX = (-viewportController.viewport.x + window.innerWidth / 2) / viewportController.viewport.zoom;
+      const centerY = (-viewportController.viewport.y + window.innerHeight / 2) / viewportController.viewport.zoom;
       return {
         x: centerX + (Math.random() - 0.5) * 100,
         y: centerY + (Math.random() - 0.5) * 100,
@@ -89,7 +104,7 @@ export function SwarmBoardToolbar() {
     } catch {
       return { x: 200 + Math.random() * 300, y: 200 + Math.random() * 200 };
     }
-  }, [reactFlow]);
+  }, [viewportController.viewport]);
 
   useEffect(() => {
     if (!spawnError) return;
@@ -122,9 +137,8 @@ export function SwarmBoardToolbar() {
     setSpawning(true);
     setSpawnError(null);
     try {
-      const cwd = state.repoRoot || "/tmp";
       const node = await spawnSession({
-        cwd,
+        cwd: state.repoRoot || undefined,
         position: getDropPosition(),
         title: "Terminal",
       });
@@ -132,58 +146,59 @@ export function SwarmBoardToolbar() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSpawnError(`Terminal: ${msg}`);
-      addNode({
-        nodeType: "agentSession",
-        title: "Terminal (offline)",
-        position: getDropPosition(),
-        data: {
-          agentModel: "shell",
-          status: "idle",
-          previewLines: ["~ run npm run tauri:dev for live terminals"],
-          receiptCount: 0,
-          blockedActionCount: 0,
-          changedFilesCount: 0,
-          risk: "low",
-          policyMode: "default",
-        },
-      });
+      if (!desktop) {
+        addNode({
+          nodeType: "agentSession",
+          title: "Terminal (offline)",
+          position: getDropPosition(),
+          data: {
+            agentModel: "shell",
+            status: "idle",
+            previewLines: ["~ run npm run tauri:dev for live terminals"],
+            receiptCount: 0,
+            blockedActionCount: 0,
+            changedFilesCount: 0,
+            risk: "low",
+            policyMode: "default",
+          },
+        });
+      }
     } finally {
       setSpawning(false);
     }
-  }, [spawning, canSpawnMore, state.repoRoot, spawnSession, getDropPosition, dispatch, addNode]);
+  }, [spawning, canSpawnMore, state.repoRoot, spawnSession, getDropPosition, dispatch, addNode, desktop]);
 
   const handleNewClaudeSession = useCallback(async () => {
     if (spawning || !canSpawnMore) return;
     setSpawning(true);
     setSpawnError(null);
     try {
-      const node = await spawnClaudeSession({
-        position: getDropPosition(),
-        worktree: hasRepoRoot,
-      });
+      const node = await spawnClaude(getDropPosition());
       dispatch({ type: "SELECT_NODE", nodeId: node.id });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSpawnError(`Claude: ${msg}`);
-      addNode({
-        nodeType: "agentSession",
-        title: "Claude (offline)",
-        position: getDropPosition(),
-        data: {
-          agentModel: "claude",
-          status: "idle",
-          previewLines: ["~ run npm run tauri:dev for live sessions"],
-          receiptCount: 0,
-          blockedActionCount: 0,
-          changedFilesCount: 0,
-          risk: "low",
-          policyMode: "default",
-        },
-      });
+      if (!desktop) {
+        addNode({
+          nodeType: "agentSession",
+          title: "Claude (offline)",
+          position: getDropPosition(),
+          data: {
+            agentModel: "claude",
+            status: "idle",
+            previewLines: ["~ run npm run tauri:dev for live sessions"],
+            receiptCount: 0,
+            blockedActionCount: 0,
+            changedFilesCount: 0,
+            risk: "low",
+            policyMode: "default",
+          },
+        });
+      }
     } finally {
       setSpawning(false);
     }
-  }, [spawning, canSpawnMore, hasRepoRoot, spawnClaudeSession, getDropPosition, dispatch, addNode]);
+  }, [spawning, canSpawnMore, spawnClaude, getDropPosition, dispatch, addNode, desktop]);
 
   const handleNewWorktreeSession = useCallback(async () => {
     if (spawning || !canSpawnMore || !hasRepoRoot) return;
@@ -257,39 +272,34 @@ export function SwarmBoardToolbar() {
 
     dispatch({ type: "SET_NODES", nodes: updated });
     setTimeout(() => {
-      reactFlow.fitView({ padding: 0.15, duration: 400 });
+      viewportController.fitBoard({ padding: 0.15, duration: 400 });
     }, LAYOUT_SETTLE_MS);
-  }, [state.nodes, dispatch, reactFlow]);
+  }, [state.nodes, dispatch, viewportController]);
 
   const handleGather = useCallback(() => {
-    reactFlow.fitView({ padding: 0.2, duration: 500 });
-  }, [reactFlow]);
+    viewportController.fitBoard({ padding: 0.2, duration: 500 });
+  }, [viewportController]);
 
   const handleFollowActive = useCallback(() => {
-    const nodes = reactFlow.getNodes();
-    const runningNode = nodes.find(
+    const runningNode = state.nodes.find(
       (n) => (n.data as Record<string, unknown>).status === "running",
     );
     if (runningNode) {
-      reactFlow.fitView({
-        nodes: [runningNode],
-        padding: 0.5,
-        duration: 400,
-      });
+      viewportController.fitNodes([runningNode], { padding: 0.5, duration: 400 });
     }
-  }, [reactFlow]);
+  }, [state.nodes, viewportController]);
 
   const handleZoomIn = useCallback(() => {
-    reactFlow.zoomIn({ duration: 200 });
-  }, [reactFlow]);
+    viewportController.zoomByFactor(1.2, { duration: 200 });
+  }, [viewportController]);
 
   const handleZoomOut = useCallback(() => {
-    reactFlow.zoomOut({ duration: 200 });
-  }, [reactFlow]);
+    viewportController.zoomByFactor(1 / 1.2, { duration: 200 });
+  }, [viewportController]);
 
   const handleResetZoom = useCallback(() => {
-    reactFlow.fitView({ padding: 0.2, duration: 300 });
-  }, [reactFlow]);
+    viewportController.fitBoard({ padding: 0.2, duration: 300 });
+  }, [viewportController]);
 
   // ------- Workspace picker -------
 
@@ -299,9 +309,8 @@ export function SwarmBoardToolbar() {
       return;
     }
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({ directory: true, title: "Select Workspace Root" });
-      if (selected && typeof selected === "string") {
+      const selected = await pickDirectoryPath("Select Workspace Root");
+      if (selected) {
         dispatch({ type: "SET_REPO_ROOT", repoRoot: selected });
       }
     } catch {
@@ -321,7 +330,7 @@ export function SwarmBoardToolbar() {
   const spawnTooltip = !desktop
     ? "Tauri desktop app required for live sessions"
     : !canSpawnMore
-      ? `Session limit reached (${MAX_ACTIVE_TERMINALS})`
+      ? `Session limit reached (${MAX_TOTAL_SESSIONS})`
       : undefined;
 
   const spawnDisabled = spawning || !canSpawnMore;
@@ -497,8 +506,8 @@ export function SwarmBoardToolbar() {
       <div className="flex items-center gap-0">
         <IconButton icon={IconNote} onClick={handleNewNote} title="Add Note" />
         <IconButton icon={IconLayoutDistributeHorizontal} onClick={handleAutoLayout} title="Auto Layout" />
-        <IconButton icon={IconFocusCentered} onClick={handleGather} title="Gather" />
-        <IconButton icon={IconPlayerPlay} onClick={handleFollowActive} title="Follow Active" />
+        <IconButton icon={IconFocusCentered} onClick={handleGather} title="Gather (F)" />
+        <IconButton icon={IconPlayerPlay} onClick={handleFollowActive} title="Follow Active (Space)" />
       </div>
 
       {/* Spacer */}
@@ -522,9 +531,9 @@ export function SwarmBoardToolbar() {
       {!canSpawnMore && (
         <span
           className="text-[8px] font-mono text-[#3d4250] mr-2 tabular-nums"
-          title={`Maximum of ${MAX_ACTIVE_TERMINALS} concurrent sessions reached`}
+          title={`Maximum of ${MAX_TOTAL_SESSIONS} persistent sessions reached (${MAX_ACTIVE_TERMINALS} live terminals recommended)`}
         >
-          {MAX_ACTIVE_TERMINALS}/{MAX_ACTIVE_TERMINALS}
+          {totalSessionCount}/{MAX_TOTAL_SESSIONS}
         </span>
       )}
 
@@ -605,7 +614,7 @@ function SessionOptionsPopover({
 }) {
   const [shell, setShell] = useState("zsh");
   const [cwd, setCwd] = useState(repoRoot || "");
-  const [useWorktree, setUseWorktree] = useState(true);
+  const [useWorktree, setUseWorktree] = useState(false);
   const [initialCommand, setInitialCommand] = useState("");
   const [branch, setBranch] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -625,7 +634,7 @@ function SessionOptionsPopover({
       });
     } else {
       await onSpawnSession({
-        cwd: cwd || repoRoot || "/tmp",
+        cwd: cwd || repoRoot || undefined,
         position,
         shell: shell === "bash" ? "/bin/bash" : undefined,
         command: initialCommand ? initialCommand + "\n" : undefined,

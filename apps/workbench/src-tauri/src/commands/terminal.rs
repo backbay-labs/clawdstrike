@@ -5,9 +5,9 @@
 //! previews. Sessions are identified by UUIDs and stored in a thread-safe
 //! [`TerminalManager`] managed by Tauri state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read as IoRead, Write as IoWrite};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -15,13 +15,16 @@ use std::sync::{
 
 use chrono::Utc;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Runtime};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
-use crate::commands::capability::{authorize_sensitive_command, CommandCapabilityState};
-use crate::commands::repo_roots;
+use crate::commands::capability::{
+    authorize_sensitive_command, ensure_trusted_window, CommandCapabilityState,
+};
+use crate::commands::{mcp_sidecar, repo_roots};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -42,13 +45,46 @@ const READ_CHUNK_SIZE: usize = 4096;
 const MAX_EXTRA_ENV_VARS: usize = 64;
 const MAX_ENV_KEY_LEN: usize = 128;
 const MAX_ENV_VALUE_LEN: usize = 8192;
-const MAX_ACTIVE_SESSIONS: usize = 32;
+const MAX_ACTIVE_SESSIONS: usize = 64;
 const MAX_WRITE_BYTES: usize = 64 * 1024;
 const MAX_PREVIEW_LINES: usize = 200;
+const TMUX_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+const SESSION_METADATA_DIRNAME: &str = "terminal-sessions";
+const TMUX_SOCKET_NAME: &str = "clawdstrike";
+
+/// Returns the `-L clawdstrike` args for socket isolation across all tmux commands.
+fn tmux_socket_args() -> Vec<String> {
+    vec!["-L".to_string(), TMUX_SOCKET_NAME.to_string()]
+}
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionPersistenceMode {
+    Direct,
+    Tmux,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionRecoveryState {
+    Fresh,
+    Recoverable,
+    Recovered,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct PersistedSessionMetadata {
+    id: String,
+    cwd: String,
+    branch: Option<String>,
+    created_at: String,
+    shell: String,
+    persistence_mode: SessionPersistenceMode,
+}
 
 /// A live PTY session.
 pub struct TerminalSession {
@@ -59,6 +95,9 @@ pub struct TerminalSession {
     pub cwd: String,
     pub branch: Option<String>,
     pub created_at: String,
+    pub shell: String,
+    pub persistence_mode: SessionPersistenceMode,
+    pub recovery_state: SessionRecoveryState,
     pub alive: Arc<AtomicBool>,
     pub _session_permit: OwnedSemaphorePermit,
     /// Handle to the background reader task so we can abort on cleanup.
@@ -75,6 +114,11 @@ pub struct SessionInfo {
     pub alive: bool,
     pub exit_code: Option<i32>,
     pub line_count: usize,
+    pub shell: String,
+    pub persistence_mode: SessionPersistenceMode,
+    pub recovery_state: SessionRecoveryState,
+    /// Whether the session's original CWD still exists on disk.
+    pub cwd_valid: bool,
 }
 
 /// Central manager holding all active sessions.
@@ -216,7 +260,13 @@ fn normalize_cwd(cwd: &str) -> Result<String, String> {
     if !canonical.is_dir() {
         return Err(format!("Working directory is not a directory: {cwd}"));
     }
-    repo_roots::ensure_path_within_approved_repo(&canonical)?;
+    // If the directory is inside a git repo, verify it's an approved root.
+    // Non-git directories (e.g. ~/.clawdstrike/workspace) are allowed —
+    // the repo-root check guards git-backed worktree operations, not
+    // plain terminal cwd.
+    if repo_roots::resolve_git_toplevel(&canonical).is_ok() {
+        repo_roots::ensure_path_within_approved_repo(&canonical)?;
+    }
 
     Ok(canonical.to_string_lossy().to_string())
 }
@@ -244,6 +294,451 @@ fn default_shell() -> String {
                 "sh".to_string()
             }
         })
+}
+
+fn sanitize_extra_env(
+    env: Option<HashMap<String, String>>,
+) -> Result<HashMap<String, String>, String> {
+    let mut sanitized = HashMap::new();
+
+    let Some(extra_env) = env else {
+        return Ok(sanitized);
+    };
+
+    if extra_env.len() > MAX_EXTRA_ENV_VARS {
+        return Err(format!(
+            "Too many environment variables supplied (max {})",
+            MAX_EXTRA_ENV_VARS
+        ));
+    }
+
+    for (key, value) in extra_env {
+        if !is_allowed_env_var(&key) {
+            eprintln!("[terminal] Ignored env key from IPC payload: {}", key);
+            continue;
+        }
+        if key.len() > MAX_ENV_KEY_LEN {
+            eprintln!(
+                "[terminal] Ignored oversize env key from IPC payload: {}",
+                key
+            );
+            continue;
+        }
+        if value.len() > MAX_ENV_VALUE_LEN {
+            eprintln!(
+                "[terminal] Ignored oversize env value for key {} from IPC payload",
+                key
+            );
+            continue;
+        }
+        sanitized.insert(key, value);
+    }
+
+    Ok(sanitized)
+}
+
+fn apply_extra_env(cmd: &mut CommandBuilder, env: &HashMap<String, String>) {
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r#"'"'"'"#))
+}
+
+fn enriched_path_string() -> String {
+    mcp_sidecar::enriched_path().to_string_lossy().to_string()
+}
+
+fn metadata_filename(session_id: &str) -> String {
+    format!("{session_id}.json")
+}
+
+fn metadata_path<R: Runtime>(app: &AppHandle<R>, session_id: &str) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+    Ok(app_data_dir
+        .join(SESSION_METADATA_DIRNAME)
+        .join(metadata_filename(session_id)))
+}
+
+fn ensure_private_metadata_dir(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::fs::DirBuilder;
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+        let mut builder = DirBuilder::new();
+        builder.recursive(true);
+        builder.mode(0o700);
+        builder
+            .create(path)
+            .map_err(|e| format!("Failed to create session metadata dir: {e}"))?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("Failed to secure session metadata dir: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(path)
+            .map_err(|e| format!("Failed to create session metadata dir: {e}"))?;
+        Ok(())
+    }
+}
+
+fn write_metadata_file(path: &Path, contents: &str) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| format!("Failed to open session metadata file: {e}"))?;
+        file.write_all(contents.as_bytes())
+            .map_err(|e| format!("Failed to write session metadata file: {e}"))?;
+        file.flush()
+            .map_err(|e| format!("Failed to flush session metadata file: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents)
+            .map_err(|e| format!("Failed to write session metadata file: {e}"))
+    }
+}
+
+fn persist_session_metadata<R: Runtime>(
+    app: &AppHandle<R>,
+    metadata: &PersistedSessionMetadata,
+) -> Result<(), String> {
+    let metadata_path = metadata_path(app, &metadata.id)?;
+    let metadata_dir = metadata_path
+        .parent()
+        .ok_or_else(|| "Invalid session metadata path".to_string())?;
+    ensure_private_metadata_dir(metadata_dir)?;
+    let serialized = serde_json::to_string_pretty(metadata)
+        .map_err(|e| format!("Failed to serialize session metadata: {e}"))?;
+    write_metadata_file(&metadata_path, &serialized)
+}
+
+fn read_session_metadata<R: Runtime>(
+    app: &AppHandle<R>,
+    session_id: &str,
+) -> Result<Option<PersistedSessionMetadata>, String> {
+    let metadata_path = metadata_path(app, session_id)?;
+    if !metadata_path.exists() {
+        return Ok(None);
+    }
+    let contents = std::fs::read_to_string(&metadata_path)
+        .map_err(|e| format!("Failed to read session metadata: {e}"))?;
+    let parsed = serde_json::from_str::<PersistedSessionMetadata>(&contents)
+        .map_err(|e| format!("Failed to parse session metadata: {e}"))?;
+    Ok(Some(parsed))
+}
+
+fn delete_session_metadata<R: Runtime>(app: &AppHandle<R>, session_id: &str) -> Result<(), String> {
+    let metadata_path = metadata_path(app, session_id)?;
+    if metadata_path.exists() {
+        std::fs::remove_file(&metadata_path)
+            .map_err(|e| format!("Failed to remove session metadata: {e}"))?;
+    }
+    Ok(())
+}
+
+fn list_session_metadata_in_dir(
+    metadata_dir: &Path,
+) -> Result<Vec<PersistedSessionMetadata>, String> {
+    if !metadata_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut entries = Vec::new();
+    let read_dir = std::fs::read_dir(metadata_dir)
+        .map_err(|e| format!("Failed to list session metadata dir: {e}"))?;
+
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                eprintln!("[terminal] Skipping unreadable session metadata entry: {err}");
+                continue;
+            }
+        };
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let contents = match std::fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(err) => {
+                eprintln!(
+                    "[terminal] Skipping unreadable session metadata file {}: {err}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        let metadata = match serde_json::from_str::<PersistedSessionMetadata>(&contents) {
+            Ok(metadata) => metadata,
+            Err(err) => {
+                eprintln!(
+                    "[terminal] Skipping malformed session metadata file {}: {err}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        entries.push(metadata);
+    }
+
+    entries.sort_by(|left, right| left.created_at.cmp(&right.created_at));
+    Ok(entries)
+}
+
+fn list_session_metadata<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Vec<PersistedSessionMetadata>, String> {
+    let metadata_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?
+        .join(SESSION_METADATA_DIRNAME);
+    list_session_metadata_in_dir(&metadata_dir)
+}
+
+fn tmux_session_info(
+    metadata: &PersistedSessionMetadata,
+    recovery_state: SessionRecoveryState,
+    line_count: usize,
+) -> SessionInfo {
+    let cwd_valid = Path::new(&metadata.cwd).exists();
+    if !cwd_valid {
+        eprintln!(
+            "[terminal] Warning: session {} CWD no longer exists: {}",
+            metadata.id, metadata.cwd
+        );
+    }
+    SessionInfo {
+        id: metadata.id.clone(),
+        cwd: metadata.cwd.clone(),
+        branch: metadata.branch.clone(),
+        created_at: metadata.created_at.clone(),
+        alive: true,
+        exit_code: None,
+        line_count,
+        shell: metadata.shell.clone(),
+        persistence_mode: metadata.persistence_mode,
+        recovery_state,
+        cwd_valid,
+    }
+}
+
+fn attach_cwd_for_metadata(metadata: &PersistedSessionMetadata) -> Option<&str> {
+    let cwd = metadata.cwd.trim();
+    if cwd.is_empty() {
+        return None;
+    }
+
+    Path::new(cwd).exists().then_some(metadata.cwd.as_str())
+}
+
+fn supports_tmux_persistence() -> bool {
+    cfg!(target_os = "macos") || cfg!(target_os = "linux")
+}
+
+/// Parse a tmux version string like "3.5a" into (major, minor, suffix).
+///
+/// The suffix character is optional; "3.4" parses as `(3, 4, '\0')`.
+#[allow(dead_code)] // Used by tests; called at runtime via detect_tmux_version for version gating
+fn parse_tmux_version(version_str: &str) -> Option<(u32, u32, char)> {
+    let s = version_str.trim();
+    let dot = s.find('.')?;
+    let major: u32 = s[..dot].parse().ok()?;
+    let rest = &s[dot + 1..];
+    // Split numeric part from optional suffix character
+    let num_end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    if num_end == 0 {
+        return None;
+    }
+    let minor: u32 = rest[..num_end].parse().ok()?;
+    let suffix = rest[num_end..].chars().next().unwrap_or('\0');
+    Some((major, minor, suffix))
+}
+
+/// Returns true if the given tmux version supports `allow-passthrough` (>= 3.3a).
+#[allow(dead_code)] // Used by tests; reserved for runtime version gating
+fn tmux_version_supports_passthrough(version_str: &str) -> bool {
+    match parse_tmux_version(version_str) {
+        Some((major, minor, _)) => major > 3 || (major == 3 && minor >= 3),
+        None => false, // conservative: assume no support if unparseable
+    }
+}
+
+/// Detect the installed tmux version by running `tmux -V`.
+///
+/// Returns the version string (e.g. "3.5a") or `None` if the command fails.
+#[allow(dead_code)] // Reserved for runtime version gating beyond tmux.conf if-shell
+async fn detect_tmux_version(tmux_bin: &str) -> Option<String> {
+    let args = vec!["-V".to_string()];
+    match run_tmux_command(tmux_bin, &args, None).await {
+        Ok(output) => {
+            // Output format: "tmux 3.5a" -- extract version part
+            let version = output.trim().strip_prefix("tmux ").unwrap_or(output.trim());
+            Some(version.to_string())
+        }
+        Err(_) => None,
+    }
+}
+
+fn bundled_tmux_path<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let binary_name = if cfg!(target_os = "windows") {
+        "tmux.exe"
+    } else {
+        "tmux"
+    };
+    let path = resource_dir.join("bin").join(binary_name);
+    path.exists().then_some(path)
+}
+
+async fn resolve_tmux_binary<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    if !supports_tmux_persistence() {
+        return None;
+    }
+
+    if let Some(path) = bundled_tmux_path(app) {
+        return Some(path.to_string_lossy().to_string());
+    }
+
+    let probe = timeout(
+        TMUX_COMMAND_TIMEOUT,
+        tokio::process::Command::new("tmux").arg("-V").output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    probe.status.success().then_some("tmux".to_string())
+}
+
+/// Resolve the path to the bundled `tmux.conf` resource file.
+///
+/// Returns `None` in dev mode when bundled resources are not present.
+fn resolve_tmux_conf<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let conf_path = resource_dir.join("tmux.conf");
+    if conf_path.exists() {
+        Some(conf_path.to_string_lossy().to_string())
+    } else {
+        eprintln!(
+            "[terminal] tmux.conf not found at {}, using tmux defaults",
+            conf_path.display()
+        );
+        None
+    }
+}
+
+fn format_tmux_command_error(args: &[String], stderr: &[u8], stdout: &[u8]) -> String {
+    let stderr = String::from_utf8_lossy(stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(stdout).trim().to_string();
+    let detail = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        "unknown tmux failure".to_string()
+    };
+    format!("tmux {} failed: {detail}", args.join(" "))
+}
+
+async fn run_tmux_command(
+    tmux_bin: &str,
+    args: &[String],
+    cwd: Option<&str>,
+) -> Result<String, String> {
+    let mut command = tokio::process::Command::new(tmux_bin);
+    command.args(args);
+    if let Some(path) = cwd {
+        command.current_dir(path);
+    }
+
+    let output = timeout(TMUX_COMMAND_TIMEOUT, command.output())
+        .await
+        .map_err(|_| format!("tmux command timed out after 5s: {}", args.join(" ")))?
+        .map_err(|e| format!("Failed to launch tmux command: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format_tmux_command_error(
+            args,
+            &output.stderr,
+            &output.stdout,
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn build_tmux_shell_command(
+    session_id: &str,
+    shell: &str,
+    env: &HashMap<String, String>,
+) -> String {
+    let path = enriched_path_string();
+    let mut exports = vec![
+        format!("TERM={}", shell_quote("xterm-256color")),
+        format!("PATH={}", shell_quote(&path)),
+        format!("CLAWDSTRIKE_SESSION_ID={}", shell_quote(session_id)),
+        format!("SHELL={}", shell_quote(shell)),
+    ];
+
+    for (key, value) in env {
+        exports.push(format!("{key}={}", shell_quote(value)));
+    }
+
+    format!("env {} {}", exports.join(" "), shell_quote(shell))
+}
+
+async fn tmux_session_exists(tmux_bin: &str, session_id: &str) -> bool {
+    let mut args = tmux_socket_args();
+    args.extend([
+        "has-session".to_string(),
+        "-t".to_string(),
+        session_id.to_string(),
+    ]);
+    run_tmux_command(tmux_bin, &args, None).await.is_ok()
+}
+
+async fn capture_tmux_scrollback(
+    tmux_bin: &str,
+    session_id: &str,
+    line_hint: usize,
+) -> Result<Vec<String>, String> {
+    let start_line = -(line_hint.max(DEFAULT_PREVIEW_LINES).max(40) as i32);
+    let mut args = tmux_socket_args();
+    args.extend([
+        "capture-pane".to_string(),
+        "-p".to_string(),
+        "-e".to_string(),
+        "-S".to_string(),
+        start_line.to_string(),
+        "-t".to_string(),
+        format!("{session_id}:0.0"),
+    ]);
+    let output = run_tmux_command(tmux_bin, &args, None).await?;
+    let mut lines = Vec::new();
+    append_to_ring_buffer(&mut lines, &output);
+    Ok(lines)
 }
 
 /// Append a chunk of output to the ring buffer, splitting on newlines and
@@ -296,6 +791,10 @@ fn session_info(session: &mut TerminalSession) -> SessionInfo {
         alive,
         exit_code,
         line_count,
+        shell: session.shell.clone(),
+        persistence_mode: session.persistence_mode,
+        recovery_state: session.recovery_state,
+        cwd_valid: true, // Live sessions always have a valid CWD (verified at creation)
     }
 }
 
@@ -376,6 +875,417 @@ fn remove_ring_buffer(session_id: &str) {
     }
 }
 
+struct SpawnedPty {
+    master: Box<dyn MasterPty + Send>,
+    child: Box<dyn Child + Send + Sync>,
+    writer: Box<dyn IoWrite + Send>,
+    reader: Box<dyn IoRead + Send>,
+}
+
+fn spawn_pty_command(cmd: CommandBuilder, description: &str) -> Result<SpawnedPty, String> {
+    let pty_system = native_pty_system();
+    let pty_pair = pty_system
+        .openpty(PtySize {
+            rows: DEFAULT_ROWS,
+            cols: DEFAULT_COLS,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| format!("Failed to open PTY: {e}"))?;
+
+    let child = pty_pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("Failed to spawn {description}: {e}"))?;
+
+    let writer = pty_pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("Failed to take PTY writer: {e}"))?;
+
+    let reader = pty_pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("Failed to clone PTY reader: {e}"))?;
+
+    Ok(SpawnedPty {
+        master: pty_pair.master,
+        child,
+        writer,
+        reader,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn register_live_session<R: Runtime>(
+    app: AppHandle<R>,
+    state: TerminalState,
+    session_id: String,
+    cwd: String,
+    branch: Option<String>,
+    created_at: String,
+    shell: String,
+    persistence_mode: SessionPersistenceMode,
+    recovery_state: SessionRecoveryState,
+    session_permit: OwnedSemaphorePermit,
+    spawned: SpawnedPty,
+    initial_scrollback: Vec<String>,
+    startup_input: Option<String>,
+) -> Result<SessionInfo, String> {
+    let SpawnedPty {
+        master,
+        child,
+        writer,
+        mut reader,
+    } = spawned;
+
+    let session_alive = Arc::new(AtomicBool::new(true));
+    let session_alive_for_reader = Arc::clone(&session_alive);
+    let shared_buf = insert_ring_buffer(&session_id);
+
+    if !initial_scrollback.is_empty() {
+        shared_buf.append(&(initial_scrollback.join("\n") + "\n"));
+    }
+
+    let session = TerminalSession {
+        id: session_id.clone(),
+        master,
+        child,
+        writer,
+        cwd: cwd.clone(),
+        branch: branch.clone(),
+        created_at: created_at.clone(),
+        shell: shell.clone(),
+        persistence_mode,
+        recovery_state,
+        alive: session_alive,
+        _session_permit: session_permit,
+        reader_task: None,
+    };
+
+    let info = SessionInfo {
+        id: session_id.clone(),
+        cwd,
+        branch,
+        created_at,
+        alive: true,
+        exit_code: None,
+        line_count: initial_scrollback.len(),
+        shell,
+        persistence_mode,
+        recovery_state,
+        cwd_valid: true, // Session just created/connected — CWD verified at creation
+    };
+
+    {
+        let mut manager = state.lock().await;
+        manager.sessions.insert(session_id.clone(), session);
+    }
+
+    let event_session_id = session_id.clone();
+    let app_handle = app.clone();
+    let buf_for_task = Arc::clone(&shared_buf);
+    let state_for_reader = state.clone();
+    let reader_task = tauri::async_runtime::spawn_blocking(move || {
+        let event_name = format!("terminal:output:{}", event_session_id);
+        let mut chunk_buf = vec![0u8; READ_CHUNK_SIZE];
+        loop {
+            if !session_alive_for_reader.load(Ordering::Acquire) {
+                break;
+            }
+            match reader.read(&mut chunk_buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let text = String::from_utf8_lossy(&chunk_buf[..n]).to_string();
+                    if !session_alive_for_reader.load(Ordering::Acquire) {
+                        break;
+                    }
+                    buf_for_task.append(&text);
+                    if session_alive_for_reader.load(Ordering::Acquire) {
+                        let _ = app_handle.emit(&event_name, &text);
+                    }
+                }
+                Err(e) => {
+                    if e.kind() != std::io::ErrorKind::Other {
+                        eprintln!("[terminal] reader error for {}: {e}", event_session_id);
+                    }
+                    break;
+                }
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let natural_exit = session_alive_for_reader.load(Ordering::Acquire);
+        let exit_code: Option<i32> = state_for_reader.try_lock().ok().and_then(|mut manager| {
+            if let Some(session) = manager.sessions.get_mut(&event_session_id) {
+                match session.child.try_wait() {
+                    Ok(Some(status)) => Some(status.exit_code() as i32),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        });
+
+        if natural_exit {
+            let exit_event = format!("terminal:exit:{}", event_session_id);
+            let _ = app_handle.emit(&exit_event, exit_code);
+
+            let cleanup_state = state_for_reader.clone();
+            let cleanup_session_id = event_session_id.clone();
+            let cleanup_app = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                let removed_persistence_mode = {
+                    let mut manager = cleanup_state.lock().await;
+                    manager
+                        .sessions
+                        .remove(&cleanup_session_id)
+                        .map(|session| session.persistence_mode)
+                };
+                remove_ring_buffer(&cleanup_session_id);
+                if removed_persistence_mode == Some(SessionPersistenceMode::Tmux) {
+                    let _ = delete_session_metadata(&cleanup_app, &cleanup_session_id);
+                }
+            });
+        }
+    });
+
+    let mut pending_reader_task = Some(reader_task);
+    {
+        let mut manager = state.lock().await;
+        if let Some(session) = manager.sessions.get_mut(&session_id) {
+            session.reader_task = pending_reader_task.take();
+        }
+    }
+    if let Some(task) = pending_reader_task {
+        task.abort();
+        let _ = task.await;
+        remove_ring_buffer(&session_id);
+        return Err("Terminal session terminated during initialization".to_string());
+    }
+
+    if let Some(startup_input) = startup_input {
+        let write_result = {
+            let mut manager = state.lock().await;
+            let session = manager
+                .sessions
+                .get_mut(&session_id)
+                .ok_or_else(|| format!("Session not found during initialization: {session_id}"))?;
+
+            session
+                .writer
+                .write_all(startup_input.as_bytes())
+                .map_err(|e| format!("Failed to write startup input to PTY: {e}"))?;
+            session
+                .writer
+                .flush()
+                .map_err(|e| format!("Failed to flush startup PTY writer: {e}"))
+        };
+
+        if let Err(err) = write_result {
+            let removed = {
+                let mut manager = state.lock().await;
+                manager.sessions.remove(&session_id)
+            };
+            if let Some(mut session) = removed {
+                session.alive.store(false, Ordering::SeqCst);
+                let _ = session.child.kill();
+                if let Some(task) = session.reader_task.take() {
+                    task.abort();
+                    let _ = task.await;
+                }
+            }
+            remove_ring_buffer(&session_id);
+            return Err(err);
+        }
+    }
+
+    Ok(info)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_tmux_session<R: Runtime>(
+    app: &AppHandle<R>,
+    tmux_bin: &str,
+    session_id: &str,
+    cwd: &str,
+    branch: Option<String>,
+    created_at: &str,
+    shell: &str,
+    env: &HashMap<String, String>,
+) -> Result<PersistedSessionMetadata, String> {
+    let shell_command = build_tmux_shell_command(session_id, shell, env);
+    let mut create_args = tmux_socket_args();
+    // Pass -f tmux.conf if available (bundled resource).
+    if let Some(conf_path) = resolve_tmux_conf(app) {
+        create_args.push("-f".to_string());
+        create_args.push(conf_path);
+    }
+    create_args.extend([
+        "new-session".to_string(),
+        "-d".to_string(),
+        "-s".to_string(),
+        session_id.to_string(),
+        "-c".to_string(),
+        cwd.to_string(),
+        shell_command,
+    ]);
+    run_tmux_command(tmux_bin, &create_args, Some(cwd)).await?;
+
+    let mut set_session_id_args = tmux_socket_args();
+    set_session_id_args.extend([
+        "set-environment".to_string(),
+        "-t".to_string(),
+        session_id.to_string(),
+        "CLAWDSTRIKE_SESSION_ID".to_string(),
+        session_id.to_string(),
+    ]);
+    if let Err(err) = run_tmux_command(tmux_bin, &set_session_id_args, None).await {
+        eprintln!("[terminal] Failed to persist tmux session id env: {err}");
+    }
+
+    let mut set_shell_args = tmux_socket_args();
+    set_shell_args.extend([
+        "set-environment".to_string(),
+        "-t".to_string(),
+        session_id.to_string(),
+        "SHELL".to_string(),
+        shell.to_string(),
+    ]);
+    if let Err(err) = run_tmux_command(tmux_bin, &set_shell_args, None).await {
+        eprintln!("[terminal] Failed to persist tmux shell env: {err}");
+    }
+
+    let mut set_path_args = tmux_socket_args();
+    set_path_args.extend([
+        "set-environment".to_string(),
+        "-t".to_string(),
+        session_id.to_string(),
+        "PATH".to_string(),
+        enriched_path_string(),
+    ]);
+    if let Err(err) = run_tmux_command(tmux_bin, &set_path_args, None).await {
+        eprintln!("[terminal] Failed to persist tmux PATH env: {err}");
+    }
+
+    // Persist caller-supplied env vars in the tmux session environment.
+    // On reconnect these are already available — no additional passthrough needed.
+    for (key, value) in env {
+        let mut set_env_args = tmux_socket_args();
+        set_env_args.extend([
+            "set-environment".to_string(),
+            "-t".to_string(),
+            session_id.to_string(),
+            key.clone(),
+            value.clone(),
+        ]);
+        if let Err(e) = run_tmux_command(tmux_bin, &set_env_args, None).await {
+            eprintln!("[terminal] Failed to set tmux env {key}: {e}");
+        }
+    }
+
+    let metadata = PersistedSessionMetadata {
+        id: session_id.to_string(),
+        cwd: cwd.to_string(),
+        branch,
+        created_at: created_at.to_string(),
+        shell: shell.to_string(),
+        persistence_mode: SessionPersistenceMode::Tmux,
+    };
+    persist_session_metadata(app, &metadata)?;
+
+    Ok(metadata)
+}
+
+async fn connect_tmux_session<R: Runtime>(
+    app: AppHandle<R>,
+    state: TerminalState,
+    metadata: PersistedSessionMetadata,
+    recovery_state: SessionRecoveryState,
+    startup_input: Option<String>,
+) -> Result<SessionInfo, String> {
+    let session_permit = session_limiter().try_acquire_owned().map_err(|_| {
+        format!(
+            "Too many active terminal sessions (max {})",
+            MAX_ACTIVE_SESSIONS
+        )
+    })?;
+
+    let tmux_bin = resolve_tmux_binary(&app)
+        .await
+        .ok_or_else(|| "tmux is unavailable on this platform".to_string())?;
+    if !tmux_session_exists(&tmux_bin, &metadata.id).await {
+        let _ = delete_session_metadata(&app, &metadata.id);
+        return Err(format!("tmux session not found: {}", metadata.id));
+    }
+
+    let initial_scrollback =
+        capture_tmux_scrollback(&tmux_bin, &metadata.id, MAX_PREVIEW_LINES).await?;
+
+    let mut cmd = CommandBuilder::new(&tmux_bin);
+    if let Some(attach_cwd) = attach_cwd_for_metadata(&metadata) {
+        cmd.cwd(attach_cwd);
+    } else {
+        eprintln!(
+            "[terminal] Reconnecting tmux session {} without cwd because saved path is unavailable: {}",
+            metadata.id, metadata.cwd
+        );
+    }
+    cmd.env("TERM", "xterm-256color");
+    // Socket isolation
+    cmd.arg("-L");
+    cmd.arg(TMUX_SOCKET_NAME);
+    // Optionally pass tmux.conf for consistency (harmless on attach since server
+    // already loaded it on new-session, but ensures config is loaded if the
+    // server was started without it).
+    if let Some(conf_path) = resolve_tmux_conf(&app) {
+        cmd.arg("-f");
+        cmd.arg(conf_path);
+    }
+    cmd.arg("attach-session");
+    cmd.arg("-t");
+    cmd.arg(&metadata.id);
+
+    let spawned = spawn_pty_command(cmd, &format!("tmux attach-session {}", metadata.id))?;
+    register_live_session(
+        app,
+        state,
+        metadata.id.clone(),
+        metadata.cwd.clone(),
+        metadata.branch.clone(),
+        metadata.created_at.clone(),
+        metadata.shell.clone(),
+        SessionPersistenceMode::Tmux,
+        recovery_state,
+        session_permit,
+        spawned,
+        initial_scrollback,
+        startup_input,
+    )
+    .await
+}
+
+async fn kill_tmux_session<R: Runtime>(app: &AppHandle<R>, session_id: &str) -> Result<(), String> {
+    let Some(tmux_bin) = resolve_tmux_binary(app).await else {
+        let _ = delete_session_metadata(app, session_id);
+        return Ok(());
+    };
+
+    if tmux_session_exists(&tmux_bin, session_id).await {
+        let mut args = tmux_socket_args();
+        args.extend([
+            "kill-session".to_string(),
+            "-t".to_string(),
+            session_id.to_string(),
+        ]);
+        run_tmux_command(&tmux_bin, &args, None).await?;
+    }
+
+    delete_session_metadata(app, session_id)?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
@@ -394,8 +1304,8 @@ pub async fn terminal_create<R: Runtime>(
     cwd: String,
     shell: Option<String>,
     env: Option<HashMap<String, String>>,
+    startup_input: Option<String>,
 ) -> Result<SessionInfo, String> {
-    // Validate cwd exists
     let cwd = normalize_cwd(&cwd)?;
     let shell_path = match shell.as_deref() {
         Some(requested) => normalize_shell(requested, false)
@@ -403,8 +1313,54 @@ pub async fn terminal_create<R: Runtime>(
         None => default_shell(),
     };
     authorize_sensitive_command(&window, &capability_state, "terminal_create").await?;
-    // Reserve capacity up front so concurrent creates cannot pass a racy
-    // sessions.len()-style pre-check.
+    let sanitized_env = sanitize_extra_env(env)?;
+    let session_id = Uuid::new_v4().to_string();
+    let branch = detect_git_branch(&cwd);
+    let created_at = Utc::now().to_rfc3339();
+    let state_handle: TerminalState = (*state).clone();
+
+    if let Some(tmux_bin) = resolve_tmux_binary(&app).await {
+        match create_tmux_session(
+            &app,
+            &tmux_bin,
+            &session_id,
+            &cwd,
+            branch.clone(),
+            &created_at,
+            &shell_path,
+            &sanitized_env,
+        )
+        .await
+        {
+            Ok(metadata) => {
+                match connect_tmux_session(
+                    app.clone(),
+                    state_handle.clone(),
+                    metadata.clone(),
+                    SessionRecoveryState::Fresh,
+                    startup_input.clone(),
+                )
+                .await
+                {
+                    Ok(info) => return Ok(info),
+                    Err(err) => {
+                        eprintln!(
+                            "[terminal] tmux attach failed, falling back to direct PTY: {err}"
+                        );
+                        let _ = kill_tmux_session(&app, &metadata.id).await;
+                    }
+                }
+            }
+            Err(err) => {
+                // tmux new-session failed — fall back to direct PTY rather than
+                // blocking terminal creation entirely (PR review #221 feedback).
+                eprintln!(
+                    "[terminal] tmux session creation failed, falling back to direct PTY: {err}"
+                );
+            }
+        }
+    }
+
     let session_permit = session_limiter().try_acquire_owned().map_err(|_| {
         format!(
             "Too many active terminal sessions (max {})",
@@ -412,207 +1368,144 @@ pub async fn terminal_create<R: Runtime>(
         )
     })?;
 
-    let session_id = Uuid::new_v4().to_string();
-    let branch = detect_git_branch(&cwd);
-    let created_at = Utc::now().to_rfc3339();
-    let session_alive = Arc::new(AtomicBool::new(true));
-    let session_alive_for_reader = Arc::clone(&session_alive);
-
-    // Create the PTY pair
-    let pty_system = native_pty_system();
-    let pty_pair = pty_system
-        .openpty(PtySize {
-            rows: DEFAULT_ROWS,
-            cols: DEFAULT_COLS,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| format!("Failed to open PTY: {e}"))?;
-
-    // Build the command
     let mut cmd = CommandBuilder::new(&shell_path);
     cmd.cwd(&cwd);
-
-    // Set TERM for colour support
     cmd.env("TERM", "xterm-256color");
+    cmd.env("PATH", mcp_sidecar::enriched_path());
+    apply_extra_env(&mut cmd, &sanitized_env);
 
-    // Merge caller-supplied environment variables using explicit allowlist.
-    if let Some(extra_env) = env {
-        if extra_env.len() > MAX_EXTRA_ENV_VARS {
-            return Err(format!(
-                "Too many environment variables supplied (max {})",
-                MAX_EXTRA_ENV_VARS
-            ));
-        }
-        for (key, value) in extra_env {
-            if !is_allowed_env_var(&key) {
-                eprintln!("[terminal] Ignored env key from IPC payload: {}", key);
-                continue;
-            }
-            if key.len() > MAX_ENV_KEY_LEN {
-                eprintln!(
-                    "[terminal] Ignored oversize env key from IPC payload: {}",
-                    key
-                );
-                continue;
-            }
-            if value.len() > MAX_ENV_VALUE_LEN {
-                eprintln!(
-                    "[terminal] Ignored oversize env value for key {} from IPC payload",
-                    key
-                );
-                continue;
-            }
-            cmd.env(key, value);
-        }
-    }
-
-    // Spawn the child
-    let child = pty_pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| format!("Failed to spawn shell ({shell_path}): {e}"))?;
-
-    // Take a writer handle for stdin
-    let writer = pty_pair
-        .master
-        .take_writer()
-        .map_err(|e| format!("Failed to take PTY writer: {e}"))?;
-
-    // Take a reader handle for stdout
-    let mut reader = pty_pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| format!("Failed to clone PTY reader: {e}"))?;
-
-    // Set up the shared ring buffer
-    let shared_buf = insert_ring_buffer(&session_id);
-
-    // Build + store session before starting the reader task so natural-exit
-    // cleanup always has a map entry to prune.
-    let session = TerminalSession {
-        id: session_id.clone(),
-        master: pty_pair.master,
-        child,
-        writer,
-        cwd: cwd.clone(),
-        branch: branch.clone(),
-        created_at: created_at.clone(),
-        alive: session_alive,
-        _session_permit: session_permit,
-        reader_task: None,
-    };
-
-    let info = SessionInfo {
-        id: session_id.clone(),
+    let spawned = spawn_pty_command(cmd, &format!("shell {shell_path}"))?;
+    register_live_session(
+        app,
+        state_handle,
+        session_id,
         cwd,
         branch,
         created_at,
-        alive: true,
-        exit_code: None,
-        line_count: 0,
+        shell_path,
+        SessionPersistenceMode::Direct,
+        SessionRecoveryState::Fresh,
+        session_permit,
+        spawned,
+        Vec::new(),
+        startup_input,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn terminal_discover<R: Runtime>(
+    app: AppHandle<R>,
+    window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<Vec<SessionInfo>, String> {
+    authorize_sensitive_command(&window, &capability_state, "terminal_discover").await?;
+
+    let Some(tmux_bin) = resolve_tmux_binary(&app).await else {
+        return Ok(Vec::new());
     };
 
-    // Store the session first to avoid create/exit races.
-    {
-        let mut manager = state.lock().await;
-        manager.sessions.insert(session_id.clone(), session);
+    let attached_ids = {
+        let manager = state.lock().await;
+        manager
+            .sessions
+            .values()
+            .filter(|session| session.persistence_mode == SessionPersistenceMode::Tmux)
+            .map(|session| session.id.clone())
+            .collect::<HashSet<_>>()
+    };
+
+    let mut discovered = Vec::new();
+    for metadata in list_session_metadata(&app)? {
+        if metadata.persistence_mode != SessionPersistenceMode::Tmux {
+            continue;
+        }
+        if attached_ids.contains(&metadata.id) {
+            continue;
+        }
+        if !tmux_session_exists(&tmux_bin, &metadata.id).await {
+            let _ = delete_session_metadata(&app, &metadata.id);
+            continue;
+        }
+        discovered.push(tmux_session_info(
+            &metadata,
+            SessionRecoveryState::Recoverable,
+            0,
+        ));
     }
 
-    // Spawn a background thread (not async — the PTY reader is blocking I/O)
-    // that reads output, populates the ring buffer, and emits Tauri events.
-    let event_session_id = session_id.clone();
-    let app_handle = app.clone();
-    let buf_for_task = Arc::clone(&shared_buf);
-    // Clone the TerminalState Arc so the reader thread can check exit code after EOF.
-    let state_for_reader: TerminalState = (*state).clone();
-    let reader_task = tauri::async_runtime::spawn_blocking(move || {
-        let event_name = format!("terminal:output:{}", event_session_id);
-        let mut chunk_buf = vec![0u8; READ_CHUNK_SIZE];
-        loop {
-            if !session_alive_for_reader.load(Ordering::Acquire) {
-                break;
-            }
-            match reader.read(&mut chunk_buf) {
-                Ok(0) => break, // EOF
-                Ok(n) => {
-                    let text = String::from_utf8_lossy(&chunk_buf[..n]).to_string();
-                    if !session_alive_for_reader.load(Ordering::Acquire) {
-                        break;
-                    }
-                    // Append to ring buffer
-                    buf_for_task.append(&text);
-                    // Emit to frontend
-                    if session_alive_for_reader.load(Ordering::Acquire) {
-                        let _ = app_handle.emit(&event_name, &text);
-                    }
-                }
-                Err(e) => {
-                    // On macOS, EIO is expected when the child exits and the
-                    // slave side of the PTY closes.
-                    if e.kind() != std::io::ErrorKind::Other {
-                        eprintln!("[terminal] reader error for {}: {e}", event_session_id);
-                    }
-                    break;
-                }
+    // Orphan cleanup: if no discoverable (unattached) sessions remain AND no
+    // sessions are currently attached in the manager, the tmux server on our
+    // socket only contains orphans (e.g. from a crash). Kill the server to
+    // reclaim resources. The `attached_ids.is_empty()` guard prevents killing
+    // the server when all sessions happen to be attached (discovered would be
+    // empty, but the sessions are still in active use).
+    if discovered.is_empty() && attached_ids.is_empty() {
+        let mut list_args = tmux_socket_args();
+        list_args.extend([
+            "list-sessions".to_string(),
+            "-F".to_string(),
+            "#{session_name}".to_string(),
+        ]);
+        if let Ok(output) = run_tmux_command(&tmux_bin, &list_args, None).await {
+            let server_sessions: Vec<&str> =
+                output.trim().lines().filter(|l| !l.is_empty()).collect();
+            if !server_sessions.is_empty() {
+                // Orphaned sessions exist with no matching metadata -- kill server
+                eprintln!(
+                    "[terminal] Killing orphaned tmux server with {} sessions on socket '{}'",
+                    server_sessions.len(),
+                    TMUX_SOCKET_NAME
+                );
+                let mut kill_args = tmux_socket_args();
+                kill_args.push("kill-server".to_string());
+                let _ = run_tmux_command(&tmux_bin, &kill_args, None).await;
             }
         }
+    }
 
-        // PTY reader has ended — the child process has exited (or the PTY
-        // was closed). Try to retrieve the exit code and emit a terminal
-        // exit event so the frontend can update session status.
-        //
-        // Brief sleep to let the child process fully exit before we check.
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        // Use try_lock() instead of block_on(lock().await) to avoid
-        // deadlocking: we're inside spawn_blocking and must not block on
-        // the async Mutex via the tokio runtime handle.
-        let natural_exit = session_alive_for_reader.load(Ordering::Acquire);
-        let exit_code: Option<i32> = state_for_reader.try_lock().ok().and_then(|mut manager| {
-            if let Some(session) = manager.sessions.get_mut(&event_session_id) {
-                match session.child.try_wait() {
-                    Ok(Some(status)) => Some(status.exit_code() as i32),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        });
+    Ok(discovered)
+}
 
-        if natural_exit {
-            let exit_event = format!("terminal:exit:{}", event_session_id);
-            let _ = app_handle.emit(&exit_event, exit_code);
+#[tauri::command]
+pub async fn terminal_reconnect<R: Runtime>(
+    app: AppHandle<R>,
+    window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
+    state: tauri::State<'_, TerminalState>,
+    session_id: String,
+) -> Result<SessionInfo, String> {
+    validate_session_id(&session_id)?;
+    authorize_sensitive_command(&window, &capability_state, "terminal_reconnect").await?;
 
-            // Guaranteed async cleanup for naturally exited sessions.
-            // This awaits the session lock instead of bounded try_lock retries.
-            let cleanup_state = state_for_reader.clone();
-            let cleanup_session_id = event_session_id.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut manager = cleanup_state.lock().await;
-                manager.sessions.remove(&cleanup_session_id);
-                drop(manager);
-                remove_ring_buffer(&cleanup_session_id);
-            });
-        }
-    });
-
-    // Attach task after spawn. If the session disappeared in the tiny window
-    // (e.g. immediate natural exit + cleanup), abort the task and fail create.
-    let mut pending_reader_task = Some(reader_task);
     {
         let mut manager = state.lock().await;
         if let Some(session) = manager.sessions.get_mut(&session_id) {
-            session.reader_task = pending_reader_task.take();
+            session.recovery_state = SessionRecoveryState::Recovered;
+            return Ok(session_info(session));
         }
     }
-    if let Some(task) = pending_reader_task {
-        task.abort();
-        let _ = task.await;
-        remove_ring_buffer(&session_id);
-        return Err("Terminal session terminated during initialization".to_string());
+
+    let metadata = read_session_metadata(&app, &session_id)?
+        .ok_or_else(|| format!("Recoverable session metadata not found: {session_id}"))?;
+
+    let cwd_valid = Path::new(&metadata.cwd).exists();
+    if !cwd_valid {
+        eprintln!(
+            "[terminal] Warning: session {} CWD no longer exists: {}",
+            session_id, metadata.cwd
+        );
     }
 
-    Ok(info)
+    connect_tmux_session(
+        app,
+        (*state).clone(),
+        metadata,
+        SessionRecoveryState::Recovered,
+        None,
+    )
+    .await
 }
 
 /// Write data to a PTY session's stdin.
@@ -653,8 +1546,12 @@ pub async fn terminal_write<R: Runtime>(
 }
 
 /// Resize a PTY session.
+///
+/// For tmux sessions, also issues `tmux resize-window` so the tmux pseudo-window
+/// dimensions stay in sync with the PTY. The tmux resize is best-effort.
 #[tauri::command]
 pub async fn terminal_resize<R: Runtime>(
+    app: AppHandle<R>,
     window: tauri::Window<R>,
     capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
@@ -665,21 +1562,45 @@ pub async fn terminal_resize<R: Runtime>(
     validate_session_id(&session_id)?;
     authorize_sensitive_command(&window, &capability_state, "terminal_resize").await?;
 
-    let manager = state.lock().await;
-    let session = manager
-        .sessions
-        .get(&session_id)
-        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    // Extract what we need under the lock, then drop it before async tmux calls.
+    let (persistence_mode, sid) = {
+        let manager = state.lock().await;
+        let session = manager
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
 
-    session
-        .master
-        .resize(PtySize {
-            rows: rows.max(1),
-            cols: cols.max(1),
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| format!("Failed to resize PTY: {e}"))?;
+        session
+            .master
+            .resize(PtySize {
+                rows: rows.max(1),
+                cols: cols.max(1),
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| format!("Failed to resize PTY: {e}"))?;
+
+        (session.persistence_mode, session.id.clone())
+    };
+
+    // For tmux sessions, also resize the tmux window so dimensions stay in sync.
+    if persistence_mode == SessionPersistenceMode::Tmux {
+        if let Some(tmux_bin) = resolve_tmux_binary(&app).await {
+            let mut args = tmux_socket_args();
+            args.extend([
+                "resize-window".to_string(),
+                "-t".to_string(),
+                sid,
+                "-x".to_string(),
+                cols.max(1).to_string(),
+                "-y".to_string(),
+                rows.max(1).to_string(),
+            ]);
+            if let Err(e) = run_tmux_command(&tmux_bin, &args, None).await {
+                eprintln!("[terminal] tmux resize-window failed (best-effort): {e}");
+            }
+        }
+    }
 
     Ok(())
 }
@@ -694,6 +1615,7 @@ pub async fn terminal_resize<R: Runtime>(
 /// 5. Remove the ring buffer
 #[tauri::command]
 pub async fn terminal_kill<R: Runtime>(
+    app: AppHandle<R>,
     window: tauri::Window<R>,
     capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
@@ -708,32 +1630,34 @@ pub async fn terminal_kill<R: Runtime>(
     let extracted = {
         let mut manager = state.lock().await;
         manager.sessions.remove(&session_id).map(|mut session| {
-            // 1. Signal the reader to stop
             session.alive.store(false, Ordering::SeqCst);
-
-            // 2. Kill the child process (best-effort; also causes reader EOF)
             let _ = session.child.kill();
 
-            (session.reader_task.take(), session.id.clone())
+            (
+                session.reader_task.take(),
+                session.id.clone(),
+                session.persistence_mode,
+            )
         })
     };
-    // Manager lock is dropped here.
-    let Some((reader_task, sid)) = extracted else {
-        // Session may have already naturally exited and been pruned asynchronously.
+
+    let Some((reader_task, sid, persistence_mode)) = extracted else {
+        if read_session_metadata(&app, &session_id)?.is_some() {
+            return kill_tmux_session(&app, &session_id).await;
+        }
         remove_ring_buffer(&session_id);
         return Ok(());
     };
 
-    // 3. Wait for the reader task to finish so no more events/ring-buffer
-    //    writes can occur after this point.
     if let Some(task) = reader_task {
         task.abort();
-        // Wait for the task to actually complete (abort is async).
         let _ = task.await;
     }
 
-    // 4. Now safe to remove the ring buffer — reader is guaranteed stopped.
     remove_ring_buffer(&sid);
+    if persistence_mode == SessionPersistenceMode::Tmux {
+        kill_tmux_session(&app, &sid).await?;
+    }
 
     Ok(())
 }
@@ -763,6 +1687,7 @@ pub async fn terminal_list<R: Runtime>(
 /// Return the last N lines from a session's ring buffer for tile preview.
 #[tauri::command]
 pub async fn terminal_preview<R: Runtime>(
+    app: AppHandle<R>,
     window: tauri::Window<R>,
     capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
@@ -772,22 +1697,101 @@ pub async fn terminal_preview<R: Runtime>(
     validate_session_id(&session_id)?;
     authorize_sensitive_command(&window, &capability_state, "terminal_preview").await?;
 
-    // Verify the session exists
-    {
-        let manager = state.lock().await;
-        if !manager.sessions.contains_key(&session_id) {
-            return Err(format!("Session not found: {session_id}"));
-        }
-    }
-
     let n = lines
         .unwrap_or(DEFAULT_PREVIEW_LINES)
         .min(MAX_PREVIEW_LINES);
 
-    let buf = get_ring_buffer(&session_id)
-        .ok_or_else(|| format!("Ring buffer not found for session: {session_id}"))?;
+    {
+        let manager = state.lock().await;
+        if manager.sessions.contains_key(&session_id) {
+            let buf = get_ring_buffer(&session_id)
+                .ok_or_else(|| format!("Ring buffer not found for session: {session_id}"))?;
+            return Ok(buf.tail(n));
+        }
+    }
 
-    Ok(buf.tail(n))
+    let metadata = read_session_metadata(&app, &session_id)?
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    if metadata.persistence_mode != SessionPersistenceMode::Tmux {
+        return Err(format!("Session not found: {session_id}"));
+    }
+
+    let tmux_bin = resolve_tmux_binary(&app)
+        .await
+        .ok_or_else(|| "tmux is unavailable on this platform".to_string())?;
+    if !tmux_session_exists(&tmux_bin, &session_id).await {
+        let _ = delete_session_metadata(&app, &session_id);
+        return Err(format!("Session not found: {session_id}"));
+    }
+
+    let scrollback = capture_tmux_scrollback(&tmux_bin, &session_id, n).await?;
+    Ok(scrollback
+        .into_iter()
+        .rev()
+        .take(n)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect())
+}
+
+/// Detach a single tmux session without destroying it.
+///
+/// Kills the PTY client (`tmux attach-session` process) and removes the session
+/// from the in-memory manager, but preserves the tmux server session and its
+/// metadata file. The session can later be rediscovered and reconnected via
+/// `terminal_discover` + `terminal_reconnect`.
+///
+/// Only tmux sessions can be detached; direct sessions must be killed.
+#[tauri::command]
+pub async fn terminal_detach<R: Runtime>(
+    _app: AppHandle<R>,
+    window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
+    state: tauri::State<'_, TerminalState>,
+    session_id: String,
+) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    authorize_sensitive_command(&window, &capability_state, "terminal_detach").await?;
+
+    // Check persistence mode BEFORE any destructive operations.  A Direct
+    // session cannot be detached—only killed—so we must reject early to avoid
+    // irreversibly destroying it.
+    {
+        let manager = state.lock().await;
+        match manager.sessions.get(&session_id) {
+            None => return Err(format!("Session not found: {session_id}")),
+            Some(session) if session.persistence_mode != SessionPersistenceMode::Tmux => {
+                return Err(
+                    "Only tmux sessions can be detached; direct sessions must be killed"
+                        .to_string(),
+                );
+            }
+            _ => {} // Tmux — proceed with detach below
+        }
+    }
+
+    let extracted = {
+        let mut manager = state.lock().await;
+        manager.sessions.remove(&session_id).map(|mut session| {
+            session.alive.store(false, Ordering::SeqCst);
+            let _ = session.child.kill(); // kills tmux attach client, NOT the tmux session
+            session.reader_task.take()
+        })
+    };
+
+    let Some(reader_task) = extracted else {
+        return Err(format!("Session not found: {session_id}"));
+    };
+
+    if let Some(task) = reader_task {
+        task.abort();
+        let _ = task.await;
+    }
+    remove_ring_buffer(&session_id);
+
+    // Metadata is preserved -- session can be rediscovered and reconnected later
+    Ok(())
 }
 
 /// Return the current working directory of the Tauri process.
@@ -795,20 +1799,25 @@ pub async fn terminal_preview<R: Runtime>(
 /// Used by the frontend to auto-detect a sensible default for `repoRoot` when
 /// none is configured (e.g. first launch).
 #[tauri::command]
-pub async fn get_cwd<R: Runtime>(
-    window: tauri::Window<R>,
-    capability_state: tauri::State<'_, CommandCapabilityState>,
-) -> Result<String, String> {
-    authorize_sensitive_command(&window, &capability_state, "get_cwd").await?;
+pub async fn get_cwd<R: Runtime>(window: tauri::Window<R>) -> Result<String, String> {
+    ensure_trusted_window(&window)?;
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())
 }
 
 /// Kill all sessions. Called during app shutdown.
+///
+/// For `Direct` sessions: kills child, aborts reader, removes ring buffer (unchanged).
+/// For `Tmux` sessions: kills the PTY client (the `tmux attach-session` process)
+/// to detach, aborts reader, removes ring buffer, but does NOT delete session
+/// metadata files. The tmux server session persists for recovery on next launch.
 pub async fn kill_all_sessions(state: &TerminalState) {
-    // Collect sessions and signal termination while holding the lock.
-    let pending: Vec<(String, Option<tauri::async_runtime::JoinHandle<()>>)> = {
+    let pending: Vec<(
+        String,
+        SessionPersistenceMode,
+        Option<tauri::async_runtime::JoinHandle<()>>,
+    )> = {
         let mut manager = state.lock().await;
         let session_ids: Vec<String> = manager.sessions.keys().cloned().collect();
         let mut pending = Vec::with_capacity(session_ids.len());
@@ -820,25 +1829,44 @@ pub async fn kill_all_sessions(state: &TerminalState) {
                 if let Some(ref t) = task {
                     t.abort();
                 }
-                pending.push((id, task));
+                pending.push((id, session.persistence_mode, task));
             }
         }
         pending
     };
-    // Manager lock is dropped here.
 
-    // Wait for all reader tasks, then clean up ring buffers.
-    for (id, task) in pending {
+    for (id, persistence_mode, task) in pending {
         if let Some(t) = task {
             let _ = t.await;
         }
         remove_ring_buffer(&id);
+
+        match persistence_mode {
+            SessionPersistenceMode::Direct => {
+                // Direct sessions are fully cleaned up -- nothing more to do.
+            }
+            SessionPersistenceMode::Tmux => {
+                // Tmux sessions: the child.kill() above killed the PTY client
+                // (tmux attach-session process), which detaches from the tmux
+                // server session. Metadata is preserved so the session can be
+                // rediscovered on next launch.
+                eprintln!("[terminal] Preserved tmux session {id} for recovery (detached on exit)");
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_shell;
+    use super::{
+        append_to_ring_buffer, attach_cwd_for_metadata, build_tmux_shell_command,
+        list_session_metadata_in_dir, normalize_shell, parse_tmux_version,
+        shell_quote, tmux_socket_args, tmux_version_supports_passthrough, PersistedSessionMetadata,
+        SessionPersistenceMode, SESSION_METADATA_DIRNAME, RING_BUFFER_MAX_LINES,
+    };
+    use std::collections::HashMap;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn normalize_shell_rejects_relative_path_components() {
@@ -864,5 +1892,176 @@ mod tests {
         let path = r"C:\Windows\System32\cmd.exe";
 
         assert_eq!(normalize_shell(path, true).as_deref(), Some(path));
+    }
+
+    #[test]
+    fn test_build_tmux_shell_command_basic() {
+        let env = HashMap::new();
+        let cmd = build_tmux_shell_command("test-id", "/bin/zsh", &env);
+        assert!(cmd.contains("CLAWDSTRIKE_SESSION_ID='test-id'"));
+        assert!(cmd.contains("SHELL='/bin/zsh'"));
+        assert!(cmd.contains("TERM='xterm-256color'"));
+        assert!(cmd.contains("PATH='"));
+        assert!(cmd.ends_with(" '/bin/zsh'"));
+        assert!(!cmd.contains(" exec "));
+    }
+
+    #[test]
+    fn test_build_tmux_shell_command_with_extra_env() {
+        let mut env = HashMap::new();
+        env.insert("LANG".to_string(), "en_US.UTF-8".to_string());
+        let cmd = build_tmux_shell_command("sid", "bash", &env);
+        assert!(cmd.contains("LANG='en_US.UTF-8'"));
+        assert!(cmd.contains("CLAWDSTRIKE_SESSION_ID='sid'"));
+    }
+
+    #[test]
+    fn test_build_tmux_shell_command_quotes_special_chars() {
+        let mut env = HashMap::new();
+        env.insert("EDITOR".to_string(), "it's vim".to_string());
+        let cmd = build_tmux_shell_command("sid", "bash", &env);
+        // The value should contain the escaped single-quote sequence
+        assert!(cmd.contains(r#"EDITOR='it'"'"'s vim'"#));
+    }
+
+    #[test]
+    fn test_tmux_socket_args_format() {
+        let args = tmux_socket_args();
+        assert_eq!(args, vec!["-L".to_string(), "clawdstrike".to_string()]);
+    }
+
+    #[test]
+    fn test_append_to_ring_buffer_basic() {
+        let mut buf = Vec::new();
+        append_to_ring_buffer(&mut buf, "line1\nline2\nline3\n");
+        assert_eq!(buf, vec!["line1", "line2", "line3", ""]);
+    }
+
+    #[test]
+    fn test_append_to_ring_buffer_partial_lines() {
+        let mut buf = Vec::new();
+        append_to_ring_buffer(&mut buf, "partial");
+        assert_eq!(buf, vec!["partial"]);
+        append_to_ring_buffer(&mut buf, " continuation\nnew line");
+        assert_eq!(buf, vec!["partial continuation", "new line"]);
+    }
+
+    #[test]
+    fn test_append_to_ring_buffer_capacity_limit() {
+        let mut buf = Vec::new();
+        // Fill buffer beyond capacity
+        for i in 0..RING_BUFFER_MAX_LINES + 50 {
+            append_to_ring_buffer(&mut buf, &format!("line{i}\n"));
+        }
+        assert!(buf.len() <= RING_BUFFER_MAX_LINES);
+        // The last line pushed should be retained
+        let last_line = format!("line{}", RING_BUFFER_MAX_LINES + 49);
+        assert!(buf.iter().any(|l| l == &last_line));
+    }
+
+    #[test]
+    fn test_shell_quote_handles_quotes() {
+        assert_eq!(shell_quote("it's"), "'it'\"'\"'s'");
+    }
+
+    #[test]
+    fn test_shell_quote_simple() {
+        assert_eq!(shell_quote("hello"), "'hello'");
+    }
+
+    #[test]
+    fn test_shell_quote_empty() {
+        assert_eq!(shell_quote(""), "''");
+    }
+
+    #[test]
+    fn test_parse_tmux_version_standard() {
+        assert_eq!(parse_tmux_version("3.5a"), Some((3, 5, 'a')));
+    }
+
+    #[test]
+    fn test_parse_tmux_version_no_suffix() {
+        assert_eq!(parse_tmux_version("3.4"), Some((3, 4, '\0')));
+    }
+
+    #[test]
+    fn test_parse_tmux_version_two_digit_minor() {
+        assert_eq!(parse_tmux_version("4.12b"), Some((4, 12, 'b')));
+    }
+
+    #[test]
+    fn test_tmux_version_supports_passthrough_33a() {
+        assert!(tmux_version_supports_passthrough("3.3a"));
+    }
+
+    #[test]
+    fn test_tmux_version_supports_passthrough_32a() {
+        assert!(!tmux_version_supports_passthrough("3.2a"));
+    }
+
+    #[test]
+    fn test_tmux_version_supports_passthrough_40() {
+        assert!(tmux_version_supports_passthrough("4.0"));
+    }
+
+    #[test]
+    fn attach_cwd_for_metadata_returns_none_when_path_is_missing() {
+        let metadata = PersistedSessionMetadata {
+            id: "session-missing".to_string(),
+            cwd: "/definitely/missing/path".to_string(),
+            branch: None,
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            shell: "zsh".to_string(),
+            persistence_mode: SessionPersistenceMode::Tmux,
+        };
+
+        assert_eq!(attach_cwd_for_metadata(&metadata), None);
+    }
+
+    #[test]
+    fn attach_cwd_for_metadata_returns_existing_path() {
+        let dir = tempdir().unwrap();
+        let metadata = PersistedSessionMetadata {
+            id: "session-existing".to_string(),
+            cwd: dir.path().to_string_lossy().into_owned(),
+            branch: None,
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            shell: "zsh".to_string(),
+            persistence_mode: SessionPersistenceMode::Tmux,
+        };
+
+        assert_eq!(
+            attach_cwd_for_metadata(&metadata),
+            Some(metadata.cwd.as_str())
+        );
+    }
+
+    #[test]
+    fn list_session_metadata_in_dir_skips_malformed_json_files() {
+        let dir = tempdir().unwrap();
+        let metadata_dir = dir.path().join(SESSION_METADATA_DIRNAME);
+        fs::create_dir_all(&metadata_dir).unwrap();
+
+        let valid = PersistedSessionMetadata {
+            id: "session-valid".to_string(),
+            cwd: "/tmp".to_string(),
+            branch: Some("main".to_string()),
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            shell: "zsh".to_string(),
+            persistence_mode: SessionPersistenceMode::Tmux,
+        };
+
+        fs::write(
+            metadata_dir.join("valid.json"),
+            serde_json::to_string(&valid).unwrap(),
+        )
+        .unwrap();
+        fs::write(metadata_dir.join("corrupt.json"), "{not valid json").unwrap();
+        fs::write(metadata_dir.join("ignored.txt"), "ignore").unwrap();
+
+        let discovered = list_session_metadata_in_dir(&metadata_dir).unwrap();
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].id, valid.id);
+        assert_eq!(discovered[0].cwd, valid.cwd);
     }
 }

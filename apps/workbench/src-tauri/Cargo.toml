@@ -19,6 +19,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "ne
 portable-pty = "0.8" # SEC-PTY-001: upgrade/remove once transitive `serial` is eliminated
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+notify = "8.2.0"
+notify-debouncer-mini = "0.7.0"
 
 # Local crates
 hush-core = { path = "../../../crates/libs/hush-core" }

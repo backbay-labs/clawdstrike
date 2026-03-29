@@ -772,14 +772,13 @@ function ObservatoryHeroPropFallbackModel({
     case "vault-rack":
       return (
         <group>
-          {[-0.34, 0, 0.34].map((x, index) => (
+          {[-0.34, 0, 0.34].map((x, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
-              position={[x, 0.62 + index * 0.18, 0]}
+              key={x}
+              position={[x, 0.62 + i * 0.18, 0]}
             >
-              <boxGeometry args={[0.24, 0.94 + index * 0.16, 0.58]} />
-              <meshStandardMaterial color="#142130" emissive={color} emissiveIntensity={0.2 + index * 0.08} />
+              <boxGeometry args={[0.24, 0.94 + i * 0.16, 0.58]} />
+              <meshStandardMaterial color="#142130" emissive={color} emissiveIntensity={0.2 + i * 0.08} />
             </mesh>
           ))}
         </group>
@@ -1032,15 +1031,14 @@ function HeroPropInteractionEffect({
     case "evidence-vault-rack":
       return (
         <group>
-          {[-0.28, 0, 0.28].map((x, index) => (
+          {[-0.28, 0, 0.28].map((x, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
-              position={[x, 0.64 + index * 0.08, 0.36]}
-              rotation={[0.14, index * 0.12, 0]}
+              key={x}
+              position={[x, 0.64 + i * 0.08, 0.36]}
+              rotation={[0.14, i * 0.12, 0]}
             >
               <boxGeometry args={[0.34, 0.02, 0.48]} />
-              <meshBasicMaterial color={prop.glowColor} transparent opacity={0.22 - index * 0.03} />
+              <meshBasicMaterial color={prop.glowColor} transparent opacity={0.22 - i * 0.03} />
             </mesh>
           ))}
         </group>
@@ -1126,10 +1124,9 @@ function HiddenSignalPathReveal({
               opacity={0.16 + strength * 0.24}
               lineWidth={1.6}
             />
-            {arc.filter((_, index) => index > 0 && index < arc.length - 1 && index % 8 === 0).map((point, index) => (
+            {arc.filter((_, idx) => idx > 0 && idx < arc.length - 1 && idx % 8 === 0).map((point) => (
               <mesh
-                // eslint-disable-next-line react/no-array-index-key
-                key={index}
+                key={`${point[0].toFixed(2)}-${point[1].toFixed(2)}-${point[2].toFixed(2)}`}
                 position={point}
               >
                 <sphereGeometry args={[0.08 + strength * 0.04, 12, 12]} />
@@ -1168,10 +1165,9 @@ function SubjectsClusterReveal({
             opacity={0.12 + strength * 0.2}
             lineWidth={1.4}
           />
-          {route.waypointPositions.map((point, index) => (
+          {route.waypointPositions.map((point) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={`${point[0].toFixed(2)}-${point[1].toFixed(2)}-${point[2].toFixed(2)}`}
               position={[point[0], point[1] + 0.12, point[2]]}
             >
               <sphereGeometry args={[0.07 + strength * 0.03, 10, 10]} />
@@ -1180,13 +1176,12 @@ function SubjectsClusterReveal({
           ))}
         </group>
       ))}
-      {[-0.6, 0, 0.6].map((offset, index) => (
+      {[-0.6, 0, 0.6].map((offset, i) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
-          position={[start[0] + offset, start[1] + 1.1 + index * 0.14, start[2] - offset * 0.22]}
+          key={offset}
+          position={[start[0] + offset, start[1] + 1.1 + i * 0.14, start[2] - offset * 0.22]}
         >
-          <sphereGeometry args={[0.18 + index * 0.03, 14, 14]} />
+          <sphereGeometry args={[0.18 + i * 0.03, 14, 14]} />
           <meshBasicMaterial color="#d8f2ff" transparent opacity={0.18 + strength * 0.14} />
         </mesh>
       ))}
@@ -1211,11 +1206,10 @@ function RunBootConsequence({
     <group>
       {runProp ? (
         <>
-          {[-0.9, -0.3, 0.3, 0.9].map((x, index) => (
+          {[-0.9, -0.3, 0.3, 0.9].map((x, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
-              position={[runProp.position[0] + x, runProp.position[1] + 0.9 + index * 0.14, runProp.position[2]]}
+              key={x}
+              position={[runProp.position[0] + x, runProp.position[1] + 0.9 + i * 0.14, runProp.position[2]]}
               scale={[0.08, 1.1 + strength * 0.8, 0.08]}
             >
               <boxGeometry args={[1, 1, 1]} />
@@ -1227,10 +1221,9 @@ function RunBootConsequence({
       {route ? (
         <>
           <Line points={route.points} color="#fff0bf" transparent opacity={0.16 + strength * 0.26} lineWidth={2} />
-          {route.waypointPositions.map((point, index) => (
+          {route.waypointPositions.map((point) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={`${point[0].toFixed(2)}-${point[1].toFixed(2)}-${point[2].toFixed(2)}`}
               position={point}
             >
               <sphereGeometry args={[0.1 + strength * 0.04, 12, 12]} />
@@ -1258,15 +1251,14 @@ function EvidenceArrivalReveal({
   if (!rack) return null;
   return (
     <group position={rack.position}>
-      {[-0.48, -0.18, 0.14, 0.46].map((x, index) => (
+      {[-0.48, -0.18, 0.14, 0.46].map((x, i) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
-          position={[x, 0.92 + index * 0.18, 0.48 - index * 0.06]}
-          rotation={[0.18 - index * 0.04, index * 0.18, 0]}
+          key={x}
+          position={[x, 0.92 + i * 0.18, 0.48 - i * 0.06]}
+          rotation={[0.18 - i * 0.04, i * 0.18, 0]}
         >
           <boxGeometry args={[0.52, 0.04, 0.72]} />
-          <meshBasicMaterial color={index % 2 === 0 ? "#dffcff" : "#8fefff"} transparent opacity={0.2 + strength * (0.16 - index * 0.02)} />
+          <meshBasicMaterial color={i % 2 === 0 ? "#dffcff" : "#8fefff"} transparent opacity={0.2 + strength * (0.16 - i * 0.02)} />
         </mesh>
       ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.18, 0]}>
@@ -1293,10 +1285,9 @@ function JudgmentSealConsequence({
       {scaffolds
         .filter((scaffold) => scaffold.primaryStationId === "case-notes")
         .flatMap((scaffold) => scaffold.lockPositions.concat(scaffold.nodes.map((node) => node.position)))
-        .map((position, index) => (
+        .map((position) => (
           <group
-            // eslint-disable-next-line react/no-array-index-key
-            key={index}
+            key={`${position[0].toFixed(2)}-${position[1].toFixed(2)}-${position[2].toFixed(2)}`}
             position={position}
           >
             <mesh rotation={[-Math.PI / 2, 0, 0]}>
@@ -1470,17 +1461,16 @@ function HorizonArrivalBeat({
           <meshBasicMaterial color="#9ce5ff" transparent opacity={0.2} side={THREE.DoubleSide} />
         </mesh>
       </group>
-      {[0, 1, 2].map((index) => (
+      {[0, 1, 2].map((n) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`ring-${n}`}
           ref={(mesh) => {
-            ringRefs.current[index] = mesh;
+            ringRefs.current[n] = mesh;
           }}
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, 0.06 + index * 0.05, 0]}
+          position={[0, 0.06 + n * 0.05, 0]}
         >
-          <ringGeometry args={[0.72 + index * 0.2, 0.9 + index * 0.2, 28]} />
+          <ringGeometry args={[0.72 + n * 0.2, 0.9 + n * 0.2, 28]} />
           <meshBasicMaterial color="#dff8ff" transparent opacity={0.16} />
         </mesh>
       ))}
@@ -1524,12 +1514,11 @@ function OperationsArrivalBeat({
 
   return (
     <group position={[origin[0], 0, origin[2]]}>
-      {[-0.54, 0, 0.54].map((x, index) => (
+      {[-0.54, 0, 0.54].map((x, i) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={`col-${index}`}
+          key={`col-${x}`}
           ref={(mesh) => {
-            columnRefs.current[index] = mesh;
+            columnRefs.current[i] = mesh;
           }}
           position={[x, origin[1] + 0.6, 0.68]}
         >
@@ -1537,15 +1526,14 @@ function OperationsArrivalBeat({
           <meshBasicMaterial color="#ffe29d" transparent opacity={0.16} />
         </mesh>
       ))}
-      {[-0.42, 0.42].map((x, index) => (
+      {[-0.42, 0.42].map((x, i) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={`bar-${index}`}
+          key={`bar-${x}`}
           ref={(mesh) => {
-            barRefs.current[index] = mesh;
+            barRefs.current[i] = mesh;
           }}
           position={[x, origin[1] + 0.4, 0.18]}
-          rotation={[0, 0.18 * (index === 0 ? -1 : 1), 0]}
+          rotation={[0, 0.18 * (i === 0 ? -1 : 1), 0]}
         >
           <boxGeometry args={[0.12, 0.92, 1.5]} />
           <meshBasicMaterial color="#fff3c8" transparent opacity={0.18} />
@@ -1600,27 +1588,25 @@ function EvidenceArrivalBeat({
 
   return (
     <group>
-      {[0, 1, 2].map((index) => (
+      {[0, 1, 2].map((n) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={`card-${index}`}
+          key={`card-${n}`}
           ref={(mesh) => {
-            cardRefs.current[index] = mesh;
+            cardRefs.current[n] = mesh;
           }}
           position={[origin[0], origin[1] + 0.6, origin[2] + 0.5]}
         >
           <planeGeometry args={[0.42, 0.72]} />
-          <meshBasicMaterial color={index === 1 ? "#eaffff" : "#8ceaff"} transparent opacity={0.16} side={THREE.DoubleSide} />
+          <meshBasicMaterial color={n === 1 ? "#eaffff" : "#8ceaff"} transparent opacity={0.16} side={THREE.DoubleSide} />
         </mesh>
       ))}
-      {[0, 1].map((index) => (
+      {[0, 1].map((n) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={`path-${index}`}
+          key={`path-${n}`}
           ref={(mesh) => {
-            pathRefs.current[index] = mesh;
+            pathRefs.current[n] = mesh;
           }}
-          position={[origin[0] + 1.2, origin[1] + 0.22 + index * 0.1, origin[2] - 0.42]}
+          position={[origin[0] + 1.2, origin[1] + 0.22 + n * 0.1, origin[2] - 0.42]}
           rotation={[0, 0.18, 0]}
         >
           <boxGeometry args={[0.94, 0.04, 0.14]} />
@@ -1668,26 +1654,24 @@ function JudgmentArrivalBeat({
 
   return (
     <group position={[origin[0], 0, origin[2]]}>
-      {[0, 1, 2].map((index) => (
+      {[0, 1, 2].map((n) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={`ring-${index}`}
+          key={`ring-${n}`}
           ref={(mesh) => {
-            ringRefs.current[index] = mesh;
+            ringRefs.current[n] = mesh;
           }}
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, origin[1] + 0.18 + index * 0.14, 0]}
+          position={[0, origin[1] + 0.18 + n * 0.14, 0]}
         >
-          <ringGeometry args={[0.76 + index * 0.34, 0.92 + index * 0.34, 34]} />
-          <meshBasicMaterial color={index === 0 ? "#ffe3ba" : "#f4ba7b"} transparent opacity={0.14} />
+          <ringGeometry args={[0.76 + n * 0.34, 0.92 + n * 0.34, 34]} />
+          <meshBasicMaterial color={n === 0 ? "#ffe3ba" : "#f4ba7b"} transparent opacity={0.14} />
         </mesh>
       ))}
-      {[-0.42, 0.42].map((x, index) => (
+      {[-0.42, 0.42].map((x, i) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={`beam-${index}`}
+          key={`beam-${x}`}
           ref={(mesh) => {
-            beamRefs.current[index] = mesh;
+            beamRefs.current[i] = mesh;
           }}
           position={[x, origin[1] + 0.9, -0.08]}
         >
@@ -1864,10 +1848,10 @@ export function TransitConvoy({
 
   return (
     <>
+      {/* eslint-disable react/no-array-index-key -- convoy pods are positional with no upstream ID; stable count per route */}
       {Array.from({ length: route.convoyCount }).map((_, index) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`convoy-${index}`}
           ref={(mesh) => {
             podRefs.current[index] = mesh;
           }}
@@ -1883,6 +1867,7 @@ export function TransitConvoy({
           />
         </mesh>
       ))}
+      {/* eslint-enable react/no-array-index-key */}
     </>
   );
 }
@@ -1951,18 +1936,17 @@ export function TransitRoute({
         opacity={(route.opacity + eruptionStrength * 0.18 + (missionTarget ? 0.14 : 0)) * modeOpacityScale}
         lineWidth={1.5}
       />
-      {route.waypointPositions.map((point, index) => (
+      {route.waypointPositions.map((point, i) => (
         <group
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`${point[0].toFixed(2)}-${point[1].toFixed(2)}-${point[2].toFixed(2)}`}
           position={point}
         >
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[0.14 + index * 0.03, 0.22 + index * 0.03, 20]} />
+            <ringGeometry args={[0.14 + i * 0.03, 0.22 + i * 0.03, 20]} />
             <meshBasicMaterial color={route.colorHex} transparent opacity={0.2 + route.intensity * 0.16} />
           </mesh>
           <mesh position={[0, 0.08, 0]}>
-            <sphereGeometry args={[0.04 + index * 0.01, 10, 10]} />
+            <sphereGeometry args={[0.04 + i * 0.01, 10, 10]} />
             <meshBasicMaterial color={route.colorHex} transparent opacity={0.28 + route.intensity * 0.22} />
           </mesh>
         </group>
@@ -2008,13 +1992,12 @@ function SubjectsGlyph({ color, emphasis }: { color: THREE.Color; emphasis: numb
         [-0.44, 0.72, 0.12],
         [0.48, 0.94, -0.18],
         [0.08, 0.42, 0.5],
-      ].map((position, index) => (
+      ].map((position, i) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`${position[0]}-${position[1]}-${position[2]}`}
           position={position as [number, number, number]}
         >
-          <sphereGeometry args={[0.22 + index * 0.03, 16, 16]} />
+          <sphereGeometry args={[0.22 + i * 0.03, 16, 16]} />
           <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.58 + emphasis * 0.3} />
         </mesh>
       ))}
@@ -2029,10 +2012,9 @@ function OperationsGlyph({ color, emphasis }: { color: THREE.Color; emphasis: nu
         [-0.42, 0.58, 0.14, 0.44, 0.96, 0.44],
         [0, 0.88, 0, 0.42, 1.54, 0.42],
         [0.42, 0.7, -0.16, 0.36, 1.18, 0.36],
-      ].map(([x, y, z, sx, sy, sz], index) => (
+      ].map(([x, y, z, sx, sy, sz]) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`${x}-${y}-${z}`}
           position={[x, y, z]}
           scale={[sx, sy, sz]}
         >
@@ -2070,10 +2052,9 @@ function JudgmentGlyph({ color, emphasis }: { color: THREE.Color; emphasis: numb
         [0, 0.44, 0, 1.18, 0.16, 0.82],
         [0, 0.72, -0.06, 0.9, 0.16, 0.62],
         [0, 1.0, -0.12, 0.62, 0.16, 0.4],
-      ].map(([x, y, z, sx, sy, sz], index) => (
+      ].map(([x, y, z, sx, sy, sz]) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`${x}-${y}-${z}`}
           position={[x, y, z]}
           scale={[sx, sy, sz]}
         >
@@ -2266,10 +2247,9 @@ function MasterplanFeature({
             <boxGeometry args={[1, 1, 1]} />
             <meshStandardMaterial color="#101923" emissive={color} emissiveIntensity={feature.emissiveIntensity * 0.4} transparent opacity={opacity} />
           </mesh>
-          {[-0.42, 0.42].map((x, index) => (
+          {[-0.42, 0.42].map((x) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={x}
               position={[x * feature.scale[0], -feature.scale[1] * 0.42, 0]}
               scale={[0.08, Math.max(0.8, feature.scale[1] * 2.4), 0.08]}
             >
@@ -2349,10 +2329,9 @@ function TraversalSurface({
       ) : null}
       {(surface.kind === "catwalk" || surface.kind === "bridge" || surface.kind === "control-deck") ? (
         <>
-          {[-0.46, 0.46].map((x, index) => (
+          {[-0.46, 0.46].map((x) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={x}
               position={[x * surface.scale[0], surface.scale[1] * 0.64, 0]}
               scale={[0.03, 0.4, 0.03]}
             >
@@ -2360,10 +2339,9 @@ function TraversalSurface({
               <meshBasicMaterial color={color} transparent opacity={opacity * 0.72} />
             </mesh>
           ))}
-          {[-0.38, 0.38].map((x, index) => (
+          {[-0.38, 0.38].map((x) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={`support-${index}`}
+              key={`support-${x}`}
               position={[x * surface.scale[0], -surface.scale[1] * 0.94, 0]}
               scale={[0.06, 1.24, 0.06]}
             >
@@ -2456,15 +2434,14 @@ function DistrictLifecycleAura({
     case "saturated":
       return (
         <>
-          {[0.02, 0.42].map((y, index) => (
+          {[0.02, 0.42].map((y, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={y}
               rotation={[-Math.PI / 2, 0, 0]}
               position={[0, y, 0]}
             >
-              <ringGeometry args={[1.42 + index * 0.34, 1.64 + index * 0.36, 40]} />
-              <meshBasicMaterial color={district.colorHex} transparent opacity={baseOpacity * (0.94 - index * 0.18)} />
+              <ringGeometry args={[1.42 + i * 0.34, 1.64 + i * 0.36, 40]} />
+              <meshBasicMaterial color={district.colorHex} transparent opacity={baseOpacity * (0.94 - i * 0.18)} />
             </mesh>
           ))}
           <mesh position={[0, district.verticalSpan * 0.46, 0]} scale={[0.1, 1.8 + focusStrength * 0.4, 0.1]}>
@@ -2476,15 +2453,14 @@ function DistrictLifecycleAura({
     case "critical":
       return (
         <>
-          {[0, 0.3, 0.62].map((y, index) => (
+          {[0, 0.3, 0.62].map((y, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={y}
               rotation={[-Math.PI / 2, 0, 0]}
               position={[0, y, 0]}
             >
-              <ringGeometry args={[1.48 + index * 0.38, 1.72 + index * 0.4, 44]} />
-              <meshBasicMaterial color="#fff0cb" transparent opacity={baseOpacity * (1.04 - index * 0.16)} />
+              <ringGeometry args={[1.48 + i * 0.38, 1.72 + i * 0.4, 44]} />
+              <meshBasicMaterial color="#fff0cb" transparent opacity={baseOpacity * (1.04 - i * 0.16)} />
             </mesh>
           ))}
           <mesh position={[0, district.verticalSpan * 0.52, 0]} scale={[0.14, 2.2 + focusStrength * 0.8, 0.14]}>
@@ -2513,24 +2489,23 @@ function DistrictProbeReaction({
       : 0.1 + intensity * 0.08;
   return (
     <group>
-      {[0.08, 0.34, 0.62].map((y, index) => (
+      {[0.08, 0.34, 0.62].map((y, i) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={y}
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, y, 0]}
         >
           <ringGeometry
             args={[
-              1.26 + index * 0.34 + intensity * 0.14,
-              1.46 + index * 0.38 + intensity * 0.16,
+              1.26 + i * 0.34 + intensity * 0.14,
+              1.46 + i * 0.38 + intensity * 0.16,
               40,
             ]}
           />
           <meshBasicMaterial
             color={color}
             transparent
-            opacity={(0.16 - index * 0.034) * (0.72 + intensity * 0.56)}
+            opacity={(0.16 - i * 0.034) * (0.72 + intensity * 0.56)}
           />
         </mesh>
       ))}
@@ -2650,10 +2625,9 @@ function DormantInfrastructure({
 }) {
   return (
     <>
-      {district.growth.conduitPaths.map((path, index) => (
+      {district.growth.conduitPaths.map((path) => (
         <Line
-          // eslint-disable-next-line react/no-array-index-key
-          key={`conduit-${index}`}
+          key={`conduit-${path[0]?.[0].toFixed(1)}-${path[0]?.[1].toFixed(1)}-${path[0]?.[2].toFixed(1)}`}
           points={path}
           color={district.colorHex}
           transparent
@@ -2677,10 +2651,9 @@ function DistrictTimeStrata({
 }) {
   return (
     <>
-      {district.timeStrata.map((stratum, index) => (
+      {district.timeStrata.map((stratum) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`stratum-${stratum.yOffset}`}
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, stratum.yOffset, 0]}
         >
@@ -2699,10 +2672,9 @@ function DistrictOccupancy({
 }) {
   return (
     <>
-      {district.occupancyNodes.map((node, index) => (
+      {district.occupancyNodes.map((node) => (
         <group
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`occ-${node.position[0].toFixed(1)}-${node.position[1].toFixed(1)}-${node.position[2].toFixed(1)}`}
           position={node.position}
         >
           <mesh scale={node.scale}>
@@ -2768,13 +2740,12 @@ function DistrictMicroInteraction({
     case "expand-cluster":
       return (
         <group ref={groupRef}>
-          {district.silhouette.nodePositions.slice(0, 3).map((position, index) => (
+          {district.silhouette.nodePositions.slice(0, 3).map((position, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={`${position[0].toFixed(1)}-${position[1].toFixed(1)}-${position[2].toFixed(1)}`}
               position={position}
             >
-              <sphereGeometry args={[0.12 + index * 0.02, 12, 12]} />
+              <sphereGeometry args={[0.12 + i * 0.02, 12, 12]} />
               <meshBasicMaterial color={district.colorHex} transparent opacity={0.14 + strength * 0.12} />
             </mesh>
           ))}
@@ -2783,12 +2754,11 @@ function DistrictMicroInteraction({
     case "engage-machinery":
       return (
         <group ref={groupRef}>
-          {[-0.6, 0, 0.6].map((x, index) => (
+          {[-0.6, 0, 0.6].map((x, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
-              position={[x, 0.44 + index * 0.1, 0.9]}
-              scale={[0.14, 0.8 + index * 0.16, 0.14]}
+              key={x}
+              position={[x, 0.44 + i * 0.1, 0.9]}
+              scale={[0.14, 0.8 + i * 0.16, 0.14]}
             >
               <boxGeometry args={[1, 1, 1]} />
               <meshBasicMaterial color={district.colorHex} transparent opacity={0.14 + strength * 0.1} />
@@ -2799,12 +2769,11 @@ function DistrictMicroInteraction({
     case "fan-stacks":
       return (
         <group ref={groupRef}>
-          {[-0.26, 0, 0.26].map((z, index) => (
+          {[-0.26, 0, 0.26].map((z, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
-              position={[0.92, 0.46 + index * 0.08, z]}
-              rotation={[0, 0.18 + index * 0.16, 0]}
+              key={z}
+              position={[0.92, 0.46 + i * 0.08, z]}
+              rotation={[0, 0.18 + i * 0.16, 0]}
               scale={[0.84, 0.02, 0.56]}
             >
               <boxGeometry args={[1, 1, 1]} />
@@ -2849,29 +2818,27 @@ function DistrictSilhouette({
 }) {
   return (
     <group>
-      {silhouette.frameLoops.map((frame, index) => (
+      {silhouette.frameLoops.map((frame, i) => (
         <Line
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`frame-${frame[0]?.[0].toFixed(1)}-${frame[0]?.[1].toFixed(1)}-${frame[0]?.[2].toFixed(1)}`}
           points={frame}
           color={colorHex}
           transparent
-          opacity={0.08 + emphasis * 0.14 - index * 0.02}
+          opacity={0.08 + emphasis * 0.14 - i * 0.02}
           lineWidth={1}
         />
       ))}
-      {silhouette.nodePositions.map((position, index) => (
+      {silhouette.nodePositions.map((position, i) => (
         <group
-          // eslint-disable-next-line react/no-array-index-key
-          key={`n-${index}`}
+          key={`n-${position[0].toFixed(1)}-${position[1].toFixed(1)}-${position[2].toFixed(1)}`}
           position={position}
         >
           <mesh>
-            <sphereGeometry args={[0.08 + index * 0.02, 12, 12]} />
+            <sphereGeometry args={[0.08 + i * 0.02, 12, 12]} />
             <meshBasicMaterial color={colorHex} transparent opacity={0.18 + emphasis * 0.2} />
           </mesh>
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.12, 0]}>
-            <ringGeometry args={[0.16 + index * 0.03, 0.24 + index * 0.03, 18]} />
+            <ringGeometry args={[0.16 + i * 0.03, 0.24 + i * 0.03, 18]} />
             <meshBasicMaterial color={colorHex} transparent opacity={0.1 + emphasis * 0.12} />
           </mesh>
         </group>
@@ -2943,15 +2910,14 @@ function DistrictAtmosphere({
     case "receipts":
       return (
         <group>
-          {[-0.8, 0, 0.8].map((x, index) => (
+          {[-0.8, 0, 0.8].map((x, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
-              position={[x, 1.2 + index * 0.38, 0]}
-              rotation={[0.08, 0.16 * (index - 1), 0]}
+              key={x}
+              position={[x, 1.2 + i * 0.38, 0]}
+              rotation={[0.08, 0.16 * (i - 1), 0]}
             >
               <planeGeometry args={[1.6, 2.8]} />
-              <meshBasicMaterial color={district.colorHex} transparent opacity={(0.04 - index * 0.008) * opacityScale} side={THREE.DoubleSide} />
+              <meshBasicMaterial color={district.colorHex} transparent opacity={(0.04 - i * 0.008) * opacityScale} side={THREE.DoubleSide} />
             </mesh>
           ))}
         </group>
@@ -2959,15 +2925,14 @@ function DistrictAtmosphere({
     case "case-notes":
       return (
         <group>
-          {[0.1, 0.7, 1.35].map((y, index) => (
+          {[0.1, 0.7, 1.35].map((y, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={y}
               rotation={[-Math.PI / 2, 0, 0]}
-              position={[0.2 * index, y, -0.16 * index]}
+              position={[0.2 * i, y, -0.16 * i]}
             >
-              <ringGeometry args={[1.2 + index * 0.4, 2 + index * 0.42, 44]} />
-              <meshBasicMaterial color={district.colorHex} transparent opacity={(0.07 - index * 0.014) * opacityScale} />
+              <ringGeometry args={[1.2 + i * 0.4, 2 + i * 0.42, 44]} />
+              <meshBasicMaterial color={district.colorHex} transparent opacity={(0.07 - i * 0.014) * opacityScale} />
             </mesh>
           ))}
         </group>
@@ -3022,15 +2987,14 @@ function DistrictArrivalBackdrop({
     case "receipts":
       return (
         <group rotation={[0, yaw, 0]} position={[offsetX, district.verticalSpan * 0.56, offsetZ]}>
-          {[-1.1, 0, 1.1].map((x, index) => (
+          {[-1.1, 0, 1.1].map((x, i) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
-              position={[x, 1 + index * 0.3, -0.4 * index]}
-              rotation={[0.08, 0.18 * (index - 1), 0]}
+              key={x}
+              position={[x, 1 + i * 0.3, -0.4 * i]}
+              rotation={[0.08, 0.18 * (i - 1), 0]}
             >
               <planeGeometry args={[1.8, 5.6]} />
-              <meshBasicMaterial color={index === 1 ? "#dffcff" : "#88eaff"} transparent opacity={baseOpacity * (0.44 - index * 0.08)} side={THREE.DoubleSide} />
+              <meshBasicMaterial color={i === 1 ? "#dffcff" : "#88eaff"} transparent opacity={baseOpacity * (0.44 - i * 0.08)} side={THREE.DoubleSide} />
             </mesh>
           ))}
         </group>
@@ -3038,15 +3002,14 @@ function DistrictArrivalBackdrop({
     case "case-notes":
       return (
         <group rotation={[0, yaw, 0]} position={[offsetX, district.verticalSpan * 0.58, offsetZ]}>
-          {[0, 1, 2].map((index) => (
+          {[0, 1, 2].map((n) => (
             <mesh
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
+              key={`cn-ring-${n}`}
               rotation={[-Math.PI / 2, 0, 0]}
-              position={[0, 0.3 + index * 0.66, -0.2 * index]}
+              position={[0, 0.3 + n * 0.66, -0.2 * n]}
             >
-              <ringGeometry args={[1.6 + index * 0.55, 2.5 + index * 0.58, 44]} />
-              <meshBasicMaterial color={index === 1 ? "#ffe1b5" : "#f0b87b"} transparent opacity={baseOpacity * (0.62 - index * 0.12)} />
+              <ringGeometry args={[1.6 + n * 0.55, 2.5 + n * 0.58, 44]} />
+              <meshBasicMaterial color={n === 1 ? "#ffe1b5" : "#f0b87b"} transparent opacity={baseOpacity * (0.62 - n * 0.12)} />
             </mesh>
           ))}
         </group>
@@ -3300,10 +3263,9 @@ export function StationDistrict({
       <StationGlyph stationId={district.id} color={color} emphasis={district.emphasis} />
       <DistrictMicroInteraction district={district} interactionState={interactionState} />
       {showGrowthAnchors
-        ? district.growthAnchors.map((anchor, index) => (
+        ? district.growthAnchors.map((anchor) => (
         <group
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`anchor-${anchor.position[0].toFixed(1)}-${anchor.position[1].toFixed(1)}-${anchor.position[2].toFixed(1)}`}
           position={anchor.position}
         >
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
@@ -3358,21 +3320,19 @@ export function HypothesisScaffold({
           : 0;
   return (
     <group>
-      {scaffold.frameLoops.map((frame, index) => (
+      {scaffold.frameLoops.map((frame, i) => (
         <Line
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
+          key={`sf-${frame[0]?.[0].toFixed(1)}-${frame[0]?.[1].toFixed(1)}-${frame[0]?.[2].toFixed(1)}`}
           points={frame}
           color={scaffold.colorHex}
           transparent
-          opacity={0.12 + scaffold.intensity + stageOpacityBias - index * 0.04}
+          opacity={0.12 + scaffold.intensity + stageOpacityBias - i * 0.04}
           lineWidth={1}
         />
       ))}
-      {scaffold.conduitPaths.map((path, index) => (
+      {scaffold.conduitPaths.map((path) => (
         <Line
-          // eslint-disable-next-line react/no-array-index-key
-          key={`c-${index}`}
+          key={`sc-${path[0]?.[0].toFixed(1)}-${path[0]?.[1].toFixed(1)}-${path[0]?.[2].toFixed(1)}`}
           points={path}
           color={scaffold.colorHex}
           transparent
@@ -3380,10 +3340,9 @@ export function HypothesisScaffold({
           lineWidth={1}
         />
       ))}
-      {scaffold.branchPaths.map((path, index) => (
+      {scaffold.branchPaths.map((path) => (
         <Line
-          // eslint-disable-next-line react/no-array-index-key
-          key={`b-${index}`}
+          key={`sb-${path[0]?.[0].toFixed(1)}-${path[0]?.[1].toFixed(1)}-${path[0]?.[2].toFixed(1)}`}
           points={path}
           color={scaffold.colorHex}
           transparent
@@ -3391,10 +3350,9 @@ export function HypothesisScaffold({
           lineWidth={1}
         />
       ))}
-      {scaffold.nodes.map((node, index) => (
+      {scaffold.nodes.map((node) => (
         <group
-          // eslint-disable-next-line react/no-array-index-key
-          key={`n-${index}`}
+          key={`sn-${node.position[0].toFixed(1)}-${node.position[1].toFixed(1)}-${node.position[2].toFixed(1)}`}
           position={node.position}
         >
           <mesh>
@@ -3407,10 +3365,9 @@ export function HypothesisScaffold({
           </mesh>
         </group>
       ))}
-      {scaffold.panels.map((panel, index) => (
+      {scaffold.panels.map((panel) => (
         <group
-          // eslint-disable-next-line react/no-array-index-key
-          key={`p-${index}`}
+          key={`sp-${panel.position[0].toFixed(1)}-${panel.position[1].toFixed(1)}-${panel.position[2].toFixed(1)}`}
           position={panel.position}
           rotation={panel.rotation}
         >
@@ -3420,14 +3377,13 @@ export function HypothesisScaffold({
           </mesh>
         </group>
       ))}
-      {scaffold.lockPositions.map((position, index) => (
+      {scaffold.lockPositions.map((position, i) => (
         <mesh
-          // eslint-disable-next-line react/no-array-index-key
-          key={`l-${index}`}
+          key={`sl-${position[0].toFixed(1)}-${position[1].toFixed(1)}-${position[2].toFixed(1)}`}
           rotation={[-Math.PI / 2, 0, 0]}
           position={position}
         >
-          <ringGeometry args={[0.28 + index * 0.04, 0.36 + index * 0.04, 22]} />
+          <ringGeometry args={[0.28 + i * 0.04, 0.36 + i * 0.04, 22]} />
           <meshBasicMaterial color={scaffold.colorHex} transparent opacity={0.16 + scaffold.intensity * 0.16} />
         </mesh>
       ))}
@@ -3545,15 +3501,14 @@ function ProbeBreadcrumbPath({
   return (
     <group>
       <Line points={points} color={colorHex} transparent opacity={0.18} lineWidth={1.2} />
-      {breadcrumbs.map((point, index) => (
+      {breadcrumbs.map((point, i) => (
         <group
-          // eslint-disable-next-line react/no-array-index-key
-          key={`probe-breadcrumb-${index}`}
+          key={`pb-${point.x.toFixed(2)}-${point.y.toFixed(2)}-${point.z.toFixed(2)}`}
           position={[point.x, point.y, point.z]}
         >
           <mesh
             ref={(element) => {
-              markerRefs.current[index] = element;
+              markerRefs.current[i] = element;
             }}
             rotation={[-Math.PI / 2, 0, 0]}
           >
@@ -3700,10 +3655,9 @@ export function OperatorProbe({
               lineWidth={1.4}
             />
           ) : null}
-          {resolvedTarget.district.growth.conduitPaths.slice(0, 2).map((path, index) => (
+          {resolvedTarget.district.growth.conduitPaths.slice(0, 2).map((path) => (
             <Line
-              // eslint-disable-next-line react/no-array-index-key
-              key={`probe-c-${index}`}
+              key={`probe-c-${path[0]?.[0].toFixed(1)}-${path[0]?.[1].toFixed(1)}-${path[0]?.[2].toFixed(1)}`}
               points={path}
               color={resolvedTarget.color}
               transparent
