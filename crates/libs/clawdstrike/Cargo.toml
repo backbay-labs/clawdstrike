@@ -44,7 +44,7 @@ semver = { workspace = true, optional = true }
 pubgrub = { workspace = true, optional = true }
 tar = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
-wasmtime = { version = "41.0.3", optional = true, default-features = false, features = ["runtime", "cranelift", "std"] }
+wasmtime = { version = "42.0.2", optional = true, default-features = false, features = ["runtime", "cranelift", "std"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
