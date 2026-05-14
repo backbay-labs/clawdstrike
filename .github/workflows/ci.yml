@@ -1112,7 +1112,11 @@ jobs:
             and .checks.hookCuaPresent
             and .checks.chatSendStarted
             and .checks.historyHasMessages
-            and (.checks.assistantBlockSignal or .checks.assistantAuthMissing)
+            and (
+              .checks.assistantBlockSignal
+              or .checks.assistantAuthMissing
+              or .checks.assistantAgentUnavailable
+            )
             and .checks.policyCheckHttpOk
             and .checks.policyCheckDenied
             and .checks.targetFileAbsent
