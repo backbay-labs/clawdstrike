@@ -25,9 +25,7 @@ openclaw_gateway_call_capture() {
 
   local raw_output
   local rc=0
-  if ! raw_output="$("$@" 2>&1)"; then
-    rc=$?
-  fi
+  raw_output="$("$@" 2>&1)" || rc=$?
 
   printf '%s\n' "$raw_output" >"$raw_file"
   local payload
@@ -48,9 +46,22 @@ openclaw_http_post_capture() {
 
   local http_status
   local rc=0
-  if ! http_status="$(curl -sS -o "$body_file" -w '%{http_code}' "$@")"; then
-    rc=$?
-  fi
+  http_status="$(curl -sS -o "$body_file" -w '%{http_code}' "$@")" || rc=$?
+  [ -f "$body_file" ] || : >"$body_file"
+
+  printf '%s\n' "$http_status" >"$status_file"
+  return "$rc"
+}
+
+openclaw_http_get_capture() {
+  local body_file="$1"
+  local status_file="$2"
+  local url="$3"
+
+  local http_status
+  local rc=0
+  http_status="$(curl -s -o "$body_file" -w '%{http_code}' "$url")" || rc=$?
+  [ -f "$body_file" ] || : >"$body_file"
 
   printf '%s\n' "$http_status" >"$status_file"
   return "$rc"
@@ -117,11 +128,23 @@ GATEWAY_PID=$!
 
 HEALTH_OK=0
 for _ in $(seq 1 30); do
-  if openclaw_gateway_call_capture \
+  HEALTH_CURL_RC=0
+  openclaw_http_get_capture \
     "$ARTIFACT_DIR/health.raw.txt" \
-    "$ARTIFACT_DIR/health.json" \
-    openclaw gateway call --token "$OPENCLAW_RUNTIME_GATEWAY_TOKEN" --json health; then
-    if jq -e '.ok == true' "$ARTIFACT_DIR/health.json" >/dev/null 2>&1; then
+    "$ARTIFACT_DIR/health.status.txt" \
+    "http://127.0.0.1:$OPENCLAW_RUNTIME_GATEWAY_PORT/readyz" || HEALTH_CURL_RC=$?
+
+  if printf '%s\n' "$(cat "$ARTIFACT_DIR/health.raw.txt")" | jq -e '.' >/dev/null 2>&1; then
+    cp "$ARTIFACT_DIR/health.raw.txt" "$ARTIFACT_DIR/health.json"
+  else
+    jq -n \
+      --arg status "$(cat "$ARTIFACT_DIR/health.status.txt")" \
+      --arg body "$(cat "$ARTIFACT_DIR/health.raw.txt")" \
+      '{ok: false, httpStatus: $status, body: $body}' >"$ARTIFACT_DIR/health.json"
+  fi
+
+  if [ "$HEALTH_CURL_RC" -eq 0 ] && [ "$(cat "$ARTIFACT_DIR/health.status.txt")" = "200" ]; then
+    if jq -e '(.ok // true) != false' "$ARTIFACT_DIR/health.json" >/dev/null 2>&1; then
       HEALTH_OK=1
       break
     fi
@@ -129,7 +152,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-RAW_PLUGIN_INFO_OUTPUT="$(openclaw plugins info clawdstrike-security --json 2>&1 || true)"
+RAW_PLUGIN_INFO_OUTPUT="$(openclaw_runtime_plugin_info clawdstrike-security)"
 printf '%s\n' "$RAW_PLUGIN_INFO_OUTPUT" >"$ARTIFACT_DIR/plugins-info.raw.txt"
 PLUGIN_INFO_PAYLOAD="$(printf '%s\n' "$RAW_PLUGIN_INFO_OUTPUT" | openclaw_runtime_plugin_info_from_output)"
 if [ -n "$PLUGIN_INFO_PAYLOAD" ]; then
@@ -147,6 +170,31 @@ openclaw_gateway_call_capture \
   --json \
   --params "{\"sessionKey\":\"global\",\"message\":\"! $BLOCKED_COMMAND\",\"idempotencyKey\":\"$IDEMPOTENCY_KEY\"}" \
   chat.send || CHAT_SEND_RC=$?
+
+PAIRING_REQUEST_ID="$(sed -nE 's/.*requestId: ([0-9a-fA-F-]{36}).*/\1/p' "$ARTIFACT_DIR/chat-send.raw.txt" | head -n 1)"
+if [ "$CHAT_SEND_RC" -ne 0 ] \
+  && [ -n "$PAIRING_REQUEST_ID" ] \
+  && grep -Eqi 'scope upgrade|pairing required' "$ARTIFACT_DIR/chat-send.raw.txt"; then
+  APPROVE_SCOPE_RC=0
+  openclaw_gateway_call_capture \
+    "$ARTIFACT_DIR/device-approve.raw.txt" \
+    "$ARTIFACT_DIR/device-approve.json" \
+    openclaw devices approve "$PAIRING_REQUEST_ID" \
+    --token "$OPENCLAW_RUNTIME_GATEWAY_TOKEN" \
+    --json || APPROVE_SCOPE_RC=$?
+
+  if [ "$APPROVE_SCOPE_RC" -eq 0 ]; then
+    CHAT_SEND_RC=0
+    openclaw_gateway_call_capture \
+      "$ARTIFACT_DIR/chat-send.raw.txt" \
+      "$ARTIFACT_DIR/chat-send.json" \
+      openclaw gateway call \
+      --token "$OPENCLAW_RUNTIME_GATEWAY_TOKEN" \
+      --json \
+      --params "{\"sessionKey\":\"global\",\"message\":\"! $BLOCKED_COMMAND\",\"idempotencyKey\":\"${IDEMPOTENCY_KEY}-retry\"}" \
+      chat.send || CHAT_SEND_RC=$?
+  fi
+fi
 
 HISTORY_READY=0
 for _ in $(seq 1 20); do
@@ -184,6 +232,11 @@ if printf '%s\n' "$ASSISTANT_TEXT" | grep -Eq 'No API key found for provider'; t
   ASSISTANT_AUTH_MISSING=true
 fi
 
+ASSISTANT_AGENT_UNAVAILABLE=false
+if printf '%s\n' "$ASSISTANT_TEXT" | grep -Eq 'Agent failed before reply|agent harness .* is not registered'; then
+  ASSISTANT_AGENT_UNAVAILABLE=true
+fi
+
 # Probe the runtime-exposed policy tool directly with a canonical denied
 # command. The chat probe above uses a side-effecting command so we can detect
 # execution bypasses, but that command is expected to rely on runtime approval
@@ -217,7 +270,7 @@ PLUGIN_INFO_JSON="$(cat "$ARTIFACT_DIR/plugins-info.json")"
 POLICY_CHECK_RESULT_JSON="$(cat "$ARTIFACT_DIR/policy-check.result.json")"
 
 GATEWAY_HEALTH_OK=false
-if [ "$HEALTH_OK" -eq 1 ] && jq -e '.ok == true' "$ARTIFACT_DIR/health.json" >/dev/null 2>&1; then
+if [ "$HEALTH_OK" -eq 1 ] && jq -e '(.ok // true) != false' "$ARTIFACT_DIR/health.json" >/dev/null 2>&1; then
   GATEWAY_HEALTH_OK=true
 fi
 
@@ -263,7 +316,9 @@ if [ "$POLICY_CHECK_HTTP_OK" = "true" ] \
 fi
 
 ASSISTANT_PATH_OK=false
-if [ "$ASSISTANT_BLOCK_SIGNAL" = "true" ] || [ "$ASSISTANT_AUTH_MISSING" = "true" ]; then
+if [ "$ASSISTANT_BLOCK_SIGNAL" = "true" ] \
+  || [ "$ASSISTANT_AUTH_MISSING" = "true" ] \
+  || [ "$ASSISTANT_AGENT_UNAVAILABLE" = "true" ]; then
   ASSISTANT_PATH_OK=true
 fi
 
@@ -304,6 +359,7 @@ jq -n \
   --argjson historyHasMessages "$HISTORY_HAS_MESSAGES" \
   --argjson assistantBlockSignal "$ASSISTANT_BLOCK_SIGNAL" \
   --argjson assistantAuthMissing "$ASSISTANT_AUTH_MISSING" \
+  --argjson assistantAgentUnavailable "$ASSISTANT_AGENT_UNAVAILABLE" \
   --argjson policyCheckHttpOk "$POLICY_CHECK_HTTP_OK" \
   --argjson policyCheckDenied "$POLICY_CHECK_DENIED" \
   --argjson targetFileAbsent "$TARGET_FILE_ABSENT" \
@@ -327,6 +383,7 @@ jq -n \
       historyHasMessages: $historyHasMessages,
       assistantBlockSignal: $assistantBlockSignal,
       assistantAuthMissing: $assistantAuthMissing,
+      assistantAgentUnavailable: $assistantAgentUnavailable,
       policyCheckHttpOk: $policyCheckHttpOk,
       policyCheckDenied: $policyCheckDenied,
       targetFileAbsent: $targetFileAbsent

@@ -39,7 +39,7 @@ if ! openclaw plugins enable clawdstrike-security >"$ARTIFACT_DIR/enable.stdout.
   ENABLE_RC=$?
 fi
 
-RAW_PLUGIN_INFO_OUTPUT="$(openclaw plugins info clawdstrike-security --json 2>&1 || true)"
+RAW_PLUGIN_INFO_OUTPUT="$(openclaw_runtime_plugin_info clawdstrike-security)"
 printf '%s\n' "$RAW_PLUGIN_INFO_OUTPUT" >"$ARTIFACT_DIR/plugins-info.raw.txt"
 PLUGIN_INFO_PAYLOAD="$(printf '%s\n' "$RAW_PLUGIN_INFO_OUTPUT" | openclaw_runtime_plugin_info_from_output)"
 if [ -n "$PLUGIN_INFO_PAYLOAD" ]; then
