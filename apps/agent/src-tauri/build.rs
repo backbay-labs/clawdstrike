@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(dead_code))]
+
 use std::{env, fs, path::PathBuf};
 
 const REQUIRED_MACOS_PACKAGING_FILES: &[&str] = &[
@@ -16,6 +18,7 @@ const REQUIRED_TAURI_CONFIG_SNIPPETS: &[&str] = &[
     "\"entitlements\": \"macos/system-extension/entitlements/agent-app.entitlements\"",
 ];
 
+#[cfg(not(test))]
 fn main() {
     println!("cargo:rerun-if-changed={TAURI_CONFIG_PATH}");
     for relative_path in REQUIRED_MACOS_PACKAGING_FILES {
@@ -121,27 +124,47 @@ fn contains_release_placeholder(contents: &str) -> bool {
         }
 
         let mut cursor = start + 2;
-        let mut saw_placeholder_body = false;
-        while cursor < bytes.len() {
-            match bytes[cursor] {
-                b'A'..=b'Z' | b'0'..=b'9' | b'_' => {
-                    saw_placeholder_body = true;
-                    cursor += 1;
-                }
-                _ => break,
-            }
+        if !matches!(bytes.get(cursor), Some(b'A'..=b'Z' | b'0'..=b'9')) {
+            start += 1;
+            continue;
         }
 
-        if saw_placeholder_body
-            && cursor + 1 < bytes.len()
-            && bytes[cursor] == b'_'
-            && bytes[cursor + 1] == b'_'
-        {
-            return true;
+        cursor += 1;
+        while cursor < bytes.len() {
+            if cursor + 1 < bytes.len() && bytes[cursor] == b'_' && bytes[cursor + 1] == b'_' {
+                return true;
+            }
+
+            if !matches!(bytes[cursor], b'A'..=b'Z' | b'0'..=b'9' | b'_') {
+                break;
+            }
+
+            cursor += 1;
         }
 
         start += 1;
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::contains_release_placeholder;
+
+    #[test]
+    fn detects_release_placeholders_with_internal_underscores() {
+        assert!(contains_release_placeholder("__TEAM_ID__"));
+        assert!(contains_release_placeholder("<string>__EXTENSION_BUNDLE_ID__</string>"));
+        assert!(contains_release_placeholder("__PROFILE_123__"));
+    }
+
+    #[test]
+    fn ignores_non_release_placeholder_text() {
+        assert!(!contains_release_placeholder("TEAM_ID"));
+        assert!(!contains_release_placeholder("__team_id__"));
+        assert!(!contains_release_placeholder("____"));
+        assert!(!contains_release_placeholder("__TEAM_ID_"));
+        assert!(!contains_release_placeholder("__TEAM-id__"));
+    }
 }
