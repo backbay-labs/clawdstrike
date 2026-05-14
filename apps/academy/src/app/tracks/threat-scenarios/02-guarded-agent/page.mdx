@@ -1,0 +1,138 @@
+export const metadata = {
+  title: "The Guarded Agent",
+  order: 2,
+  track: "threat-scenarios",
+  description: "The same dangerous actions, now blocked by ClawdStrike guards",
+}
+
+# The Guarded Agent
+
+Same agent. Same attacker. Same prompt injection. But now ClawdStrike's guard
+pipeline is active. Every action passes through a chain of guards before execution.
+If *any* guard returns DENY, the action is blocked and a signed receipt is produced
+as cryptographic evidence.
+
+The attacker's playbook from the last lesson is about to fail -- five times.
+
+## Blocked: SSH Key Access
+
+The attacker instructs the agent to read `~/.ssh/id_rsa`. The **ForbiddenPathGuard**
+intercepts the action before it reaches the filesystem:
+
+```text
+VERDICT: DENY
+Guard:    ForbiddenPathGuard
+Severity: critical
+Reason:   Path matches forbidden pattern: ~/.ssh/*
+```
+
+The file is never read. The agent never sees the private key. The attacker gets nothing.
+
+Try it yourself -- enter a file path and see if the guard blocks it:
+
+<GuardPlayground guard="forbidden_path" actionType="file_access" placeholder="Enter a file path..." defaultInput="~/.ssh/id_rsa" examples={[{label: "SSH key", value: "~/.ssh/id_rsa"}, {label: "AWS creds", value: "~/.aws/credentials"}, {label: "Safe file", value: "/tmp/notes.txt"}]} />
+
+## Blocked: Data Exfiltration
+
+The attacker tries to send data to `evil.com`. The **EgressAllowlistGuard** blocks
+the request because `evil.com` is not in the allowlist:
+
+```text
+VERDICT: DENY
+Guard:    EgressAllowlistGuard
+Severity: critical
+Reason:   Domain not in egress allowlist: evil.com
+```
+
+The agent can only reach domains you explicitly allow. Everything else is blocked by default.
+
+<GuardPlayground guard="egress_allowlist" actionType="network_egress" placeholder="Enter a domain..." defaultInput="evil.com" examples={[{label: "Evil domain", value: "evil.com"}, {label: "Allowed API", value: "api.openai.com"}, {label: "Unknown domain", value: "sketchy-server.xyz"}]} />
+
+## Blocked: Destructive Command
+
+The attacker instructs the agent to run `rm -rf /home/user/projects`. The
+**ShellCommandGuard** recognizes the destructive pattern and blocks it:
+
+```text
+VERDICT: DENY
+Guard:    ShellCommandGuard
+Severity: critical
+Reason:   Command matches blocked pattern: rm with -rf flags
+```
+
+The command never executes. The user's files are safe.
+
+<GuardPlayground guard="shell_command" actionType="shell_command" placeholder="Enter a shell command..." defaultInput="rm -rf /home/user/projects" examples={[{label: "Delete all", value: "rm -rf /"}, {label: "Safe command", value: "echo hello"}, {label: "Fork bomb", value: ":(){ :|:& };:"}]} />
+
+## Blocked: API Key Leak
+
+The agent tries to write a file containing `ANTHROPIC_API_KEY=sk-ant-api03-...`.
+The **SecretLeakGuard** detects the API key pattern in the content before the file
+is written:
+
+```text
+VERDICT: DENY
+Guard:    SecretLeakGuard
+Severity: critical
+Reason:   Secret pattern detected: Anthropic API key
+```
+
+Secrets never make it to disk. Even if the agent thinks it's being helpful by
+creating a config file, the guard catches the leak.
+
+<GuardPlayground guard="secret_leak" actionType="file_write" placeholder="Enter file content to write..." defaultInput="ANTHROPIC_API_KEY=sk-ant-api03-fake-key-value-here-1234567890abcdef" examples={[{label: "API key", value: "ANTHROPIC_API_KEY=sk-ant-api03-fake-key-value-1234567890abcdef1234567890"}, {label: "Safe content", value: "Hello, world!"}, {label: "GitHub token", value: "ghp_1234567890abcdef1234567890abcdef12345678"}]} />
+
+## Blocked: Fork Bomb
+
+The fork bomb `:(){ :|:& };:` from the previous lesson? The **ShellCommandGuard**
+catches that too. It recognizes dangerous shell patterns -- recursive process spawning,
+reverse shells, privilege escalation attempts -- and blocks them all.
+
+Try the fork bomb in the shell command playground above. It will be denied.
+
+## How It Works
+
+Every action passes through ClawdStrike's guard pipeline:
+
+```text
+Action -> [Guard 1] -> [Guard 2] -> [Guard 3] -> ... -> [Guard N] -> Execute
+              |             |             |                  |
+              v             v             v                  v
+           ALLOW?        ALLOW?        ALLOW?            ALLOW?
+```
+
+If **any** guard returns DENY, the pipeline short-circuits. The action is never executed.
+A signed receipt is produced as tamper-evident proof of the decision.
+
+## Receipts and Evidence
+
+Every guard decision produces a cryptographic receipt -- an Ed25519-signed attestation
+that records what was checked, when, and what the verdict was:
+
+```json
+{
+  "version": "1.0",
+  "timestamp": "2026-03-20T15:30:00Z",
+  "action": {
+    "type": "file_access",
+    "path": "~/.ssh/id_rsa"
+  },
+  "verdict": "deny",
+  "guard": "ForbiddenPathGuard",
+  "severity": "critical",
+  "policy": "default",
+  "evidence": {
+    "matched_pattern": "~/.ssh/*",
+    "guard_version": "1.5.0"
+  },
+  "signature": "ed25519:9f3a...c4e1"
+}
+```
+
+Receipts are tamper-evident. If anyone modifies a receipt after signing, the signature
+verification fails. This creates an unforgeable audit trail -- you can prove exactly
+which actions were blocked, which were allowed, and why.
+
+<LessonCompleteButton lessonSlug="threat-scenarios/02-guarded-agent" />
+
+<LessonNav trackSlug="threat-scenarios" lessonSlug="02-guarded-agent" />

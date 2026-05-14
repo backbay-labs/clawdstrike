@@ -5,7 +5,7 @@ cmake_policy(SET CMP0091 NEW)
 endif()
 
 set(SOFTWARE_NAME "awslc")
-set(SOFTWARE_VERSION "1.67.0")
+set(SOFTWARE_VERSION "1.71.0")
 set(ABI_VERSION 0)
 set(CRYPTO_LIB_NAME "crypto")
 set(SSL_LIB_NAME "ssl")
@@ -18,6 +18,26 @@ set(REPORTED_PKGCONFIG_VERSION "1.1.1")
 
 # Defer enabling C and CXX languages.
 project(AWSLC VERSION "${SOFTWARE_VERSION}" LANGUAGES NONE)
+
+if(DEFINED ENABLE_PRE_SONAME_BUILD)
+  message(WARNING "ENABLE_PRE_SONAME_BUILD option will be deprecated in a future release. Please see ENABLE_DIST_PKG and ENABLE_DIST_PKG_OPENSSL_SHIM")
+endif()
+
+option(BUILD_TESTING "Build all test targets for AWS-LC" ON)
+option(BUILD_LIBSSL "Build libssl for AWS-LC" ON)
+option(BUILD_TOOL "Build bssl tool for AWS-LC" ON)
+option(DISABLE_PERL "Disable Perl for AWS-LC" OFF)
+option(DISABLE_GO "Disable Go for AWS-LC" OFF)
+# Keeping this flag for now, for compatibility with existing build configs.
+option(ENABLE_FIPS_ENTROPY_CPU_JITTER "Enable FIPS entropy source: CPU Jitter" OFF)
+option(ENABLE_DATA_INDEPENDENT_TIMING "Enable automatic setting/resetting Data-Independent Timing
+(DIT) flag in cryptographic functions. Currently only applicable to Arm64 (except on Windows)" OFF)
+option(ENABLE_PRE_SONAME_BUILD "Build AWS-LC without SONAME configuration for shared library builds" ON)
+option(ENABLE_SOURCE_MODIFICATION "Allow the build to update files in the source directory. This is typically done to update versioning." ON)
+option(DISABLE_CPU_JITTER_ENTROPY "Disable usage of CPU Jitter Entropy as an entropy source. This option cannot be used with the FIPS build. With this configuration, randomness generation might not use two independent entropy sources." OFF)
+option(GENERATE_RUST_BINDINGS "Generate Rust bindings using bindgen-cli" OFF)
+option(ENABLE_DIST_PKG "Enables a set of packaging that take highest precedence to any other packaging configuration i.e. ENABLE_PRE_SONAME_BUILD" OFF)
+option(ENABLE_DIST_PKG_OPENSSL_SHIM "Controls whether the OpenSSL shim components are installed when ENABLE_DIST_PKG is enabled" OFF)
 
 if(MSVC)
   # On Windows, prefer cl over gcc if both are available. By default most of
@@ -52,6 +72,62 @@ if(POLICY CMP0077)
   cmake_policy(SET CMP0077 NEW) #option does nothing when a normal variable of the same name exists.
 endif()
 
+set(RUST_BINDINGS_TARGET_VERSION "1.70" CACHE STRING "Minimum Rust version for generated bindings")
+
+include(cmake/go.cmake)
+
+if(ENABLE_DIST_PKG_OPENSSL_SHIM AND NOT ENABLE_DIST_PKG)
+  message(FATAL_ERROR "ENABLE_DIST_PKG_OPENSSL_SHIM requires ENABLE_DIST_PKG to be enabled and will be ignored.")
+endif()
+
+if(ENABLE_DIST_PKG)
+  if(NOT UNIX OR APPLE)
+    message(FATAL_ERROR "ENABLE_DIST_PKG is not supported on macOS or Windows and will be ignored.")
+  else()
+    set(SET_LIB_SONAME 1)
+    set(COHABITANT_HEADERS 1)
+    if(ENABLE_DIST_PKG_OPENSSL_SHIM)
+      set(INSTALL_OPENSSL_SHIM 1)
+    else()
+      set(INSTALL_OPENSSL_SHIM 0)
+    endif()
+  endif()
+elseif(NOT ENABLE_PRE_SONAME_BUILD AND BUILD_SHARED_LIBS AND UNIX AND NOT APPLE)
+  set(SET_LIB_SONAME 1)
+  set(COHABITANT_HEADERS 0)
+  set(INSTALL_OPENSSL_SHIM 1)
+else()
+  set(SET_LIB_SONAME 0)
+  set(COHABITANT_HEADERS 0)
+  set(INSTALL_OPENSSL_SHIM 1)
+endif()
+
+message(STATUS "SET_LIB_SONAME: ${SET_LIB_SONAME}")
+message(STATUS "COHABITANT_HEADERS: ${COHABITANT_HEADERS}")
+message(STATUS "INSTALL_OPENSSL_SHIM: ${INSTALL_OPENSSL_SHIM}")
+
+if(SET_LIB_SONAME)
+  set(CRYPTO_LIB_NAME "${CRYPTO_LIB_NAME}-${SOFTWARE_NAME}")
+  set(SSL_LIB_NAME "${SSL_LIB_NAME}-${SOFTWARE_NAME}")
+endif()
+
+enable_language(C)
+
+if (NOT WIN32 AND NOT APPLE)
+  include(GNUInstallDirs)
+elseif(NOT DEFINED CMAKE_INSTALL_LIBDIR)
+  set(CMAKE_INSTALL_LIBDIR "lib")
+  set(CMAKE_INSTALL_INCLUDEDIR "include")
+  set(CMAKE_INSTALL_BINDIR "bin")
+endif()
+
+# Set the install include directory based on whether a prefix subdirectory is desired
+if(COHABITANT_HEADERS)
+  set(AWSLC_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/aws-lc")
+else()
+  set(AWSLC_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}")
+endif()
+
 function(target_add_awslc_include_paths)
   set(options EXCLUDE_PREFIX_HEADERS)
   set(oneValueArgs TARGET SCOPE)
@@ -79,38 +155,51 @@ function(target_add_awslc_include_paths)
 
   add_dependencies(${arg_TARGET} boringssl_prefix_symbols)
   target_include_directories(${arg_TARGET} BEFORE ${arg_SCOPE}
-    $<$<BOOL:INCLUDE_PREFIX_HEADERS>:$<BUILD_INTERFACE:${AWSLC_BINARY_DIR}/symbol_prefix_include>>
+    $<$<BOOL:${INCLUDE_PREFIX_HEADERS}>:$<BUILD_INTERFACE:${AWSLC_BINARY_DIR}/symbol_prefix_include>>
     $<BUILD_INTERFACE:${AWSLC_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>)
+    $<INSTALL_INTERFACE:${AWSLC_INSTALL_INCLUDEDIR}>)
 endfunction()
 
-option(BUILD_TESTING "Build all test targets for AWS-LC" ON)
-option(BUILD_LIBSSL "Build libssl for AWS-LC" ON)
-option(BUILD_TOOL "Build bssl tool for AWS-LC" ON)
-option(DISABLE_PERL "Disable Perl for AWS-LC" OFF)
-option(DISABLE_GO "Disable Go for AWS-LC" OFF)
-# Keeping this flag for now, for compatibility with existing build configs.
-option(ENABLE_FIPS_ENTROPY_CPU_JITTER "Enable FIPS entropy source: CPU Jitter" OFF)
-option(ENABLE_DATA_INDEPENDENT_TIMING "Enable automatic setting/resetting Data-Independent Timing
-(DIT) flag in cryptographic functions. Currently only applicable to Arm64 (except on Windows)" OFF)
-option(ENABLE_PRE_SONAME_BUILD "Build AWS-LC without SONAME configuration for shared library builds" ON)
-option(ENABLE_SOURCE_MODIFICATION "Allow the build to update files in the source directory. This is typically done to update versioning." ON)
-option(DISABLE_CPU_JITTER_ENTROPY "Disable usage of CPU Jitter Entropy as an entropy source. This option cannot be used with the FIPS build. With this configuration, randomness generation might not use two independent entropy sources." OFF)
+# Validate Rust bindings prerequisites
+if(GENERATE_RUST_BINDINGS)
+  find_program(BINDGEN_EXECUTABLE NAMES bindgen)
+  if(NOT BINDGEN_EXECUTABLE)
+    message(FATAL_ERROR "GENERATE_RUST_BINDINGS is enabled but bindgen-cli was not found. "
+                        "Install it with: cargo install --force --locked bindgen-cli")
+  endif()
 
-include(cmake/go.cmake)
+  # Verify minimum version (0.69.5)
+  execute_process(
+    COMMAND ${BINDGEN_EXECUTABLE} --version
+    OUTPUT_VARIABLE BINDGEN_VERSION_OUTPUT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE BINDGEN_VERSION_RESULT
+  )
 
-if(NOT ENABLE_PRE_SONAME_BUILD AND BUILD_SHARED_LIBS AND UNIX AND NOT APPLE)
-  set(PERFORM_SONAME_BUILD 1)
-  set(CRYPTO_LIB_NAME "${CRYPTO_LIB_NAME}-${SOFTWARE_NAME}")
-  set(SSL_LIB_NAME "${SSL_LIB_NAME}-${SOFTWARE_NAME}")
-else()
-  set(PERFORM_SONAME_BUILD 0)
+  if(NOT BINDGEN_VERSION_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to get bindgen version")
+  endif()
+
+  # Extract version number (format: "bindgen X.Y.Z")
+  string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" BINDGEN_VERSION "${BINDGEN_VERSION_OUTPUT}")
+
+  if(BINDGEN_VERSION VERSION_LESS "0.69.5")
+    message(FATAL_ERROR "bindgen version ${BINDGEN_VERSION} is too old. "
+                        "Minimum required version is 0.69.5. "
+                        "Upgrade with: cargo install --force --locked bindgen-cli")
+  endif()
+
+  message(STATUS "Found bindgen-cli: ${BINDGEN_EXECUTABLE} (version ${BINDGEN_VERSION})")
+  message(STATUS "Rust bindings target version: ${RUST_BINDINGS_TARGET_VERSION}")
+
+  # Check for rustfmt (required for --formatter rustfmt option)
+  find_program(RUSTFMT_EXECUTABLE NAMES rustfmt)
+  if(NOT RUSTFMT_EXECUTABLE)
+    message(FATAL_ERROR "GENERATE_RUST_BINDINGS requires rustfmt but it was not found. "
+                        "Install it with: rustup component add rustfmt")
+  endif()
+  message(STATUS "Found rustfmt: ${RUSTFMT_EXECUTABLE}")
 endif()
-
-message(STATUS "ENABLE_PRE_SONAME_BUILD: ${ENABLE_PRE_SONAME_BUILD}")
-message(STATUS "PERFORM_SONAME_BUILD: ${PERFORM_SONAME_BUILD}")
-
-enable_language(C)
 
 if(DISABLE_CPU_JITTER_ENTROPY)
   if(FIPS)
@@ -124,8 +213,6 @@ else()
   # Entropy by default; because it's the root of the Tree DRBG.
   message(STATUS "Entropy source configured: Dynamic (default: CPU Jitter)")
 endif()
-
-
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "OpenBSD")
   # OpenBSD by defaults links with --execute-only this is problematic for two reasons:
@@ -211,16 +298,8 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
   set(GCC 1)
 endif()
 
-if (NOT WIN32 AND NOT APPLE)
-  include(GNUInstallDirs)
-elseif(NOT DEFINED CMAKE_INSTALL_LIBDIR)
-  set(CMAKE_INSTALL_LIBDIR "lib")
-  set(CMAKE_INSTALL_INCLUDEDIR "include")
-  set(CMAKE_INSTALL_BINDIR "bin")
-endif()
-
 install(DIRECTORY include/openssl
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        DESTINATION ${AWSLC_INSTALL_INCLUDEDIR}
         COMPONENT Development
         PATTERN boringssl_prefix_symbols.h EXCLUDE
         PATTERN boringssl_prefix_symbols_asm.h EXCLUDE
@@ -321,7 +400,7 @@ if(BORINGSSL_PREFIX AND BORINGSSL_PREFIX_SYMBOLS AND GO_EXECUTABLE)
             symbol_prefix_include/openssl/boringssl_prefix_symbols_nasm.inc)
 
   install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/symbol_prefix_include/openssl
-          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+          DESTINATION ${AWSLC_INSTALL_INCLUDEDIR}
           COMPONENT Development
   )
 elseif(BORINGSSL_PREFIX AND BORINGSSL_PREFIX_HEADERS)
@@ -341,23 +420,80 @@ elseif(BORINGSSL_PREFIX AND BORINGSSL_PREFIX_HEADERS)
   add_custom_target(boringssl_prefix_symbols)
 
   install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/symbol_prefix_include/openssl
-          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+          DESTINATION ${AWSLC_INSTALL_INCLUDEDIR}
           COMPONENT Development
   )
-elseif(BORINGSSL_PREFIX OR BORINGSSL_PREFIX_SYMBOLS)
-  message(FATAL_ERROR "Must specify both or neither of BORINGSSL_PREFIX and BORINGSSL_PREFIX_SYMBOLS")
-elseif((BORINGSSL_PREFIX AND BORINGSSL_PREFIX_SYMBOLS) AND NOT GO_EXECUTABLE)
+elseif(BORINGSSL_PREFIX AND BORINGSSL_PREFIX_SYMBOLS AND NOT GO_EXECUTABLE)
+  # This case is reached when both BORINGSSL_PREFIX and BORINGSSL_PREFIX_SYMBOLS are set,
+  # but GO_EXECUTABLE is not available (checked after the first if-branch).
   message(FATAL_ERROR "Must have Go installed when using BORINGSSL_PREFIX and BORINGSSL_PREFIX_SYMBOLS")
+elseif(BORINGSSL_PREFIX OR BORINGSSL_PREFIX_SYMBOLS)
+  # Only one of BORINGSSL_PREFIX or BORINGSSL_PREFIX_SYMBOLS is set
+  message(FATAL_ERROR "Must specify both or neither of BORINGSSL_PREFIX and BORINGSSL_PREFIX_SYMBOLS")
 else()
   add_custom_target(boringssl_prefix_symbols)
 
   install(DIRECTORY include/openssl
-          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+          DESTINATION ${AWSLC_INSTALL_INCLUDEDIR}
           COMPONENT Development
           FILES_MATCHING
           PATTERN boringssl_prefix_symbols.h
           PATTERN boringssl_prefix_symbols_asm.h
           PATTERN boringssl_prefix_symbols_nasm.inc
+  )
+endif()
+
+# Rust bindings generation
+if(GENERATE_RUST_BINDINGS)
+  include(cmake/rust_bindings.cmake)
+
+  # Generate the rust_wrapper.h header from template
+  generate_rust_wrapper_header()
+
+  set(RUST_BINDINGS_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rust/aws_lc_bindings.rs")
+
+  # Build list of include directories for bindgen.
+  # Prefix symbols header is intentionally excluded; see cmake/rust_bindings.cmake.
+  set(RUST_BINDINGS_INCLUDE_DIRS
+    "${CMAKE_CURRENT_BINARY_DIR}/include"   # Generated rust_wrapper.h location
+    "${AWSLC_SOURCE_DIR}/include"           # Main AWS-LC headers (unprefixed)
+  )
+
+  # Conditionally set optional arguments for generate_rust_bindings
+  if(BORINGSSL_PREFIX)
+    set(_rust_prefix_arg PREFIX "${BORINGSSL_PREFIX}")
+  else()
+    set(_rust_prefix_arg "")
+  endif()
+
+  if(BUILD_LIBSSL)
+    set(_rust_ssl_arg INCLUDE_SSL)
+  else()
+    set(_rust_ssl_arg "")
+  endif()
+
+  generate_rust_bindings(
+    OUTPUT_FILE "${RUST_BINDINGS_OUTPUT}"
+    INCLUDE_DIRS ${RUST_BINDINGS_INCLUDE_DIRS}
+    ${_rust_prefix_arg}
+    ${_rust_ssl_arg}
+  )
+
+  # Install the generated Rust bindings.
+  # The rust_bindings target is not part of ALL, so we build it on-demand during install.
+  install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" --build \"${CMAKE_BINARY_DIR}\" --target rust_bindings)")
+
+  install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/rust/aws_lc_bindings.rs"
+    DESTINATION "share/rust"
+    COMPONENT Development
+  )
+
+  # Install the generated rust_wrapper.h header
+  install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/include/rust_wrapper.h"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    COMPONENT Development
   )
 endif()
 
@@ -504,7 +640,10 @@ if(GCC OR CLANG)
     endif()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wunused -Wcomment -Wchar-subscripts -Wuninitialized -Wshadow")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wwrite-strings -Wformat-security -Wunused-result -Wno-overlength-strings")
-    set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wno-c11-extensions -Wvla -Wtype-limits -Wno-unused-parameter")
+    set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wvla -Wtype-limits -Wno-unused-parameter")
+    if(CLANG)
+      set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wno-c11-extensions")
+    endif()
   endif()
   set(C_CXX_FLAGS "${C_CXX_FLAGS} -Werror -Wformat=2 -Wsign-compare -Wmissing-field-initializers -Wwrite-strings")
 
@@ -826,23 +965,18 @@ if(KEEP_ASM_LOCAL_SYMBOLS)
 endif()
 
 if(FIPS)
-
   if(NOT GO_EXECUTABLE OR NOT PERL_EXECUTABLE)
     message(FATAL_ERROR "Building AWS-LC for FIPS requires Go and Perl")
   endif()
 
-  if(NOT BUILD_SHARED_LIBS AND NOT (NOT WIN32 AND NOT APPLE))
+  if(NOT BUILD_SHARED_LIBS AND (WIN32 OR APPLE))
     message(FATAL_ERROR "Static FIPS build of AWS-LC is supported only on Linux")
   endif()
 
-
-
-  string(REGEX MATCH "(^| )-DAWSLC_FIPS_FAILURE_CALLBACK($| )" FIPS_CALLBACK_ENABLED "${CMAKE_C_FLAGS}")
-  if(FIPS_CALLBACK_ENABLED AND BUILD_SHARED_LIBS)
+  if(CMAKE_C_FLAGS MATCHES "(^| )-DAWSLC_FIPS_FAILURE_CALLBACK($| )" AND BUILD_SHARED_LIBS)
     message(FATAL_ERROR "AWSLC_FIPS_FAILURE_CALLBACK only supported with the static library build of AWS-LC")
-  endif ()
+  endif()
 
-  add_definitions(-DBORINGSSL_FIPS)
   # The FIPS integrity check does not work for ASan and MSan builds.
   if(NOT ASAN AND NOT MSAN)
     if(BUILD_SHARED_LIBS)
@@ -851,14 +985,17 @@ if(FIPS)
       set(FIPS_DELOCATE "1")
     endif()
   endif()
-  if(FIPS_SHARED AND ANDROID)
-    # The Android CMake files set -ffunction-sections and -fdata-sections,
-    # which is incompatible with FIPS_SHARED.
-    set(CMAKE_C_FLAGS
-        "${CMAKE_C_FLAGS} -fno-function-sections -fno-data-sections")
-    set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -fno-function-sections -fno-data-sections")
-  endif()
+
+  add_definitions(-DBORINGSSL_FIPS)
+endif()
+
+# The Android CMake files set -ffunction-sections and -fdata-sections, which
+# is incompatible with FIPS_SHARED.
+if(FIPS_SHARED AND ANDROID)
+  set(CMAKE_C_FLAGS
+      "${CMAKE_C_FLAGS} -fno-function-sections -fno-data-sections")
+  set(CMAKE_CXX_FLAGS
+      "${CMAKE_CXX_FLAGS} -fno-function-sections -fno-data-sections")
 endif()
 
 if(OPENSSL_SMALL)
@@ -1132,6 +1269,26 @@ if(NOT DISABLE_CPU_JITTER_ENTROPY)
   add_subdirectory(third_party/jitterentropy)
 endif()
 
+# CMAKE_SYSTEM_NAME is "Generic" for embedded OSes:
+# https://cmake.org/cmake/help/book/mastering-cmake/chapter/Cross%20Compiling%20With%20CMake.html#toolchain-files
+#
+# For now we assume embedded OSes do not have threads. Additionally, the Threads
+# package does not work with Android, but Android does not require any extra
+# parameters to link pthreads. Emscripten provides its own pthread implementation
+# via Web Workers and SharedArrayBuffer, configured through compiler flags.
+if(NOT CMAKE_SYSTEM_NAME MATCHES "^(Generic|Android|Emscripten)$")
+  find_package(Threads REQUIRED)
+  set(AWSLC_LINK_THREADS TRUE)
+  # CMAKE_THREAD_LIBS_INIT contains the actual linker flags (e.g., -lpthread)
+  # set by find_package(Threads). Use this for pkgconfig instead of the
+  # imported target name.
+  set(PKGCONFIG_LIBS_PRIVATE "${CMAKE_THREAD_LIBS_INIT}")
+else()
+  set(AWSLC_LINK_THREADS FALSE)
+  set(PKGCONFIG_LIBS_PRIVATE "")
+endif()
+
+
 add_subdirectory(crypto)
 if(BUILD_LIBSSL)
   add_subdirectory(ssl)
@@ -1183,7 +1340,7 @@ endif()
 if(BUILD_TESTING)
   if(GO_EXECUTABLE)
     if(FIPS)
-      if(MSVC)
+      if(WIN32)
         set(ACVP_TOOL ${AWSLC_BINARY_DIR}/acvptool.exe)
         set(TEST_WRAPPER ${AWSLC_BINARY_DIR}/testmodulewrapper.exe)
       else()
@@ -1198,7 +1355,7 @@ if(BUILD_TESTING)
       set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         util/go_fips_tests.txt)
 
-      if(MSVC)
+      if(WIN32)
         # Delocator doesn't support Windows. So, this test would fail.
         string(REGEX REPLACE "./util/fipstools/delocate" "" GO_FIPS_TESTS "${GO_FIPS_TESTS}")
       endif()
@@ -1343,7 +1500,7 @@ if(BUILD_TESTING)
           DEPENDS all_tests
           ${MAYBE_USES_TERMINAL})
     else()
-      add_custom_command(
+      add_custom_target(
           run_minimal_tests
           COMMAND crypto/crypto_test
           COMMAND crypto/urandom_test
@@ -1359,26 +1516,67 @@ if(NOT MSVC AND NOT CLANG AND NOT GCC)
   message(STATUS "Alternative compiler '${CMAKE_C_COMPILER_ID}' detected. Not all flags may be set, check final options with 'cmake --build . -- VERBOSE=1'")
 endif()
 
-# AWS-LC may be installed in a non-standard prefix. If OpenSSL exists in the standard path,
-# the downstream integration may build with the system's OpenSSL version instead.
-# Consider adjusting the PKG_CONFIG_PATH environment to get around this.
-file(GLOB OPENSSL_PKGCONFIGS "pkgconfig/*.pc.in")
-
 include(cmake/JoinPaths.cmake)
-join_paths(libdir_for_pc_file "\${prefix}" "${CMAKE_INSTALL_LIBDIR}")
-join_paths(includedir_for_pc_file "\${prefix}" "${CMAKE_INSTALL_INCLUDEDIR}")
+join_paths(LIBDIR_FOR_PC_FILE "\${prefix}" "${CMAKE_INSTALL_LIBDIR}")
+join_paths(INCLUDEDIR_FOR_PC_FILE "\${prefix}" "${AWSLC_INSTALL_INCLUDEDIR}")
 
-foreach(in_file ${OPENSSL_PKGCONFIGS})
-  file(RELATIVE_PATH in_file ${AWSLC_SOURCE_DIR} ${in_file})
-  string(REPLACE ".in" "" pc_file ${in_file})
-  configure_file(${in_file} ${CMAKE_CURRENT_BINARY_DIR}/${pc_file} @ONLY)
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${pc_file} DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-endforeach()
+function(install_pkgconfig_file)
+  set(options "")
+  set(oneValueArgs TEMPLATE DEST)
+  set(multiValueArgs)
+  if(CMAKE_VERSION VERSION_LESS "3.7")
+    cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+  else()
+    cmake_parse_arguments(PARSE_ARGV 0 arg "${options}" "${oneValueArgs}" "${multiValueArgs}")
+  endif()
+
+  configure_file(pkgconfig/${arg_TEMPLATE} ${CMAKE_CURRENT_BINARY_DIR}/pkgconfig/${arg_DEST} @ONLY)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkgconfig/${arg_DEST} DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+endfunction()
 
 if(ENABLE_SOURCE_MODIFICATION)
   configure_file(include/openssl/base.h.in ${AWSLC_SOURCE_DIR}/include/openssl/base.h @ONLY)
   configure_file(include/openssl/opensslv.h.in ${AWSLC_SOURCE_DIR}/include/openssl/opensslv.h @ONLY)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/util/check-linkage.sh.in")
     configure_file(util/check-linkage.sh.in check-linkage.sh @ONLY)
+  endif()
+endif()
+
+install_pkgconfig_file(TEMPLATE product.pc.in DEST aws-lc.pc)
+install_pkgconfig_file(TEMPLATE libcrypto.pc.in DEST lib${CRYPTO_LIB_NAME}.pc)
+install_pkgconfig_file(TEMPLATE libssl.pc.in DEST lib${SSL_LIB_NAME}.pc)
+
+if(INSTALL_OPENSSL_SHIM)
+  install_pkgconfig_file(TEMPLATE product.pc.in DEST openssl.pc)
+
+  # Create OpenSSL compatibility symlinks
+  if(BUILD_SHARED_LIBS)
+    if(SET_LIB_SONAME)
+      # When SONAME build is enabled, libraries have -awslc suffix
+      install(CODE "
+        execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
+          lib${CRYPTO_LIB_NAME}.so \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libcrypto.so\")
+        execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
+          lib${SSL_LIB_NAME}.so \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libssl.so\")
+      ")
+    endif()
+  else()
+    if(SET_LIB_SONAME)
+      # When SONAME build is enabled, libraries have -awslc suffix
+      install(CODE "
+        execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
+          lib${CRYPTO_LIB_NAME}.a \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libcrypto.a\")
+        execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
+          lib${SSL_LIB_NAME}.a \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libssl.a\")
+      " COMPONENT Development)
+    endif()
+  endif()
+
+  if(COHABITANT_HEADERS)
+    # Always create the include directory symlink for OpenSSL compatibility
+    install(CODE "
+      execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
+        aws-lc/openssl \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/openssl\")
+    " COMPONENT Development)
   endif()
 endif()

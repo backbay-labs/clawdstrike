@@ -1,4 +1,4 @@
-# Dependency Advisory Triage (2026-02-10)
+# Dependency Advisory Triage (2026-03-14)
 
 This document tracks explicitly accepted RustSec advisories for Clawdstrike.
 
@@ -33,6 +33,15 @@ Policy gates:
 | RUSTSEC-2025-0098 | `unic-ucd-version` (unmaintained) | Temporary exception (transitive via `urlpattern` in `tauri-utils`) | `@desktop-platform` | 2026-06-30 | Remove once `tauri-utils` no longer depends on `urlpattern`/`unic-*` |
 | RUSTSEC-2025-0100 | `unic-ucd-ident` (unmaintained) | Temporary exception (transitive via `urlpattern` in `tauri-utils`) | `@desktop-platform` | 2026-06-30 | Remove once `tauri-utils` no longer depends on `urlpattern`/`unic-*` |
 | RUSTSEC-2025-0119 | `number_prefix` (unmaintained) | Temporary exception (transitive via `indicatif`) | `@deps-maintainers` | 2026-06-30 | Track `indicatif` update to drop `number_prefix` |
+| RUSTSEC-2026-0044 | `aws-lc-rs` (X.509 name constraints bypass) | Temporary exception (transitive via `rustls`) | `@deps-maintainers` | 2026-06-30 | Remove once `rustls` pulls a patched `aws-lc-rs` release |
+| RUSTSEC-2026-0045 | `aws-lc-rs` (AES-CCM timing side-channel) | Temporary exception (transitive via `rustls`) | `@deps-maintainers` | 2026-06-30 | Remove once `rustls` pulls a patched `aws-lc-rs` release |
+| RUSTSEC-2026-0046 | `aws-lc-rs` (PKCS7 certificate chain validation bypass) | Temporary exception (transitive via `rustls`) | `@deps-maintainers` | 2026-06-30 | Remove once `rustls` pulls a patched `aws-lc-rs` release |
+| RUSTSEC-2026-0047 | `aws-lc-rs` advisory batch exception | Temporary exception (transitive via `rustls`) | `@deps-maintainers` | 2026-06-30 | Remove once `rustls` pulls a patched `aws-lc-rs` release |
+| RUSTSEC-2026-0048 | `aws-lc-rs` advisory batch exception | Temporary exception (transitive via `rustls`) | `@deps-maintainers` | 2026-06-30 | Remove once `rustls` pulls a patched `aws-lc-rs` release |
+| RUSTSEC-2026-0049 | `aws-lc-rs` advisory batch exception | Temporary exception (transitive via `rustls`) | `@deps-maintainers` | 2026-06-30 | Remove once `rustls` pulls a patched `aws-lc-rs` release |
+| RUSTSEC-2026-0067 | `aws-lc-rs` advisory batch exception | Temporary exception (transitive via `rustls`) | `@deps-maintainers` | 2026-06-30 | Remove once `rustls` pulls a patched `aws-lc-rs` release |
+| RUSTSEC-2026-0068 | `aws-lc-rs` advisory batch exception | Temporary exception (transitive via `rustls`) | `@deps-maintainers` | 2026-06-30 | Remove once `rustls` pulls a patched `aws-lc-rs` release |
+| RUSTSEC-2017-0008 | `serial` (unmaintained) | Temporary exception (transitive via `portable-pty` in workbench PTY service; mitigated by strict shell/env allowlists plus backend-minted capability tokens and trusted-window guards for terminal/worktree commands) | `@desktop-platform` | 2026-06-30 | Ticket `SEC-PTY-001`: remove ignore immediately after upstream `portable-pty` drops `serial` |
 
 Review rules:
 - No advisory exception may be extended without a new review date and rationale.

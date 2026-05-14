@@ -1,0 +1,16 @@
+[package]
+name = "formal-diff-tests"
+description = "Differential testing: random inputs compared against reference spec and production implementation"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+clawdstrike = { workspace = true, default-features = false }
+proptest = "1.10"
+
+[lints]
+workspace = true

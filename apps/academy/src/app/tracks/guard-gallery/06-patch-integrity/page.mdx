@@ -1,0 +1,76 @@
+export const metadata = {
+  title: "Patch Integrity Guard",
+  order: 6,
+  track: "guard-gallery",
+  description: "Analyzes unified diffs for forbidden patterns and suspicious modification ratios",
+}
+
+# Patch Integrity Guard
+
+## The Threat
+
+When an agent modifies code via patches (unified diff format), it might inject dangerous code -- `eval()`, `exec()`, `chmod 777`, `disable_security`, or reverse shell setups. Even if individual guards catch these in shell commands or file writes, patches are a separate attack vector that needs its own analysis.
+
+The PatchIntegrityGuard analyzes the diff to catch forbidden patterns in added lines and flags suspicious modification ratios (e.g., a patch that deletes 500 lines but adds only 2).
+
+## How It Works
+
+The guard parses the unified diff, counting added (`+`) and deleted (`-`) lines (skipping `+++`/`---` headers). It performs two checks:
+
+1. **Forbidden patterns**: Checks added lines **only** against forbidden regex patterns -- deleted code doesn't matter because removing dangerous code is safe
+2. **Imbalance ratio**: Computes `|additions - deletions| / max(additions, deletions)` and flags diffs exceeding the threshold, catching patches that are disproportionately destructive
+
+## Configuration
+
+```yaml
+guards:
+  patch_integrity:
+    enabled: true
+    max_imbalance_ratio: 0.9
+    forbidden_patterns:
+      - "eval\\s*\\("
+      - "exec\\s*\\("
+      - "chmod\\s+777"
+      - "disable.*security"
+```
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="patch-integrity-analyze"
+  title="PatchIntegrityGuard::analyze()"
+  annotations={[
+    { line: 3, label: "1", explanation: "Count added (+) and deleted (-) lines, skipping +++ and --- header lines" },
+    { line: 8, label: "2", explanation: "Check forbidden patterns ONLY against added lines -- deletions don't introduce new vulnerabilities" },
+    { line: 14, label: "3", explanation: "Compute imbalance ratio: |adds - dels| / max(adds, dels) -- flags lopsided patches" }
+  ]}
+/>
+
+## Try It Yourself
+
+<GuardPlayground guard="patch_integrity" actionType="patch" placeholder="Enter a unified diff..." defaultInput={"--- a/config.py\n+++ b/config.py\n@@ -1,3 +1,4 @@\n import os\n+eval(os.environ.get('PAYLOAD'))\n config = {}\n"} examples={[{label: "Dangerous eval", value: "--- a/config.py\n+++ b/config.py\n@@ -1,3 +1,4 @@\n import os\n+eval(os.environ.get('PAYLOAD'))\n config = {}\n"}, {label: "Safe change", value: "--- a/readme.md\n+++ b/readme.md\n@@ -1,2 +1,3 @@\n # Project\n+Added documentation\n"}, {label: "Chmod 777", value: "--- a/setup.sh\n+++ b/setup.sh\n@@ -1,2 +1,3 @@\n #!/bin/bash\n+chmod 777 /etc/shadow\n"}]} />
+
+## Bypass Challenges
+
+<BypassChallenge
+  guard="patch_integrity"
+  expectedVerdict="allow"
+  description="Submit a safe patch that the guard allows."
+  hint="A patch with normal code additions (no eval, exec, chmod 777, etc.) will pass. Try adding a comment or documentation line."
+  challengeId="guard-gallery/06-patch-integrity/easy"
+  actionType="patch"
+  placeholder="Enter a unified diff..."
+/>
+
+<BypassChallenge
+  guard="patch_integrity"
+  expectedVerdict="allow"
+  description="Can you add code that does something similar to eval() without matching the forbidden regex pattern?"
+  hint="The regex is eval\\s*\\( -- it requires 'eval' followed by optional whitespace and an open paren. The word 'evaluate' won't match, and neither will ev + al split across lines."
+  challengeId="guard-gallery/06-patch-integrity/hard"
+  actionType="patch"
+  placeholder="Enter a unified diff..."
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/06-patch-integrity" />
+<LessonNav trackSlug="guard-gallery" lessonSlug="06-patch-integrity" />

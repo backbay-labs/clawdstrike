@@ -44,6 +44,176 @@ export interface AuditStats {
   uptime_secs: number;
 }
 
+export type BrokerProvider = "openai" | "github" | "slack" | "generic_https";
+export type BrokerCapabilityState = "active" | "revoked" | "frozen" | "expired";
+export type BrokerExecutionOutcome = "success" | "upstream_error" | "incomplete";
+export type BrokerExecutionPhase = "started" | "completed";
+export type BrokerIntentRiskLevel = "low" | "medium" | "high";
+export type BrokerApprovalState = "not_required" | "pending" | "approved" | "rejected";
+export type BrokerMintedIdentityKind =
+  | "static"
+  | "github_app_installation"
+  | "slack_app_session"
+  | "aws_sts_session";
+
+export interface BrokerMintedIdentity {
+  kind: BrokerMintedIdentityKind;
+  subject: string;
+  issued_at: string;
+  expires_at: string;
+  metadata?: Record<string, string>;
+}
+
+export interface BrokerIntentResource {
+  kind: string;
+  value: string;
+}
+
+export interface BrokerIntentPreview {
+  preview_id: string;
+  provider: BrokerProvider;
+  operation: string;
+  summary: string;
+  created_at: string;
+  risk_level: BrokerIntentRiskLevel;
+  data_classes?: string[];
+  resources?: BrokerIntentResource[];
+  egress_host: string;
+  estimated_cost_usd_micros?: number;
+  approval_required: boolean;
+  approval_state: BrokerApprovalState;
+  approved_at?: string;
+  approver?: string;
+  body_sha256?: string;
+}
+
+export interface BrokerDelegationLineage {
+  token_jti: string;
+  parent_token_jti?: string;
+  chain?: string[];
+  depth: number;
+  issuer: string;
+  subject: string;
+  purpose?: string;
+}
+
+export interface BrokerCapabilityStatus {
+  capability_id: string;
+  provider: BrokerProvider;
+  state: BrokerCapabilityState;
+  issued_at: string;
+  expires_at: string;
+  policy_hash: string;
+  session_id?: string;
+  endpoint_agent_id?: string;
+  runtime_agent_id?: string;
+  runtime_agent_kind?: string;
+  origin_fingerprint?: string;
+  secret_ref_id: string;
+  url: string;
+  method: string;
+  state_reason?: string;
+  revoked_at?: string;
+  execution_count: number;
+  max_executions?: number;
+  last_executed_at?: string;
+  last_status_code?: number;
+  last_outcome?: BrokerExecutionOutcome;
+  intent_preview?: BrokerIntentPreview;
+  minted_identity?: BrokerMintedIdentity;
+  lineage?: BrokerDelegationLineage;
+  suspicion_reason?: string;
+}
+
+export interface BrokerCapabilitiesResponse {
+  capabilities: BrokerCapabilityStatus[];
+}
+
+export interface BrokerExecutionEvidence {
+  execution_id: string;
+  capability_id: string;
+  provider: BrokerProvider;
+  phase: BrokerExecutionPhase;
+  executed_at: string;
+  secret_ref_id: string;
+  url: string;
+  method: string;
+  request_body_sha256?: string;
+  response_body_sha256?: string;
+  status_code?: number;
+  bytes_sent: number;
+  bytes_received: number;
+  stream_chunk_count?: number;
+  provider_metadata?: Record<string, string>;
+  outcome?: BrokerExecutionOutcome;
+  minted_identity?: BrokerMintedIdentity;
+  preview_id?: string;
+  lineage?: BrokerDelegationLineage;
+  suspicion_reason?: string;
+}
+
+export interface BrokerCapabilityDetailResponse {
+  capability: BrokerCapabilityStatus;
+  executions: BrokerExecutionEvidence[];
+}
+
+export interface BrokerFrozenProviderStatus {
+  provider: BrokerProvider;
+  frozen_at: string;
+  reason: string;
+}
+
+export interface BrokerFrozenProvidersResponse {
+  frozen_providers: BrokerFrozenProviderStatus[];
+}
+
+export interface BrokerPreviewResponse {
+  preview: BrokerIntentPreview;
+}
+
+export interface BrokerPreviewListResponse {
+  previews: BrokerIntentPreview[];
+}
+
+export interface BrokerReplayDiff {
+  field: string;
+  previous: string;
+  current: string;
+}
+
+export interface BrokerReplayResponse {
+  capability_id: string;
+  current_policy_hash: string;
+  current_state: BrokerCapabilityState;
+  provider_frozen: boolean;
+  egress_allowed: boolean;
+  provider_allowed: boolean;
+  policy_changed: boolean;
+  approval_required: boolean;
+  preview_still_approved?: boolean;
+  delegated_subject?: string;
+  minted_identity_kind?: BrokerMintedIdentityKind;
+  would_allow: boolean;
+  reason: string;
+  diffs?: BrokerReplayDiff[];
+  notes?: string[];
+}
+
+export interface BrokerRevokeAllResponse {
+  revoked_count: number;
+}
+
+export interface BrokerCompletionBundle {
+  generated_at: string;
+  capability: BrokerCapabilityStatus;
+  executions: BrokerExecutionEvidence[];
+}
+
+export interface BrokerCompletionBundleResponse {
+  envelope: string;
+  bundle: BrokerCompletionBundle;
+}
+
 export interface HealthResponse {
   status: string;
   version?: string;
@@ -207,6 +377,146 @@ export async function fetchAuditStats(): Promise<AuditStats> {
   const res = await fetch(`${getApiBase()}/api/v1/audit/stats`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Audit stats failed: ${res.status}`);
   return res.json();
+}
+
+async function brokerGet<T>(path: string, label: string, params?: URLSearchParams): Promise<T> {
+  const qs = params?.toString();
+  const url = `${getApiBase()}${path}${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
+  return res.json();
+}
+
+async function brokerMutate<T>(
+  path: string,
+  label: string,
+  method: "POST" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${getApiBase()}${path}`, {
+    method,
+    headers: getHeaders(),
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `${label} failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchBrokerCapabilities(filters?: {
+  state?: BrokerCapabilityState;
+  provider?: BrokerProvider;
+  limit?: number;
+}): Promise<BrokerCapabilitiesResponse> {
+  const params = new URLSearchParams();
+  if (filters?.state) params.set("state", filters.state);
+  if (filters?.provider) params.set("provider", filters.provider);
+  if (filters?.limit != null) params.set("limit", String(filters.limit));
+  return brokerGet("/api/v1/broker/capabilities", "Broker capability query", params);
+}
+
+export async function fetchBrokerCapability(
+  capabilityId: string,
+): Promise<BrokerCapabilityDetailResponse> {
+  return brokerGet(`/api/v1/broker/capabilities/${capabilityId}`, "Broker capability fetch");
+}
+
+export async function fetchBrokerPreviews(filters?: {
+  provider?: BrokerProvider;
+  limit?: number;
+}): Promise<BrokerPreviewListResponse> {
+  const params = new URLSearchParams();
+  if (filters?.provider) params.set("provider", filters.provider);
+  if (filters?.limit != null) params.set("limit", String(filters.limit));
+  return brokerGet("/api/v1/broker/previews", "Broker preview query", params);
+}
+
+export async function fetchBrokerPreview(previewId: string): Promise<BrokerPreviewResponse> {
+  return brokerGet(`/api/v1/broker/previews/${previewId}`, "Broker preview fetch");
+}
+
+export async function approveBrokerPreview(
+  previewId: string,
+  approver?: string,
+): Promise<BrokerIntentPreview> {
+  const payload = await brokerMutate<BrokerPreviewResponse>(
+    `/api/v1/broker/previews/${previewId}/approve`,
+    "Broker preview approval",
+    "POST",
+    { approver },
+  );
+  return payload.preview;
+}
+
+export async function revokeBrokerCapability(
+  capabilityId: string,
+  reason?: string,
+): Promise<BrokerCapabilityStatus> {
+  const payload = await brokerMutate<{ capability: BrokerCapabilityStatus }>(
+    `/api/v1/broker/capabilities/${capabilityId}/revoke`,
+    "Broker capability revoke",
+    "POST",
+    { reason },
+  );
+  return payload.capability;
+}
+
+export async function fetchFrozenBrokerProviders(): Promise<BrokerFrozenProvidersResponse> {
+  return brokerGet("/api/v1/broker/providers/freeze", "Broker provider freeze query");
+}
+
+export async function freezeBrokerProvider(
+  provider: BrokerProvider,
+  reason: string,
+): Promise<BrokerFrozenProvidersResponse> {
+  return brokerMutate(
+    `/api/v1/broker/providers/${provider}/freeze`,
+    "Broker provider freeze",
+    "POST",
+    { reason },
+  );
+}
+
+export async function unfreezeBrokerProvider(
+  provider: BrokerProvider,
+): Promise<BrokerFrozenProvidersResponse> {
+  return brokerMutate(
+    `/api/v1/broker/providers/${provider}/freeze`,
+    "Broker provider unfreeze",
+    "DELETE",
+  );
+}
+
+export async function replayBrokerCapability(
+  capabilityId: string,
+): Promise<BrokerReplayResponse> {
+  return brokerMutate(
+    `/api/v1/broker/capabilities/${capabilityId}/replay`,
+    "Broker capability replay",
+    "POST",
+  );
+}
+
+export async function exportBrokerCompletionBundle(
+  capabilityId: string,
+): Promise<BrokerCompletionBundleResponse> {
+  return brokerGet(
+    `/api/v1/broker/capabilities/${capabilityId}/bundle`,
+    "Broker completion bundle export",
+  );
+}
+
+export async function revokeAllBrokerCapabilities(
+  reason?: string,
+): Promise<BrokerRevokeAllResponse> {
+  return brokerMutate(
+    "/api/v1/broker/capabilities/revoke-all",
+    "Broker revoke-all",
+    "POST",
+    { reason },
+  );
 }
 
 export async function fetchAgentStatus(params?: {

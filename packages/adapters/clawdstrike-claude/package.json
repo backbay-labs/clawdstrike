@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/claude",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "In-process tool boundary hooks for Claude Code and the Claude Agent SDK",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,7 @@
     "format:check": "biome check src/"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.2.1"
+    "@clawdstrike/adapter-core": "^0.2.7"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",

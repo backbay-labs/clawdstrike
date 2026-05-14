@@ -41,7 +41,7 @@ fi
 
 RAW_PLUGIN_INFO_OUTPUT="$(openclaw plugins info clawdstrike-security --json 2>&1 || true)"
 printf '%s\n' "$RAW_PLUGIN_INFO_OUTPUT" >"$ARTIFACT_DIR/plugins-info.raw.txt"
-PLUGIN_INFO_PAYLOAD="$(printf '%s\n' "$RAW_PLUGIN_INFO_OUTPUT" | openclaw_runtime_json_from_output)"
+PLUGIN_INFO_PAYLOAD="$(printf '%s\n' "$RAW_PLUGIN_INFO_OUTPUT" | openclaw_runtime_plugin_info_from_output)"
 if [ -n "$PLUGIN_INFO_PAYLOAD" ]; then
   printf '%s\n' "$PLUGIN_INFO_PAYLOAD" >"$ARTIFACT_DIR/plugins-info.json"
 else
@@ -58,6 +58,7 @@ EXPECTED_HOOKS_JSON='[
   "clawdstrike:tool-guard:tool-result-persist",
   "clawdstrike:agent-bootstrap"
 ]'
+PLUGIN_INFO_ROOT_FILTER='(.plugin // .)'
 
 INSTALL_COMMAND_SUCCEEDED=false
 if [ "$INSTALL_RC" -eq 0 ]; then
@@ -75,12 +76,12 @@ if [ -n "$PLUGIN_INFO_PAYLOAD" ]; then
 fi
 
 PLUGIN_ID_MATCHES=false
-if jq -e '.id == "clawdstrike-security"' "$ARTIFACT_DIR/plugins-info.json" >/dev/null 2>&1; then
+if jq -e "$PLUGIN_INFO_ROOT_FILTER | .id == \"clawdstrike-security\"" "$ARTIFACT_DIR/plugins-info.json" >/dev/null 2>&1; then
   PLUGIN_ID_MATCHES=true
 fi
 
 PLUGIN_STATUS_LOADED=false
-if jq -e '.status == "loaded"' "$ARTIFACT_DIR/plugins-info.json" >/dev/null 2>&1; then
+if jq -e "$PLUGIN_INFO_ROOT_FILTER | .status == \"loaded\"" "$ARTIFACT_DIR/plugins-info.json" >/dev/null 2>&1; then
   PLUGIN_STATUS_LOADED=true
 fi
 
@@ -94,7 +95,7 @@ if jq -e '.plugins.entries["clawdstrike-security"].enabled == true' "$ARTIFACT_D
   CONFIG_ENTRY_ENABLED=true
 fi
 
-MISSING_HOOKS_JSON="$(jq -c --argjson expected "$EXPECTED_HOOKS_JSON" '($expected - (.hookNames // []))' "$ARTIFACT_DIR/plugins-info.json")"
+MISSING_HOOKS_JSON="$(jq -c --argjson expected "$EXPECTED_HOOKS_JSON" '($expected - ((.plugin // .).hookNames // []))' "$ARTIFACT_DIR/plugins-info.json")"
 ALL_EXPECTED_HOOKS_PRESENT=false
 if [ "$MISSING_HOOKS_JSON" = "[]" ]; then
   ALL_EXPECTED_HOOKS_PRESENT=true
@@ -139,7 +140,7 @@ jq -n \
   --argjson idMismatchWarningPresent "$ID_MISMATCH_WARNING_PRESENT" \
   --argjson missingHooks "$MISSING_HOOKS_JSON" \
   --argjson pass "$PASS" \
-  '{
+  'def pluginRoot: ($pluginInfo.plugin // $pluginInfo); {
     script: $script,
     generatedAt: $generatedAt,
     openclawVersion: $openclawVersion,
@@ -157,9 +158,9 @@ jq -n \
       idMismatchWarningPresent: $idMismatchWarningPresent
     },
     observed: {
-      pluginId: ($pluginInfo.id // null),
-      status: ($pluginInfo.status // null),
-      hookNames: ($pluginInfo.hookNames // []),
+      pluginId: (pluginRoot.id // null),
+      status: (pluginRoot.status // null),
+      hookNames: (pluginRoot.hookNames // []),
       missingHooks: $missingHooks
     },
     result: (if $pass then "pass" else "fail" end)

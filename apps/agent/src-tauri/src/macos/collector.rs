@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -14,7 +15,9 @@ use tokio::time::timeout;
 
 use super::host::MacosHostService;
 use super::status::{
-    CombinedSystemExtensionStatus, ProviderStatus, SystemExtensionApproval, SystemExtensionInstallState,
+    CombinedSystemExtensionStatus, EvidenceArtifact, MdmProfileState, ProviderAttestationState,
+    ProviderRuntimeState, ProviderStatus, SystemExtensionActivationState, SystemExtensionApproval,
+    SystemExtensionInstallState,
 };
 
 const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(60);
@@ -74,6 +77,16 @@ impl ToolInvocation {
 #[derive(Debug, Deserialize)]
 struct EndpointSecurityStatusSample {
     host_status: EndpointSecurityHostStatus,
+    #[serde(default)]
+    provider_state: Option<ProviderAttestationState>,
+    #[serde(default)]
+    counters: BTreeMap<String, u64>,
+    #[serde(default)]
+    evidence_paths: Vec<EvidenceArtifact>,
+    #[serde(default)]
+    policy_epoch: Option<u64>,
+    #[serde(default)]
+    last_error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +101,16 @@ struct NetworkExtensionStatusSample {
     install_state: SystemExtensionInstallState,
     approval: SystemExtensionApproval,
     host_status: ProviderStatus,
+    #[serde(default, rename = "attestation_state")]
+    provider_state: Option<ProviderAttestationState>,
+    #[serde(default)]
+    counters: BTreeMap<String, u64>,
+    #[serde(default)]
+    evidence_paths: Vec<EvidenceArtifact>,
+    #[serde(default)]
+    policy_epoch: Option<u64>,
+    #[serde(default)]
+    last_error: Option<String>,
 }
 
 pub fn start_status_collector<R: Runtime + 'static>(
@@ -221,16 +244,108 @@ fn merge_samples(
         _ => SystemExtensionApproval::Unknown,
     };
 
+    let endpoint_security = endpoint_sample
+        .map(endpoint_provider_status)
+        .unwrap_or_else(ProviderStatus::unknown);
+    let network_extension = network_sample
+        .map(network_provider_status)
+        .unwrap_or_else(ProviderStatus::unknown);
+    let activation_state = derive_activation_state(
+        install_state,
+        approval,
+        &endpoint_security,
+        &network_extension,
+    );
+
     CombinedSystemExtensionStatus {
         install_state,
         approval,
-        endpoint_security: endpoint_sample
-            .map(|sample| sample.host_status.endpoint_security)
-            .unwrap_or_else(ProviderStatus::unknown),
-        network_extension: network_sample
-            .map(|sample| sample.host_status)
-            .unwrap_or_else(ProviderStatus::unknown),
+        activation_state,
+        mdm_profile_state: MdmProfileState::Unknown,
+        endpoint_security,
+        network_extension,
+        ..CombinedSystemExtensionStatus::default()
     }
+}
+
+fn endpoint_provider_status(sample: EndpointSecurityStatusSample) -> ProviderStatus {
+    let mut status = sample.host_status.endpoint_security;
+    enrich_provider_status(
+        &mut status,
+        sample.provider_state,
+        sample.counters,
+        sample.evidence_paths,
+        sample.policy_epoch,
+        sample.last_error,
+    );
+    status
+}
+
+fn network_provider_status(sample: NetworkExtensionStatusSample) -> ProviderStatus {
+    let mut status = sample.host_status;
+    enrich_provider_status(
+        &mut status,
+        sample.provider_state,
+        sample.counters,
+        sample.evidence_paths,
+        sample.policy_epoch,
+        sample.last_error,
+    );
+    status
+}
+
+fn enrich_provider_status(
+    status: &mut ProviderStatus,
+    provider_state: Option<ProviderAttestationState>,
+    counters: BTreeMap<String, u64>,
+    evidence_paths: Vec<EvidenceArtifact>,
+    policy_epoch: Option<u64>,
+    last_error: Option<String>,
+) {
+    if let Some(provider_state) = provider_state {
+        if status.last_healthy_timestamp.is_none() {
+            status.last_healthy_timestamp = provider_state.last_healthy_timestamp.clone();
+        }
+        status.provider_state = Some(provider_state);
+    }
+    status.counters = counters;
+    status.evidence_paths = evidence_paths;
+    status.policy_epoch = policy_epoch;
+    status.last_error = last_error;
+}
+
+fn derive_activation_state(
+    install_state: SystemExtensionInstallState,
+    approval: SystemExtensionApproval,
+    endpoint_security: &ProviderStatus,
+    network_extension: &ProviderStatus,
+) -> SystemExtensionActivationState {
+    if install_state == SystemExtensionInstallState::Unknown
+        || approval == SystemExtensionApproval::Unknown
+    {
+        return SystemExtensionActivationState::Unknown;
+    }
+    if install_state == SystemExtensionInstallState::NotInstalled {
+        return SystemExtensionActivationState::NotRequested;
+    }
+    if approval == SystemExtensionApproval::ApprovalBlocked {
+        return SystemExtensionActivationState::Failed;
+    }
+    if matches!(endpoint_security.runtime, ProviderRuntimeState::Active)
+        && matches!(network_extension.runtime, ProviderRuntimeState::Active)
+    {
+        return SystemExtensionActivationState::Active;
+    }
+    if matches!(
+        endpoint_security.runtime,
+        ProviderRuntimeState::Unknown | ProviderRuntimeState::Inactive
+    ) || matches!(
+        network_extension.runtime,
+        ProviderRuntimeState::Unknown | ProviderRuntimeState::Inactive
+    ) {
+        return SystemExtensionActivationState::Pending;
+    }
+    SystemExtensionActivationState::Failed
 }
 
 fn merge_install_state(
@@ -342,7 +457,10 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
-    use crate::macos::status::{ProviderRuntimeState, ProviderStatus};
+    use crate::macos::status::{
+        EvidenceArtifact, ProviderApprovalStatus, ProviderAttestationState, ProviderAvailability,
+        ProviderRuntimeState, ProviderStatus,
+    };
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -362,6 +480,40 @@ mod tests {
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions).expect("chmod temp script");
         path
+    }
+
+    fn endpoint_sample(runtime: ProviderRuntimeState) -> EndpointSecurityStatusSample {
+        EndpointSecurityStatusSample {
+            host_status: EndpointSecurityHostStatus {
+                install_state: SystemExtensionInstallState::Installed,
+                approval: SystemExtensionApproval::Approved,
+                endpoint_security: ProviderStatus {
+                    runtime,
+                    ..ProviderStatus::unknown()
+                },
+            },
+            provider_state: None,
+            counters: BTreeMap::new(),
+            evidence_paths: Vec::new(),
+            policy_epoch: None,
+            last_error: None,
+        }
+    }
+
+    fn network_sample(runtime: ProviderRuntimeState) -> NetworkExtensionStatusSample {
+        NetworkExtensionStatusSample {
+            install_state: SystemExtensionInstallState::Installed,
+            approval: SystemExtensionApproval::Approved,
+            host_status: ProviderStatus {
+                runtime,
+                ..ProviderStatus::unknown()
+            },
+            provider_state: None,
+            counters: BTreeMap::new(),
+            evidence_paths: Vec::new(),
+            policy_epoch: None,
+            last_error: None,
+        }
     }
 
     #[tokio::test]
@@ -400,15 +552,7 @@ mod tests {
     #[test]
     fn merge_samples_preserves_valid_provider_status_and_marks_missing_sample_unknown() {
         let combined = merge_samples(
-            Some(EndpointSecurityStatusSample {
-                host_status: EndpointSecurityHostStatus {
-                    install_state: SystemExtensionInstallState::Installed,
-                    approval: SystemExtensionApproval::Approved,
-                    endpoint_security: ProviderStatus {
-                        runtime: ProviderRuntimeState::Active,
-                    },
-                },
-            }),
+            Some(endpoint_sample(ProviderRuntimeState::Active)),
             None,
         );
 
@@ -418,6 +562,7 @@ mod tests {
             combined.endpoint_security,
             ProviderStatus {
                 runtime: ProviderRuntimeState::Active,
+                ..ProviderStatus::unknown()
             }
         );
         assert_eq!(combined.network_extension, ProviderStatus::unknown());
@@ -426,22 +571,8 @@ mod tests {
     #[test]
     fn merge_samples_promotes_consistent_install_and_approval_proof() {
         let combined = merge_samples(
-            Some(EndpointSecurityStatusSample {
-                host_status: EndpointSecurityHostStatus {
-                    install_state: SystemExtensionInstallState::Installed,
-                    approval: SystemExtensionApproval::Approved,
-                    endpoint_security: ProviderStatus {
-                        runtime: ProviderRuntimeState::Active,
-                    },
-                },
-            }),
-            Some(NetworkExtensionStatusSample {
-                install_state: SystemExtensionInstallState::Installed,
-                approval: SystemExtensionApproval::Approved,
-                host_status: ProviderStatus {
-                    runtime: ProviderRuntimeState::Active,
-                },
-            }),
+            Some(endpoint_sample(ProviderRuntimeState::Active)),
+            Some(network_sample(ProviderRuntimeState::Active)),
         );
 
         assert_eq!(combined.install_state, SystemExtensionInstallState::Installed);
@@ -450,13 +581,68 @@ mod tests {
             combined.endpoint_security,
             ProviderStatus {
                 runtime: ProviderRuntimeState::Active,
+                ..ProviderStatus::unknown()
             }
         );
         assert_eq!(
             combined.network_extension,
             ProviderStatus {
                 runtime: ProviderRuntimeState::Active,
+                ..ProviderStatus::unknown()
             }
+        );
+    }
+
+    #[test]
+    fn merge_samples_preserves_provider_runtime_readouts() {
+        let mut endpoint = endpoint_sample(ProviderRuntimeState::Active);
+        endpoint.provider_state = Some(ProviderAttestationState {
+            provider: "endpoint_security".to_string(),
+            installed: true,
+            approval_status: ProviderApprovalStatus::Approved,
+            active: true,
+            healthy: true,
+            availability: ProviderAvailability::Active,
+            degraded_reasons: Vec::new(),
+            last_healthy_timestamp: Some("2026-05-14T12:00:00Z".to_string()),
+        });
+        endpoint.counters.insert("auth_open_allowed".to_string(), 7);
+        endpoint.policy_epoch = Some(42);
+        endpoint.evidence_paths.push(EvidenceArtifact {
+            kind: "status".to_string(),
+            path: "/tmp/clawdstrike/es-status.json".to_string(),
+            detail: "endpoint security helper output".to_string(),
+        });
+
+        let combined = merge_samples(
+            Some(endpoint),
+            Some(network_sample(ProviderRuntimeState::Active)),
+        );
+
+        assert_eq!(
+            combined.activation_state,
+            SystemExtensionActivationState::Active
+        );
+        assert_eq!(combined.endpoint_security.policy_epoch, Some(42));
+        assert_eq!(
+            combined
+                .endpoint_security
+                .counters
+                .get("auth_open_allowed"),
+            Some(&7)
+        );
+        assert_eq!(
+            combined.endpoint_security.last_healthy_timestamp.as_deref(),
+            Some("2026-05-14T12:00:00Z")
+        );
+        assert_eq!(combined.endpoint_security.evidence_paths.len(), 1);
+        assert_eq!(
+            combined
+                .endpoint_security
+                .provider_state
+                .as_ref()
+                .map(|state| state.provider.as_str()),
+            Some("endpoint_security")
         );
     }
 

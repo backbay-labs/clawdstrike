@@ -12,6 +12,7 @@ from clawdstrike.exceptions import (
     NativeBackendError,
     PolicyError,
     ReceiptError,
+    UnsupportedOriginFeatureError,
 )
 from clawdstrike.guards import (
     Action,
@@ -62,7 +63,12 @@ from clawdstrike.merkle import (
     hash_node,
 )
 from clawdstrike.native import NATIVE_AVAILABLE, init_native
-from clawdstrike.policy_lab import PolicyLab
+from clawdstrike.origin import (
+    OriginContext,
+    ProvenanceConfidence,
+    normalize_origin_dict,
+    normalize_origin_input,
+)
 from clawdstrike.policy import (
     GuardConfigs,
     Policy,
@@ -73,6 +79,7 @@ from clawdstrike.policy import (
     PostureState,
     PostureTransition,
 )
+from clawdstrike.policy_lab import PolicyLab
 from clawdstrike.receipt import (
     RECEIPT_SCHEMA_VERSION,
     Provenance,
@@ -85,9 +92,18 @@ from clawdstrike.receipt import (
     ViolationRef,
     validate_receipt_version,
 )
+from clawdstrike.testing import (
+    DiffReport,
+    Scenario,
+    ScenarioResult,
+    ScenarioRunner,
+    ScenarioSuite,
+    SuiteReport,
+    diff_policies,
+)
 from clawdstrike.types import Decision, DecisionStatus, SessionOptions, SessionSummary
 
-__version__ = "0.2.5"
+__version__ = "0.2.7"
 
 __all__ = [
     "__version__",
@@ -98,6 +114,7 @@ __all__ = [
     "ReceiptError",
     "ConfigurationError",
     "NativeBackendError",
+    "UnsupportedOriginFeatureError",
     # Core crypto
     "sha256",
     "keccak256",
@@ -140,6 +157,11 @@ __all__ = [
     "McpToolAction",
     "PatchAction",
     "CustomAction",
+    # Origin
+    "OriginContext",
+    "ProvenanceConfidence",
+    "normalize_origin_dict",
+    "normalize_origin_input",
     # Decision / Facade
     "Decision",
     "DecisionStatus",
@@ -193,4 +215,12 @@ __all__ = [
     "EngineBackend",
     "NativeEngineBackend",
     "PurePythonBackend",
+    # Testing
+    "Scenario",
+    "ScenarioResult",
+    "ScenarioRunner",
+    "ScenarioSuite",
+    "SuiteReport",
+    "DiffReport",
+    "diff_policies",
 ]

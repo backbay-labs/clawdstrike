@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadDescription</key>
+      <string>Grants Full Disk Access to the ClawdStrike containing app and combined system extension.</string>
+      <key>PayloadDisplayName</key>
+      <string>ClawdStrike Full Disk Access</string>
+      <key>PayloadIdentifier</key>
+      <string>{{ORG_IDENTIFIER}}.clawdstrike.pppc-full-disk-access</string>
+      <key>PayloadOrganization</key>
+      <string>{{ORG_IDENTIFIER}}</string>
+      <key>PayloadType</key>
+      <string>com.apple.TCC.configuration-profile-policy</string>
+      <key>PayloadUUID</key>
+      <string>{{PAYLOAD_UUID}}</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>Services</key>
+      <dict>
+        <key>SystemPolicyAllFiles</key>
+        <array>
+          <dict>
+            <key>Allowed</key>
+            <true/>
+            <key>CodeRequirement</key>
+            <string>{{APP_CODE_REQUIREMENT}}</string>
+            <key>Identifier</key>
+            <string>{{APP_BUNDLE_ID}}</string>
+            <key>IdentifierType</key>
+            <string>bundleID</string>
+            <key>StaticCode</key>
+            <false/>
+          </dict>
+          <dict>
+            <key>Allowed</key>
+            <true/>
+            <key>CodeRequirement</key>
+            <string>{{SYSTEM_EXTENSION_CODE_REQUIREMENT}}</string>
+            <key>Identifier</key>
+            <string>{{SYSTEM_EXTENSION_BUNDLE_ID}}</string>
+            <key>IdentifierType</key>
+            <string>bundleID</string>
+            <key>StaticCode</key>
+            <false/>
+          </dict>
+        </array>
+      </dict>
+    </dict>
+  </array>
+  <key>PayloadDescription</key>
+  <string>Managed PPPC profile for ClawdStrike EndpointSecurity operation.</string>
+  <key>PayloadDisplayName</key>
+  <string>ClawdStrike Full Disk Access</string>
+  <key>PayloadIdentifier</key>
+  <string>{{ORG_IDENTIFIER}}.clawdstrike.full-disk-access</string>
+  <key>PayloadOrganization</key>
+  <string>{{ORG_IDENTIFIER}}</string>
+  <key>PayloadRemovalDisallowed</key>
+  <true/>
+  <key>PayloadScope</key>
+  <string>System</string>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>{{PROFILE_UUID}}</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+</dict>
+</plist>

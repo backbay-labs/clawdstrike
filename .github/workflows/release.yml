@@ -17,6 +17,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CIBUILDWHEEL_VERSION: "2.23.3"
 
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref_name }}
@@ -124,7 +125,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          crates=(hush-core hush-proxy hush-spine clawdstrike clawdstrike-ocsf hunt-scan hunt-query clawdstrike-policy-event hunt-correlate hush-cli)
+          # Keep this list to crates that currently pass `cargo publish --dry-run`
+          # against registry dependencies.
+          #
+          # The remaining 0.2.7-drifting public crates stay excluded for now:
+          # - clawdstrike: dry-run fails against crates.io's hushspec/nono surface
+          # - clawdstrike-policy-event, hunt-scan, hunt-query, hunt-correlate, hush-cli,
+          #   clawdstrike-logos: blocked transitively on clawdstrike 0.2.7 being unpublished
+          crates=(logos-ffi clawdstrike-ocsf hush-core hush-proxy hush-spine)
           missing=()
           for crate in "${crates[@]}"; do
             code="$(curl -s -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/${crate}/${VERSION}")"
@@ -177,25 +185,27 @@ jobs:
                 return 0
               fi
 
-              echo "Publish attempt failed for ${crate}; waiting for index propagation"
-              sleep 30
-              attempt=$((attempt + 1))
+              if grep -Eq "no matching package named|failed to get `.*` as a dependency|download of config\\.json failed|failed to download from|service unavailable|timed out|timeout" <<<"$output"; then
+                echo "Publish attempt failed for ${crate} with a retryable crates.io/index error; waiting for propagation"
+                sleep 30
+                attempt=$((attempt + 1))
+                continue
+              fi
+
+              echo "Publish attempt failed for ${crate} with a non-retryable error"
+              exit $status
+
             done
 
             echo "Failed to publish ${crate}@${VERSION}"
             exit 1
           }
 
+          publish_with_retry logos-ffi
+          publish_with_retry clawdstrike-ocsf
           publish_with_retry hush-core
           publish_with_retry hush-proxy
           publish_with_retry hush-spine
-          publish_with_retry clawdstrike
-          publish_with_retry clawdstrike-ocsf
-          publish_with_retry hunt-scan
-          publish_with_retry hunt-query
-          publish_with_retry clawdstrike-policy-event
-          publish_with_retry hunt-correlate
-          publish_with_retry hush-cli
 
       - name: Crates already published
         if: steps.detect.outputs.none_missing == 'true'
@@ -213,55 +223,142 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Detect missing npm package versions
-        id: detect
+      - name: Discover public npm workspaces
+        id: discover
         shell: bash
         run: |
           set -euo pipefail
+          node <<'NODE'
+          const { appendFileSync, readFileSync } = require("fs");
+          const path = require("path");
 
-          packages=(
-            packages/adapters/clawdstrike-adapter-core
-            packages/sdk/hush-ts
-            packages/sdk/clawdstrike
-            packages/policy/clawdstrike-policy
-            packages/adapters/clawdstrike-claude
-            packages/adapters/clawdstrike-openai
-            packages/adapters/clawdstrike-vercel-ai
-            packages/adapters/clawdstrike-langchain
-            packages/adapters/clawdstrike-openclaw
-            packages/adapters/clawdstrike-opencode
-            packages/adapters/clawdstrike-hush-cli-engine
-            packages/adapters/clawdstrike-hushd-engine
-          )
+          const rootPackage = JSON.parse(readFileSync("package.json", "utf8"));
+          const workspacePaths = Array.isArray(rootPackage.workspaces) ? rootPackage.workspaces : [];
+          const manifests = [];
 
-          missing=()
-          for pkg in "${packages[@]}"; do
-            name="$(node -e "console.log(require('./${pkg}/package.json').name)")"
-            version="$(node -e "console.log(require('./${pkg}/package.json').version)")"
-            if npm view "${name}@${version}" version >/dev/null 2>&1; then
-              echo "${name}@${version} already exists"
-            else
-              echo "${name}@${version} missing"
-              missing+=("$pkg")
-            fi
-          done
+          for (const workspace of workspacePaths) {
+            if (workspace === "crates/libs/hush-wasm") {
+              continue;
+            }
 
-          if [[ "${#missing[@]}" -eq 0 ]]; then
-            echo "none_missing=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "none_missing=false" >> "$GITHUB_OUTPUT"
-            echo "missing_packages=${missing[*]}" >> "$GITHUB_OUTPUT"
-          fi
+            const manifestPath = path.join(workspace, "package.json");
+            const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+            const publishAccess = manifest.publishConfig?.access;
+            if (manifest.private === true || publishAccess !== "public") {
+              continue;
+            }
+
+            manifests.push({
+              workspace,
+              name: manifest.name,
+              dependencies: Object.keys(manifest.dependencies || {}).concat(
+                Object.keys(manifest.optionalDependencies || {})
+              ),
+            });
+          }
+
+          const byName = new Map(manifests.map((manifest) => [manifest.name, manifest]));
+          const indegree = new Map(manifests.map((manifest) => [manifest.workspace, 0]));
+          const edges = new Map(manifests.map((manifest) => [manifest.workspace, []]));
+
+          for (const manifest of manifests) {
+            const internalDeps = [...new Set(manifest.dependencies.filter((dep) => byName.has(dep)))];
+            for (const dependencyName of internalDeps) {
+              const dependency = byName.get(dependencyName);
+              edges.get(dependency.workspace).push(manifest.workspace);
+              indegree.set(manifest.workspace, indegree.get(manifest.workspace) + 1);
+            }
+          }
+
+          const queue = manifests
+            .map((manifest) => manifest.workspace)
+            .filter((workspace) => indegree.get(workspace) === 0)
+            .sort();
+          const ordered = [];
+
+          while (queue.length > 0) {
+            const workspace = queue.shift();
+            ordered.push(workspace);
+
+            for (const dependent of edges.get(workspace).sort()) {
+              indegree.set(dependent, indegree.get(dependent) - 1);
+              if (indegree.get(dependent) === 0) {
+                queue.push(dependent);
+              }
+            }
+
+            queue.sort();
+          }
+
+          if (ordered.length !== manifests.length) {
+            throw new Error("failed to topologically order npm release workspaces");
+          }
+
+          appendFileSync(process.env.GITHUB_OUTPUT, `packages=${JSON.stringify(ordered)}\n`);
+          NODE
+
+      - name: Detect missing npm package versions
+        id: detect
+        env:
+          PACKAGE_PATHS_JSON: ${{ steps.discover.outputs.packages }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { appendFileSync, readFileSync } = require("fs");
+          const { execFileSync } = require("child_process");
+
+          const packages = JSON.parse(process.env.PACKAGE_PATHS_JSON || "[]");
+          const missing = [];
+
+          for (const pkg of packages) {
+            const manifest = JSON.parse(readFileSync(`./${pkg}/package.json`, "utf8"));
+            const name = manifest.name;
+            const version = manifest.version;
+
+            try {
+              execFileSync("npm", ["view", `${name}@${version}`, "version"], {
+                stdio: ["ignore", "ignore", "ignore"],
+              });
+              console.log(`${name}@${version} already exists`);
+            } catch (_error) {
+              console.log(`${name}@${version} missing`);
+              missing.push(pkg);
+            }
+          }
+
+          appendFileSync(process.env.GITHUB_OUTPUT, `none_missing=${missing.length === 0}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `missing_packages=${JSON.stringify(missing)}\n`);
+          NODE
 
       - name: Install workspace dependencies
         if: steps.detect.outputs.none_missing == 'false'
         run: npm ci --ignore-scripts
+
+      - name: Setup Rust target for local WASM npm tests
+        if: steps.detect.outputs.none_missing == 'false'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack for local WASM npm tests
+        if: steps.detect.outputs.none_missing == 'false'
+        run: cargo install wasm-pack --locked --version 0.14.0
+
+      - name: Build local @clawdstrike/wasm package for dependent npm tests
+        if: steps.detect.outputs.none_missing == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd crates/libs/hush-wasm
+          wasm-pack build --target nodejs --release --out-dir pkg-node
 
       - name: Publish missing npm packages in dependency order
         if: steps.detect.outputs.none_missing == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+          PACKAGE_PATHS_JSON: ${{ steps.discover.outputs.packages }}
         shell: bash
         run: |
           set -euo pipefail
@@ -308,18 +405,17 @@ jobs:
             return $status
           }
 
-          publish_workspace packages/adapters/clawdstrike-adapter-core
-          publish_workspace packages/sdk/hush-ts
-          publish_workspace packages/sdk/clawdstrike
-          publish_workspace packages/policy/clawdstrike-policy
-          publish_workspace packages/adapters/clawdstrike-claude
-          publish_workspace packages/adapters/clawdstrike-openai
-          publish_workspace packages/adapters/clawdstrike-vercel-ai
-          publish_workspace packages/adapters/clawdstrike-langchain
-          publish_workspace packages/adapters/clawdstrike-openclaw
-          publish_workspace packages/adapters/clawdstrike-opencode
-          publish_workspace packages/adapters/clawdstrike-hush-cli-engine
-          publish_workspace packages/adapters/clawdstrike-hushd-engine
+          node <<'NODE' > /tmp/release-npm-packages.txt
+          const packages = JSON.parse(process.env.PACKAGE_PATHS_JSON || "[]");
+          for (const pkg of packages) {
+            console.log(pkg);
+          }
+          NODE
+
+          while IFS= read -r pkg; do
+            [[ -n "$pkg" ]] || continue
+            publish_workspace "$pkg"
+          done < /tmp/release-npm-packages.txt
 
       - name: npm packages already published
         if: steps.detect.outputs.none_missing == 'true'
@@ -515,6 +611,70 @@ jobs:
         shell: bash
         run: scripts/sync-hush-py-native-sources.sh
 
+      - name: Install cibuildwheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "cibuildwheel==${CIBUILDWHEEL_VERSION}"
+
+      - name: Prime cibuildwheel virtualenv cache
+        env:
+          CIBW_CACHE_PATH: ${{ runner.temp }}/cibuildwheel-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.resources
+          import os
+          import time
+          import tomllib
+          import urllib.request
+          from pathlib import Path
+
+          config_path = importlib.resources.files("cibuildwheel.resources").joinpath("virtualenv.toml")
+          configuration = tomllib.loads(config_path.read_text(encoding="utf-8"))["default"]
+          version = str(configuration["version"])
+          primary_url = str(configuration["url"])
+          raw_url = (
+              primary_url.replace("https://github.com/", "https://raw.githubusercontent.com/")
+              .replace("/blob/", "/")
+              .replace("?raw=true", "")
+          )
+          fallback_urls = [
+              raw_url,
+              primary_url,
+              f"https://cdn.jsdelivr.net/gh/pypa/get-virtualenv@{version}/public/virtualenv.pyz",
+          ]
+
+          cache_path = Path(os.environ["CIBW_CACHE_PATH"])
+          target = cache_path / f"virtualenv-{version}.pyz"
+          cache_path.mkdir(parents=True, exist_ok=True)
+
+          if target.exists():
+              print(f"Using cached virtualenv bootstrap: {target}")
+              raise SystemExit(0)
+
+          last_error = None
+          for attempt in range(1, 6):
+              for url in fallback_urls:
+                  try:
+                      print(f"Downloading {url} (attempt {attempt}/5)")
+                      with urllib.request.urlopen(url, timeout=60) as response:
+                          payload = response.read()
+                      if len(payload) < 100_000:
+                          raise RuntimeError(f"downloaded payload too small: {len(payload)} bytes")
+                      target.write_bytes(payload)
+                      print(f"Cached virtualenv bootstrap at {target}")
+                      raise SystemExit(0)
+                  except Exception as exc:  # pragma: no cover - exercised in CI
+                      last_error = exc
+                      print(f"Download failed from {url}: {exc}")
+              time.sleep(min(attempt * 15, 60))
+
+          raise SystemExit(f"failed to cache cibuildwheel virtualenv bootstrap: {last_error}")
+          PY
+
       - name: Build native wheels
         env:
           CIBW_BUILD: "cp310-*"
@@ -523,12 +683,11 @@ jobs:
           CIBW_ARCHS_MACOS: ${{ matrix.cibw_archs_macos }}
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_archs_windows }}
           CIBW_BEFORE_ALL_LINUX: "curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal && . $HOME/.cargo/env"
+          CIBW_CACHE_PATH: ${{ runner.temp }}/cibuildwheel-cache
           MACOSX_DEPLOYMENT_TARGET: "10.12"
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install "cibuildwheel==2.23.3"
           python -m cibuildwheel packages/sdk/hush-py/hush-native --output-dir wheelhouse
           ls -la wheelhouse
 
@@ -651,23 +810,58 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Setup Strawberry Perl (Windows)
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/setup-strawberry-perl
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build release binaries
+      - name: Build release binaries (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
-          cargo build --release --target ${{ matrix.target }} -p hush-cli
-          cargo build --release --target ${{ matrix.target }} -p hushd
+          set -euo pipefail
+          cargo build --release --target ${{ matrix.target }} -p hush-cli --bin hush --bin clawdstrike
+          cargo build --release --target ${{ matrix.target }} -p hushd --bin hushd
+
+      - name: Build release binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --release --target ${{ matrix.target }} -p hush-cli --bin hush --bin clawdstrike
+          cargo build --release --target ${{ matrix.target }} -p hushd --bin hushd
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'
-        run: cp target/${{ matrix.target }}/release/hush ${{ matrix.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          bin_path="${release_dir}/hush"
+          if [[ ! -f "${bin_path}" ]]; then
+            echo "Missing expected binary: ${bin_path}" >&2
+            ls -la "${release_dir}" >&2 || true
+            exit 1
+          fi
+          cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Rename binary (Windows)
         if: runner.os == 'Windows'
-        run: cp target/${{ matrix.target }}/release/hush.exe ${{ matrix.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          bin_path="${release_dir}/hush.exe"
+          if [[ ! -f "${bin_path}" ]]; then
+            echo "Missing expected binary: ${bin_path}" >&2
+            ls -la "${release_dir}" >&2 || true
+            exit 1
+          fi
+          cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -714,21 +908,56 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Setup Strawberry Perl (Windows)
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/setup-strawberry-perl
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build release hushd binary
-        run: cargo build --release --target ${{ matrix.target }} -p hushd
+      - name: Build release hushd binary (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --target ${{ matrix.target }} -p hushd --bin hushd
+
+      - name: Build release hushd binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --release --target ${{ matrix.target }} -p hushd --bin hushd
 
       - name: Rename hushd binary (Unix)
         if: runner.os != 'Windows'
-        run: cp target/${{ matrix.target }}/release/hushd ${{ matrix.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          bin_path="${release_dir}/hushd"
+          if [[ ! -f "${bin_path}" ]]; then
+            echo "Missing expected binary: ${bin_path}" >&2
+            ls -la "${release_dir}" >&2 || true
+            exit 1
+          fi
+          cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Rename hushd binary (Windows)
         if: runner.os == 'Windows'
-        run: cp target/${{ matrix.target }}/release/hushd.exe ${{ matrix.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          bin_path="${release_dir}/hushd.exe"
+          if [[ ! -f "${bin_path}" ]]; then
+            echo "Missing expected binary: ${bin_path}" >&2
+            ls -la "${release_dir}" >&2 || true
+            exit 1
+          fi
+          cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Upload hushd artifact
         uses: actions/upload-artifact@v6

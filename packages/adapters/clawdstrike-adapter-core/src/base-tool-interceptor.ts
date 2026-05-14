@@ -2,6 +2,7 @@ import type { AdapterConfig, GenericToolCall } from "./adapter.js";
 import type { AuditEvent } from "./audit.js";
 import { emitAuditEvent as emitAuditEventShared } from "./audit-event-emitter.js";
 import { sanitizeAuditText } from "./audit-sanitizer.js";
+import type { BrokerExecutionContext } from "./broker-types.js";
 import type { SecurityContext } from "./context.js";
 import { DefaultOutputSanitizer } from "./default-output-sanitizer.js";
 import type { PolicyEngineLike } from "./engine.js";
@@ -217,12 +218,63 @@ export class BaseToolInterceptor implements ToolInterceptor {
       decision,
     });
 
+    let brokerReplacementResult = sanitizeOverrides?.replacementResult;
+    if (brokerReplacementResult === undefined && this.config.broker?.executor) {
+      try {
+        const brokerResult = await this.config.broker.executor.execute({
+          toolName: normalizedName,
+          rawInput: input,
+          dispatchInput,
+          parameters: dispatchParams,
+          policyEvent: event,
+          decision,
+          securityContext: context,
+        } satisfies BrokerExecutionContext);
+        brokerReplacementResult = brokerResult?.replacementResult;
+      } catch (error) {
+        const brokerError = error instanceof Error ? error : new Error(String(error));
+        const brokerDecision: Decision = {
+          status: "deny",
+          reason_code: "ADC_BROKER_FAILURE",
+          guard: "broker",
+          severity: "high",
+          reason: "broker execution failed closed",
+          message: "broker execution failed closed",
+        };
+
+        context.violationCount++;
+        context.recordBlocked(normalizedName, brokerDecision);
+        this.config.handlers?.onError?.(brokerError, toolCall);
+        this.config.handlers?.onBlocked?.(toolCall, brokerDecision);
+
+        await this.emitAuditEvent(context, {
+          id: `${event.eventId}-broker-error`,
+          type: "tool_call_blocked",
+          timestamp: new Date(),
+          contextId: context.id,
+          sessionId: context.sessionId,
+          toolName: normalizedName,
+          parameters: this.config.audit?.logParameters
+            ? (this.sanitizeForAudit(dispatchParams) as Record<string, unknown>)
+            : undefined,
+          decision: brokerDecision,
+          details: { phase: "broker" },
+        });
+
+        return {
+          proceed: false,
+          decision: brokerDecision,
+          duration: Date.now() - startTime,
+        };
+      }
+    }
+
     return {
       proceed: true,
       decision,
       modifiedInput: sanitizeOverrides?.modifiedInput,
       modifiedParameters: sanitizeOverrides?.modifiedParameters,
-      replacementResult: sanitizeOverrides?.replacementResult,
+      replacementResult: brokerReplacementResult,
       warning:
         decision.status === "warn" || decision.status === "sanitize" ? decision.message : undefined,
       duration: Date.now() - startTime,

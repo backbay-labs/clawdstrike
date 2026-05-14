@@ -149,7 +149,9 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: packages/sdk/hush-ts/package-lock.json
+          cache-dependency-path: |
+            packages/sdk/hush-ts/package-lock.json
+            packages/adapters/clawdstrike-adapter-core/package-lock.json
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -292,6 +294,35 @@ jobs:
         working-directory: apps/desktop
         run: bun run build
 
+  workbench-frontend:
+    name: Workbench Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/workbench/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/workbench
+        run: npm ci
+
+      - name: Type check
+        working-directory: apps/workbench
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: apps/workbench
+        run: npm test -- --run
+
+      - name: Build
+        working-directory: apps/workbench
+        run: npm run build
+
   control-console:
     name: Control Console
     runs-on: ubuntu-latest
@@ -397,6 +428,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Free disk space
+        run: |
+          echo "Disk before cleanup:"
+          df -h
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          echo "Disk after cleanup:"
+          df -h
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -418,7 +460,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler z3 libz3-dev clang libclang-dev
 
       - name: Build documentation
         run: cargo doc --no-deps --all-features
@@ -468,11 +510,27 @@ jobs:
             --ignore RUSTSEC-2025-0081 \
             --ignore RUSTSEC-2025-0098 \
             --ignore RUSTSEC-2025-0100 \
-            --ignore RUSTSEC-2025-0119
+            --ignore RUSTSEC-2025-0119 \
+            # Temporary: transitive via portable-pty->serial in workbench PTY stack.
+            # Mitigated by command hardening (shell/env allowlists + backend-minted
+            # capability tokens bound to trusted-window context).
+            # Tracking removal: SEC-PTY-001.
+            --ignore RUSTSEC-2017-0008
+            # aws-lc-rs advisories (2026-03-23). Transitive via rustls.
+            # Awaiting patched release. Owner: @deps-maintainers.
+            --ignore RUSTSEC-2026-0044
+            --ignore RUSTSEC-2026-0045
+            --ignore RUSTSEC-2026-0046
+            --ignore RUSTSEC-2026-0047
+            --ignore RUSTSEC-2026-0048
+            --ignore RUSTSEC-2026-0049
+            --ignore RUSTSEC-2026-0067
+            --ignore RUSTSEC-2026-0068
           )
 
           cargo audit --deny warnings "${audit_ignores[@]}"
           cargo audit --deny warnings --file apps/desktop/src-tauri/Cargo.lock "${audit_ignores[@]}"
+          cargo audit --deny warnings --file apps/workbench/src-tauri/Cargo.lock "${audit_ignores[@]}"
 
   license-check:
     name: License Check
@@ -509,6 +567,9 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+      - name: Install Z3 toolchain for all-features coverage
+        run: sudo apt-get update && sudo apt-get install -y z3 libz3-dev clang libclang-dev
+
       - name: Install Linux dependencies for desktop Tauri coverage
         run: |
           sudo apt-get update
@@ -527,9 +588,19 @@ jobs:
       - name: Generate desktop Tauri coverage report
         run: cargo llvm-cov --manifest-path apps/desktop/src-tauri/Cargo.toml --lcov --output-path lcov.desktop.info
 
+      - name: Generate workbench Tauri coverage report
+        run: cargo llvm-cov --manifest-path apps/workbench/src-tauri/Cargo.toml --lcov --output-path lcov.workbench.info
+
       - name: Combine coverage reports
         run: |
-          cat lcov.workspace.info lcov.desktop.info > lcov.info
+          {
+            cat lcov.workspace.info
+            printf '\n'
+            cat lcov.desktop.info
+            printf '\n'
+            cat lcov.workbench.info
+            printf '\n'
+          } > lcov.info
 
       - name: Enforce changed-file Rust coverage floor
         env:
@@ -557,17 +628,24 @@ jobs:
             exit 0
           fi
 
-          # This job merges coverage from the root Rust workspace and the
-          # desktop Tauri crate. Keep generating desktop LCOV, but exclude the
-          # long-lived Tauri surface from the changed-line floor until it has a
+          # This job merges coverage from the root Rust workspace plus the
+          # desktop and workbench Tauri crates. Keep excluding the long-lived
+          # desktop Tauri surface from the changed-line floor until it has a
           # dedicated changed-line gate instead of inheriting legacy branch
-          # churn. Also exclude standalone crates still outside the combined
-          # coverage set and test-only Rust sources that do not emit stable
-          # LCOV entries in this job.
+          # churn. Also exclude vendored upstream Rust snapshots, standalone
+          # crates still outside the combined coverage set, the out-of-workspace
+          # `logos-z3` crate, and test-only Rust sources that do not emit stable
+          # LCOV entries in this job. The root workspace coverage run installs
+          # Z3 and uses `--all-features`, so `clawdstrike-logos` solver-gated
+          # paths remain in scope here.
           grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
             | grep -v '^apps/desktop/src-tauri/' \
+            | grep -v '^apps/workbench/src-tauri/' \
             | grep -v '^crates/bridges/hush-go-native/' \
+            | grep -v '^crates/libs/logos-z3/' \
             | grep -v '^packages/sdk/hush-py/hush-native/' \
+            | grep -v '^vendor/hushspec/' \
+            | grep -Ev '(^|/)build\.rs$' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
             | grep -Ev '^crates/libs/hunt-(correlate|query|scan)/src/(lib|error)\.rs$' \
             | grep -Ev '^crates/libs/(hush-core|clawdstrike)/src/lib\.rs$' \
@@ -818,6 +896,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             packages/adapters/clawdstrike-adapter-core/package-lock.json
+            packages/adapters/clawdstrike-broker-client/package-lock.json
             packages/adapters/clawdstrike-openai/package-lock.json
             packages/adapters/clawdstrike-claude/package-lock.json
             packages/adapters/clawdstrike-hush-cli-engine/package-lock.json
@@ -826,6 +905,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm --prefix packages/adapters/clawdstrike-adapter-core ci
+          npm --prefix packages/adapters/clawdstrike-broker-client ci
           npm --prefix packages/adapters/clawdstrike-openai ci
           npm --prefix packages/adapters/clawdstrike-claude ci
           npm --prefix packages/adapters/clawdstrike-hush-cli-engine ci
@@ -834,6 +914,7 @@ jobs:
       - name: Build dependencies and adapters
         run: |
           npm --prefix packages/adapters/clawdstrike-adapter-core run build
+          npm --prefix packages/adapters/clawdstrike-broker-client run build
           npm --prefix packages/adapters/clawdstrike-openai run build
           npm --prefix packages/adapters/clawdstrike-claude run build
           npm --prefix packages/adapters/clawdstrike-hush-cli-engine run build
@@ -1031,7 +1112,9 @@ jobs:
             and .checks.hookCuaPresent
             and .checks.chatSendStarted
             and .checks.historyHasMessages
-            and .checks.assistantBlockSignal
+            and (.checks.assistantBlockSignal or .checks.assistantAuthMissing)
+            and .checks.policyCheckHttpOk
+            and .checks.policyCheckDenied
             and .checks.targetFileAbsent
           ' artifacts/openclaw-runtime-blocked-e2e-${{ matrix.openclaw_version }}/summary.json >/dev/null
 
@@ -1135,31 +1218,37 @@ jobs:
           - name: OpenAI
             dir: packages/adapters/clawdstrike-openai
             bootstrap_adapter_core: true
+            bootstrap_broker_client: true
             bootstrap_sdk: false
             bootstrap_hush: false
           - name: OpenCode
             dir: packages/adapters/clawdstrike-opencode
             bootstrap_adapter_core: true
+            bootstrap_broker_client: false
             bootstrap_sdk: false
             bootstrap_hush: false
           - name: Claude
             dir: packages/adapters/clawdstrike-claude
             bootstrap_adapter_core: true
+            bootstrap_broker_client: false
             bootstrap_sdk: false
             bootstrap_hush: false
           - name: Vercel AI
             dir: packages/adapters/clawdstrike-vercel-ai
             bootstrap_adapter_core: true
+            bootstrap_broker_client: false
             bootstrap_sdk: true
             bootstrap_hush: false
           - name: LangChain
             dir: packages/adapters/clawdstrike-langchain
             bootstrap_adapter_core: true
+            bootstrap_broker_client: false
             bootstrap_sdk: false
             bootstrap_hush: false
           - name: Hushd Engine
             dir: packages/adapters/clawdstrike-hushd-engine
             bootstrap_adapter_core: true
+            bootstrap_broker_client: false
             bootstrap_sdk: false
             bootstrap_hush: false
     steps:
@@ -1170,7 +1259,11 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: ${{ matrix.dir }}/package-lock.json
+          cache-dependency-path: |
+            ${{ matrix.dir }}/package-lock.json
+            packages/adapters/clawdstrike-adapter-core/package-lock.json
+            packages/adapters/clawdstrike-broker-client/package-lock.json
+            packages/sdk/hush-ts/package-lock.json
 
       - name: Install Rust toolchain
         if: ${{ matrix.bootstrap_hush }}
@@ -1192,6 +1285,16 @@ jobs:
       - name: Build file deps (adapter-core)
         if: ${{ matrix.bootstrap_adapter_core }}
         working-directory: packages/adapters/clawdstrike-adapter-core
+        run: npm run build
+
+      - name: Bootstrap file deps (broker-client)
+        if: ${{ matrix.bootstrap_broker_client }}
+        working-directory: packages/adapters/clawdstrike-broker-client
+        run: npm ci
+
+      - name: Build file deps (broker-client)
+        if: ${{ matrix.bootstrap_broker_client }}
+        working-directory: packages/adapters/clawdstrike-broker-client
         run: npm run build
 
       - name: Bootstrap file deps (sdk)

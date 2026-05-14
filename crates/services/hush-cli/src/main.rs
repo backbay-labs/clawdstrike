@@ -23,6 +23,9 @@
 //! - `hush policy migrate <input> --to 1.2.0 [--output <path>|--in-place] [--from <ver>|--legacy-openclaw]` - Migrate a policy to a supported schema version
 //! - `hush policy version <policyRef>` - Show policy schema version compatibility
 //! - `hush run --policy <ref|file> -- <cmd> <args…>` - Best-effort process wrapper (proxy + audit log + receipt)
+//! - `hush origin resolve <policy>` - Resolve origin context against policy
+//! - `hush origin explain <policy>` - Explain origin resolution step by step
+//! - `hush origin list-profiles <policy>` - List all origin profiles in a policy
 //! - `hush pkg init|pack|install|list|verify|info` - Package management
 //! - `hush daemon start|stop|status|reload` - Daemon management
 
@@ -45,6 +48,7 @@ mod hunt;
 mod hush_run;
 mod init;
 mod mirror;
+mod origin_cli;
 mod pkg_cli;
 mod policy_bundle;
 mod policy_diff;
@@ -57,10 +61,13 @@ mod policy_pac;
 mod policy_rego;
 mod policy_synth;
 mod policy_test;
+mod policy_verify;
 mod policy_version;
 mod registry_config;
 mod remote_extends;
+#[cfg(unix)]
 mod sandbox_nono;
+#[cfg(unix)]
 mod supervised_exec;
 mod tui;
 mod ui;
@@ -270,6 +277,12 @@ enum Commands {
         command: GuardCommands,
     },
 
+    /// Origin context resolution and inspection
+    Origin {
+        #[command(subcommand)]
+        command: origin_cli::OriginCommands,
+    },
+
     /// Package management commands
     Pkg {
         #[command(subcommand)]
@@ -450,6 +463,24 @@ enum PolicyCommands {
         /// Emit machine-readable SARIF 2.1.0 JSON.
         #[arg(long, conflicts_with = "json")]
         sarif: bool,
+    },
+
+    /// Verify policy properties (consistency, completeness, inheritance) via Logos formal analysis
+    Verify {
+        /// Policy reference (ruleset name or file path)
+        policy_ref: String,
+        /// Deprecated: verification always resolves extends transitively.
+        #[arg(long, hide = true)]
+        resolve: bool,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+        /// Show the current achievable attestation level
+        #[arg(long)]
+        attestation_level: bool,
+        /// Show detailed formula listing
+        #[arg(long)]
+        verbose: bool,
     },
 
     /// Run a policy test suite (YAML)
@@ -1308,6 +1339,8 @@ enum HuntCommands {
 
 #[tokio::main]
 async fn main() {
+    clawdstrike_logos::verifier::install_clawdstrike_policy_load_verifier();
+
     // Initialize color early so --version banner respects NO_COLOR env.
     // The --no-color flag is handled after full parse succeeds below.
     if std::env::var_os("NO_COLOR").is_some() {
@@ -1539,6 +1572,10 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
         }
 
         Commands::Guard { command } => guard_cli::cmd_guard(command, stdout, stderr).as_i32(),
+
+        Commands::Origin { command } => {
+            origin_cli::cmd_origin(command, &remote_extends, stdout, stderr).as_i32()
+        }
 
         Commands::Pkg { command } => {
             tokio::task::block_in_place(|| pkg_cli::cmd_pkg(command, stdout, stderr).as_i32())
@@ -2545,6 +2582,25 @@ async fn cmd_policy(
             stderr,
         )),
 
+        PolicyCommands::Verify {
+            policy_ref,
+            resolve,
+            json,
+            attestation_level,
+            verbose,
+        } => Ok(policy_verify::cmd_policy_verify(
+            policy_verify::PolicyVerifyCommand {
+                policy_ref,
+                resolve,
+                json,
+                attestation_level,
+                verbose,
+            },
+            remote_extends,
+            stdout,
+            stderr,
+        )),
+
         PolicyCommands::Test {
             command,
             test_file,
@@ -2817,6 +2873,11 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             match cmd.spawn() {
                 Ok(_) => {
                     let _ = writeln!(stdout, "Daemon started");
+                    let _ = writeln!(
+                        stdout,
+                        "The daemon is running as a background process.\n\
+                         To stop it, run: clawdstrike daemon stop"
+                    );
                     ExitCode::Ok
                 }
                 Err(e) => {

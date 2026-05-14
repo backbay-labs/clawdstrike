@@ -1,0 +1,126 @@
+export const metadata = {
+  title: "Spider Sense Guard",
+  order: 11,
+  track: "guard-gallery",
+  description: "Hierarchical threat screening using embedding-based cosine similarity",
+}
+
+# Spider Sense Guard
+
+Some threats don't match simple regex patterns or keyword lists. A sophisticated attacker
+might use novel phrasing, euphemisms, or indirect references to describe malicious actions.
+The SpiderSense guard uses embedding-based similarity matching to detect threats that are
+semantically similar to known attack patterns, even if the exact words are different.
+
+## The Threat
+
+Traditional pattern-matching guards fail against semantic evasion:
+
+```text
+# Easily caught by keyword matching:
+"Delete all database records"
+
+# Not caught -- same intent, different words:
+"Remove every entry from the persistent storage layer"
+```
+
+An attacker who knows which keywords a guard looks for can rephrase their instructions
+to avoid detection while preserving the malicious intent. The SpiderSense guard solves
+this by operating in embedding space -- where semantic meaning matters more than exact words.
+
+## How It Works
+
+Based on the Yu et al. 2026 hierarchical screening approach, the guard maintains a
+`PatternDb` of threat pattern entries, each with a category, stage, and embedding vector.
+When screening input text:
+
+1. **Compute embedding** -- The input text is converted to a vector representation.
+2. **Cosine similarity search** -- The guard calculates cosine similarity against all
+   patterns in the database.
+3. **Threshold check** -- If the top similarity score exceeds the `similarity_threshold`
+   (default: 0.85), the verdict is **Deny**.
+4. **Ambiguity band** -- If the score falls in the ambiguity band (between threshold and
+   a lower bound), the verdict is **Escalate** for further review.
+5. **Allow** -- Otherwise, the input is allowed.
+
+The built-in pattern database (`s2bench-v1.json`) contains 36 entries organized by the
+S2Bench taxonomy: 4 attack stages x 9 attack types, with 3-dimensional demo embeddings.
+
+Optionally, an LLM "deep path" can be enabled for cases in the ambiguity band -- the
+LLM evaluates whether the flagged text truly represents a threat.
+
+## Configuration
+
+```yaml
+guards:
+  spider_sense:
+    enabled: true
+    pattern_db_path: "builtin:s2bench-v1"
+    similarity_threshold: 0.85
+    ambiguity_band: 0.15
+    deep_path_enabled: false  # Optional LLM deep path
+```
+
+- **`pattern_db_path`** -- Path to pattern database (use `builtin:s2bench-v1` for the built-in DB)
+- **`similarity_threshold`** -- Cosine similarity score above which to deny (default: 0.85)
+- **`ambiguity_band`** -- Width of the escalation zone below the threshold (default: 0.15)
+- **`deep_path_enabled`** -- Enable optional LLM deep reasoning for ambiguous cases (default: false)
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="spider-sense-search"
+  title="PatternDb::search()"
+  annotations={[
+    { line: 2, label: "1", explanation: "Compare input embedding against every entry in the pattern database" },
+    { line: 5, label: "2", explanation: "Calculate cosine similarity between the input vector and each pattern's embedding" },
+    { line: 8, label: "3", explanation: "Return the top-K matches sorted by similarity score" }
+  ]}
+/>
+
+<AnnotatedSource
+  tag="spider-sense-cosine"
+  title="cosine_similarity_f32()"
+  annotations={[
+    { line: 2, label: "1", explanation: "Compute dot product of two vectors" },
+    { line: 4, label: "2", explanation: "Compute magnitude (L2 norm) of each vector" },
+    { line: 6, label: "3", explanation: "Similarity = dot_product / (magnitude_a * magnitude_b) -- ranges from -1.0 to 1.0" }
+  ]}
+/>
+
+## Playground
+
+Enter text below to evaluate it against the Spider Sense Guard. The WASM engine
+computes embedding similarity against the built-in S2Bench pattern database.
+
+<GuardPlayground guard="spider_sense" />
+
+## Bypass Challenges
+
+### Challenge 1: Everyday Text (Easy)
+
+<BypassChallenge
+  guard="spider_sense"
+  expectedVerdict="allow"
+  description="Send text with no matching threat patterns."
+  hint="Normal questions about everyday topics (cooking, weather, math) have low similarity to threat patterns in the database."
+  challengeId="guard-gallery/11-spider-sense/easy"
+  actionType="text"
+  placeholder="Enter text..."
+/>
+
+### Challenge 2: Security-Adjacent (Hard)
+
+<BypassChallenge
+  guard="spider_sense"
+  expectedVerdict="allow"
+  description="Can you describe something that sounds security-related but stays below the similarity threshold?"
+  hint="The guard uses embedding-based similarity, not keyword matching. Discussing security concepts in an educational context (like this very lesson) might have some similarity to threat patterns, but typically scores below the 0.85 threshold."
+  challengeId="guard-gallery/11-spider-sense/hard"
+  actionType="text"
+  placeholder="Enter text..."
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/11-spider-sense" />
+
+<LessonNav trackSlug="guard-gallery" lessonSlug="11-spider-sense" />

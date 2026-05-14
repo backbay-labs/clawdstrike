@@ -5,17 +5,21 @@
  * Capsules can hold: output logs, events feed, artifact preview, inspectors.
  */
 
-export type CapsuleKind =
-  | "output" // Job/run output
-  | "events" // Kernel/events feed
-  | "artifact" // Artifact preview
-  | "inspector" // Workcell/issue inspector
-  | "terminal" // Terminal session popup
-  | "action" // Agent decision/question requiring user input
-  | "chat" // Chat/messaging capsule
-  | "social" // Social/connections capsule
-  | "season_pass" // Optional: future
-  | "kernel_agent"; // Optional: future
+/** Capsule content type. Built-in kinds listed in BUILTIN_CAPSULE_KINDS; plugins register custom kinds. */
+export type CapsuleKind = string;
+
+export const BUILTIN_CAPSULE_KINDS = [
+  "output", // Job/run output
+  "events", // Kernel/events feed
+  "artifact", // Artifact preview
+  "inspector", // Workcell/issue inspector
+  "terminal", // Terminal session popup
+  "action", // Agent decision/question requiring user input
+  "chat", // Chat/messaging capsule
+  "social", // Social/connections capsule
+  "season_pass", // Optional: future
+  "kernel_agent", // Optional: future
+] as const;
 
 export type ActionPriority = "critical" | "high" | "normal" | "low";
 export type ActionType = "decision" | "question" | "approval" | "input" | "review";
@@ -98,7 +102,10 @@ export interface SessionItem {
   route?: string;
 }
 
-export type ShelfMode = "events" | "output" | "artifacts";
+/** Shelf display mode. Built-in modes listed in BUILTIN_SHELF_MODES; plugins register custom modes. */
+export type ShelfMode = string;
+
+export const BUILTIN_SHELF_MODES = ["events", "output", "artifacts"] as const;
 
 export interface ShelfState {
   isOpen: boolean;

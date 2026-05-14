@@ -1,0 +1,85 @@
+export const metadata = {
+  title: "MCP Tool Guard",
+  order: 7,
+  track: "guard-gallery",
+  description: "Restricts which MCP tools an agent can invoke and enforces argument size limits",
+}
+
+# MCP Tool Guard
+
+## The Threat
+
+The Model Context Protocol (MCP) gives AI agents access to external tools. Without restrictions, an agent could invoke `shell_exec` (arbitrary command execution), `raw_file_write` (bypass file guards), or `raw_file_delete` (destructive deletion).
+
+The McpToolGuard controls which tools are allowed, which require confirmation, and which are outright blocked -- providing a capability boundary around tool invocation.
+
+## How It Works
+
+Decision cascade with clear precedence:
+
+1. **Block set** checked first (always wins -- hard deny)
+2. **Confirmation set** checked next (returns `RequireConfirmation` -- a warn, not deny)
+3. If **allowlist is non-empty**, tool must be in allowlist to pass
+4. If **allowlist is empty**, fall back to default action
+
+The guard also enforces a `max_args_size` limit (default 1MB) using a zero-allocation counting writer, preventing agents from sending oversized payloads through tool arguments.
+
+## Configuration
+
+```yaml
+guards:
+  mcp_tool:
+    enabled: true
+    blocked_tools:
+      - shell_exec
+      - run_command
+      - raw_file_write
+    require_confirmation:
+      - file_write
+      - file_delete
+      - git_push
+    allowed_tools: []  # Empty = allow all not blocked
+    max_args_size: 1048576  # 1MB
+```
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="mcp-tool-decision"
+  title="McpToolGuard::is_allowed()"
+  annotations={[
+    { line: 2, label: "1", explanation: "Block set has highest precedence -- if the tool is blocked, it's always denied" },
+    { line: 5, label: "2", explanation: "Confirmation set returns RequireConfirmation -- a WARNING, not a hard DENY" },
+    { line: 8, label: "3", explanation: "If allowlist is non-empty, only listed tools pass -- deny-by-default when allowlist is configured" },
+    { line: 12, label: "4", explanation: "If allowlist is empty, fall back to default action (typically allow)" }
+  ]}
+/>
+
+## Try It Yourself
+
+<GuardPlayground guard="mcp_tool" actionType="mcp_tool" placeholder="Enter an MCP tool name..." defaultInput="shell_exec" examples={[{label: "Blocked: shell_exec", value: "shell_exec"}, {label: "Blocked: run_command", value: "run_command"}, {label: "Needs confirm: file_write", value: "file_write"}, {label: "Allowed: read_file", value: "read_file"}]} />
+
+## Bypass Challenges
+
+<BypassChallenge
+  guard="mcp_tool"
+  expectedVerdict="allow"
+  description="Invoke an MCP tool that the guard allows."
+  hint="The blocked list contains shell_exec, run_command, raw_file_write, raw_file_delete. Any other tool name like read_file or list_files is allowed."
+  challengeId="guard-gallery/07-mcp-tool/easy"
+  actionType="mcp_tool"
+  placeholder="Enter a tool name..."
+/>
+
+<BypassChallenge
+  guard="mcp_tool"
+  expectedVerdict="allow"
+  description="Can you find a tool that requires confirmation but isn't blocked? (Hint: it returns a warning, not a denial)"
+  hint="The file_write tool is in the require_confirmation set. It returns RequireConfirmation, which maps to a WARNING severity -- not a hard DENY. The guard ALLOWS it with a warning."
+  challengeId="guard-gallery/07-mcp-tool/hard"
+  actionType="mcp_tool"
+  placeholder="Enter a tool name..."
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/07-mcp-tool" />
+<LessonNav trackSlug="guard-gallery" lessonSlug="07-mcp-tool" />

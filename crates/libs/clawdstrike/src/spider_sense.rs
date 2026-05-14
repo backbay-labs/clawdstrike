@@ -132,6 +132,7 @@ impl PatternDb {
         })
     }
 
+    // @academy:start spider-sense-search
     /// Brute-force cosine similarity search. Returns the top-k matches sorted
     /// by descending similarity score.
     pub fn search(&self, query: &[f32], top_k: usize) -> Vec<PatternMatch> {
@@ -155,6 +156,7 @@ impl PatternDb {
         scored.truncate(top_k);
         scored
     }
+    // @academy:end spider-sense-search
 
     /// Number of entries in the database.
     pub fn len(&self) -> usize {
@@ -174,6 +176,7 @@ impl PatternDb {
 
 // ── Cosine Similarity ───────────────────────────────────────────────────
 
+// @academy:start spider-sense-cosine
 /// Compute cosine similarity between two f32 vectors, using f64 precision
 /// for the accumulation. Returns 0.0 if either vector has zero norm or if
 /// any element is non-finite (NaN, Inf). This ensures fail-closed behavior:
@@ -207,6 +210,7 @@ pub fn cosine_similarity_f32(a: &[f32], b: &[f32]) -> f64 {
         0.0
     }
 }
+// @academy:end spider-sense-cosine
 
 // ── Screening ───────────────────────────────────────────────────────────
 

@@ -19,10 +19,10 @@ mod win_x86_64;
 
 use crate::nasm_builder::NasmBuilder;
 use crate::{
-    cargo_env, disable_jitter_entropy, emit_warning, env_var_to_bool, execute_command,
-    get_crate_cc, get_crate_cflags, get_crate_cxx, is_no_asm, out_dir, requested_c_std,
-    set_env_for_target, target, target_arch, target_env, target_os, target_vendor,
-    test_clang_cl_command, CStdRequested, OutputLibType,
+    cargo_env, disable_jitter_entropy, emit_warning, env_name_for_target, env_var_to_bool,
+    execute_command, get_crate_cc, get_crate_cflags, get_crate_cxx, is_no_asm, out_dir,
+    requested_c_std, set_env_for_target, target, target_arch, target_env, target_os, target_vendor,
+    test_clang_cl_command, CStdRequested, EnvGuard, OutputLibType,
 };
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -203,10 +203,12 @@ impl CcBuilder {
                 build_options.push(BuildOption::std("c11"));
             }
             CStdRequested::None => {
-                if self.compiler_check("c11", Vec::<String>::new()) {
-                    build_options.push(BuildOption::std("c11"));
-                } else {
-                    build_options.push(BuildOption::std("c99"));
+                if !compiler_is_msvc {
+                    if self.compiler_check("c11", Vec::<String>::new()) {
+                        build_options.push(BuildOption::std("c11"));
+                    } else {
+                        build_options.push(BuildOption::std("c99"));
+                    }
                 }
             }
         }
@@ -430,20 +432,6 @@ impl CcBuilder {
             option.apply_cc(&mut je_builder);
         }
 
-        if let Some(original_cflags) = get_crate_cflags() {
-            let mut new_cflags = original_cflags.clone();
-            if is_like_msvc {
-                new_cflags.push_str(" -Od");
-            } else {
-                new_cflags.push_str(" -O0 -Wp,-U_FORTIFY_SOURCE");
-            }
-            set_env_for_target("CFLAGS", &new_cflags);
-            // cc-rs currently prioritizes flags provided by CFLAGS over the flags provided by the build script.
-            // The environment variables used by the compiler are set when `get_compiler` is called.
-            je_builder.get_compiler();
-            set_env_for_target("CFLAGS", &original_cflags);
-        }
-
         je_builder.define("AWSLC", "1");
         if target_os() == "macos" || target_os() == "darwin" {
             // Certain MacOS system headers are guarded by _POSIX_C_SOURCE and _DARWIN_C_SOURCE
@@ -474,6 +462,27 @@ impl CcBuilder {
                 .flag("-Wconversion");
         }
         je_builder
+    }
+
+    /// The cc crate appends CFLAGS at the end of the compiler command line,
+    /// which means CFLAGS optimization flags override build script flags.
+    /// Jitterentropy MUST be compiled with -O0, so we temporarily override
+    /// CFLAGS to replace any optimization flags with -O0.
+    fn jitter_entropy_cflags_guard(is_like_msvc: bool) -> Option<EnvGuard> {
+        let cflags = get_crate_cflags()?;
+        let filtered: String = cflags
+            .split_whitespace()
+            .filter(|flag| !flag.starts_with("-O") && !flag.starts_with("/O"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let new_cflags = if is_like_msvc {
+            format!("{filtered} -Od").trim().to_string()
+        } else {
+            format!("{filtered} -O0 -Wp,-U_FORTIFY_SOURCE")
+                .trim()
+                .to_string()
+        };
+        Some(EnvGuard::new(&env_name_for_target("CFLAGS"), &new_cflags))
     }
 
     fn add_all_files(&self, sources: &[&'static str], cc_build: &mut cc::Build) {
@@ -567,6 +576,7 @@ impl CcBuilder {
             cc_build.object(object);
         }
         if Some(true) != disable_jitter_entropy() {
+            let _je_cflags_guard = Self::jitter_entropy_cflags_guard(compiler.is_like_msvc());
             let jitter_entropy_object_files = jitter_entropy_builder.compile_intermediates();
             for object in jitter_entropy_object_files {
                 cc_build.object(object);

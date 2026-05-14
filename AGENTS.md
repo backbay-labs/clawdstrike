@@ -4,7 +4,7 @@
 
 - `crates/`: Rust workspace crates (core engine, guards, CLI, daemon, WASM bindings)
 - `packages/`: TypeScript SDK + framework adapters, plus Python SDK in `packages/sdk/hush-py/`
-- `apps/`: user-facing apps (`desktop/`, `agent/`, `control-console/`)
+- `apps/`: user-facing apps (`academy/`, `desktop/`, `agent/`, `control-console/`, `workbench/`, …)
 - `integrations/`: transport/runtime integrations (e.g. `integrations/transports/reticulum/`)
 - `infra/`: packaging assets (e.g. `infra/packaging/HomebrewFormula/`)
 - `rulesets/`: pre-configured YAML policies used by examples and tooling
@@ -28,6 +28,8 @@ TypeScript packages are built/tested per-package (no root JS workspace):
 
 Docs:
 - `mdbook build docs` / `mdbook test docs`
+
+**ClawdStrike Academy (`apps/academy`):** Contributor and agent setup (design rules, `npm run dev`, notes) is in `apps/academy/DEVELOPMENT.md`. Visitor-facing overview is `apps/academy/README.md`.
 
 ## Coding Style & Naming Conventions
 

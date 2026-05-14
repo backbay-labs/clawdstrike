@@ -3377,7 +3377,11 @@ settings:
 
 #[cfg(test)]
 mod policy_migrate_contract {
-    use crate::policy_migrate::{migrate_policy_yaml, PolicyMigrateMode, PolicyMigrateOptions};
+    use crate::policy_migrate::{
+        cmd_policy_migrate, migrate_policy_yaml, PolicyMigrateCommand, PolicyMigrateMode,
+        PolicyMigrateOptions,
+    };
+    use crate::ExitCode;
 
     #[test]
     fn migrates_policy_version_1_0_0_to_1_1_0_and_validates() {
@@ -3491,6 +3495,63 @@ extends: clawdstrike:default
         let policy = clawdstrike::Policy::from_yaml(&res.migrated_yaml).expect("output loads");
         assert_eq!(policy.version, "1.2.0");
         assert_eq!(policy.name, "Schema bump");
+    }
+
+    #[test]
+    fn invalid_target_error_mentions_hushspec() {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = cmd_policy_migrate(
+            PolicyMigrateCommand {
+                input: "policy.yaml".to_string(),
+                from: None,
+                to: "2.0.0".to_string(),
+                legacy_openclaw: false,
+                output: None,
+                in_place: false,
+                json: false,
+                dry_run: false,
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+
+        assert_eq!(code, ExitCode::InvalidArgs);
+        assert!(stdout.is_empty());
+
+        let stderr = String::from_utf8(stderr).expect("stderr should be utf-8");
+        assert!(stderr.contains(clawdstrike::policy::POLICY_SCHEMA_VERSION));
+        assert!(stderr.contains("hushspec"));
+    }
+
+    #[test]
+    fn migrate_to_hushspec_rejects_egress_log_default_action() {
+        let input = r#"
+version: "1.5.0"
+guards:
+  egress_allowlist:
+    default_action: log
+"#;
+
+        let err = migrate_policy_yaml(
+            input,
+            &PolicyMigrateOptions {
+                from: None,
+                to: "hushspec".to_string(),
+                legacy_openclaw: false,
+            },
+        )
+        .expect_err("lossy egress log defaults should be rejected");
+
+        assert_eq!(err.code, ExitCode::ConfigError);
+        assert!(err
+            .message
+            .contains("Failed to decompile Clawdstrike policy to HushSpec"));
+        assert!(err
+            .message
+            .contains("guards.egress_allowlist.default_action"));
+        assert!(err.message.contains("log"));
     }
 }
 

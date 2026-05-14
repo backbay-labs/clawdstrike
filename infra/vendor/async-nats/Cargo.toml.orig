@@ -1,7 +1,7 @@
 [package]
 name = "async-nats"
 authors = ["Tomasz Pietrek <tomasz@nats.io>", "Casper Beyer <caspervonb@pm.me>"]
-version = "0.39.0"
+version = "0.40.0"
 edition = "2021"
 rust = "1.79.0"
 description = "A async Rust NATS client"
@@ -39,7 +39,7 @@ base64 = "0.22"
 tryhard = "0.5"
 ring = { version = "0.17", optional = true }
 rand = "0.8"
-rustls-webpki = { package = "rustls-webpki", default-features = false, version = "0.102" }
+rustls-webpki = { package = "rustls-webpki", default-features = false, version = "0.103.10" }
 portable-atomic = "1"
 tokio-websockets = { version = "0.10", default-features = false, features = ["client", "rand", "rustls-webpki-roots"], optional = true }
 pin-project = "1.0"
@@ -60,7 +60,7 @@ jsonschema = "0.17.1"
 num = "0.4.1"
 
 [features]
-default = ["server_2_10", "ring"]
+default = ["server_2_10", "server_2_11", "ring"]
 # Enables Service API for the client.
 service = []
 websockets = ["dep:tokio-websockets"]
@@ -72,6 +72,7 @@ experimental = []
 # Features that require nats-server version 2.10 or higher.
 # It is enabled by default since official 2.10 nats-server release.
 "server_2_10" = []
+"server_2_11" = []
 # Used for enabling/disabling tests that by design take a lot of time to  complete.
 # Those tests are usually used for time-sensitive checks, like consumer heartbeats, longer timeouts, etc.
 slow_tests = []

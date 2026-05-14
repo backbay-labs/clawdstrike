@@ -9,10 +9,13 @@ use hush_certification::certification::{IssuerConfig, SqliteCertificationStore};
 use hush_certification::evidence::SqliteEvidenceExportStore;
 use hush_certification::webhooks::SqliteWebhookStore;
 use hush_core::{Keypair, PublicKey};
+use hush_multi_agent::InMemoryRevocationStore;
 
+use crate::api::presence::{PresenceHub, PresenceTicketStore};
 use crate::audit::forward::AuditForwarder;
 use crate::audit::{AuditEvent, AuditLedger};
 use crate::auth::AuthStore;
+use crate::broker_state::BrokerStateStore;
 use crate::config::{Config, SiemPrivacyConfig};
 use crate::control_db::ControlDb;
 use crate::identity::oidc::OidcValidator;
@@ -40,82 +43,53 @@ use crate::siem::types::{SecurityEvent, SecurityEventContext};
 use crate::spine_publisher::SpinePublisher;
 use crate::v1_rate_limit::V1RateLimitState;
 
-/// Event broadcast for SSE streaming
 #[derive(Clone, Debug)]
 pub struct DaemonEvent {
     pub event_type: String,
     pub data: serde_json::Value,
 }
 
-/// Shared application state
 #[derive(Clone)]
 pub struct AppState {
-    /// Security engine
     pub engine: Arc<RwLock<HushEngine>>,
-    /// Audit ledger
     pub ledger: Arc<AuditLedger>,
-    /// Audit ledger v2 (hash-chained)
     pub audit_v2: Arc<AuditLedgerV2>,
-    /// Optional audit forwarder (fan-out to external sinks)
     pub audit_forwarder: Option<AuditForwarder>,
-    /// Prometheus-style metrics
     pub metrics: Arc<Metrics>,
-    /// Certification store (issue/verify/revoke)
     pub certification_store: Arc<SqliteCertificationStore>,
-    /// Evidence export job store
     pub evidence_exports: Arc<SqliteEvidenceExportStore>,
-    /// Webhook store (/v1/webhooks)
     pub webhook_store: Arc<SqliteWebhookStore>,
-    /// Evidence exports directory
     pub evidence_dir: std::path::PathBuf,
-    /// Issuer metadata for badge signing
     pub issuer: IssuerConfig,
-    /// Event broadcaster
     pub event_tx: broadcast::Sender<DaemonEvent>,
-    /// Canonical security event broadcaster (for SIEM/SOAR exporters)
     pub security_event_tx: broadcast::Sender<SecurityEvent>,
-    /// Default context for canonical security events
     pub security_ctx: Arc<RwLock<SecurityEventContext>>,
-    /// Configuration
     pub config: Arc<Config>,
-    /// Control-plane DB (sessions/RBAC/scoped policies, rate limits, ...).
     pub control_db: Arc<ControlDb>,
-    /// API key authentication store
     pub auth_store: Arc<AuthStore>,
-    /// Optional OIDC validator (JWT authentication)
     pub oidc: Option<Arc<OidcValidator>>,
-    /// Session manager (identity-aware sessions)
     pub sessions: Arc<SessionManager>,
-    /// RBAC manager (authorization for user principals)
     pub rbac: Arc<RbacManager>,
-    /// Policy resolver (identity-based policy scoping)
     pub policy_resolver: Arc<PolicyResolver>,
-    /// Cache of compiled engines for resolved policies
     pub policy_engine_cache: Arc<PolicyEngineCache>,
-    /// Trusted keys for verifying signed policy bundles
     pub policy_bundle_trusted_keys: Arc<Vec<PublicKey>>,
-    /// Session ID
     pub session_id: String,
-    /// Start time
     pub started_at: chrono::DateTime<chrono::Utc>,
-    /// Rate limiter state
     pub rate_limit: RateLimitState,
-    /// Tiered `/v1` rate limiter state
     pub v1_rate_limit: V1RateLimitState,
-    /// Identity-based rate limiter (sliding window, SQLite baseline)
     pub identity_rate_limiter: Arc<IdentityRateLimiter>,
-    /// Threat intel state (if enabled)
     pub threat_intel_state: Option<Arc<RwLock<ThreatIntelState>>>,
-    /// Threat intel background task (if enabled)
     pub threat_intel_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    /// Exporter health handles (if SIEM is enabled)
     pub siem_exporters: Arc<RwLock<Vec<ExporterStatusHandle>>>,
-    /// Exporter manager (fanout task) if SIEM is enabled
     pub siem_manager: Arc<Mutex<Option<ExporterManager>>>,
-    /// Optional Spine publisher for eval receipt attestation
     pub spine_publisher: Option<Arc<SpinePublisher>>,
-    /// Shutdown notifier (used for API-triggered shutdown)
+    pub presence_hub: Arc<PresenceHub>,
+    pub presence_ticket_store: Arc<PresenceTicketStore>,
     pub shutdown: Arc<Notify>,
+    pub broker_state: Arc<BrokerStateStore>,
+    /// Without this, each call to `resolve_delegation_lineage` would create a
+    /// fresh empty store, silently accepting revoked tokens.
+    pub delegation_revocations: Arc<InMemoryRevocationStore>,
 }
 
 #[derive(Clone)]
@@ -143,15 +117,10 @@ impl AppState {
             .policy)
     }
 
-    /// Create new application state
     pub async fn new(config: Config) -> anyhow::Result<Self> {
-        // Load policy
         let policy = Self::load_policy_from_config(&config)?;
-
-        // Create engine (fail closed if custom guards are requested but unavailable)
         let mut engine = HushEngine::builder(policy).build()?;
 
-        // Optional threat intelligence guard + polling.
         let (threat_intel_state, threat_intel_task) = if config.threat_intel.enabled {
             let state = Arc::new(RwLock::new(ThreatIntelState::default()));
             engine.add_extra_guard(ThreatIntelGuard::new(
@@ -164,7 +133,6 @@ impl AppState {
             (None, None)
         };
 
-        // Load signing key
         if let Some(ref key_path) = config.signing_key {
             let key_hex = std::fs::read_to_string(key_path)?.trim().to_string();
             let keypair = Keypair::from_hex(&key_hex)?;
@@ -177,7 +145,6 @@ impl AppState {
             );
         }
 
-        // Create audit ledger
         let mut ledger = AuditLedger::new(&config.audit_db)?;
         if let Some(key) = config.audit_encryption_key()? {
             ledger = ledger.with_encryption_key(key)?;
@@ -188,7 +155,6 @@ impl AppState {
         }
         let ledger = Arc::new(ledger);
 
-        // Create audit ledger v2 + certification stores (share the same SQLite file by default).
         let audit_v2 = Arc::new(AuditLedgerV2::new(&config.audit_db)?);
         let certification_store = Arc::new(SqliteCertificationStore::new(&config.audit_db)?);
         let evidence_exports = Arc::new(SqliteEvidenceExportStore::new(&config.audit_db)?);
@@ -200,11 +166,9 @@ impl AppState {
             .join("evidence_exports");
         let issuer = IssuerConfig::default();
 
-        // Optional audit forwarding pipeline
         let audit_forward_config = config.audit_forward.resolve_env_refs()?;
         let audit_forwarder = AuditForwarder::from_config(&audit_forward_config)?;
 
-        // Create control-plane DB (sessions/RBAC/scoped policies).
         let control_path = config
             .control_db
             .clone()
@@ -215,7 +179,6 @@ impl AppState {
             config.rate_limit.identity.clone(),
         ));
 
-        // Create policy resolver (scoped policies).
         let policy_store = Arc::new(SqlitePolicyScopingStore::new(control_db.clone()));
         let policy_resolver = Arc::new(PolicyResolver::new(
             policy_store,
@@ -223,17 +186,14 @@ impl AppState {
             None,
         ));
 
-        // Cache of compiled policy engines (resolved policy hash -> HushEngine).
         let policy_engine_cache =
             Arc::new(PolicyEngineCache::from_config(&config.policy_scoping.cache));
 
-        // Create RBAC manager and seed builtin roles.
         let rbac_store = Arc::new(SqliteRbacStore::new(control_db.clone()));
         let rbac_config = Arc::new(config.rbac.clone());
         let rbac = Arc::new(RbacManager::new(rbac_store, rbac_config)?);
         rbac.seed_builtin_roles()?;
 
-        // Create session manager (SQLite baseline; in-memory is used in unit tests).
         let session_store = Arc::new(SqliteSessionStore::new(control_db.clone()));
         let default_ttl_seconds = engine.policy().settings.effective_session_timeout_secs();
         let sessions = Arc::new(SessionManager::new(
@@ -244,19 +204,16 @@ impl AppState {
             config.session.clone(),
         ));
 
-        // Create event channels
         let (event_tx, _) = broadcast::channel(1024);
         let (security_event_tx, _) = broadcast::channel(1024);
 
         let metrics = Arc::new(Metrics::default());
 
-        // Load auth store from config
         let auth_store = Arc::new(config.load_auth_store().await?);
         if config.auth.enabled {
             tracing::info!(key_count = auth_store.key_count().await, "Auth enabled");
         }
 
-        // Build OIDC validator (optional).
         let oidc = match (&config.auth.enabled, config.identity.oidc.clone()) {
             (true, Some(oidc_cfg)) => {
                 let validator =
@@ -267,7 +224,6 @@ impl AppState {
             _ => None,
         };
 
-        // Load trusted policy bundle keys
         let policy_bundle_trusted_keys = Arc::new(config.load_trusted_policy_bundle_keys()?);
         if !policy_bundle_trusted_keys.is_empty() {
             tracing::info!(
@@ -276,7 +232,6 @@ impl AppState {
             );
         }
 
-        // Initialize optional Spine publisher.
         let spine_publisher = {
             let signing_kp = engine.keypair().cloned().unwrap_or_else(Keypair::generate);
             match crate::spine_publisher::init_spine_publisher(&config.spine, &signing_kp).await {
@@ -288,7 +243,6 @@ impl AppState {
             }
         };
 
-        // Create rate limiter state
         let rate_limit = RateLimitState::new(&config.rate_limit, metrics.clone());
         if config.rate_limit.enabled {
             tracing::info!(
@@ -300,10 +254,8 @@ impl AppState {
 
         let v1_rate_limit = V1RateLimitState::default();
 
-        // Generate session ID
         let session_id = uuid::Uuid::new_v4().to_string();
 
-        // Initialize canonical SecurityEvent context.
         let mut base_security_ctx = SecurityEventContext::hushd(session_id.clone());
         base_security_ctx.policy_hash = engine.policy_hash().ok().map(|h| h.to_hex_prefixed());
         base_security_ctx.ruleset = Some(engine.policy().name.clone());
@@ -314,7 +266,6 @@ impl AppState {
         }
         let security_ctx = Arc::new(RwLock::new(base_security_ctx));
 
-        // Optional SIEM exporters.
         let (siem_exporters, siem_manager): (Vec<ExporterStatusHandle>, Option<ExporterManager>) =
             if config.siem.enabled {
                 let mut handles: Vec<ExporterHandle> = Vec::new();
@@ -456,6 +407,22 @@ impl AppState {
                 (Vec::new(), None)
             };
 
+        let (presence_hub, _presence_rx) = PresenceHub::new();
+        let presence_hub = Arc::new(presence_hub);
+        let presence_ticket_store = Arc::new(PresenceTicketStore::new());
+
+        let shutdown = Arc::new(Notify::new());
+
+        // Spawn the heartbeat reaper for presence tracking
+        {
+            let hub_for_reaper = presence_hub.clone();
+            let shutdown_for_reaper = shutdown.clone();
+            tokio::spawn(async move {
+                crate::api::presence::spawn_heartbeat_reaper(hub_for_reaper, shutdown_for_reaper)
+                    .await;
+            });
+        }
+
         let state = Self {
             engine: Arc::new(RwLock::new(engine)),
             ledger,
@@ -489,10 +456,13 @@ impl AppState {
             siem_exporters: Arc::new(RwLock::new(siem_exporters)),
             siem_manager: Arc::new(Mutex::new(siem_manager)),
             spine_publisher,
-            shutdown: Arc::new(Notify::new()),
+            presence_hub,
+            presence_ticket_store,
+            shutdown,
+            broker_state: Arc::new(BrokerStateStore::new()),
+            delegation_revocations: Arc::new(InMemoryRevocationStore::default()),
         };
 
-        // Record session start (after forwarder is initialized).
         let start_event = AuditEvent::session_start(&state.session_id, None);
         {
             let ctx = state.security_ctx.read().await.clone();
@@ -508,9 +478,7 @@ impl AppState {
         Ok(state)
     }
 
-    /// Broadcast an event
     pub fn broadcast(&self, event: DaemonEvent) {
-        // Ignore send errors (no subscribers)
         let _ = self.event_tx.send(event);
     }
 
@@ -522,9 +490,8 @@ impl AppState {
         let _ = self.security_event_tx.send(event);
     }
 
-    /// Request graceful shutdown of the daemon.
     pub fn request_shutdown(&self) {
-        self.shutdown.notify_one();
+        self.shutdown.notify_waiters();
     }
 
     /// Record an audit event to the local ledger and optionally forward it to external sinks.
@@ -541,7 +508,6 @@ impl AppState {
         }
     }
 
-    /// Record an audit event without blocking the async runtime.
     pub async fn record_audit_event_async(&self, event: AuditEvent) {
         self.metrics.inc_audit_event();
         if let Err(err) = self.ledger.record_async(event.clone()).await {
@@ -564,7 +530,6 @@ impl AppState {
         }
     }
 
-    /// Reload policy from config
     pub async fn reload_policy(&self) -> anyhow::Result<()> {
         let policy = Self::load_policy_from_config(self.config.as_ref())?;
 
@@ -621,12 +586,10 @@ impl AppState {
         Ok(())
     }
 
-    /// Get daemon uptime in seconds
     pub fn uptime_secs(&self) -> i64 {
         (chrono::Utc::now() - self.started_at).num_seconds()
     }
 
-    /// Check if authentication is enabled
     pub fn auth_enabled(&self) -> bool {
         self.config.auth.enabled
     }
@@ -688,5 +651,43 @@ fn apply_siem_privacy(event: &mut SecurityEvent, privacy: &SiemPrivacyConfig) {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn request_shutdown_wakes_all_waiters() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = crate::config::Config {
+            cors_enabled: false,
+            audit_db: temp_dir.path().join("audit.db"),
+            control_db: Some(temp_dir.path().join("control.db")),
+            ..Default::default()
+        };
+        let state = AppState::new(config).await.expect("state");
+
+        let waiter_one = {
+            let shutdown = state.shutdown.clone();
+            tokio::spawn(async move { shutdown.notified().await })
+        };
+        let waiter_two = {
+            let shutdown = state.shutdown.clone();
+            tokio::spawn(async move { shutdown.notified().await })
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        state.request_shutdown();
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiter_one)
+            .await
+            .expect("waiter one timeout")
+            .expect("waiter one join");
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiter_two)
+            .await
+            .expect("waiter two timeout")
+            .expect("waiter two join");
     }
 }

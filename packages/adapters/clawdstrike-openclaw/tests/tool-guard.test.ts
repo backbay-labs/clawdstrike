@@ -11,7 +11,12 @@ import toolGuardHandler, {
   initialize as initToolGuard,
 } from '../src/hooks/tool-guard/handler.js';
 import { inferEventTypeFromName } from '../src/classification.js';
-import type { ToolResultPersistEvent, ClawdstrikeConfig } from '../src/types.js';
+import { rememberToolInvocation } from '../src/hooks/tool-invocation-state.js';
+import type {
+  ClawdstrikeConfig,
+  ModernToolResultPersistEvent,
+  ToolResultPersistEvent,
+} from '../src/types.js';
 
 const HOME = homedir();
 
@@ -31,6 +36,23 @@ function makeToolResultEvent(
       toolResult: { toolName, params, result },
     },
     messages: [],
+  };
+}
+
+function makeModernToolResultEvent(
+  toolName: string,
+  messageText: string,
+): ModernToolResultPersistEvent {
+  return {
+    toolName,
+    toolCallId: 'tool-call-1',
+    message: {
+      role: 'toolResult',
+      toolName,
+      toolCallId: 'tool-call-1',
+      content: [{ type: 'text', text: messageText }],
+      timestamp: Date.now(),
+    },
   };
 }
 
@@ -822,5 +844,131 @@ describe('Tool Guard Handler — edge cases', () => {
     await toolGuardHandler(event);
     // Should not crash; URL is extracted from command string
     expect(event.messages.every((m) => !m.includes('patch_integrity'))).toBe(true);
+  });
+});
+
+describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
+  const config: ClawdstrikeConfig = {
+    policy: 'clawdstrike:ai-agent-minimal',
+    mode: 'deterministic',
+    logLevel: 'error',
+  };
+
+  beforeEach(() => {
+    initToolGuard(config);
+  });
+
+  it('sanitizes modern tool_result_persist messages synchronously', async () => {
+    const event = makeModernToolResultEvent('read', 'Contact alice@example.com for access');
+
+    const result = await toolGuardHandler(event as any, { sessionKey: 'modern-session' });
+    const message = (result as { message?: { content?: Array<{ text?: string }> } } | undefined)?.message;
+    const text = message?.content?.[0]?.text ?? '';
+
+    expect(text).toContain('[REDACTED:email]');
+    expect(text).not.toContain('alice@example.com');
+  });
+
+  it('rewrites denied modern tool results into synthetic error messages', async () => {
+    const event = makeModernToolResultEvent(
+      'generic_tool',
+      'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    );
+
+    const result = await toolGuardHandler(event as any, { sessionKey: 'modern-session' });
+    const message = (result as { message?: Record<string, unknown> } | undefined)?.message;
+
+    expect(message?.isError).toBe(true);
+    expect(message?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('[clawdstrike] Blocked by secret_leak'),
+      },
+    ]);
+  });
+
+  it('recovers modern tool params from the prior tool invocation state', async () => {
+    rememberToolInvocation(
+      'modern-session',
+      'read',
+      { path: `${HOME}/.ssh/id_rsa` },
+      'tool-call-1',
+    );
+
+    const event = makeModernToolResultEvent('read', 'safe looking content');
+    const result = await toolGuardHandler(event as any, {
+      sessionKey: 'modern-session',
+      toolCallId: 'tool-call-1',
+    });
+    const message = (result as { message?: Record<string, unknown> } | undefined)?.message;
+
+    expect(message?.isError).toBe(true);
+    expect(message?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('[clawdstrike] Blocked by forbidden_path'),
+      },
+    ]);
+  });
+
+  it('prefers structured modern result payloads over content summaries', async () => {
+    const event: ModernToolResultPersistEvent = {
+      toolName: 'generic_tool',
+      toolCallId: 'tool-call-1',
+      message: {
+        role: 'toolResult',
+        toolName: 'generic_tool',
+        toolCallId: 'tool-call-1',
+        content: [{ type: 'text', text: 'done' }],
+        result: {
+          token: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        },
+      },
+    };
+
+    const result = await toolGuardHandler(event as any, { sessionKey: 'modern-session' });
+    const message = (result as { message?: Record<string, unknown> } | undefined)?.message;
+
+    expect(message?.isError).toBe(true);
+    expect(message?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('[clawdstrike] Blocked by secret_leak'),
+      },
+    ]);
+  });
+
+  it('ignores blank hook context tool names and falls back to the message payload', async () => {
+    rememberToolInvocation(
+      'modern-session',
+      'read',
+      { path: `${HOME}/.ssh/id_rsa` },
+      'tool-call-2',
+    );
+
+    const event: ModernToolResultPersistEvent = {
+      toolCallId: 'tool-call-2',
+      message: {
+        role: 'toolResult',
+        toolName: 'read',
+        toolCallId: 'tool-call-2',
+        content: [{ type: 'text', text: 'safe looking content' }],
+      },
+    };
+
+    const result = await toolGuardHandler(event as any, {
+      sessionKey: 'modern-session',
+      toolName: '   ',
+      toolCallId: 'tool-call-2',
+    });
+    const message = (result as { message?: Record<string, unknown> } | undefined)?.message;
+
+    expect(message?.isError).toBe(true);
+    expect(message?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('[clawdstrike] Blocked by forbidden_path'),
+      },
+    ]);
   });
 });

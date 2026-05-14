@@ -1,0 +1,11 @@
+hushspec: "0.1.0"
+name: child
+rules:
+  egress:
+    allow:
+      - "c.com"
+    default: allow
+  forbidden_paths:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"

@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/wasm",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "WebAssembly bindings for clawdstrike cryptographic verification",
   "main": "hush_wasm.js",
   "types": "hush_wasm.d.ts",

@@ -1,0 +1,5 @@
+hushspec: "0.1.0"
+extensions:
+  detection:
+    threat_intel:
+      similarity_threshold: 1.5

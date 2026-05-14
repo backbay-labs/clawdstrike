@@ -330,7 +330,7 @@ export function ShellLayout() {
   });
 
   const renderShelfContent = useCallback(
-    (mode: "events" | "output" | "artifacts") => {
+    (mode: string) => {
       if (mode !== "events") return undefined;
       return (
         <ChronicleWorkbenchShelf

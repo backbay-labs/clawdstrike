@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "async-nats"
-version = "0.39.0"
+version = "0.40.0"
 authors = [
     "Tomasz Pietrek <tomasz@nats.io>",
     "Casper Beyer <caspervonb@pm.me>",
@@ -197,7 +197,7 @@ version = "0.7"
 version = "2"
 
 [dependencies.rustls-webpki]
-version = "0.102"
+version = "0.103.10"
 default-features = false
 package = "rustls-webpki"
 
@@ -308,6 +308,7 @@ aws-lc-rs = [
 compatibility_tests = []
 default = [
     "server_2_10",
+    "server_2_11",
     "ring",
 ]
 experimental = []
@@ -321,6 +322,7 @@ ring = [
     "tokio-websockets?/ring",
 ]
 server_2_10 = []
+server_2_11 = []
 service = []
 slow_tests = []
 websockets = ["dep:tokio-websockets"]

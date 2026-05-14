@@ -14,6 +14,40 @@ Freeze the packaging path and the failure-mode verification bar for the first ma
 
 This is the minimum deployment shape that `PKG` is allowed to optimize. It is not allowed to silently switch deployment models.
 
+## Managed Deployment Artifacts
+
+The MDM payload sources live under `apps/agent/src-tauri/macos/system-extension/profiles/`.
+
+Render concrete profiles with:
+
+```bash
+apps/agent/src-tauri/macos/system-extension/profiles/render-mdm-profiles.sh \
+  --team-id JB6682CJY9 \
+  --app-bundle-id dev.clawdstrike.agent \
+  --extension-bundle-id dev.clawdstrike.agent.system-extension \
+  --org-identifier com.example.enterprise \
+  --out-dir /tmp/clawdstrike-mdm-profiles
+```
+
+The rendered set is:
+
+- `clawdstrike-system-extension-approval.mobileconfig`
+- `clawdstrike-full-disk-access.mobileconfig`
+- `clawdstrike-network-content-filter.mobileconfig`
+- `manifest.txt`
+
+Deployment order for a managed macOS host:
+
+1. Install the rendered system-extension approval profile.
+2. Install the rendered PPPC Full Disk Access profile.
+3. Install the rendered NetworkExtension content-filter profile.
+4. Install the notarized ClawdStrike Agent app in `/Applications`.
+5. Launch the agent and let it request activation for `dev.clawdstrike.agent.system-extension`.
+6. Verify `/api/v1/agent/health` reports `"pending"` during activation and `"ok"` only after ES and NE provider readouts are active and healthy.
+7. Run the supervised file/network allow-deny smoke tests and archive the resulting health JSON, profile manifest, `systemextensionsctl list`, entitlements dumps, and receipts.
+
+The source templates intentionally use render-time values for Team ID, app bundle ID, system-extension bundle ID, and organization identifier. The generated files, not the `.in` templates, are the deployment artifacts for Jamf, Kandji, Intune, or another MDM.
+
 ## TN3134 And TN3165 Constraints
 
 `PKG` must treat TN3134 and TN3165 as gating platform documents, not optional background reading.

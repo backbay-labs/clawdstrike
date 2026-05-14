@@ -4,7 +4,7 @@ export interface EgressAllowlistConfig {
   enabled?: boolean;
   allow?: string[];
   block?: string[];
-  defaultAction?: "allow" | "block";
+  defaultAction?: "allow" | "block" | "log";
 }
 
 function escapeRegex(ch: string): string {
@@ -116,7 +116,7 @@ export class EgressAllowlistGuard implements Guard {
   private enabled: boolean;
   private allow: RegExp[];
   private block: RegExp[];
-  private defaultAction: "allow" | "block";
+  private defaultAction: "allow" | "block" | "log";
 
   constructor(config: EgressAllowlistConfig = {}) {
     this.enabled = config.enabled ?? true;
@@ -163,6 +163,17 @@ export class EgressAllowlistGuard implements Guard {
     // Apply default action
     if (this.defaultAction === "allow") {
       return GuardResult.allow(this.name);
+    }
+    if (this.defaultAction === "log") {
+      return GuardResult.warn(
+        this.name,
+        `Egress to unlisted destination logged: ${host}`,
+      ).withDetails({
+        host,
+        port: action.port,
+        reason: "not_in_allowlist",
+        defaultAction: "log",
+      });
     }
 
     return GuardResult.block(

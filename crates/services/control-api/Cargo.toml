@@ -37,7 +37,7 @@ sqlx = { package = "sqlx-core", version = "0.8", default-features = false, featu
 sqlx-postgres = { version = "0.8", default-features = false, features = ["chrono", "uuid", "json"] }
 
 # Messaging
-async-nats = "0.39"
+async-nats = "0.40"
 
 # Auth
 jsonwebtoken.workspace = true

@@ -1,0 +1,140 @@
+export const metadata = {
+  title: "Build Your Policy",
+  order: 4,
+  track: "policy-lab",
+  description: "Guided exercise: create a custom policy for a coding assistant",
+}
+
+# Build Your Policy
+
+Time to put what you have learned into practice. In this exercise you will create a
+complete custom policy for a real-world scenario, validate it in the editor, and test
+it against example actions using the guard playground.
+
+## Scenario
+
+You are deploying a coding assistant that should be able to read documentation files and
+project source code, but must **never** access sensitive paths like SSH keys, AWS
+credentials, or environment files. It should be allowed to make network requests to
+GitHub and npm, but not to arbitrary domains.
+
+Here are the requirements:
+
+1. **Extend `clawdstrike:default`** to get a sensible baseline with common forbidden
+   paths already configured
+2. **Add project-specific forbidden paths:** `**/secrets/**` and `**/.vault/**` should
+   be blocked in addition to the default forbidden paths
+3. **Allow egress** to `registry.npmjs.org`, `api.github.com`, and `docs.rs` -- the
+   three domains your coding assistant needs
+4. **Block all other egress** by setting `default_action: block`
+5. **Enable the shell_command guard** to prevent dangerous commands like `rm -rf /` and
+   `chmod 777`
+6. **Keep `fail_fast: false`** so all guards run and you see every violation at once
+
+## Your Turn
+
+Open the editor below and fill in the skeleton. Each `# TODO` comment tells you what
+to configure. The editor will validate your YAML in real time -- green means valid,
+red means something needs fixing:
+
+<PolicyEditor defaultValue={`version: "1.5.0"
+name: Coding Assistant Policy
+description: TODO - describe your policy
+extends: # TODO - which ruleset to extend?
+
+guards:
+  # TODO: configure forbidden_path
+  # Add patterns for **/secrets/** and **/.vault/**
+
+  # TODO: configure egress_allowlist
+  # Allow registry.npmjs.org, api.github.com, docs.rs
+  # Block everything else
+
+  # TODO: configure shell_command
+  # Enable the guard to block dangerous commands
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600
+`} />
+
+Take your time. There is no time limit. When you think your policy is complete, check
+it against the solution below.
+
+## Check Your Work
+
+<details>
+<summary>Reveal the solution</summary>
+
+```yaml
+version: "1.5.0"
+name: Coding Assistant Policy
+description: Security policy for a coding assistant that reads docs and source code
+extends: clawdstrike:default
+
+guards:
+  forbidden_path:
+    patterns:
+      # Inherited from default: .ssh, .aws, .env, .gnupg, .kube, .docker, etc.
+      # Project-specific additions:
+      - "**/secrets/**"
+      - "**/.vault/**"
+    exceptions: []
+
+  egress_allowlist:
+    allow:
+      - "registry.npmjs.org"
+      - "api.github.com"
+      - "docs.rs"
+    block: []
+    default_action: block
+
+  shell_command:
+    enabled: true
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600
+```
+
+Key points in this solution:
+
+- **`extends: clawdstrike:default`** gives you the full set of default forbidden paths
+  (SSH keys, AWS credentials, environment files, and more) without listing them yourself.
+- **`forbidden_path.patterns`** adds `**/secrets/**` and `**/.vault/**` as project-specific
+  blocked paths. With `deep_merge` (the default merge strategy), these are the patterns
+  that apply. If you need to keep the parent's patterns too, you would list them explicitly
+  since arrays replace rather than append.
+- **`egress_allowlist`** restricts network access to exactly three domains. The
+  `default_action: block` ensures anything not in the allow list is denied.
+- **`shell_command.enabled: true`** activates the shell command guard, which blocks
+  known dangerous commands like `rm -rf /`, fork bombs, and reverse shells.
+- **`fail_fast: false`** means all 13 guards evaluate every action, giving you a
+  complete picture of violations rather than stopping at the first one.
+
+</details>
+
+## Test It
+
+Now let us see the policy in action. The forbidden path guard blocks access to sensitive
+locations. Try the examples below, or type your own paths:
+
+<GuardPlayground guard="forbidden_path" actionType="file_access" placeholder="Enter a file path to check..." defaultInput="/project/secrets/api.key" examples={[{label: "Project secrets", value: "/project/secrets/api.key"}, {label: "Vault file", value: "/app/.vault/tokens.json"}, {label: "SSH key", value: "~/.ssh/id_rsa"}, {label: "Documentation", value: "/docs/README.md"}, {label: "Source code", value: "/src/main.rs"}]} />
+
+And the egress guard controls which domains the agent can reach. Test it with domains
+that should be allowed and blocked:
+
+<GuardPlayground guard="egress_allowlist" actionType="network_egress" placeholder="Enter a domain to check..." defaultInput="api.github.com" examples={[{label: "GitHub API (allowed)", value: "api.github.com"}, {label: "npm registry (allowed)", value: "registry.npmjs.org"}, {label: "Rust docs (allowed)", value: "docs.rs"}, {label: "Random site (blocked)", value: "evil.com"}, {label: "Social media (blocked)", value: "twitter.com"}]} />
+
+Notice how the forbidden path guard allows `/docs/README.md` and `/src/main.rs` (safe
+project paths) but blocks `/project/secrets/api.key` and `~/.ssh/id_rsa` (sensitive
+paths). The egress guard allows the three configured domains and blocks everything else.
+
+This is the power of policy-driven security: the agent can do its job (read code, fetch
+packages, check documentation) but cannot touch secrets or phone home to arbitrary servers.
+
+<LessonCompleteButton lessonSlug="policy-lab/04-build-your-policy" />
+
+<LessonNav trackSlug="policy-lab" lessonSlug="04-build-your-policy" />

@@ -1,0 +1,8 @@
+hushspec: "0.1.0"
+extensions:
+  posture:
+    initial: nonexistent
+    states:
+      valid:
+        capabilities: [file_access]
+    transitions: []

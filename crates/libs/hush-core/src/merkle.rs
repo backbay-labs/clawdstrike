@@ -72,7 +72,12 @@ impl MerkleTree {
         }
 
         let mut levels: Vec<Vec<Hash>> = Vec::new();
-        let mut current: Vec<Hash> = leaves.iter().map(|l| leaf_hash(l.as_ref())).collect();
+        let mut current: Vec<Hash> = Vec::with_capacity(leaves.len());
+        let mut li = 0;
+        while li < leaves.len() {
+            current.push(leaf_hash(leaves[li].as_ref()));
+            li += 1;
+        }
         levels.push(current.clone());
 
         while current.len() > 1 {
@@ -124,16 +129,25 @@ impl MerkleTree {
 
     /// Get the number of leaves
     pub fn leaf_count(&self) -> usize {
-        self.levels.first().map(|l| l.len()).unwrap_or(0)
+        if self.levels.is_empty() {
+            0
+        } else {
+            self.levels[0].len()
+        }
     }
 
     /// Get the root hash
     pub fn root(&self) -> Hash {
-        self.levels
-            .last()
-            .and_then(|l| l.first())
-            .copied()
-            .unwrap_or_else(Hash::zero)
+        if self.levels.is_empty() {
+            Hash::zero()
+        } else {
+            let last = &self.levels[self.levels.len() - 1];
+            if last.is_empty() {
+                Hash::zero()
+            } else {
+                last[0]
+            }
+        }
     }
 
     /// Generate an inclusion proof for a leaf at the given index.
@@ -160,21 +174,24 @@ impl MerkleTree {
         let mut audit_path: Vec<Hash> = Vec::new();
         let mut idx = leaf_index;
 
-        for level in &self.levels {
-            if level.len() <= 1 {
+        let mut level_idx = 0;
+        while level_idx < self.levels.len() {
+            let level_len = self.levels[level_idx].len();
+            if level_len <= 1 {
                 break;
             }
 
             if idx.is_multiple_of(2) {
                 let sib = idx + 1;
-                if sib < level.len() {
-                    audit_path.push(level[sib]);
+                if sib < level_len {
+                    audit_path.push(self.levels[level_idx][sib]);
                 }
             } else {
-                audit_path.push(level[idx - 1]);
+                audit_path.push(self.levels[level_idx][idx - 1]);
             }
 
             idx /= 2;
+            level_idx += 1;
         }
 
         Ok(MerkleProof {
@@ -211,16 +228,24 @@ impl MerkleProof {
         let mut h = leaf_hash;
         let mut idx = self.leaf_index;
         let mut size = self.tree_size;
-        let mut it = self.audit_path.iter();
+        let mut path_idx: usize = 0;
 
         while size > 1 {
             if idx.is_multiple_of(2) {
                 if idx + 1 < size {
-                    let sibling = it.next().ok_or(Error::MerkleProofFailed)?;
+                    if path_idx >= self.audit_path.len() {
+                        return Err(Error::MerkleProofFailed);
+                    }
+                    let sibling = &self.audit_path[path_idx];
+                    path_idx += 1;
                     h = node_hash(&h, sibling);
                 } // else: carried upward (no sibling at this level)
             } else {
-                let sibling = it.next().ok_or(Error::MerkleProofFailed)?;
+                if path_idx >= self.audit_path.len() {
+                    return Err(Error::MerkleProofFailed);
+                }
+                let sibling = &self.audit_path[path_idx];
+                path_idx += 1;
                 h = node_hash(sibling, &h);
             }
 
@@ -228,7 +253,7 @@ impl MerkleProof {
             size = size.div_ceil(2);
         }
 
-        if it.next().is_some() {
+        if path_idx != self.audit_path.len() {
             return Err(Error::MerkleProofFailed);
         }
 
@@ -237,16 +262,18 @@ impl MerkleProof {
 
     /// Verify the proof against expected root
     pub fn verify(&self, leaf_bytes: &[u8], expected_root: &Hash) -> bool {
-        self.compute_root(leaf_bytes)
-            .map(|root| &root == expected_root)
-            .unwrap_or(false)
+        match self.compute_root(leaf_bytes) {
+            Ok(root) => &root == expected_root,
+            Err(_) => false,
+        }
     }
 
     /// Verify the proof from a pre-hashed leaf
     pub fn verify_hash(&self, leaf_hash: Hash, expected_root: &Hash) -> bool {
-        self.compute_root_from_hash(leaf_hash)
-            .map(|root| &root == expected_root)
-            .unwrap_or(false)
+        match self.compute_root_from_hash(leaf_hash) {
+            Ok(root) => &root == expected_root,
+            Err(_) => false,
+        }
     }
 }
 

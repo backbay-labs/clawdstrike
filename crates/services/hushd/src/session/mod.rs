@@ -32,6 +32,7 @@ pub type Result<T> = std::result::Result<T, SessionError>;
 pub type PostureRuntimeState = clawdstrike::PostureRuntimeState;
 pub type PostureBudgetCounter = clawdstrike::PostureBudgetCounter;
 pub type PostureTransitionRecord = clawdstrike::PostureTransitionRecord;
+pub type OriginRuntimeState = clawdstrike::OriginRuntimeState;
 
 pub fn posture_state_from_session(session: &SessionContext) -> Option<PostureRuntimeState> {
     let state = session.state.as_ref()?;
@@ -44,6 +45,20 @@ pub fn posture_state_patch(
 ) -> std::result::Result<HashMap<String, serde_json::Value>, serde_json::Error> {
     let mut patch = HashMap::new();
     patch.insert("posture".to_string(), serde_json::to_value(posture)?);
+    Ok(patch)
+}
+
+pub fn origin_state_from_session(session: &SessionContext) -> Option<OriginRuntimeState> {
+    let state = session.state.as_ref()?;
+    let origin = state.get("origin")?;
+    serde_json::from_value(origin.clone()).ok()
+}
+
+pub fn origin_state_patch(
+    origin: &OriginRuntimeState,
+) -> std::result::Result<HashMap<String, serde_json::Value>, serde_json::Error> {
+    let mut patch = HashMap::new();
+    patch.insert("origin".to_string(), serde_json::to_value(origin)?);
     Ok(patch)
 }
 
@@ -778,6 +793,7 @@ fn parse_rfc3339(value: &str) -> Result<DateTime<Utc>> {
 mod tests {
     use super::*;
     use crate::control_db::ControlDb;
+    use clawdstrike::policy::OriginBudgets;
 
     fn test_identity() -> IdentityPrincipal {
         IdentityPrincipal {
@@ -990,6 +1006,7 @@ mod tests {
                 trigger: "user_approval".to_string(),
                 at: chrono::Utc::now().to_rfc3339(),
             }],
+            origin_runtime: None,
         };
 
         let patch = posture_state_patch(&posture).expect("patch");
@@ -1017,6 +1034,70 @@ mod tests {
             Some((1, 10))
         );
         assert_eq!(restored.transition_history.len(), 1);
+    }
+
+    #[test]
+    fn origin_helpers_roundtrip() {
+        let origin = OriginRuntimeState::new(
+            clawdstrike::OriginContext {
+                provider: clawdstrike::OriginProvider::Slack,
+                tenant_id: Some("T123".to_string()),
+                space_id: Some("C456".to_string()),
+                external_participants: Some(false),
+                tags: vec!["provider:slack".to_string()],
+                ..clawdstrike::OriginContext::default()
+            },
+            clawdstrike::ResolvedEnclave {
+                profile_id: Some("slack-default".to_string()),
+                mcp: None,
+                posture: None,
+                egress: None,
+                data: None,
+                budgets: Some(OriginBudgets {
+                    egress_calls: Some(3),
+                    ..Default::default()
+                }),
+                bridge_policy: None,
+                explanation: None,
+                resolution_path: vec!["provider=slack".to_string()],
+            },
+            HashMap::from([(
+                "egress_calls".to_string(),
+                PostureBudgetCounter { used: 1, limit: 3 },
+            )]),
+        );
+
+        let patch = origin_state_patch(&origin).expect("patch");
+        let session = SessionContext {
+            session_id: "sess-origin".to_string(),
+            identity: test_identity(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            last_activity_at: chrono::Utc::now().to_rfc3339(),
+            expires_at: (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+            organization: None,
+            effective_roles: vec![],
+            effective_permissions: vec![],
+            request: None,
+            metadata: None,
+            state: Some(patch),
+        };
+
+        let restored = origin_state_from_session(&session).expect("origin");
+        assert_eq!(
+            restored.current_origin.provider,
+            clawdstrike::OriginProvider::Slack
+        );
+        assert_eq!(
+            restored.current_enclave.profile_id.as_deref(),
+            Some("slack-default")
+        );
+        assert_eq!(
+            restored
+                .budgets
+                .get("egress_calls")
+                .map(|b| (b.used, b.limit)),
+            Some((1, 3))
+        );
     }
 
     #[test]

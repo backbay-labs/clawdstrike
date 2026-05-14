@@ -1,0 +1,19 @@
+hushspec: "0.1.0"
+name: detection-thresholds
+extensions:
+  detection:
+    prompt_injection:
+      enabled: true
+      warn_at_or_above: suspicious
+      block_at_or_above: high
+      max_scan_bytes: 200000
+    jailbreak:
+      enabled: true
+      block_threshold: 40
+      warn_threshold: 15
+      max_input_bytes: 200000
+    threat_intel:
+      enabled: true
+      pattern_db: "builtin:s2bench-v1"
+      similarity_threshold: 0.85
+      top_k: 5

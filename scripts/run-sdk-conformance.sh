@@ -15,6 +15,8 @@ bold "Go SDK conformance vectors"
 )
 
 bold "TypeScript SDK conformance vectors"
+npm --prefix packages/adapters/clawdstrike-adapter-core ci
+npm --prefix packages/adapters/clawdstrike-adapter-core run build
 npm --prefix packages/sdk/hush-ts ci
 npm --prefix packages/sdk/hush-ts test -- tests/policy-conformance.test.ts tests/canonical.test.ts tests/spider-sense-conformance.test.ts
 

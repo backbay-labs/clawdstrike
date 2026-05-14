@@ -27,7 +27,7 @@ clap = { workspace = true, features = ["env"] }
 chrono.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
-async-nats = "0.39"
+async-nats = "0.40"
 tonic = "0.13"
 prost = "0.13"
 prost-types = "0.13"

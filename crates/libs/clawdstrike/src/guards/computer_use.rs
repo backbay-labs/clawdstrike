@@ -110,6 +110,7 @@ impl Guard for ComputerUseGuard {
         matches!(action, GuardAction::Custom(ct, _) if ct.starts_with("remote.") || ct.starts_with("input."))
     }
 
+    // @academy:start computer-use-check
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
         if !self.enabled {
             return GuardResult::allow(&self.name);
@@ -173,6 +174,7 @@ impl Guard for ComputerUseGuard {
             }
         }
     }
+    // @academy:end computer-use-check
 }
 
 #[cfg(test)]

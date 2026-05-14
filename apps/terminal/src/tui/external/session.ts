@@ -91,6 +91,9 @@ export function buildLaunchScript(
     "}",
     `${commandLine}`,
     "exit_code=$?",
+    "if [ \"$exit_code\" -eq 129 ] && [ \"$__clawdstrike_external_status_written\" -eq 0 ]; then",
+    "  __clawdstrike_external_write_finished 129 hangup",
+    "fi",
     "exit \"$exit_code\"",
   ].join("\n")
 }

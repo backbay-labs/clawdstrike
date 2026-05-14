@@ -27,11 +27,17 @@ mod jetstream {
     #[cfg(feature = "server_2_10")]
     use std::collections::HashMap;
     use std::str::from_utf8;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    use std::time::Instant;
+
+    #[cfg(feature = "server_2_11")]
+    use async_nats::jetstream::consumer::PriorityPolicy;
 
     use super::*;
     use async_nats::connection::State;
     use async_nats::header::{self, HeaderMap, NATS_MESSAGE_ID};
+    #[cfg(feature = "server_2_11")]
+    use async_nats::jetstream::consumer::pull::BatchConfig;
     use async_nats::jetstream::consumer::{
         self, push, AckPolicy, DeliverPolicy, Info, OrderedPullConsumer, OrderedPushConsumer,
         PullConsumer, PushConsumer, ReplayPolicy,
@@ -47,7 +53,7 @@ mod jetstream {
         DiscardPolicy, StorageType,
     };
     use async_nats::jetstream::AckKind;
-    use async_nats::ConnectOptions;
+    use async_nats::{ConnectOptions, StatusCode};
     use futures::stream::{StreamExt, TryStreamExt};
     use time::OffsetDateTime;
     use tracing::debug;
@@ -875,7 +881,10 @@ mod jetstream {
 
         assert_eq!(
             stream.direct_get(1).await.unwrap_err().kind(),
-            DirectGetErrorKind::TimedOut
+            DirectGetErrorKind::ErrorResponse(
+                StatusCode::NO_RESPONDERS,
+                "no responders".to_string()
+            )
         );
     }
 
@@ -2192,10 +2201,8 @@ mod jetstream {
         messages.next().await.unwrap().unwrap();
     }
 
-    #[cfg(feature = "slow_tests")]
     #[tokio::test]
     async fn pull_consumer_stream_with_heartbeat() {
-        use tracing::debug;
         let server = nats_server::run_server("tests/configs/jetstream.conf");
         let client = ConnectOptions::new()
             .event_callback(|err| async move { println!("error: {err:?}") })
@@ -2229,10 +2236,16 @@ mod jetstream {
         stream.delete_consumer(name).await.unwrap();
         // Expect Idle Heartbeats to kick in.
         debug!("waiting for the first idle heartbeat timeout");
-        let mut messages = consumer.messages().await.unwrap();
+        let mut messages = consumer
+            .stream()
+            .heartbeat(Duration::from_secs(3))
+            .expires(Duration::from_secs(6))
+            .messages()
+            .await
+            .unwrap();
         assert_eq!(
             messages.next().await.unwrap().unwrap_err().kind(),
-            async_nats::jetstream::consumer::pull::MessagesErrorKind::MissingHeartbeat,
+            async_nats::jetstream::consumer::pull::MessagesErrorKind::Other,
         );
         // But the consumer iterator should still be there.
         // We should get timeout again.
@@ -2261,10 +2274,12 @@ mod jetstream {
             .unwrap();
         // and expect the message to be there.
         debug!("awaiting the message with recreated consumer");
-        let now = Instant::now();
-        let m = messages.next().await.unwrap();
-        println!("after: {:?}", now.elapsed());
-        m.unwrap();
+        let m1 = messages.next().await.unwrap();
+        let m2 = messages.next().await.unwrap();
+
+        if m1.is_err() && m2.is_err() {
+            panic!("consumer should recover");
+        }
     }
 
     #[tokio::test]
@@ -3861,5 +3876,342 @@ mod jetstream {
             .unwrap();
         assert_eq!(message.sequence, 11);
         assert_eq!(from_utf8(&message.payload).unwrap(), "2");
+    }
+
+    #[cfg(feature = "server_2_11")]
+    #[tokio::test]
+    async fn consumer_overflow() {
+        let server = nats_server::run_server("tests/configs/jetstream.conf");
+        let client = async_nats::connect(server.client_url()).await.unwrap();
+
+        let jetstream = async_nats::jetstream::new(client.clone());
+
+        let stream = jetstream
+            .create_stream(stream::Config {
+                name: "events".to_string(),
+                subjects: vec!["events.>".to_string()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let consumer = stream
+            .create_consumer(jetstream::consumer::pull::Config {
+                durable_name: Some("name".to_string()),
+                ack_policy: AckPolicy::Explicit,
+                filter_subject: "events.>".to_string(),
+                priority_policy: PriorityPolicy::Overflow,
+                priority_groups: vec!["A".to_string()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        for i in 0..5 {
+            jetstream
+                .publish("events.1", format!("{i}").into())
+                .await
+                .unwrap()
+                .await
+                .unwrap();
+        }
+
+        let mut sub = client.subscribe("NOTHING").await.unwrap();
+        consumer
+            .request_batch(
+                BatchConfig {
+                    batch: 10,
+                    idle_heartbeat: Duration::from_secs(10),
+                    max_bytes: 0,
+                    expires: Some(Duration::from_secs(30)),
+                    no_wait: false,
+                    min_pending: Some(10),
+                    min_ack_pending: None,
+                    group: Some("A".to_string()),
+                },
+                "NOTHING".into(),
+            )
+            .await
+            .unwrap();
+
+        // We have < 10 pending messages, so we should not get any messages.
+        tokio::time::timeout(tokio::time::Duration::from_secs(2), sub.next())
+            .await
+            .unwrap_err();
+
+        let mut sub = client.subscribe("NOTHING_ACK").await.unwrap();
+        consumer
+            .request_batch(
+                BatchConfig {
+                    batch: 10,
+                    idle_heartbeat: Duration::from_secs(10),
+                    max_bytes: 0,
+                    expires: Some(Duration::from_secs(30)),
+                    no_wait: false,
+                    min_pending: Some(10),
+                    min_ack_pending: None,
+                    group: Some("A".to_string()),
+                },
+                "NOTHING_ACK".into(),
+            )
+            .await
+            .unwrap();
+
+        // We have < 10 pending acks, so we should not get any messages.
+        tokio::time::timeout(tokio::time::Duration::from_secs(2), sub.next())
+            .await
+            .unwrap_err();
+
+        for i in 0..100 {
+            jetstream
+                .publish("events.1", format!("{i}").into())
+                .await
+                .unwrap()
+                .await
+                .unwrap();
+        }
+        let mut sub = client.subscribe("SOMETHING").await.unwrap();
+        consumer
+            .request_batch(
+                BatchConfig {
+                    batch: 10,
+                    idle_heartbeat: Duration::from_secs(10),
+                    max_bytes: 0,
+                    expires: Some(Duration::from_secs(30)),
+                    no_wait: false,
+                    min_pending: Some(10),
+                    min_ack_pending: None,
+                    group: Some("A".to_string()),
+                },
+                "SOMETHING".into(),
+            )
+            .await
+            .unwrap();
+
+        sub.next().await.unwrap();
+
+        let mut sub = client.subscribe("SOMETHING_ACK").await.unwrap();
+        consumer
+            .request_batch(
+                BatchConfig {
+                    batch: 10,
+                    idle_heartbeat: Duration::from_secs(10),
+                    max_bytes: 0,
+                    expires: Some(Duration::from_secs(30)),
+                    no_wait: false,
+                    min_pending: None,
+                    min_ack_pending: Some(5),
+                    group: Some("A".to_string()),
+                },
+                "SOMETHING_ACK".into(),
+            )
+            .await
+            .unwrap();
+        sub.next().await.unwrap();
+    }
+
+    #[cfg(feature = "server_2_11")]
+    #[tokio::test]
+    async fn consumer_overflow_stream() {
+        let server = nats_server::run_server("tests/configs/jetstream.conf");
+        let client = async_nats::connect(server.client_url()).await.unwrap();
+
+        let jetstream = async_nats::jetstream::new(client.clone());
+
+        let stream = jetstream
+            .create_stream(stream::Config {
+                name: "events".to_string(),
+                subjects: vec!["events.>".to_string()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let consumer = stream
+            .create_consumer(jetstream::consumer::pull::Config {
+                durable_name: Some("name".to_string()),
+                ack_policy: AckPolicy::Explicit,
+                filter_subject: "events.>".to_string(),
+                priority_policy: PriorityPolicy::Overflow,
+                priority_groups: vec!["A".to_string()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        for i in 0..5 {
+            jetstream
+                .publish("events.1", format!("{i}").into())
+                .await
+                .unwrap()
+                .await
+                .unwrap();
+        }
+
+        let mut messages_pending = consumer
+            .stream()
+            .group("A")
+            .min_pending(10)
+            .messages()
+            .await
+            .unwrap();
+
+        // We have < 10 pending messages, so we should not get any messages.
+        tokio::time::timeout(tokio::time::Duration::from_secs(2), messages_pending.next())
+            .await
+            .unwrap_err();
+
+        let mut messages_acks = consumer
+            .stream()
+            .group("A")
+            .min_ack_pending(10)
+            .messages()
+            .await
+            .unwrap();
+
+        // We have < 10 pending acks, so we should not get any messages.
+        tokio::time::timeout(tokio::time::Duration::from_secs(2), messages_acks.next())
+            .await
+            .unwrap_err();
+
+        for i in 0..100 {
+            jetstream
+                .publish("events.1", format!("{i}").into())
+                .await
+                .unwrap()
+                .await
+                .unwrap();
+        }
+
+        messages_pending.next().await.unwrap().unwrap();
+        messages_acks.next().await.unwrap().unwrap();
+    }
+
+    #[cfg(feature = "server_2_11")]
+    #[tokio::test]
+    async fn pause_consumer() {
+        use time::Duration;
+        let server = nats_server::run_server("tests/configs/jetstream.conf");
+        let client = async_nats::ConnectOptions::new()
+            .connect(server.client_url())
+            .await
+            .unwrap();
+        let jetstream = async_nats::jetstream::new(client);
+
+        let stream = jetstream
+            .create_stream(stream::Config {
+                name: "events".to_string(),
+                subjects: vec!["events.>".to_string()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let mut consumer = stream
+            .create_consumer(consumer::pull::Config {
+                durable_name: Some("name".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert!(!consumer.info().await.unwrap().paused);
+
+        stream
+            .pause_consumer(
+                "name",
+                OffsetDateTime::now_utc().saturating_add(Duration::seconds_f32(10.0)),
+            )
+            .await
+            .unwrap();
+
+        let info = consumer.info().await.unwrap();
+        assert!(info.paused);
+
+        stream.resume_consumer("name").await.unwrap();
+        let info = consumer.info().await.unwrap();
+        assert!(!info.paused);
+
+        // test starting a paused consumer.
+        let mut consumer = stream
+            .create_consumer(consumer::pull::Config {
+                durable_name: Some("blame".to_string()),
+                pause_until: Some(
+                    OffsetDateTime::now_utc().saturating_add(Duration::seconds_f32(3.0)),
+                ),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert!(consumer.info().await.unwrap().paused);
+        tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+        assert!(!consumer.info().await.unwrap().paused);
+    }
+
+    #[cfg(feature = "server_2_11")]
+    #[tokio::test]
+    async fn message_with_ttl() {
+        use async_nats::header::{NATS_MARKER_REASON, NATS_MESSAGE_TTL};
+
+        let server = nats_server::run_server("tests/configs/jetstream.conf");
+        let client = async_nats::ConnectOptions::new()
+            .connect(server.client_url())
+            .await
+            .unwrap();
+
+        let jetstream = async_nats::jetstream::new(client);
+
+        let mut stream = jetstream
+            .create_stream(stream::Config {
+                name: "events".to_string(),
+                subjects: vec!["events.>".to_string()],
+                allow_message_ttl: true,
+                allow_direct: true,
+                subject_delete_marker_ttl: Some(Duration::from_secs(2)),
+                max_age: Duration::from_secs(2),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        jetstream
+            .send_publish(
+                "events.data",
+                Publish::build()
+                    .ttl(Duration::from_secs(20))
+                    .payload("data".into()),
+            )
+            .await
+            .unwrap()
+            .await
+            .unwrap();
+
+        jetstream
+            .send_publish("events.data", Publish::build().payload("data".into()))
+            .await
+            .unwrap()
+            .await
+            .unwrap();
+
+        let info = stream.info().await.unwrap();
+        assert_eq!(info.state.messages, 2);
+
+        let message = stream.direct_get(1).await.unwrap();
+
+        // Check if the message has ttl.
+        let ttl = message.headers.get(NATS_MESSAGE_TTL).unwrap();
+        assert_eq!(ttl.as_str(), Duration::from_secs(20).as_nanos().to_string());
+
+        tokio::time::sleep(Duration::from_millis(2500)).await;
+
+        // Check if delete markers work fine.
+        let message = stream
+            .direct_get_last_for_subject("events.data")
+            .await
+            .unwrap();
+
+        let ttl = message.headers.get(NATS_MARKER_REASON).unwrap();
+        assert_eq!(ttl.as_str(), "MaxAge");
     }
 }

@@ -1,0 +1,27 @@
+# Proptest configuration for formal differential tests.
+#
+# This file is read by proptest at runtime. Settings here serve as defaults
+# and can be overridden by environment variables (e.g. PROPTEST_CASES).
+#
+# See: https://proptest-rs.github.io/proptest/proptest-config/attributes.html
+
+# Default case count for local development. CI overrides via env var:
+#   - PR/push CI:  PROPTEST_CASES=1_000_000
+#   - Nightly CI:  PROPTEST_CASES=100_000_000
+cases = 256
+
+# Shrink iterations: 10K is enough to find minimal failing inputs in
+# reasonable time, even during nightly runs.
+max_shrink_iters = 10000
+
+# Persist failures to regression files so they are automatically replayed.
+# These files are committed to the repo (or uploaded as CI artifacts).
+failure_persistence = "file"
+
+# Fork mode: do not fork child processes. This avoids overhead that matters
+# at 100M+ cases and keeps stack traces clean.
+fork = false
+
+# Timeout per individual test case (milliseconds). 60s is generous for
+# any single case — the aggregation/merge/cycle functions are sub-microsecond.
+timeout = 60000

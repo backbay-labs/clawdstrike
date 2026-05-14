@@ -9,7 +9,7 @@
 class Hush < Formula
   desc "CLI for clawdstrike security verification and policy enforcement"
   homepage "https://github.com/backbay-labs/clawdstrike"
-  url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v0.2.5.tar.gz"
+  url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v0.2.7.tar.gz"
   sha256 "PLACEHOLDER_SHA256_WILL_BE_UPDATED_ON_RELEASE"
   license "Apache-2.0"
   head "https://github.com/backbay-labs/clawdstrike.git", branch: "main"

@@ -8,6 +8,19 @@ use chrono::Utc;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+#[cfg(has_nono_signal_mode)]
+fn signal_mode_label(caps: &nono::CapabilitySet) -> &'static str {
+    match caps.signal_mode() {
+        nono::SignalMode::Isolated => "isolated",
+        nono::SignalMode::AllowAll => "allow_all",
+    }
+}
+
+#[cfg(not(has_nono_signal_mode))]
+fn signal_mode_label(_: &nono::CapabilitySet) -> &'static str {
+    "isolated"
+}
+
 /// Complete sandbox attestation for receipt metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SandboxAttestation {
@@ -330,15 +343,9 @@ impl SandboxRuntimeState {
                 .push("sandbox_apply_failed".to_string());
         }
         if !supervised_active {
-            if cfg!(target_os = "macos") {
-                state
-                    .degraded_reasons
-                    .push("macos_authorization_contract_unavailable".to_string());
-            } else {
-                state
-                    .degraded_reasons
-                    .push("supervised_interception_inactive".to_string());
-            }
+            state
+                .degraded_reasons
+                .push(supervised_unavailable_reason().to_string());
         }
         state
     }
@@ -358,7 +365,7 @@ impl SandboxRuntimeState {
             deadline_miss_count: 0,
             dropped_event_count: 0,
             degraded_reasons: vec![
-                "macos_authorization_contract_unavailable".to_string(),
+                supervised_unavailable_reason().to_string(),
                 "supervised_launch_refused_without_live_authorization_provider".to_string(),
             ],
             provider_states: default_provider_states(false),
@@ -496,7 +503,7 @@ pub fn build_attestation(
         network_mode,
         mediation_backend_hint,
         proxy_port,
-        signal_mode: format!("{:?}", caps.signal_mode()),
+        signal_mode: signal_mode_label(caps).to_string(),
         blocked_commands: caps.blocked_commands().to_vec(),
         extensions_enabled: caps.extensions_enabled(),
     };
@@ -638,6 +645,14 @@ fn supervised_contract_name() -> &'static str {
     }
 }
 
+fn supervised_unavailable_reason() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos_authorization_contract_unavailable"
+    } else {
+        "supervised_interception_inactive"
+    }
+}
+
 fn supervised_authorization_model() -> &'static str {
     if cfg!(target_os = "macos") {
         "auth_open_point_in_time"
@@ -666,9 +681,23 @@ mod tests {
         let attestation = build_attestation(&caps, SandboxRuntimeState::static_mode(true, None));
         assert!(!attestation.capabilities.fs.is_empty());
         assert_eq!(attestation.capabilities.network_mode, "blocked");
+        assert_eq!(attestation.capabilities.signal_mode, "isolated");
         assert!(attestation.denials.is_empty());
         assert!(attestation.supervisor.is_none());
         assert!(attestation.runtime.applied);
+    }
+
+    #[cfg(has_nono_signal_mode)]
+    #[test]
+    fn test_build_attestation_preserves_signal_mode() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let caps = CapabilitySet::new()
+            .allow_path(tmp.path(), AccessMode::Read)
+            .unwrap()
+            .allow_signals();
+
+        let attestation = build_attestation(&caps, SandboxRuntimeState::static_mode(true, None));
+        assert_eq!(attestation.capabilities.signal_mode, "allow_all");
     }
 
     #[test]
@@ -892,6 +921,16 @@ mod tests {
                 .iter()
                 .any(|reason| reason == "macos_authorization_contract_unavailable"));
         }
+    }
+
+    #[test]
+    fn test_supervised_preflight_uses_platform_specific_unavailable_reason() {
+        let runtime = SandboxRuntimeState::supervised_preflight_refused("provider unavailable");
+
+        assert!(runtime
+            .degraded_reasons
+            .iter()
+            .any(|reason| reason == supervised_unavailable_reason()));
     }
 
     #[test]

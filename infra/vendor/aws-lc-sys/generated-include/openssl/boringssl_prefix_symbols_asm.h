@@ -1,16 +1,5 @@
 // Copyright (c) 2018, Google Inc.
-//
-// Permission to use, copy, modify, and/or distribute this software for any
-// purpose with or without fee is hereby granted, provided that the above
-// copyright notice and this permission notice appear in all copies.
-//
-// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-// WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
-// SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-// WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
-// OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
-// CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+// SPDX-License-Identifier: ISC
 
 #if !defined(__APPLE__)
 #include <openssl/boringssl_prefix_symbols.h>
@@ -20,7 +9,7 @@
 #define BORINGSSL_PREFIX_SYMBOLS_ASM_H
 
 #ifndef BORINGSSL_PREFIX
-#define BORINGSSL_PREFIX aws_lc_0_37_1
+#define BORINGSSL_PREFIX aws_lc_0_39_0
 #endif // BORINGSSL_PREFIX
 
 // On iOS and macOS, we need to treat assembly symbols differently from other
@@ -1368,6 +1357,7 @@
 #define _EVP_PKEY_param_check BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, EVP_PKEY_param_check)
 #define _EVP_PKEY_paramgen BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, EVP_PKEY_paramgen)
 #define _EVP_PKEY_paramgen_init BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, EVP_PKEY_paramgen_init)
+#define _EVP_PKEY_pqdsa_get_type BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, EVP_PKEY_pqdsa_get_type)
 #define _EVP_PKEY_pqdsa_new_raw_private_key BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, EVP_PKEY_pqdsa_new_raw_private_key)
 #define _EVP_PKEY_pqdsa_new_raw_public_key BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, EVP_PKEY_pqdsa_new_raw_public_key)
 #define _EVP_PKEY_pqdsa_pkey_meth BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, EVP_PKEY_pqdsa_pkey_meth)
@@ -1542,7 +1532,6 @@
 #define _FIPS_is_entropy_cpu_jitter BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, FIPS_is_entropy_cpu_jitter)
 #define _FIPS_mode BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, FIPS_mode)
 #define _FIPS_mode_set BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, FIPS_mode_set)
-#define _FIPS_read_counter BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, FIPS_read_counter)
 #define _FIPS_service_indicator_after_call BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, FIPS_service_indicator_after_call)
 #define _FIPS_service_indicator_before_call BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, FIPS_service_indicator_before_call)
 #define _GENERAL_NAMES_free BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, GENERAL_NAMES_free)
@@ -2091,6 +2080,7 @@
 #define _RAND_poll BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RAND_poll)
 #define _RAND_priv_bytes BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RAND_priv_bytes)
 #define _RAND_pseudo_bytes BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RAND_pseudo_bytes)
+#define _RAND_public_bytes BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RAND_public_bytes)
 #define _RAND_seed BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RAND_seed)
 #define _RAND_set_rand_method BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RAND_set_rand_method)
 #define _RAND_status BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RAND_status)
@@ -2146,6 +2136,7 @@
 #define _RSA_get0_p BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RSA_get0_p)
 #define _RSA_get0_pss_params BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RSA_get0_pss_params)
 #define _RSA_get0_q BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RSA_get0_q)
+#define _RSA_get0_ssa_pss_params BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RSA_get0_ssa_pss_params)
 #define _RSA_get_default_method BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RSA_get_default_method)
 #define _RSA_get_ex_data BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RSA_get_ex_data)
 #define _RSA_get_ex_new_index BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, RSA_get_ex_new_index)
@@ -2827,6 +2818,7 @@
 #define _X509v3_get_ext_count BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, X509v3_get_ext_count)
 #define ___local_stdio_printf_options BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, __local_stdio_printf_options)
 #define ___local_stdio_scanf_options BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, __local_stdio_scanf_options)
+#define _a2i_ASN1_INTEGER BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, a2i_ASN1_INTEGER)
 #define _a2i_IPADDRESS BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, a2i_IPADDRESS)
 #define _a2i_IPADDRESS_NC BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, a2i_IPADDRESS_NC)
 #define _abi_test_bad_unwind_epilog BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, abi_test_bad_unwind_epilog)
@@ -3595,9 +3587,11 @@
 #define _gcm_setiv_avx512 BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, gcm_setiv_avx512)
 #define _get_entropy_source BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_entropy_source)
 #define _get_entropy_source_method_id_FOR_TESTING BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_entropy_source_method_id_FOR_TESTING)
+#define _get_private_thread_generate_calls_since_seed BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_private_thread_generate_calls_since_seed)
+#define _get_private_thread_reseed_calls_since_initialization BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_private_thread_reseed_calls_since_initialization)
+#define _get_public_thread_generate_calls_since_seed BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_public_thread_generate_calls_since_seed)
+#define _get_public_thread_reseed_calls_since_initialization BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_public_thread_reseed_calls_since_initialization)
 #define _get_thread_and_global_tree_drbg_calls_FOR_TESTING BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_thread_and_global_tree_drbg_calls_FOR_TESTING)
-#define _get_thread_generate_calls_since_seed BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_thread_generate_calls_since_seed)
-#define _get_thread_reseed_calls_since_initialization BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, get_thread_reseed_calls_since_initialization)
 #define _handle_cpu_env BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, handle_cpu_env)
 #define _have_hw_rng_aarch64_for_testing BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, have_hw_rng_aarch64_for_testing)
 #define _have_hw_rng_x86_64_for_testing BORINGSSL_ADD_PREFIX_MAC_ASM(BORINGSSL_PREFIX, have_hw_rng_x86_64_for_testing)

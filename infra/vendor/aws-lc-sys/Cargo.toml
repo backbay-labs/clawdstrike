@@ -13,10 +13,10 @@
 edition = "2021"
 rust-version = "1.71.0"
 name = "aws-lc-sys"
-version = "0.37.1"
+version = "0.39.0"
 authors = ["AWS-LC"]
 build = "builder/main.rs"
-links = "aws_lc_0_37_1"
+links = "aws_lc_0_39_0"
 include = [
     "LICENSE",
     "/aws-lc/**/*.c",
@@ -24,6 +24,7 @@ include = [
     "/aws-lc/**/*.pl",
     "/aws-lc/**/*.h",
     "/aws-lc/**/*.h.in",
+    "/aws-lc/**/*.pc.in",
     "/aws-lc/**/*.i",
     "/aws-lc/**/*.S",
     "/aws-lc/**/*.asm",
@@ -71,11 +72,11 @@ autotests = false
 autobenches = false
 description = "AWS-LC is a general-purpose cryptographic library maintained by the AWS Cryptography team for AWS and their customers. It іs based on code from the Google BoringSSL project and the OpenSSL project."
 readme = "README.md"
-license = "ISC AND (Apache-2.0 OR ISC) AND OpenSSL"
+license = "ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)"
 repository = "https://github.com/aws/aws-lc-rs"
 
 [package.metadata.aws-lc-sys]
-commit-hash = "bee13c3051b4cdc568d4c358660aeeb734157804"
+commit-hash = "47389586f8aa77c83245173793f4d44ed1d6c3a8"
 
 [features]
 all-bindings = []
@@ -83,6 +84,7 @@ asan = []
 bindgen = ["dep:bindgen"]
 default = ["all-bindings"]
 disable-prebuilt-nasm = []
+fips = ["dep:bindgen"]
 prebuilt-nasm = []
 ssl = [
     "bindgen",

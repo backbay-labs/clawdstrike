@@ -20,8 +20,16 @@ import { createPortal } from "react-dom";
 import { Capsule } from "./Capsule";
 import { useDock } from "./DockContext";
 import { SessionRail } from "./SessionRail";
-import type { CapsuleViewMode, DockCapsuleState, ShelfMode } from "./types";
+import type { CapsuleContentProps, CapsuleViewMode, DockCapsuleState, ShelfMode } from "./types";
 import { useDockDemo } from "./useDockDemo";
+import { registerCapsuleRenderer, unregisterCapsuleRenderer, getCapsuleRenderer } from "./capsule-renderer-registry";
+import type { ComponentType } from "react";
+
+/** Guard with unregister-first to survive Vite HMR re-evaluation */
+function registerBuiltinCapsuleRenderer(kind: string, component: ComponentType<CapsuleContentProps>): void {
+  unregisterCapsuleRenderer(kind);
+  registerCapsuleRenderer(kind, component);
+}
 
 // =============================================================================
 // Design Tokens
@@ -646,25 +654,31 @@ function getDemoShelfContent(mode: ShelfMode) {
 // Capsule Content Renderers
 // =============================================================================
 
-interface CapsuleContentProps {
-  capsule: DockCapsuleState;
+function capsuleContentClass(baseClassName: string, isExpanded: boolean): string {
+  return `${baseClassName} ${isExpanded ? `${baseClassName}--expanded` : `${baseClassName}--collapsed`}`;
 }
 
-function OutputContent({ capsule }: CapsuleContentProps) {
+function OutputContent({ capsule, isExpanded }: CapsuleContentProps) {
   const output = capsule.sourceData as string | undefined;
   return (
-    <div className="capsule-content-output">
+    <div
+      className={capsuleContentClass("capsule-content-output", isExpanded)}
+      data-expanded={isExpanded}
+    >
       <pre className="capsule-output-log">{output || "Awaiting echoes from the void..."}</pre>
     </div>
   );
 }
 
-function EventsContent({ capsule }: CapsuleContentProps) {
+function EventsContent({ capsule, isExpanded }: CapsuleContentProps) {
   const events = capsule.sourceData as
     | Array<{ type: string; message: string; timestamp: string }>
     | undefined;
   return (
-    <div className="capsule-content-events">
+    <div
+      className={capsuleContentClass("capsule-content-events", isExpanded)}
+      data-expanded={isExpanded}
+    >
       {events?.length ? (
         <ul className="capsule-events-list">
           {events.map((event, i) => (
@@ -681,9 +695,12 @@ function EventsContent({ capsule }: CapsuleContentProps) {
   );
 }
 
-function ArtifactContent({ capsule }: CapsuleContentProps) {
+function ArtifactContent({ capsule, isExpanded }: CapsuleContentProps) {
   return (
-    <div className="capsule-content-artifact">
+    <div
+      className={capsuleContentClass("capsule-content-artifact", isExpanded)}
+      data-expanded={isExpanded}
+    >
       <div className="capsule-artifact-preview">
         <span className="capsule-artifact-icon" aria-hidden="true">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
@@ -696,10 +713,13 @@ function ArtifactContent({ capsule }: CapsuleContentProps) {
   );
 }
 
-function InspectorContent({ capsule }: CapsuleContentProps) {
+function InspectorContent({ capsule, isExpanded }: CapsuleContentProps) {
   const data = capsule.sourceData as Record<string, unknown> | undefined;
   return (
-    <div className="capsule-content-inspector">
+    <div
+      className={capsuleContentClass("capsule-content-inspector", isExpanded)}
+      data-expanded={isExpanded}
+    >
       <pre className="capsule-inspector-json">
         {data ? JSON.stringify(data, null, 2) : "No data"}
       </pre>
@@ -707,9 +727,12 @@ function InspectorContent({ capsule }: CapsuleContentProps) {
   );
 }
 
-function TerminalContent({ capsule }: CapsuleContentProps) {
+function TerminalContent({ capsule, isExpanded }: CapsuleContentProps) {
   return (
-    <div className="capsule-content-terminal">
+    <div
+      className={capsuleContentClass("capsule-content-terminal", isExpanded)}
+      data-expanded={isExpanded}
+    >
       <div className="capsule-terminal-placeholder">Terminal: {capsule.sourceId || capsule.id}</div>
     </div>
   );
@@ -730,7 +753,7 @@ interface ActionData {
   createdAt?: string;
 }
 
-function ActionContent({ capsule }: CapsuleContentProps) {
+function ActionContent({ capsule, isExpanded }: CapsuleContentProps) {
   const action = capsule.sourceData as ActionData | undefined;
 
   if (!action) {
@@ -740,7 +763,10 @@ function ActionContent({ capsule }: CapsuleContentProps) {
   const priorityClass = `action-priority-${action.priority}`;
 
   return (
-    <div className={`capsule-content-action ${priorityClass}`}>
+    <div
+      className={`${capsuleContentClass("capsule-content-action", isExpanded)} ${priorityClass}`}
+      data-expanded={isExpanded}
+    >
       {/* Action Header */}
       <div className="action-header">
         <ActionTypeIcon type={action.type} />
@@ -808,11 +834,14 @@ interface ChatData {
   isTyping?: boolean;
 }
 
-function ChatContent({ capsule }: CapsuleContentProps) {
+function ChatContent({ capsule, isExpanded }: CapsuleContentProps) {
   const chat = capsule.sourceData as ChatData | undefined;
 
   return (
-    <div className="capsule-content-chat">
+    <div
+      className={capsuleContentClass("capsule-content-chat", isExpanded)}
+      data-expanded={isExpanded}
+    >
       {chat?.messages?.length ? (
         <>
           <div className="chat-messages">
@@ -872,11 +901,14 @@ interface SocialData {
   pendingRequests?: number;
 }
 
-function SocialContent({ capsule }: CapsuleContentProps) {
+function SocialContent({ capsule, isExpanded }: CapsuleContentProps) {
   const social = capsule.sourceData as SocialData | undefined;
 
   return (
-    <div className="capsule-content-social">
+    <div
+      className={capsuleContentClass("capsule-content-social", isExpanded)}
+      data-expanded={isExpanded}
+    >
       {social?.pendingRequests && social.pendingRequests > 0 && (
         <div className="social-pending-banner">
           <span className="social-pending-count">{social.pendingRequests}</span>
@@ -924,11 +956,14 @@ interface SeasonPassData {
   isPremium?: boolean;
 }
 
-function SeasonPassContent({ capsule }: CapsuleContentProps) {
+function SeasonPassContent({ capsule, isExpanded }: CapsuleContentProps) {
   const data = capsule.sourceData as SeasonPassData | undefined;
 
   return (
-    <div className="capsule-content-season-pass">
+    <div
+      className={capsuleContentClass("capsule-content-season-pass", isExpanded)}
+      data-expanded={isExpanded}
+    >
       <div className="capsule-empty">
         Season pass is not wired in this build{data?.isPremium ? " (premium)" : ""}.
       </div>
@@ -936,31 +971,29 @@ function SeasonPassContent({ capsule }: CapsuleContentProps) {
   );
 }
 
+// Register built-in capsule renderers
+registerBuiltinCapsuleRenderer("output", OutputContent);
+registerBuiltinCapsuleRenderer("events", EventsContent);
+registerBuiltinCapsuleRenderer("artifact", ArtifactContent);
+registerBuiltinCapsuleRenderer("inspector", InspectorContent);
+registerBuiltinCapsuleRenderer("terminal", TerminalContent);
+registerBuiltinCapsuleRenderer("action", ActionContent);
+registerBuiltinCapsuleRenderer("chat", ChatContent);
+registerBuiltinCapsuleRenderer("social", SocialContent);
+registerBuiltinCapsuleRenderer("season_pass", SeasonPassContent);
+// kernel_agent uses an inline fallback (no dedicated component)
+
 function getCapsuleContent(capsule: DockCapsuleState): ReactNode {
-  switch (capsule.kind) {
-    case "output":
-      return <OutputContent capsule={capsule} />;
-    case "events":
-      return <EventsContent capsule={capsule} />;
-    case "artifact":
-      return <ArtifactContent capsule={capsule} />;
-    case "inspector":
-      return <InspectorContent capsule={capsule} />;
-    case "terminal":
-      return <TerminalContent capsule={capsule} />;
-    case "action":
-      return <ActionContent capsule={capsule} />;
-    case "chat":
-      return <ChatContent capsule={capsule} />;
-    case "social":
-      return <SocialContent capsule={capsule} />;
-    case "season_pass":
-      return <SeasonPassContent capsule={capsule} />;
-    case "kernel_agent":
-      return <div className="capsule-empty">Kernel agent capsule is not wired yet.</div>;
-    default:
-      return null;
+  const Renderer = getCapsuleRenderer(capsule.kind);
+  if (Renderer) {
+    return <Renderer capsule={capsule} isExpanded={capsule.viewMode === "expanded" || capsule.viewMode === "fullView"} />;
   }
+  // Fallback for unregistered kinds (e.g. kernel_agent or future plugin kinds
+  // that haven't registered yet)
+  if (capsule.kind === "kernel_agent") {
+    return <div className="capsule-empty">Kernel agent capsule is not wired yet.</div>;
+  }
+  return null;
 }
 
 // =============================================================================

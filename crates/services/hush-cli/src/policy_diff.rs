@@ -1,3 +1,4 @@
+use clawdstrike::policy::PolicyLocation;
 use clawdstrike::{Policy, RuleSet};
 
 use crate::remote_extends::{RemoteExtendsConfig, RemotePolicyResolver};
@@ -20,7 +21,10 @@ impl ResolvedPolicySource {
 #[derive(Clone, Debug)]
 pub struct LoadedPolicy {
     pub policy: Policy,
+    pub source_policy: Policy,
     pub source: ResolvedPolicySource,
+    pub source_location: PolicyLocation,
+    pub original_extends: Option<String>,
 }
 
 #[derive(Debug)]
@@ -40,75 +44,100 @@ pub fn load_policy_from_arg(
             source: e,
         })?;
 
-    match RuleSet::by_name(arg) {
-        Ok(Some(rs)) => {
-            if !resolve {
-                return Ok(LoadedPolicy {
-                    policy: rs.policy,
-                    source: ResolvedPolicySource::Ruleset { id: rs.id },
-                });
-            }
-
-            // Resolve `extends` using the same mechanism as file-based policies.
-            let yaml = rs.policy.to_yaml().map_err(|e| PolicyLoadError {
-                message: format!("Failed to export ruleset as YAML: {}", e),
+    match RuleSet::yaml_by_name(arg) {
+        Some((yaml, id)) => {
+            let source = ResolvedPolicySource::Ruleset { id: id.clone() };
+            let source_location = PolicyLocation::Ruleset { id };
+            let source_policy =
+                Policy::from_yaml_without_load_verification(yaml).map_err(|e| PolicyLoadError {
+                    message: format!("Failed to load ruleset {:?}: {}", arg, e),
+                    source: e,
+                })?;
+            // Built-in rulesets historically load as effective policies via
+            // `RuleSet::by_name()`. Keep that behavior even when callers do not
+            // request `--resolve`, while still preserving the raw source policy
+            // for inheritance-aware CLI reporting.
+            let policy = Policy::from_yaml_with_extends_location_resolver(
+                yaml,
+                source_location.clone(),
+                &resolver,
+            )
+            .map_err(|e| PolicyLoadError {
+                message: format!("Failed to resolve ruleset extends: {}", e),
                 source: e,
             })?;
-
-            let policy =
-                Policy::from_yaml_with_extends_resolver(&yaml, None, &resolver).map_err(|e| {
-                    PolicyLoadError {
-                        message: format!("Failed to resolve ruleset extends: {}", e),
-                        source: e,
-                    }
-                })?;
+            let original_extends = source_policy.extends.clone();
 
             Ok(LoadedPolicy {
                 policy,
-                source: ResolvedPolicySource::Ruleset { id: rs.id },
+                source_policy,
+                source,
+                source_location,
+                original_extends,
             })
         }
-        Ok(None) => {
-            let policy = if resolve {
-                let path = std::path::Path::new(arg);
-                let content = std::fs::read_to_string(path).map_err(|e| PolicyLoadError {
-                    message: format!(
-                        "{arg:?} is not a known ruleset; failed to read policy file: {}",
-                        e
-                    ),
-                    source: clawdstrike::Error::from(e),
-                })?;
+        None => {
+            let path = std::path::Path::new(arg);
+            let source = ResolvedPolicySource::File {
+                path: arg.to_string(),
+            };
+            let source_location = PolicyLocation::File(path.to_path_buf());
 
-                Policy::from_yaml_with_extends_resolver(&content, Some(path), &resolver).map_err(
-                    |e| PolicyLoadError {
+            let (policy, source_policy, original_extends) =
+                if resolve {
+                    let content = std::fs::read_to_string(path).map_err(|e| PolicyLoadError {
+                        message: format!(
+                            "{arg:?} is not a known ruleset; failed to read policy file: {}",
+                            e
+                        ),
+                        source: clawdstrike::Error::from(e),
+                    })?;
+
+                    let raw_policy = Policy::from_yaml_without_load_verification(&content)
+                        .map_err(|e| PolicyLoadError {
+                            message: format!(
+                                "{arg:?} is not a known ruleset; failed to load policy file: {}",
+                                e
+                            ),
+                            source: e,
+                        })?;
+                    let original_extends = raw_policy.extends.clone();
+
+                    let policy = Policy::from_yaml_with_extends_location_resolver(
+                        &content,
+                        source_location.clone(),
+                        &resolver,
+                    )
+                    .map_err(|e| PolicyLoadError {
                         message: format!(
                             "{arg:?} is not a known ruleset; failed to load policy file: {}",
                             e
                         ),
                         source: e,
-                    },
-                )?
-            } else {
-                Policy::from_yaml_file(arg).map_err(|e| PolicyLoadError {
-                    message: format!(
-                        "{arg:?} is not a known ruleset; failed to load policy file: {}",
-                        e
-                    ),
-                    source: e,
-                })?
-            };
+                    })?;
+
+                    (policy, raw_policy, original_extends)
+                } else {
+                    let policy = Policy::from_yaml_file(arg).map_err(|e| PolicyLoadError {
+                        message: format!(
+                            "{arg:?} is not a known ruleset; failed to load policy file: {}",
+                            e
+                        ),
+                        source: e,
+                    })?;
+                    let original_extends = policy.extends.clone();
+
+                    (policy.clone(), policy, original_extends)
+                };
 
             Ok(LoadedPolicy {
                 policy,
-                source: ResolvedPolicySource::File {
-                    path: arg.to_string(),
-                },
+                source_policy,
+                source,
+                source_location,
+                original_extends,
             })
         }
-        Err(e) => Err(PolicyLoadError {
-            message: format!("Failed to load ruleset {arg:?}: {}", e),
-            source: e,
-        }),
     }
 }
 
@@ -227,6 +256,7 @@ pub fn format_compact_value(value: &serde_json::Value, max_len: usize) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn diff_paths_use_json_pointer() {
@@ -263,6 +293,52 @@ mod tests {
             loaded.source,
             ResolvedPolicySource::Ruleset { ref id } if id == "default"
         ));
+        assert!(matches!(
+            loaded.source_location,
+            PolicyLocation::Ruleset { ref id } if id == "default"
+        ));
+    }
+
+    #[test]
+    fn load_resolved_ruleset_keeps_original_extends_metadata() {
+        let loaded = load_policy_from_arg(
+            "remote-desktop-strict",
+            true,
+            &RemoteExtendsConfig::disabled(),
+        )
+        .expect("load resolved ruleset");
+
+        assert_eq!(loaded.original_extends.as_deref(), Some("remote-desktop"));
+        assert_eq!(
+            loaded.source_policy.extends.as_deref(),
+            Some("remote-desktop")
+        );
+        assert_eq!(loaded.policy.extends, None);
+    }
+
+    #[test]
+    fn load_unresolved_ruleset_still_returns_effective_policy() {
+        let loaded = load_policy_from_arg(
+            "remote-desktop-strict",
+            false,
+            &RemoteExtendsConfig::disabled(),
+        )
+        .expect("load unresolved ruleset");
+        let expected = RuleSet::by_name("remote-desktop-strict")
+            .expect("ruleset lookup")
+            .expect("ruleset")
+            .policy;
+
+        assert_eq!(
+            serde_json::to_value(&loaded.policy).expect("serialize loaded policy"),
+            serde_json::to_value(&expected).expect("serialize expected policy")
+        );
+        assert_eq!(loaded.original_extends.as_deref(), Some("remote-desktop"));
+        assert_eq!(
+            loaded.source_policy.extends.as_deref(),
+            Some("remote-desktop")
+        );
+        assert_eq!(loaded.policy.extends, None);
     }
 
     #[test]
@@ -291,6 +367,68 @@ name: "test-policy"
         )
         .expect("load file");
         assert!(matches!(loaded.source, ResolvedPolicySource::File { .. }));
+        assert!(matches!(
+            loaded.source_location,
+            PolicyLocation::File { .. }
+        ));
         assert_eq!(loaded.policy.name, "test-policy");
+        assert_eq!(loaded.source_policy.name, "test-policy");
+    }
+
+    #[test]
+    fn load_resolved_file_with_strict_extends_uses_resolver_context() {
+        clawdstrike_logos::verifier::install_clawdstrike_policy_load_verifier();
+
+        let dir = tempdir().expect("tempdir");
+        let parent = dir.path().join("parent.yaml");
+        let child = dir.path().join("child.yaml");
+
+        std::fs::write(
+            &parent,
+            r#"
+version: "1.5.0"
+name: "parent"
+settings:
+  verification:
+    enabled: true
+    strict: true
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "/etc/shadow"
+"#,
+        )
+        .expect("write parent");
+
+        std::fs::write(
+            &child,
+            r#"
+version: "1.5.0"
+name: "child"
+extends: "parent.yaml"
+settings:
+  verification:
+    enabled: true
+    strict: true
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "/etc/shadow"
+"#,
+        )
+        .expect("write child");
+
+        let loaded = load_policy_from_arg(
+            child.to_str().expect("child path"),
+            true,
+            &RemoteExtendsConfig::disabled(),
+        )
+        .expect("resolved strict policy should load");
+
+        assert_eq!(loaded.original_extends.as_deref(), Some("parent.yaml"));
+        assert_eq!(loaded.source_policy.extends.as_deref(), Some("parent.yaml"));
+        assert_eq!(loaded.policy.extends, None);
     }
 }

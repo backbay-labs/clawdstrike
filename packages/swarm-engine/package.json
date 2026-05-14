@@ -1,0 +1,32 @@
+{
+  "name": "@clawdstrike/swarm-engine",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./consensus": {
+      "types": "./dist/consensus/index.d.ts",
+      "import": "./dist/consensus/index.js"
+    },
+    "./memory": {
+      "types": "./dist/memory/shared-memory.d.ts",
+      "import": "./dist/memory/shared-memory.js"
+    }
+  },
+  "sideEffects": false,
+  "files": ["dist"],
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7",
+    "vitest": "^4.0"
+  },
+  "peerDependencies": {},
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}

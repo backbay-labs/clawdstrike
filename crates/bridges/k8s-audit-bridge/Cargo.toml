@@ -27,7 +27,7 @@ clap = { workspace = true, features = ["env"] }
 chrono.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
-async-nats = "0.39"
+async-nats = "0.40"
 axum.workspace = true
 
 [lints]

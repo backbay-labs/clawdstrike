@@ -597,7 +597,7 @@ mod tests {
 
     #[test]
     fn daemon_event_agent_heartbeat_deserializes() {
-        let json = r#"{"type":"agent_heartbeat","endpoint_agent_id":"agent-1","runtime_agent_id":"runtime-1","runtime_agent_kind":"desktop","session_id":"s-1","posture":"standard","policy_version":"1.0.0","daemon_version":"0.2.5","timestamp":"2026-03-06T03:49:39Z"}"#;
+        let json = r#"{"type":"agent_heartbeat","endpoint_agent_id":"agent-1","runtime_agent_id":"runtime-1","runtime_agent_kind":"desktop","session_id":"s-1","posture":"standard","policy_version":"1.0.0","daemon_version":"0.2.7","timestamp":"2026-03-06T03:49:39Z"}"#;
         let event: DaemonEvent = match serde_json::from_str(json) {
             Ok(v) => v,
             Err(err) => panic!("failed to parse agent heartbeat event: {err}"),
@@ -658,7 +658,7 @@ mod tests {
 
         mgr.handle_sse_message(
             "agent_heartbeat",
-            r#"{"endpoint_agent_id":"agent-1","runtime_agent_id":"runtime-1","runtime_agent_kind":"desktop","session_id":"s-1","posture":"standard","policy_version":"1.0.0","daemon_version":"0.2.5","timestamp":"2026-03-06T03:49:39Z"}"#,
+            r#"{"endpoint_agent_id":"agent-1","runtime_agent_id":"runtime-1","runtime_agent_kind":"desktop","session_id":"s-1","posture":"standard","policy_version":"1.0.0","daemon_version":"0.2.7","timestamp":"2026-03-06T03:49:39Z"}"#,
         )
         .await
         .expect("should dispatch agent heartbeat");

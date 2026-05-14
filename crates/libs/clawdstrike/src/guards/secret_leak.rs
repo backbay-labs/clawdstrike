@@ -78,6 +78,7 @@ fn default_severity_threshold() -> Severity {
     Severity::Error
 }
 
+// @academy:start secret-leak-patterns
 fn default_patterns() -> Vec<SecretPattern> {
     vec![
         SecretPattern {
@@ -122,6 +123,7 @@ fn default_patterns() -> Vec<SecretPattern> {
             luhn_check: false,
             masking: None,
         },
+        // @academy:end secret-leak-patterns
         SecretPattern {
             name: "openai_project_key".to_string(),
             pattern: r"sk-proj-[A-Za-z0-9]{48,}".to_string(),
@@ -392,6 +394,7 @@ impl SecretLeakGuard {
         }
     }
 
+    // @academy:start secret-leak-scan
     /// Check content for secrets
     pub fn scan(&self, content: &[u8]) -> Vec<SecretMatch> {
         let content = match std::str::from_utf8(content) {
@@ -425,6 +428,7 @@ impl SecretLeakGuard {
         }
         matches
     }
+    // @academy:end secret-leak-scan
 
     /// Check if a path should be skipped
     pub fn should_skip_path(&self, path: &str) -> bool {

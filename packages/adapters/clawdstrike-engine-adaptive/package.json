@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/engine-adaptive",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "Adaptive policy engine with automatic mode switching between local and remote engines",
   "type": "module",
   "main": "dist/index.js",
@@ -20,7 +20,7 @@
     "format:check": "biome check src/"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.1.1"
+    "@clawdstrike/adapter-core": "^0.2.7"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",

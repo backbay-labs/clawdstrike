@@ -40,7 +40,6 @@ LEGACY_PATHS=(
   "packages/clawdstrike-hushd-engine"
   "deploy"
   "docker"
-  "vendor"
 )
 
 TARGET_PATHS=(
@@ -114,6 +113,37 @@ ensure_target_present() {
   fi
 }
 
+ensure_vendor_root_only_hushspec() {
+  local tracked
+  local entries
+
+  tracked="$(
+    git ls-files -- vendor vendor/** \
+      | sed '/^$/d' \
+      | rg -v '^vendor/hushspec(/|$)' || true
+  )"
+  if [[ -n "$tracked" ]]; then
+    echo "[move-validation] unexpected tracked files under vendor/:"
+    echo "$tracked"
+    echo
+    fail=1
+  fi
+
+  if [[ -d vendor ]]; then
+    entries="$(
+      find vendor -mindepth 1 -maxdepth 1 -print \
+        | sed 's#^vendor/##' \
+        | rg -v '^hushspec$' || true
+    )"
+    if [[ -n "$entries" ]]; then
+      echo "[move-validation] unexpected paths under vendor/:"
+      echo "$entries"
+      echo
+      fail=1
+    fi
+  fi
+}
+
 for path in "${LEGACY_PATHS[@]}"; do
   ensure_legacy_empty "$path"
   ensure_legacy_absent_on_disk "$path"
@@ -122,6 +152,8 @@ done
 for path in "${TARGET_PATHS[@]}"; do
   ensure_target_present "$path"
 done
+
+ensure_vendor_root_only_hushspec
 
 if [[ "$fail" -ne 0 ]]; then
   echo "[move-validation] FAIL"

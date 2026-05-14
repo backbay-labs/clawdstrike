@@ -15,6 +15,8 @@ import (
 // Re-export Decision types from guards package for top-level API convenience.
 type Decision = guards.Decision
 type DecisionStatus = guards.DecisionStatus
+type OriginContext = guards.OriginContext
+type OutputSendPayload = guards.OutputSendPayload
 
 const (
 	StatusAllow = guards.StatusAllow
@@ -123,7 +125,11 @@ func (c *Clawdstrike) Check(action guards.GuardAction) Decision {
 }
 
 func (c *Clawdstrike) CheckWithContext(action guards.GuardAction, ctx *guards.GuardContext) Decision {
-	result := c.effectiveChecker().CheckAction(action, ctx)
+	checker := c.effectiveChecker()
+	if guards.IsOriginAwareRequest(action, ctx) && !guards.SupportsOriginRuntime(checker) {
+		return guards.DecisionFromResult(localUnsupportedOriginResult())
+	}
+	result := checker.CheckAction(action, ctx)
 	return guards.DecisionFromResult(result)
 }
 
@@ -177,4 +183,8 @@ func (c *Clawdstrike) effectiveChecker() checker {
 		guard:   "clawdstrike",
 		message: "clawdstrike checker is not initialized",
 	}
+}
+
+func localUnsupportedOriginResult() guards.GuardResult {
+	return guards.Block("origin", guards.Critical, guards.LocalOriginUnsupportedMessage)
 }

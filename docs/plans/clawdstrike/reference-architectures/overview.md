@@ -22,6 +22,7 @@ Clawdstrike is a security SDK for AI agents that provides:
 | [Secure Coding Assistant](./secure-coding-assistant.md) | Dev tool integration | Medium | 1-2 weeks |
 | [Autonomous Sandbox](./autonomous-sandbox.md) | Isolated agent execution | Medium | 1-2 weeks |
 | [Multi-Agent Orchestration](./multi-agent-orchestration.md) | Agent collaboration | High | 3-6 weeks |
+| [Local Docker Compose Stack](./local-docker-compose.md) | Laptop or CI-adjacent service bring-up | Low-Medium | 10-20 minutes |
 | [Enterprise Deployment](./enterprise-deployment.md) | Organization-wide rollout | High | 4-8 weeks |
 | [Cloud-Native](./cloud-native.md) | K8s/Serverless deployment | Medium-High | 2-4 weeks |
 

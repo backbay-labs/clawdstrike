@@ -1,0 +1,160 @@
+export const metadata = {
+  title: "Built-in Rulesets",
+  order: 3,
+  track: "policy-lab",
+  description: "Comparing all 10 built-in rulesets side by side",
+}
+
+# Built-in Rulesets
+
+ClawdStrike ships 10 built-in rulesets designed for different scenarios. Understanding
+their differences helps you choose the right starting point for your own policies.
+
+## The Three Core Rulesets
+
+The three core rulesets -- `permissive`, `default`, and `strict` -- represent a spectrum
+from development convenience to production lockdown:
+
+### Permissive
+
+The `permissive` ruleset is designed for development and exploration. It allows egress
+to all domains (`"*"`), raises patch limits to 10,000 additions, disables fail-fast mode,
+and enables verbose logging. It does **not** configure forbidden paths, secret leak
+detection, or MCP tool restrictions.
+
+Use this when you want to observe what an agent does without blocking it. It is the
+starting point for the observe-synth-tighten workflow you will learn in Lesson 5.
+
+### Default
+
+The `default` ruleset provides balanced security. It blocks access to common sensitive
+paths (SSH keys, AWS credentials, environment files, GPG keys, Docker configs). Egress
+is limited to well-known AI APIs, code hosting platforms, and package registries. Secret
+leak detection catches AWS keys, GitHub tokens, OpenAI keys, and private key headers.
+Patch integrity is capped at 1,000 additions and 500 deletions.
+
+This is the right starting point for most production deployments. Extend it and add
+domain-specific overrides.
+
+### Strict
+
+The `strict` ruleset enables maximum security. The egress allowlist is **empty** -- no
+domains are allowed by default. Forbidden paths include everything in `default` plus
+`.vault/`, `.secrets/`, `credentials/`, `private/`, and Windows certificate stores.
+Secret leak detection adds patterns for Anthropic keys, npm tokens, Slack tokens, and
+generic API key patterns. Patch limits are halved (500 additions, 200 deletions) and
+balance is required.
+
+Most importantly, `strict` is the only core ruleset that enables **prompt injection** and
+**jailbreak** detection by default. It also sets `fail_fast: true`, stopping evaluation
+at the first denial.
+
+## Specialized Rulesets
+
+Beyond the three core rulesets, ClawdStrike provides specialized rulesets for specific
+environments:
+
+- **ai-agent** -- Optimized for AI coding assistants. Broader egress allowlist (includes
+  documentation sites, more package registries), higher patch limits (2,000 additions),
+  and enabled prompt injection and jailbreak detection with relaxed thresholds. Does not
+  extend any parent.
+
+- **ai-agent-posture** -- Extends `ai-agent` and adds posture states: `restricted`
+  (read-only), `standard` (file writes + egress), and `elevated` (full capabilities).
+  Agents start in restricted mode and transition via user approval.
+
+- **cicd** -- Designed for CI/CD pipelines. Allows egress to container registries (Docker
+  Hub, GitHub Container Registry, AWS ECR) and build tool repositories. Blocks access to
+  CI secret directories while allowing workflow config files. Sets `fail_fast: true` and
+  a 30-minute session timeout because CI jobs should be fast.
+
+- **remote-desktop** -- Extends `ai-agent` and adds CUA-specific guards:
+  `computer_use`, `remote_desktop_side_channel`, and `input_injection_capability`. For
+  AI agents operating via remote desktop sessions.
+
+- **remote-desktop-permissive** -- Extends `remote-desktop` with development-friendly
+  CUA settings. Allows all channels and uses observe-only enforcement.
+
+- **remote-desktop-strict** -- Extends `remote-desktop` with maximum CUA security for
+  high-security environments.
+
+- **spider-sense** -- Hierarchical threat screening using embedding-based cosine
+  similarity against the S2Bench taxonomy. Requires an embedding API endpoint. Optionally
+  enables the LLM deep reasoning path for ambiguous cases.
+
+## Compare Them
+
+Use the interactive comparison table below to see exactly how each ruleset configures
+every guard. Toggle rulesets on and off to focus on the ones you are evaluating:
+
+<RulesetComparison />
+
+Select `permissive`, `default`, and `strict` to start. Look for the cells that differ --
+those are the guard configurations where the three rulesets diverge.
+
+## Key Differences
+
+Here are the most important differences between the built-in rulesets:
+
+### Detection Guards
+
+`strict` and `ai-agent` both enable `prompt_injection` and `jailbreak` detection.
+`default` and `permissive` do **not** enable them. This is the single biggest
+security difference between rulesets: without detection guards, prompt injections
+pass through unchecked.
+
+<table className="w-full text-sm border-collapse my-6">
+<thead className="border-b-2 border-border">
+<tr>
+<th className="text-left py-2 px-3 font-semibold">Ruleset</th>
+<th className="text-left py-2 px-3 font-semibold">Prompt Injection</th>
+<th className="text-left py-2 px-3 font-semibold">Jailbreak</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>permissive</code></td>
+<td className="py-2 px-3 border-b border-border">not configured</td>
+<td className="py-2 px-3 border-b border-border">not configured</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>default</code></td>
+<td className="py-2 px-3 border-b border-border">not configured</td>
+<td className="py-2 px-3 border-b border-border">not configured</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>strict</code></td>
+<td className="py-2 px-3 border-b border-border">enabled, block at <code>suspicious</code></td>
+<td className="py-2 px-3 border-b border-border">enabled, block at score 40</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>ai-agent</code></td>
+<td className="py-2 px-3 border-b border-border">enabled, block at <code>high</code></td>
+<td className="py-2 px-3 border-b border-border">enabled, block at score 70</td>
+</tr>
+</tbody>
+</table>
+
+### Egress Control
+
+`permissive` allows egress to **all** domains. `default` allows a curated list of
+AI APIs, code hosting, and package registries. `strict` allows **nothing** -- you must
+explicitly allowlist every domain.
+
+### CUA Guards
+
+The `remote-desktop` family adds three guards that only apply to computer-use agent
+(CUA) environments: `computer_use` controls which desktop actions are allowed,
+`remote_desktop_side_channel` restricts clipboard, audio, and file transfer channels,
+and `input_injection_capability` limits what input injection methods an agent can use.
+These guards are not present in any non-CUA ruleset.
+
+### Fail-Fast Behavior
+
+`strict` and `cicd` set `fail_fast: true` -- the engine stops at the first guard
+denial. `default`, `permissive`, and `ai-agent` set `fail_fast: false` so you see
+all violations at once. During development, `false` is usually better for debugging.
+
+<LessonCompleteButton lessonSlug="policy-lab/03-ruleset-comparison" />
+
+<LessonNav trackSlug="policy-lab" lessonSlug="03-ruleset-comparison" />

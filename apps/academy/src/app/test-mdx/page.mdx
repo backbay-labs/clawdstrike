@@ -1,0 +1,30 @@
+# Test MDX Page
+
+This is a test page to verify the MDX pipeline works end-to-end.
+
+## Code Block Test
+
+```typescript
+function greet(name: string): string {
+  return `Hello, ${name}!`;
+}
+
+const result = greet("ClawdStrike");
+console.log(result);
+```
+
+## Multi-language Support
+
+```rust
+fn evaluate_guard(action: &Action) -> Verdict {
+    match action.action_type {
+        ActionType::FileWrite => Verdict::Deny,
+        ActionType::ShellCommand => Verdict::Deny,
+        _ => Verdict::Allow,
+    }
+}
+```
+
+## Inline Code
+
+Use `console.log()` for debugging. The `ClawdStrike` engine evaluates guards at the `tool boundary`.

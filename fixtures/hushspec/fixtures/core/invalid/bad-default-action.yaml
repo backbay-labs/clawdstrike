@@ -1,0 +1,5 @@
+hushspec: "0.1.0"
+rules:
+  egress:
+    allow: ["*"]
+    default: maybe

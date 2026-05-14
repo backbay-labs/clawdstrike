@@ -7,6 +7,8 @@
   "workspaces": [
     "crates/libs/hush-wasm",
     "packages/adapters/clawdstrike-adapter-core",
+    "packages/adapters/clawdstrike-broker-client",
+    "packages/adapters/clawdstrike-engine-adaptive",
     "packages/sdk/hush-ts",
     "packages/sdk/clawdstrike",
     "packages/policy/clawdstrike-policy",
@@ -16,10 +18,16 @@
     "packages/adapters/clawdstrike-langchain",
     "packages/adapters/clawdstrike-openclaw",
     "packages/adapters/clawdstrike-opencode",
+    "packages/adapters/clawdstrike-origin-core",
     "packages/adapters/clawdstrike-hush-cli-engine",
     "packages/adapters/clawdstrike-hushd-engine",
     "apps/control-console",
-    "packages/sdk/clawdstrike-hunt"
+    "apps/workbench",
+    "apps/academy",
+    "packages/sdk/clawdstrike-hunt",
+    "packages/sdk/plugin-sdk",
+    "packages/cli/create-plugin",
+    "packages/swarm-engine"
   ],
   "devDependencies": {
     "@biomejs/biome": "^2.4.4"

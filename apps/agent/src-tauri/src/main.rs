@@ -12,6 +12,7 @@ mod api_server;
 mod approval;
 mod approval_outbox;
 mod approval_sync;
+mod brokerd;
 mod daemon;
 mod decision;
 mod enrollment;
@@ -36,6 +37,7 @@ mod updater;
 use agent_auth::ensure_local_api_token;
 use api_server::{AgentApiServer, AgentApiServerDeps};
 use approval::ApprovalQueue;
+use brokerd::{find_brokerd_binary, prepare_managed_brokerd_binary, BrokerdConfig, BrokerdManager};
 use daemon::{
     find_hushd_binary, prepare_managed_hushd_binary, AuditFlushProgressError, AuditQueue,
     DaemonConfig, DaemonManager, DaemonState, PolicyCache,
@@ -67,6 +69,7 @@ const DEFAULT_POLICY: &str = include_str!("../resources/default-policy.yaml");
 struct AppState {
     settings: Arc<RwLock<Settings>>,
     daemon_manager: Arc<DaemonManager>,
+    brokerd_manager: Arc<BrokerdManager>,
     event_manager: Arc<EventManager>,
     openclaw_manager: OpenClawManager,
     session_manager: Arc<SessionManager>,
@@ -186,6 +189,29 @@ fn main() {
         });
     tracing::info!(path = %hushd_path.display(), "Using hushd binary path");
 
+    let bundled_brokerd_path = if settings.brokerd.enabled && settings.brokerd.binary_path.is_none()
+    {
+        match prepare_managed_brokerd_binary() {
+            Ok(path) => path,
+            Err(err) => {
+                tracing::warn!(error = %err, "Failed to prepare bundled brokerd binary");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let brokerd_path = settings
+        .brokerd
+        .binary_path
+        .clone()
+        .or(bundled_brokerd_path)
+        .or_else(find_brokerd_binary)
+        .unwrap_or_else(|| std::path::PathBuf::from("clawdstrike-brokerd"));
+    if settings.brokerd.enabled {
+        tracing::info!(path = %brokerd_path.display(), "Using brokerd binary path");
+    }
+
     let settings = Arc::new(RwLock::new(settings));
     let (daemon_url, daemon_api_key) = {
         let guard = settings.blocking_read();
@@ -201,6 +227,22 @@ fn main() {
         }
     };
     let daemon_manager = Arc::new(DaemonManager::new(daemon_config));
+    let brokerd_config = {
+        let guard = settings.blocking_read();
+        BrokerdConfig {
+            enabled: guard.brokerd.enabled,
+            binary_path: brokerd_path,
+            port: guard.brokerd.port,
+            hushd_base_url: guard.daemon_url(),
+            hushd_token: guard.api_key.clone(),
+            admin_token: guard.brokerd.admin_token.clone(),
+            secret_backend: guard.brokerd.secret_backend.clone(),
+            allow_http_loopback: guard.brokerd.allow_http_loopback,
+            allow_private_upstream_hosts: guard.brokerd.allow_private_upstream_hosts,
+            allow_invalid_upstream_tls: guard.brokerd.allow_invalid_upstream_tls,
+        }
+    };
+    let brokerd_manager = Arc::new(BrokerdManager::new(brokerd_config));
     let event_manager = Arc::new(EventManager::new(daemon_url, daemon_api_key));
     let openclaw_manager = OpenClawManager::new(settings.clone());
     let session_manager = Arc::new(SessionManager::new());
@@ -216,6 +258,7 @@ fn main() {
     let app_state = AppState {
         settings: settings.clone(),
         daemon_manager,
+        brokerd_manager,
         event_manager,
         openclaw_manager: openclaw_manager.clone(),
         session_manager,
@@ -234,6 +277,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .manage(app_state.settings.clone())
         .manage(app_state.daemon_manager.clone())
+        .manage(app_state.brokerd_manager.clone())
         .manage(app_state.event_manager.clone())
         .manage(app_state.openclaw_manager.clone())
         .manage(app_state.session_manager.clone())
@@ -253,6 +297,7 @@ fn main() {
             app.manage(tray_manager.clone());
 
             let daemon_manager = app_state.daemon_manager.clone();
+            let brokerd_manager = app_state.brokerd_manager.clone();
             let event_manager = app_state.event_manager.clone();
             let openclaw_manager = app_state.openclaw_manager.clone();
             let session_manager = app_state.session_manager.clone();
@@ -270,6 +315,7 @@ fn main() {
                 run_agent(
                     app_handle,
                     daemon_manager,
+                    brokerd_manager,
                     event_manager,
                     openclaw_manager,
                     session_manager,
@@ -338,6 +384,7 @@ fn validate_nats_security_settings(nats: &NatsSettings) -> std::result::Result<(
 async fn run_agent<R: Runtime>(
     app: AppHandle<R>,
     daemon_manager: Arc<DaemonManager>,
+    brokerd_manager: Arc<BrokerdManager>,
     event_manager: Arc<EventManager>,
     openclaw_manager: OpenClawManager,
     session_manager: Arc<SessionManager>,
@@ -395,6 +442,10 @@ async fn run_agent<R: Runtime>(
     } else {
         tray_manager.set_daemon_state(DaemonState::Running).await;
         show_startup_notification(&app);
+
+        if let Err(err) = brokerd_manager.start().await {
+            tracing::error!(error = %err, "Failed to start brokerd sidecar");
+        }
 
         // Create session with hushd.
         match session_manager
@@ -1075,6 +1126,9 @@ async fn run_agent<R: Runtime>(
         }
     }
 
+    if let Err(err) = brokerd_manager.stop().await {
+        tracing::error!(error = %err, "Error during brokerd shutdown");
+    }
     if let Err(err) = daemon_manager.stop().await {
         tracing::error!("Error during daemon shutdown: {}", err);
     }

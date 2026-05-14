@@ -1,0 +1,31 @@
+[package]
+name = "clawdstrike-logos"
+description = "Bridge between ClawdStrike policy types and Logos modal-temporal logic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+z3 = ["dep:logos-z3"]
+
+[dependencies]
+clawdstrike = { workspace = true, default-features = false, features = ["full"] }
+hush-core.workspace = true
+hush-proxy.workspace = true
+logos-ffi.workspace = true
+logos-z3 = { workspace = true, optional = true }
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+glob.workspace = true
+regex.workspace = true
+regex-syntax = "0.8"
+
+[dev-dependencies]
+
+[lints]
+workspace = true

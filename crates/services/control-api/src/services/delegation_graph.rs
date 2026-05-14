@@ -506,8 +506,8 @@ pub async fn exercise_grant(
     request: GrantExerciseRequest,
 ) -> Result<DelegationGraphSnapshot, ApiError> {
     let grant = get_grant(db, tenant_id, grant_id).await?;
-    ensure_grant_is_exercisable(&grant)?;
     let event = load_grant_exercise_event(db, tenant_id, grant_id, &request).await?;
+    ensure_grant_is_exercisable(&grant)?;
     let grant_node_id = DelegationGraphNodeKind::Grant.node_id(&grant.id.to_string());
     let mut tx = db.begin().await.map_err(ApiError::Database)?;
 

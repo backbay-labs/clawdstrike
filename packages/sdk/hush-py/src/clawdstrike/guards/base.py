@@ -9,7 +9,10 @@ import dataclasses
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from collections.abc import Mapping
 from typing import Any
+
+from clawdstrike.origin import OriginContext, normalize_origin_input
 
 
 class Severity(str, Enum):
@@ -74,6 +77,10 @@ class GuardContext:
     session_id: str | None = None
     agent_id: str | None = None
     metadata: dict[str, Any] | None = None
+    origin: OriginContext | Mapping[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        self.origin = normalize_origin_input(self.origin)
 
 
 # ---------------------------------------------------------------------------

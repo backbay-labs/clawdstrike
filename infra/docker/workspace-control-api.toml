@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.5"
+version = "0.2.7"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/backbay-labs/clawdstrike"
@@ -76,8 +76,8 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 
 # Internal crates
-hush-core = { path = "crates/libs/hush-core", version = "0.2.5" }
-spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.5" }
+hush-core = { path = "crates/libs/hush-core", version = "0.2.7" }
+spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.7" }
 
 [profile.release]
 lto = true

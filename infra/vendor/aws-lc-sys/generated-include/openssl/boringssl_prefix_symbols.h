@@ -1,23 +1,12 @@
 // Copyright (c) 2018, Google Inc.
-//
-// Permission to use, copy, modify, and/or distribute this software for any
-// purpose with or without fee is hereby granted, provided that the above
-// copyright notice and this permission notice appear in all copies.
-//
-// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-// WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
-// SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-// WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
-// OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
-// CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+// SPDX-License-Identifier: ISC
 
 #ifndef BORINGSSL_PREFIX_SYMBOLS_H
 
 #define BORINGSSL_PREFIX_SYMBOLS_H	
 
 #ifndef BORINGSSL_PREFIX
-#define BORINGSSL_PREFIX aws_lc_0_37_1
+#define BORINGSSL_PREFIX aws_lc_0_39_0
 #endif // BORINGSSL_PREFIX
 
 
@@ -1364,6 +1353,7 @@
 #define EVP_PKEY_param_check BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_param_check)
 #define EVP_PKEY_paramgen BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_paramgen)
 #define EVP_PKEY_paramgen_init BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_paramgen_init)
+#define EVP_PKEY_pqdsa_get_type BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_pqdsa_get_type)
 #define EVP_PKEY_pqdsa_new_raw_private_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_pqdsa_new_raw_private_key)
 #define EVP_PKEY_pqdsa_new_raw_public_key BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_pqdsa_new_raw_public_key)
 #define EVP_PKEY_pqdsa_pkey_meth BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, EVP_PKEY_pqdsa_pkey_meth)
@@ -1538,7 +1528,6 @@
 #define FIPS_is_entropy_cpu_jitter BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, FIPS_is_entropy_cpu_jitter)
 #define FIPS_mode BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, FIPS_mode)
 #define FIPS_mode_set BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, FIPS_mode_set)
-#define FIPS_read_counter BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, FIPS_read_counter)
 #define FIPS_service_indicator_after_call BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, FIPS_service_indicator_after_call)
 #define FIPS_service_indicator_before_call BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, FIPS_service_indicator_before_call)
 #define GENERAL_NAMES_free BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, GENERAL_NAMES_free)
@@ -2087,6 +2076,7 @@
 #define RAND_poll BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RAND_poll)
 #define RAND_priv_bytes BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RAND_priv_bytes)
 #define RAND_pseudo_bytes BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RAND_pseudo_bytes)
+#define RAND_public_bytes BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RAND_public_bytes)
 #define RAND_seed BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RAND_seed)
 #define RAND_set_rand_method BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RAND_set_rand_method)
 #define RAND_status BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RAND_status)
@@ -2142,6 +2132,7 @@
 #define RSA_get0_p BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RSA_get0_p)
 #define RSA_get0_pss_params BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RSA_get0_pss_params)
 #define RSA_get0_q BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RSA_get0_q)
+#define RSA_get0_ssa_pss_params BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RSA_get0_ssa_pss_params)
 #define RSA_get_default_method BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RSA_get_default_method)
 #define RSA_get_ex_data BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RSA_get_ex_data)
 #define RSA_get_ex_new_index BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, RSA_get_ex_new_index)
@@ -2823,6 +2814,7 @@
 #define X509v3_get_ext_count BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, X509v3_get_ext_count)
 #define __local_stdio_printf_options BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, __local_stdio_printf_options)
 #define __local_stdio_scanf_options BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, __local_stdio_scanf_options)
+#define a2i_ASN1_INTEGER BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, a2i_ASN1_INTEGER)
 #define a2i_IPADDRESS BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, a2i_IPADDRESS)
 #define a2i_IPADDRESS_NC BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, a2i_IPADDRESS_NC)
 #define abi_test_bad_unwind_epilog BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, abi_test_bad_unwind_epilog)
@@ -3591,9 +3583,11 @@
 #define gcm_setiv_avx512 BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, gcm_setiv_avx512)
 #define get_entropy_source BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_entropy_source)
 #define get_entropy_source_method_id_FOR_TESTING BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_entropy_source_method_id_FOR_TESTING)
+#define get_private_thread_generate_calls_since_seed BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_private_thread_generate_calls_since_seed)
+#define get_private_thread_reseed_calls_since_initialization BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_private_thread_reseed_calls_since_initialization)
+#define get_public_thread_generate_calls_since_seed BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_public_thread_generate_calls_since_seed)
+#define get_public_thread_reseed_calls_since_initialization BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_public_thread_reseed_calls_since_initialization)
 #define get_thread_and_global_tree_drbg_calls_FOR_TESTING BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_thread_and_global_tree_drbg_calls_FOR_TESTING)
-#define get_thread_generate_calls_since_seed BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_thread_generate_calls_since_seed)
-#define get_thread_reseed_calls_since_initialization BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, get_thread_reseed_calls_since_initialization)
 #define handle_cpu_env BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, handle_cpu_env)
 #define have_hw_rng_aarch64_for_testing BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, have_hw_rng_aarch64_for_testing)
 #define have_hw_rng_x86_64_for_testing BORINGSSL_ADD_PREFIX(BORINGSSL_PREFIX, have_hw_rng_x86_64_for_testing)

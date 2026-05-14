@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/vercel-ai",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "Minimal Clawdstrike tool wrappers for the Vercel AI SDK",
   "type": "module",
   "main": "dist/index.js",
@@ -24,8 +24,8 @@
     "format:check": "biome check src/"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.2.1",
-    "@clawdstrike/sdk": "^0.2.1"
+    "@clawdstrike/adapter-core": "^0.2.7",
+    "@clawdstrike/sdk": "^0.2.7"
   },
   "peerDependencies": {
     "@ai-sdk/react": ">=3.0.0",
@@ -50,7 +50,7 @@
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
     "ai": "^6.0.69",
-    "jsdom": "^28.0.0",
+    "jsdom": "^29.0.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^5.9.3",

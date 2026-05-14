@@ -49,6 +49,10 @@ spec:
               value: {{ .Values.controlApi.env.NATS_PROVISIONER_BASE_URL | quote }}
             - name: NATS_ALLOW_INSECURE_MOCK_PROVISIONER
               value: {{ .Values.controlApi.env.NATS_ALLOW_INSECURE_MOCK_PROVISIONER | quote }}
+            - name: JWT_ISSUER
+              value: {{ .Values.controlApi.env.JWT_ISSUER | quote }}
+            - name: JWT_AUDIENCE
+              value: {{ .Values.controlApi.env.JWT_AUDIENCE | quote }}
             - name: APPROVAL_SIGNING_ENABLED
               value: {{ .Values.controlApi.env.APPROVAL_SIGNING_ENABLED | quote }}
             - name: APPROVAL_SIGNING_KEYPAIR_PATH

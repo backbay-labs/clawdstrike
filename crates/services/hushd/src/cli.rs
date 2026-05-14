@@ -128,6 +128,7 @@ fn parse_cli(bin_name: &'static str) -> Cli {
 }
 
 pub async fn run_bin(bin_name: &'static str) -> anyhow::Result<()> {
+    clawdstrike_logos::verifier::install_clawdstrike_policy_load_verifier();
     run(parse_cli(bin_name)).await
 }
 

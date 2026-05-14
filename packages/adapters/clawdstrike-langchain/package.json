@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/langchain",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "Minimal Clawdstrike tool wrappers for LangChain tools",
   "type": "module",
   "main": "dist/index.js",
@@ -20,7 +20,7 @@
     "format:check": "biome check src/"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.2.1"
+    "@clawdstrike/adapter-core": "^0.2.7"
   },
   "peerDependencies": {
     "@langchain/core": ">=0.1.0"

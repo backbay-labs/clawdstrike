@@ -1,6 +1,6 @@
 {
   "name": "clawdstrike",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "Official Clawdstrike TypeScript SDK",
   "type": "module",
   "main": "./index.cjs",
@@ -24,7 +24,7 @@
     "test": "node -e \"import('./index.js').then(() => console.log('ok'))\""
   },
   "dependencies": {
-    "@clawdstrike/sdk": "^0.1.0"
+    "@clawdstrike/sdk": "^0.2.7"
   },
   "publishConfig": {
     "access": "public"

@@ -131,7 +131,7 @@ print(f"Backend: {cs._backend.name}")  # "native" or "pure_python"
 
 ```python
 from clawdstrike import Clawdstrike
-from clawdstrike.backend import NativeEngineBackend, PurePythonBackend
+from clawdstrike.backend import DaemonEngineBackend, NativeEngineBackend, PurePythonBackend
 from clawdstrike.policy import Policy, PolicyEngine
 
 # Force pure Python backend
@@ -142,6 +142,64 @@ cs = Clawdstrike(PurePythonBackend(PolicyEngine(policy)))
 # Force native backend (raises if unavailable)
 backend = NativeEngineBackend.from_ruleset("strict")
 cs = Clawdstrike(backend)
+
+# Force daemon-backed evaluation through hushd
+daemon = DaemonEngineBackend("https://hushd.example.com", api_key="dev-token")
+cs = Clawdstrike(daemon)
+```
+
+### Origin-Aware Checks
+
+Origin-aware enforcement is available on:
+
+- the bundled native Rust backend
+- hushd via `Clawdstrike.from_daemon(...)` or `DaemonEngineBackend`
+
+The pure-Python backend does not enforce `policy.origins`. It fails closed with
+`UnsupportedOriginFeatureError` if you pass `origin` or use `origin.output_send`.
+
+```python
+from clawdstrike import Clawdstrike
+
+origin = {
+    "provider": "slack",
+    "tenant_id": "T123",
+    "space_id": "C456",
+    "actor_role": "incident_commander",
+}
+
+cs = Clawdstrike.from_daemon("https://hushd.example.com", api_key="dev-token")
+
+decision = cs.check_mcp_tool(
+    "read_file",
+    {"path": "/srv/runbook.md"},
+    origin=origin,
+)
+
+send_decision = cs.check_output_send(
+    "Posting sanitized status update",
+    target="slack://incident-room",
+    mime_type="text/plain",
+    metadata={"thread_id": "1712502451.000100"},
+    origin=origin,
+)
+```
+
+Per-check origin changes also work through sessions:
+
+```python
+session = cs.session(session_id="sess-123", agent_id="triage-bot")
+
+session.check_file(
+    "/srv/runbook.md",
+    origin={"provider": "github", "space_id": "repo-1"},
+)
+
+session.check_output_send(
+    "Ready for review",
+    target="slack://incident-room",
+    origin={"provider": "slack", "space_id": "C456"},
+)
 ```
 
 ## Features

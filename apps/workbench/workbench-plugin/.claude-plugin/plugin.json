@@ -1,0 +1,13 @@
+{
+  "name": "clawdstrike-workbench",
+  "version": "0.1.0",
+  "description": "ClawdStrike Policy Workbench tools for scenario testing, policy validation, compliance scoring, and policy synthesis.",
+  "author": {
+    "name": "Backbay Labs",
+    "email": "hello@backbay.io"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "repository": "https://github.com/backbay-labs/clawdstrike",
+  "license": "Apache-2.0",
+  "keywords": ["security", "policy", "workbench", "testing", "compliance", "mcp"]
+}

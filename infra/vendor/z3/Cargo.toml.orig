@@ -1,0 +1,36 @@
+[package]
+name = "z3"
+version = "0.12.1"
+authors = ["Graydon Hoare <graydon@pobox.com>", "Bruce Mitchener <bruce.mitchener@gmail.com>", "Nick Fitzgerald <fitzgen@gmail.com>"]
+
+description = "High-level rust bindings for the Z3 SMT solver from Microsoft Research"
+license = "MIT"
+keywords = ["FFI", "SMT", "satisfiability", "solver"]
+categories = ["api-bindings"]
+readme = "README.md"
+documentation = "https://docs.rs/z3/"
+homepage = "https://github.com/prove-rs/z3.rs"
+repository = "https://github.com/prove-rs/z3.rs.git"
+
+
+[features]
+default = []
+arbitrary-size-numeral = ["num"]
+
+# Enable this feature to statically link our own build of Z3, rather than
+# dynamically linking to the system's `libz3.so`.
+static-link-z3 = ["z3-sys/static-link-z3"]
+
+[dependencies]
+log = "0.4"
+
+# optional dependencies
+num = { version = "0.4.0", optional=true }
+
+[dev-dependencies]
+env_logger = "0.10"
+semver = "1"
+
+[dependencies.z3-sys]
+path = "../z3-sys"
+version = "0.8"

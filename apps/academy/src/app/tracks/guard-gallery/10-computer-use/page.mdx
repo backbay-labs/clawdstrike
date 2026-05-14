@@ -1,0 +1,106 @@
+export const metadata = {
+  title: "Computer Use Guard",
+  order: 10,
+  track: "guard-gallery",
+  description: "Controls CUA actions for remote desktop sessions with three enforcement modes",
+}
+
+# Computer Use Guard
+
+Computer Use Agents (CUA) interact with remote desktop sessions -- clicking, typing,
+taking screenshots, transferring files. Without controls, a CUA could take any action
+on a remote system.
+
+## The Threat
+
+A CUA with unrestricted access to a remote desktop session can:
+
+- Navigate to malicious websites and download software
+- Take screenshots to exfiltrate sensitive data displayed on screen
+- Install unauthorized applications or backdoors
+- Hijack active sessions by reconnecting or sharing access
+- Execute arbitrary input sequences that mimic human actions
+
+The risk is amplified because CUA actions happen through the same interface a human
+would use -- there is no API boundary to enforce, only UI-level interactions.
+
+## How It Works
+
+The guard checks actions with `remote.*` or `input.*` type prefixes against an
+allowlist of known action types. Three enforcement modes control behavior for
+unknown actions:
+
+1. **Observe** -- Always allow, just log (monitoring mode).
+2. **Guardrail** -- Allow known actions. WARN (but allow) unknown ones.
+3. **FailClosed** -- Allow known actions. DENY unknown ones.
+
+10 default allowed actions include `remote.session.connect`, `remote.session.disconnect`,
+`remote.session.reconnect`, `input.inject`, and various `remote.*` types.
+
+## Configuration
+
+```yaml
+guards:
+  computer_use:
+    enabled: true
+    mode: fail_closed  # observe | guardrail | fail_closed
+    allowed_action_types:
+      - "remote.session.connect"
+      - "remote.session.disconnect"
+      - "input.inject"
+      - "remote.clipboard"
+```
+
+- **`mode`** -- Enforcement mode: `observe`, `guardrail`, or `fail_closed` (default: `fail_closed`)
+- **`allowed_action_types`** -- List of allowed CUA action types
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="computer-use-check"
+  title="ComputerUseGuard::check()"
+  annotations={[
+    { line: 3, label: "1", explanation: "Extract the custom action_type from the action -- must be a remote.* or input.* type" },
+    { line: 7, label: "2", explanation: "Check if the action type is in the allowed set" },
+    { line: 10, label: "3", explanation: "Mode-based dispatch: Observe always allows, Guardrail warns on unknown, FailClosed denies unknown" }
+  ]}
+/>
+
+## Playground
+
+Select a CUA action type below to see how the Computer Use Guard evaluates it. Try
+both allowed and unknown action types to see how the guard responds.
+
+<GuardPlayground guard="computer_use" actionType="custom" customActionType="computer_use" placeholder="Enter a CUA action type (e.g., remote.screenshot)..." defaultInput="remote.session.connect" examples={[{label: "Connect session", value: "remote.session.connect"}, {label: "Inject input", value: "input.inject"}, {label: "Unknown action", value: "remote.install_software"}, {label: "Take screenshot", value: "remote.screenshot"}]} />
+
+## Bypass Challenges
+
+### Challenge 1: Allowed Action (Easy)
+
+<BypassChallenge
+  guard="computer_use"
+  expectedVerdict="allow"
+  description="Send a CUA action that the Computer Use Guard allows."
+  hint="The 10 default allowed actions include remote.session.connect, remote.session.disconnect, input.inject, and remote.clipboard. Try one of these."
+  challengeId="guard-gallery/10-computer-use/easy"
+  actionType="custom"
+  customActionType="computer_use"
+  placeholder="Enter a CUA action type..."
+/>
+
+### Challenge 2: Guardrail Mode Bypass (Hard)
+
+<BypassChallenge
+  guard="computer_use"
+  expectedVerdict="allow"
+  description="In Guardrail mode, unknown actions aren't blocked -- they're only warned about. Can you trigger a warning that still ALLOWS the action?"
+  hint="Guardrail mode WARNS but ALLOWS unknown actions. Try any action type NOT in the default allowed list, like 'remote.install_software'. It will be allowed with a warning, not denied."
+  challengeId="guard-gallery/10-computer-use/hard"
+  actionType="custom"
+  customActionType="computer_use"
+  placeholder="Enter a CUA action type..."
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/10-computer-use" />
+
+<LessonNav trackSlug="guard-gallery" lessonSlug="10-computer-use" />

@@ -1,7 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR ISC
 
-use crate::{emit_warning, get_rust_include_path, BindingOptions, COPYRIGHT, PRELUDE};
+use crate::{
+    effective_target, emit_warning, get_rust_include_path, is_all_bindings, BindingOptions,
+    EnvGuard, COPYRIGHT, PRELUDE,
+};
 use bindgen::callbacks::{ItemInfo, ParseCallbacks};
 use std::fmt::Debug;
 use std::path::Path;
@@ -103,7 +106,7 @@ fn prepare_bindings_builder(manifest_dir: &Path, options: &BindingOptions) -> bi
                 .to_string(),
         );
 
-    if cfg!(feature = "all-bindings") {
+    if is_all_bindings() {
         builder = builder.allowlist_file(r".*(/|\\)openssl((/|\\)[^/\\]+)+\.h");
     } else {
         for header in ALLOWED_HEADERS {
@@ -139,6 +142,7 @@ pub(crate) fn generate_bindings(
     manifest_dir: &Path,
     options: &BindingOptions,
 ) -> bindgen::Bindings {
+    let _guard_target = EnvGuard::new("TARGET", effective_target());
     prepare_bindings_builder(manifest_dir, options)
         .generate()
         .expect("Unable to generate bindings.")

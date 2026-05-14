@@ -1,0 +1,71 @@
+hushspec: "0.1.0"
+name: cicd
+description: Security rules for CI/CD pipelines
+
+rules:
+  forbidden_paths:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.git-credentials"
+      - "**/.gnupg/**"
+      - "**/.github/secrets/**"
+      - "**/.gitlab-ci-secrets/**"
+      - "**/.circleci/secrets/**"
+    exceptions:
+      - "**/.github/workflows/**"
+      - "**/.gitlab-ci.yml"
+      - "**/.circleci/config.yml"
+
+  egress:
+    allow:
+      # Package registries
+      - "*.npmjs.org"
+      - "registry.npmjs.org"
+      - "pypi.org"
+      - "files.pythonhosted.org"
+      - "crates.io"
+      - "static.crates.io"
+      - "rubygems.org"
+      - "packagist.org"
+      - "plugins.gradle.org"
+      # Container registries
+      - "*.docker.io"
+      - "*.docker.com"
+      - "*.gcr.io"
+      - "*.ecr.aws"
+      - "ghcr.io"
+      # Build tools
+      - "repo1.maven.org"
+      - "services.gradle.org"
+    block: []
+    default: block
+
+  secret_patterns:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+    skip_paths:
+      - "**/test/**"
+      - "**/tests/**"
+
+  tool_access:
+    allow:
+      - read_file
+      - write_file
+      - list_directory
+      - run_tests
+      - build
+    block:
+      - shell_exec
+      - deploy_production
+    default: block

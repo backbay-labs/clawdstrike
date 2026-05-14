@@ -21,6 +21,8 @@ Current policy/structure guardrails:
 9. `scripts/helm-all-on-preflight.sh` - strict preflight gate for all-on profile rollout (bridge image availability, cluster prerequisites, and render checks).
 10. `scripts/openclaw-plugin-install-link-smoke.sh` - validates clean-room `plugins install --link` + `plugins enable` flow against the package entry path and emits `summary.json`.
 11. `scripts/openclaw-plugin-runtime-smoke.sh` - validates OpenClaw plugin runtime loading and expected hook registrations from `plugins info ... --json`, emitting `summary.json`.
-12. `scripts/openclaw-plugin-blocked-call-e2e.sh` - validates end-to-end runtime blocking for a destructive `bash` call (no target file creation), emitting `summary.json`.
+12. `scripts/openclaw-plugin-blocked-call-e2e.sh` - validates blocked runtime command execution with a side-effecting chat probe plus a direct `policy_check` denial on a canonical dangerous command, emitting `summary.json`.
 13. `scripts/adaptive-openclaw-spine-e2e.sh` - combined smoke that validates OpenClaw blocked-call interception plus control-api signed Spine approval envelope emission, emitting `summary.json`.
 14. `scripts/huntronomer-playwright-smoke.sh` - Huntronomer desktop shell smoke via Playwright CLI (`launch overlay -> dismiss -> Hunt Deck artifacts`), emitting `summary.json`.
+15. `scripts/workbench-live-dogfood.sh` - live operator smoke for the mounted workbench shell (`settings -> local stack connect -> intel/findings/sentinel flows`), emitting `summary.json`.
+16. `scripts/workbench-mission-control-dogfood.sh` - live Mission Control dogfood for the mounted workbench shell (`settings -> sentinel creation -> blocked Claude launch -> ready OpenClaw launch`), emitting `summary.json`.

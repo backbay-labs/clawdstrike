@@ -93,6 +93,7 @@ impl Guard for JailbreakGuard {
             && matches!(action, GuardAction::Custom(kind, _) if is_user_input_action_kind(kind))
     }
 
+    // @academy:start jailbreak-check
     async fn check(&self, action: &GuardAction<'_>, context: &GuardContext) -> GuardResult {
         if !self.enabled {
             return GuardResult::allow(&self.name);
@@ -157,6 +158,7 @@ impl Guard for JailbreakGuard {
 
         GuardResult::allow(&self.name)
     }
+    // @academy:end jailbreak-check
 }
 
 #[cfg(test)]

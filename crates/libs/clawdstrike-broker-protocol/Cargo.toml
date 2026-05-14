@@ -1,0 +1,23 @@
+[package]
+name = "clawdstrike-broker-protocol"
+description = "Shared protocol types for the Clawdstrike secret broker"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "clawdstrike_broker_protocol"
+path = "src/lib.rs"
+
+[dependencies]
+hush-core.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

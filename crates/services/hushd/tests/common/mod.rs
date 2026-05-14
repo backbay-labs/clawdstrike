@@ -1,4 +1,5 @@
 //! Common test utilities for clawdstriked integration tests
+#![allow(dead_code)]
 
 use std::net::TcpListener;
 use std::net::{SocketAddr, TcpStream};
@@ -9,6 +10,7 @@ use std::time::Duration;
 use hushd::config::{ApiKeyConfig, AuthConfig, Config, RateLimitConfig};
 
 static TEST_DAEMON: OnceLock<Mutex<TestDaemon>> = OnceLock::new();
+static TEST_DAEMON_SPAWN_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Get the daemon URL from environment or use default
 pub fn daemon_url() -> String {
@@ -122,6 +124,14 @@ impl TestDaemon {
     }
 
     pub fn spawn_with_config(mut config: Config) -> Self {
+        // Selecting an ephemeral port and spawning the daemon is otherwise racy:
+        // parallel tests can observe the same "available" port before either
+        // child process binds, and one daemon then exits with EADDRINUSE.
+        let _spawn_guard = TEST_DAEMON_SPAWN_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("Test daemon spawn mutex poisoned");
+
         let port = find_available_port();
         let url = format!("http://127.0.0.1:{}", port);
 

@@ -1,0 +1,78 @@
+export const metadata = {
+  title: "Forbidden Path Guard",
+  order: 1,
+  track: "guard-gallery",
+  description: "Blocks access to sensitive filesystem paths like SSH keys and credentials",
+}
+
+# Forbidden Path Guard
+
+## The Threat
+
+AI agents with filesystem access can read SSH private keys, cloud credentials, environment files, Docker sockets, and other sensitive paths. Even "helpful" agents might access `~/.ssh/id_rsa` if asked to debug an SSH connection.
+
+The ForbiddenPathGuard blocks access to a configurable set of glob patterns, ensuring agents never touch sensitive files regardless of how they justify the request.
+
+## How It Works
+
+The guard normalizes the requested path using **both** lexical normalization (resolving `..` segments textually) **and** filesystem-aware normalization (resolving symlinks). It then checks the path against a set of forbidden glob patterns using globset matching.
+
+If **either** the lexical or resolved path matches a forbidden pattern, access is denied. This dual-check prevents symlink-based bypasses. The guard also supports an exceptions list -- paths that are allowed even if they match a forbidden pattern.
+
+## Configuration
+
+```yaml
+guards:
+  forbidden_path:
+    enabled: true
+    forbidden_patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/etc/shadow"
+      - "**/etc/passwd"
+    exceptions:
+      - "**/known_hosts"
+```
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="forbidden-path-check"
+  title="ForbiddenPathGuard::is_forbidden()"
+  annotations={[
+    { line: 2, label: "1", explanation: "Normalize the path using lexical rules -- resolves '..' segments without touching the filesystem" },
+    { line: 3, label: "2", explanation: "Also normalize with filesystem awareness -- resolves symlinks to prevent symlink-based bypasses" },
+    { line: 6, label: "3", explanation: "Check exceptions FIRST -- if the resolved path matches an exception pattern, allow access immediately" },
+    { line: 12, label: "4", explanation: "Check forbidden patterns against BOTH lexical and resolved paths -- attacker can't hide behind either representation" }
+  ]}
+/>
+
+## Try It Yourself
+
+<GuardPlayground guard="forbidden_path" actionType="file_access" placeholder="Enter a file path to check..." defaultInput="~/.ssh/id_rsa" examples={[{label: "SSH key", value: "~/.ssh/id_rsa"}, {label: "AWS credentials", value: "~/.aws/credentials"}, {label: "Environment file", value: "/app/.env"}, {label: "Safe path", value: "/tmp/notes.txt"}]} />
+
+## Bypass Challenges
+
+<BypassChallenge
+  guard="forbidden_path"
+  expectedVerdict="allow"
+  description="The Forbidden Path Guard blocks sensitive paths. Can you find a path it ALLOWS?"
+  hint="The guard blocks SSH keys, AWS credentials, .env files, and system paths. Regular project files in /tmp or /home/user/projects are fine."
+  challengeId="guard-gallery/01-forbidden-path/easy"
+  actionType="file_access"
+  placeholder="/path/to/file"
+/>
+
+<BypassChallenge
+  guard="forbidden_path"
+  expectedVerdict="allow"
+  description="Can you use path traversal (../) to access a forbidden file? Try crafting a path that looks innocent but resolves to a sensitive location."
+  hint="The guard normalizes '..' segments BEFORE checking patterns. /app/../home/user/.ssh/id_rsa resolves to /home/user/.ssh/id_rsa, which is still blocked. You'll need to find a truly allowed path instead."
+  challengeId="guard-gallery/01-forbidden-path/hard"
+  actionType="file_access"
+  placeholder="/path/with/../traversal"
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/01-forbidden-path" />
+<LessonNav trackSlug="guard-gallery" lessonSlug="01-forbidden-path" />

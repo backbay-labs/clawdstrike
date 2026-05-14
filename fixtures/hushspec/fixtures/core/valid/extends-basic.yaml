@@ -1,0 +1,8 @@
+hushspec: "0.1.0"
+name: child-policy
+extends: "hushspec:default"
+rules:
+  egress:
+    allow:
+      - "api.custom.com"
+    default: block

@@ -2,13 +2,16 @@
 # ClawdStrike services — local development / testing
 #
 # Usage:
-#   docker compose -f infra/docker/docker-compose.services.yaml up -d nats
-#   docker compose -f infra/docker/docker-compose.services.yaml up spine-checkpointer spine-witness spine-proofs-api
+#   docker compose -f infra/docker/docker-compose.services.yaml up -d --build
+#   docker compose -f infra/docker/docker-compose.services.yaml --profile spine up -d --build
+#   docker compose -f infra/docker/docker-compose.services.yaml --profile registry up -d --build
 #
 # Optional bridge services (need gRPC endpoints):
 #   TETRAGON_GRPC=host.docker.internal:54321 \
-#     docker compose -f infra/docker/docker-compose.services.yaml up tetragon-bridge
+#     docker compose -f infra/docker/docker-compose.services.yaml --profile bridges up -d tetragon-bridge
 ###############################################################################
+
+name: clawdstrike-local
 
 services:
   # ---------------------------------------------------------------------------
@@ -27,6 +30,116 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  control-api-postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${CONTROL_API_POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${CONTROL_API_POSTGRES_DB:-cloud_api}
+      POSTGRES_USER: ${CONTROL_API_POSTGRES_USER:-clawdstrike}
+      POSTGRES_PASSWORD: ${CONTROL_API_POSTGRES_PASSWORD:-clawdstrike}
+    volumes:
+      - control-api-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Local control plane
+  # ---------------------------------------------------------------------------
+  control-api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.control-api
+      args:
+        CARGO_PROFILE: ${CLAWDSTRIKE_LOCAL_CARGO_PROFILE:-dev}
+        CARGO_BUILD_JOBS: ${CLAWDSTRIKE_LOCAL_CARGO_BUILD_JOBS:-1}
+    ports:
+      - "${CONTROL_API_PORT:-8090}:8080"
+    depends_on:
+      nats:
+        condition: service_healthy
+      control-api-postgres:
+        condition: service_healthy
+    environment:
+      LISTEN_ADDR: 0.0.0.0:8080
+      DATABASE_URL: postgres://${CONTROL_API_POSTGRES_USER:-clawdstrike}:${CONTROL_API_POSTGRES_PASSWORD:-clawdstrike}@control-api-postgres:5432/${CONTROL_API_POSTGRES_DB:-cloud_api}
+      NATS_URL: nats://nats:4222
+      AGENT_NATS_URL: ${CONTROL_API_AGENT_NATS_URL:-nats://localhost:4222}
+      NATS_PROVISIONING_MODE: mock
+      NATS_ALLOW_INSECURE_MOCK_PROVISIONER: "true"
+      JWT_SECRET: ${CONTROL_API_JWT_SECRET:-dev-jwt-secret-local}
+      JWT_ISSUER: ${CONTROL_API_JWT_ISSUER:-clawdstrike-control-api}
+      JWT_AUDIENCE: ${CONTROL_API_JWT_AUDIENCE:-clawdstrike-control-api}
+      STRIPE_SECRET_KEY: ${CONTROL_API_STRIPE_SECRET_KEY:-sk_test_local}
+      STRIPE_WEBHOOK_SECRET: ${CONTROL_API_STRIPE_WEBHOOK_SECRET:-whsec_test_local}
+      APPROVAL_SIGNING_ENABLED: ${CONTROL_API_APPROVAL_SIGNING_ENABLED:-true}
+      APPROVAL_RESOLUTION_OUTBOX_ENABLED: ${CONTROL_API_APPROVAL_RESOLUTION_OUTBOX_ENABLED:-true}
+      AUDIT_CONSUMER_ENABLED: ${CONTROL_API_AUDIT_CONSUMER_ENABLED:-false}
+      APPROVAL_CONSUMER_ENABLED: ${CONTROL_API_APPROVAL_CONSUMER_ENABLED:-true}
+      HEARTBEAT_CONSUMER_ENABLED: ${CONTROL_API_HEARTBEAT_CONSUMER_ENABLED:-true}
+      STALE_DETECTOR_ENABLED: ${CONTROL_API_STALE_DETECTOR_ENABLED:-true}
+      RUST_LOG: ${CONTROL_API_RUST_LOG:-info,clawdstrike_control_api=debug}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8080/api/v1/health/ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  control-api-seed:
+    image: postgres:16-alpine
+    depends_on:
+      control-api-postgres:
+        condition: service_healthy
+      control-api:
+        condition: service_healthy
+    environment:
+      PGHOST: control-api-postgres
+      PGPORT: 5432
+      PGDATABASE: ${CONTROL_API_POSTGRES_DB:-cloud_api}
+      PGUSER: ${CONTROL_API_POSTGRES_USER:-clawdstrike}
+      PGPASSWORD: ${CONTROL_API_POSTGRES_PASSWORD:-clawdstrike}
+      CONTROL_API_BOOTSTRAP_TENANT_ID: ${CONTROL_API_BOOTSTRAP_TENANT_ID:-11111111-1111-4111-8111-111111111111}
+      CONTROL_API_BOOTSTRAP_TENANT_NAME: ${CONTROL_API_BOOTSTRAP_TENANT_NAME:-ClawdStrike Local Dev}
+      CONTROL_API_BOOTSTRAP_TENANT_SLUG: ${CONTROL_API_BOOTSTRAP_TENANT_SLUG:-localdev}
+      CONTROL_API_BOOTSTRAP_API_KEY_NAME: ${CONTROL_API_BOOTSTRAP_API_KEY_NAME:-local-admin}
+      CONTROL_API_BOOTSTRAP_API_KEY: ${CONTROL_API_BOOTSTRAP_API_KEY:-cs_local_dev_key}
+      CONTROL_API_BOOTSTRAP_KEY_PREFIX: ${CONTROL_API_BOOTSTRAP_KEY_PREFIX:-cs_local}
+    volumes:
+      - ./control-api/seed-local.sh:/usr/local/bin/seed-local.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/seed-local.sh"]
+    restart: "no"
+
+  hushd:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.hushd
+      args:
+        CARGO_PROFILE: ${CLAWDSTRIKE_LOCAL_CARGO_PROFILE:-dev}
+        CARGO_BUILD_JOBS: ${CLAWDSTRIKE_LOCAL_CARGO_BUILD_JOBS:-1}
+    ports:
+      - "${HUSHD_PORT:-9876}:9876"
+    volumes:
+      - ./hushd/config.local.yaml:/etc/hushd/config.yaml:ro
+      - hushd-data:/var/lib/hushd
+    environment:
+      CLAWDSTRIKE_API_KEY: ${CLAWDSTRIKE_API_KEY:-clawdstrike-local-check}
+      CLAWDSTRIKE_ADMIN_KEY: ${CLAWDSTRIKE_ADMIN_KEY:-clawdstrike-local-admin}
+      CLAWDSTRIKE_AUTH_PEPPER: ${CLAWDSTRIKE_AUTH_PEPPER:-clawdstrike-local-pepper}
+    healthcheck:
+      test: ["CMD-SHELL", "hushd status http://127.0.0.1:9876 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Spine services
@@ -45,6 +158,9 @@ services:
       NATS_URL: nats://nats:4222
       SPINE_LOG_SEED_HEX: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
       RUST_LOG: info,spine=debug
+    profiles:
+      - spine
+    restart: unless-stopped
 
   spine-witness:
     build:
@@ -59,6 +175,9 @@ services:
       NATS_URL: nats://nats:4222
       SPINE_WITNESS_SEED_HEX: "f1e1d1c1b1a191817161514131211101f0e0d0c0b0a090807060504030201000"
       RUST_LOG: info,spine=debug
+    profiles:
+      - spine
+    restart: unless-stopped
 
   spine-proofs-api:
     build:
@@ -67,7 +186,7 @@ services:
       args:
         BIN: spine-proofs-api
     ports:
-      - "8080:8080"
+      - "${SPINE_PROOFS_API_PORT:-8081}:8080"
     depends_on:
       nats:
         condition: service_healthy
@@ -80,6 +199,9 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+    profiles:
+      - spine
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Bridge services (optional — require external gRPC endpoints)
@@ -97,6 +219,7 @@ services:
       RUST_LOG: info,tetragon_bridge=debug
     profiles:
       - bridges
+    restart: unless-stopped
 
   hubble-bridge:
     build:
@@ -111,6 +234,7 @@ services:
       RUST_LOG: info,hubble_bridge=debug
     profiles:
       - bridges
+    restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Package Registry
@@ -133,7 +257,12 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    profiles:
+      - registry
+    restart: unless-stopped
 
 volumes:
   nats-data:
+  control-api-postgres-data:
+  hushd-data:
   registry-data:

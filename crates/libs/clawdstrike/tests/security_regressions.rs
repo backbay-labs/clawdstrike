@@ -81,6 +81,7 @@ async fn security_regression_fs_traversal_in_nonfirst_object_arg_is_denied() {
     );
 }
 
+// @academy:start security-regression-url-spoof
 #[tokio::test]
 async fn security_regression_net_userinfo_spoof_is_denied_using_actual_host() {
     let irm = NetworkIrm::new();
@@ -109,6 +110,7 @@ guards:
         "userinfo spoof URL must be evaluated against evil.example and denied"
     );
 }
+// @academy:end security-regression-url-spoof
 
 #[tokio::test]
 async fn security_regression_async_background_guards_enforce_inflight_limit() {

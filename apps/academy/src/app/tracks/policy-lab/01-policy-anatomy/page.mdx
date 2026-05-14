@@ -1,0 +1,220 @@
+export const metadata = {
+  title: "Policy Anatomy",
+  order: 1,
+  track: "policy-lab",
+  description: "Understanding the structure of a ClawdStrike YAML policy",
+}
+
+# Policy Anatomy
+
+Policies are YAML files that define which guards are active and how they are configured.
+They control the boundary between an AI agent and the actions it can take. Every action
+an agent attempts -- reading a file, making a network request, running a shell command --
+passes through the policy engine, which consults the active policy to decide whether the
+action is allowed.
+
+In this lesson you will learn the structure of a ClawdStrike policy from the ground up.
+
+## Schema Version
+
+Every policy starts with a `version` field that declares which schema version it uses:
+
+```yaml
+version: "1.5.0"
+```
+
+ClawdStrike maintains backward compatibility across schema versions:
+
+<table className="w-full text-sm border-collapse my-6">
+<thead className="border-b-2 border-border">
+<tr>
+<th className="text-left py-2 px-3 font-semibold">Version</th>
+<th className="text-left py-2 px-3 font-semibold">Added</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td className="py-2 px-3 border-b border-border">1.1.0</td>
+<td className="py-2 px-3 border-b border-border">Initial schema: guards, settings, extends</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border">1.2.0</td>
+<td className="py-2 px-3 border-b border-border">Posture states, CUA guards (<code>computer_use</code>, <code>remote_desktop_side_channel</code>, <code>input_injection_capability</code>)</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border">1.3.0</td>
+<td className="py-2 px-3 border-b border-border">Spider Sense guard, custom guard promotion path</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border">1.4.0</td>
+<td className="py-2 px-3 border-b border-border">Origin Enclaves, origin profiles, trust adapters</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border">1.5.0</td>
+<td className="py-2 px-3 border-b border-border">Broker subsystem, capability lifecycle, secret backends</td>
+</tr>
+</tbody>
+</table>
+
+Policies written for an older version continue to work with newer engines. The engine
+validates the document against the declared version's schema.
+
+## Top-Level Fields
+
+A policy has a handful of top-level fields:
+
+```yaml
+version: "1.5.0"
+name: My Policy
+description: A brief description of what this policy is for
+
+extends: clawdstrike:default    # Optional: inherit from a built-in ruleset
+merge_strategy: deep_merge      # How child overrides combine with parent
+
+guards:
+  # Per-guard configuration (13 built-in guards)
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600
+```
+
+- **`version`** -- Schema version string (required).
+- **`name`** -- Human-readable name for the policy.
+- **`description`** -- What this policy is for and when to use it.
+- **`extends`** -- Inherit from a built-in ruleset, a local file, a remote URL, or a git ref.
+- **`merge_strategy`** -- Controls how child fields combine with parent fields (`deep_merge`, `merge`, or `replace`).
+- **`guards`** -- The main configuration block. Each key is a guard name.
+- **`settings`** -- Engine-level settings that apply across all guards.
+
+## The Guards Block
+
+The `guards` block contains configuration for up to 13 built-in guards. Each guard
+can be enabled or disabled, and has its own configuration fields depending on what it does:
+
+<table className="w-full text-sm border-collapse my-6">
+<thead className="border-b-2 border-border">
+<tr>
+<th className="text-left py-2 px-3 font-semibold">Guard</th>
+<th className="text-left py-2 px-3 font-semibold">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>forbidden_path</code></td>
+<td className="py-2 px-3 border-b border-border">Blocks access to sensitive filesystem paths</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>path_allowlist</code></td>
+<td className="py-2 px-3 border-b border-border">Allowlist-based path access control</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>egress_allowlist</code></td>
+<td className="py-2 px-3 border-b border-border">Controls network egress by domain</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>secret_leak</code></td>
+<td className="py-2 px-3 border-b border-border">Detects secrets in file writes</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>patch_integrity</code></td>
+<td className="py-2 px-3 border-b border-border">Validates patch safety (size limits, forbidden patterns)</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>shell_command</code></td>
+<td className="py-2 px-3 border-b border-border">Blocks dangerous shell commands before execution</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>mcp_tool</code></td>
+<td className="py-2 px-3 border-b border-border">Restricts MCP tool invocations</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>prompt_injection</code></td>
+<td className="py-2 px-3 border-b border-border">Detects prompt injection attempts</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>jailbreak</code></td>
+<td className="py-2 px-3 border-b border-border">Multi-layer jailbreak detection</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>computer_use</code></td>
+<td className="py-2 px-3 border-b border-border">Controls CUA actions for remote desktop</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>remote_desktop_side_channel</code></td>
+<td className="py-2 px-3 border-b border-border">Side-channel controls (clipboard, audio, file transfer)</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>input_injection_capability</code></td>
+<td className="py-2 px-3 border-b border-border">Restricts input injection in CUA environments</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><code>spider_sense</code></td>
+<td className="py-2 px-3 border-b border-border">Hierarchical threat screening via embedding similarity</td>
+</tr>
+</tbody>
+</table>
+
+Guards that are not mentioned in the policy use their default behavior, which depends on
+the base ruleset. Guards can be explicitly disabled by setting `enabled: false`.
+
+## Interactive Editor
+
+Use the editor below to explore a valid policy. Try modifying it -- for example, add an
+unknown field like `foobar: true` at the top level and watch the red underline appear.
+You can also try adding an invalid field inside a guard config to see the error message:
+
+<PolicyEditor defaultValue={`version: "1.5.0"
+name: My First Policy
+description: A minimal policy to explore
+
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.env"
+    exceptions: []
+
+  egress_allowlist:
+    allow:
+      - "api.github.com"
+      - "registry.npmjs.org"
+    block: []
+    default_action: block
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600
+`} />
+
+Try these experiments:
+
+1. Add `foobar: true` at the top level -- the editor rejects unknown fields
+2. Change `fail_fast` to `"yes"` instead of `false` -- type validation catches it
+3. Remove the `version` field -- the editor flags the missing required field
+4. Add `enabled: true` inside `forbidden_path` -- a valid field you might not have known about
+
+## The Settings Block
+
+The `settings` block controls engine-level behavior:
+
+- **`fail_fast`** -- When `true`, the engine stops evaluating after the first guard denial.
+  When `false` (the default), all guards run and the aggregate result is returned. Setting
+  this to `false` is usually better during development because you see all violations at once.
+- **`verbose_logging`** -- Enables detailed logging of each guard evaluation. Useful for
+  debugging but noisy in production.
+- **`session_timeout_secs`** -- How long a session can remain active before requiring
+  re-authentication. Defaults to 3600 (one hour).
+
+## What's Next
+
+Now that you understand the anatomy of a single policy, the next lesson covers
+**inheritance** -- how policies can extend built-in rulesets and override specific
+guards without rewriting everything from scratch.
+
+<LessonCompleteButton lessonSlug="policy-lab/01-policy-anatomy" />
+
+<LessonNav trackSlug="policy-lab" lessonSlug="01-policy-anatomy" />

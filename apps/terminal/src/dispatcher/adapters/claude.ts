@@ -9,7 +9,7 @@ import { join } from "path"
 import { stat } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
-import { commandExists, homeDirFromEnv } from "../../system"
+import { commandExists, homeDirFromEnv, resolveCommandPath } from "../../system"
 
 /**
  * Claude Code configuration
@@ -82,8 +82,13 @@ export function configure(newConfig: Partial<ClaudeConfig>): void {
 }
 
 async function checkClaudeAuthStatus(): Promise<boolean> {
+  const claudeCli = await resolveCommandPath("claude")
+  if (!claudeCli) {
+    return false
+  }
+
   try {
-    const proc = Bun.spawn(["claude", "auth", "status"], {
+    const proc = Bun.spawn([claudeCli, "auth", "status"], {
       env: {
         ...process.env,
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
@@ -119,7 +124,7 @@ export const ClaudeAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    if (!commandExists("claude")) {
+    if (!(await commandExists("claude"))) {
       return false
     }
 
@@ -144,10 +149,19 @@ export const ClaudeAdapter: Adapter = {
   ): Promise<AdapterResult> {
     const startTime = Date.now()
     const args = buildClaudeExecArgs(workcell, task.prompt)
+    const claudeCli = await resolveCommandPath("claude")
+
+    if (!claudeCli) {
+      return {
+        success: false,
+        output: "",
+        error: "claude CLI not found",
+      }
+    }
 
     try {
       // Execute claude CLI
-      const proc = Bun.spawn(["claude", ...args], {
+      const proc = Bun.spawn([claudeCli, ...args], {
         cwd: workcell.directory,
         env: {
           ...process.env,

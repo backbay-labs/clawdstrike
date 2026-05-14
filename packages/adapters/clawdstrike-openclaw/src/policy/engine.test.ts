@@ -37,6 +37,57 @@ describe("PolicyEngine", () => {
     expect(decision.guard).toBe("forbidden_path");
   });
 
+  it("supports deterministic synchronous evaluation for hot-path hooks", () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const decision = engine.evaluateSync({
+      eventId: "t1-sync",
+      eventType: "file_read",
+      timestamp: new Date().toISOString(),
+      data: { type: "file", path: `${homedir()}/.ssh/id_rsa`, operation: "read" },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(engine.hasAsyncGuards()).toBe(false);
+  });
+
+  it("evaluates async guards without rerunning deterministic checks", async () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+    });
+    const asyncEvaluate = vi.fn().mockResolvedValue({
+      status: "warn",
+      reason_code: "policy_warn",
+      reason: "async follow-up warning",
+      guard: "spider_sense",
+      severity: "medium",
+    });
+
+    vi.spyOn(engine as never, "evaluateDeterministic" as never).mockImplementation(() => {
+      throw new Error("evaluateDeterministic should not run during async follow-up");
+    });
+    (engine as any).threatIntelEngine = {
+      evaluate: asyncEvaluate,
+    };
+
+    const decision = await engine.evaluateAsyncGuards({
+      eventId: "t1-async",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: { type: "tool", toolName: "generic_tool", parameters: {}, result: "ok" },
+    });
+
+    expect(asyncEvaluate).toHaveBeenCalledTimes(1);
+    expect(decision.status).toBe("warn");
+    expect(decision.guard).toBe("spider_sense");
+  });
+
   it("skips spider_sense custom guard execution when spider_sense toggle is false", async () => {
     const policyPath = join(testDir, "spider-sense-toggle-policy.yaml");
     writeFileSync(

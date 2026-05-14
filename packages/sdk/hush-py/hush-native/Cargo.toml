@@ -1,6 +1,6 @@
 [package]
 name = "hush-native"
-version = "0.2.5"
+version = "0.2.7"
 edition = "2021"
 description = "Bundled native Rust extension for clawdstrike Python SDK"
 license = "Apache-2.0"
@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
 hush-core = { workspace = true }
 clawdstrike = { workspace = true, features = ["full"] }
+clawdstrike-logos = { workspace = true }
 clawdstrike-policy-event = { workspace = true, features = ["simulate"] }
 futures = { workspace = true }
 base64 = { workspace = true }

@@ -7,6 +7,8 @@ use crate::{CliJsonError, ExitCode, CLI_JSON_VERSION};
 pub enum PolicyMigrateMode {
     VersionBump,
     LegacyOpenclaw,
+    ToHushspec,
+    FromHushspec,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -85,7 +87,7 @@ pub fn cmd_policy_migrate(
     } = command;
 
     let supported_to = clawdstrike::policy::POLICY_SCHEMA_VERSION.to_string();
-    if to != supported_to {
+    if to != supported_to && to != "hushspec" {
         return emit_error(
             json,
             PolicyMigrateJsonOutput {
@@ -105,7 +107,7 @@ pub fn cmd_policy_migrate(
                 error: Some(CliJsonError {
                     kind: "invalid_args",
                     message: format!(
-                        "Unsupported target schema version. Supported: {}",
+                        "Unsupported target schema version. Supported: {}, hushspec",
                         supported_to
                     ),
                 }),
@@ -391,6 +393,80 @@ pub(crate) fn migrate_policy_yaml(
             kind: "config_error",
             message: "Policy YAML must be a mapping/object".to_string(),
         })?;
+
+    // Check if input is HushSpec format
+    let is_hushspec_input = obj.contains_key("hushspec");
+
+    // Check if target is HushSpec
+    let to_hushspec = opts.to == "hushspec";
+
+    // HushSpec → HushSpec (no-op)
+    if is_hushspec_input && to_hushspec {
+        return Ok(PolicyMigrateResult {
+            migrated_yaml: input_yaml.to_string(),
+            detected_from_version: Some("hushspec".to_string()),
+            mode: PolicyMigrateMode::ToHushspec,
+            warnings: vec!["Input is already in HushSpec format; returned as-is.".to_string()],
+            legacy_openclaw: None,
+        });
+    }
+
+    // HushSpec → Clawdstrike (input is HushSpec, target is a version like "1.5.0")
+    if is_hushspec_input && !to_hushspec {
+        // Use compile_hushspec which includes parse + validate + compile
+        let policy = clawdstrike::hushspec_compiler::compile_hushspec(input_yaml).map_err(|e| {
+            PolicyMigrateError {
+                code: ExitCode::ConfigError,
+                kind: "config_error",
+                message: format!("Failed to compile HushSpec: {}", e),
+            }
+        })?;
+        let migrated_yaml = serde_yaml::to_string(&policy).map_err(|e| PolicyMigrateError {
+            code: ExitCode::RuntimeError,
+            kind: "runtime_error",
+            message: format!("Failed to serialize: {}", e),
+        })?;
+        return Ok(PolicyMigrateResult {
+            migrated_yaml,
+            detected_from_version: Some("hushspec".to_string()),
+            mode: PolicyMigrateMode::FromHushspec,
+            warnings: vec![],
+            legacy_openclaw: None,
+        });
+    }
+
+    // Clawdstrike → HushSpec (input is Clawdstrike, target is "hushspec")
+    if to_hushspec && !is_hushspec_input {
+        let policy =
+            clawdstrike::Policy::from_yaml(input_yaml).map_err(|e| PolicyMigrateError {
+                code: ExitCode::ConfigError,
+                kind: "config_error",
+                message: format!("Failed to parse Clawdstrike policy: {}", e),
+            })?;
+        let spec =
+            clawdstrike::hushspec_compiler::decompile(&policy).map_err(|e| PolicyMigrateError {
+                code: ExitCode::ConfigError,
+                kind: "config_error",
+                message: format!("Failed to decompile Clawdstrike policy to HushSpec: {}", e),
+            })?;
+        let migrated_yaml = spec.to_yaml().map_err(|e| PolicyMigrateError {
+            code: ExitCode::RuntimeError,
+            kind: "runtime_error",
+            message: format!("Failed to serialize HushSpec: {}", e),
+        })?;
+        return Ok(PolicyMigrateResult {
+            migrated_yaml,
+            detected_from_version: obj
+                .get("version")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            mode: PolicyMigrateMode::ToHushspec,
+            warnings: vec![
+                "Converted to HushSpec format. Engine-only fields (settings, broker, custom_guards) were dropped.".to_string(),
+            ],
+            legacy_openclaw: None,
+        });
+    }
 
     let detected_version = obj
         .get("version")

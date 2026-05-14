@@ -26,6 +26,8 @@ export interface SecretLeakConfig {
     severity?: "info" | "warning" | "error" | "critical";
   }>;
   enabled?: boolean;
+  redact?: boolean;
+  severityThreshold?: "info" | "warning" | "error" | "critical";
 }
 
 /**
@@ -36,6 +38,8 @@ export class SecretLeakGuard implements Guard {
   private secrets: string[];
   private patterns: Array<{ name?: string; regex: RegExp; severity: Severity }>;
   private enabled: boolean;
+  private redact: boolean;
+  private severityThreshold: Severity;
 
   constructor(config: SecretLeakConfig = {}) {
     // Filter out empty/whitespace-only secrets
@@ -47,9 +51,11 @@ export class SecretLeakGuard implements Guard {
       .map((entry) => ({
         name: entry.name,
         regex: compileSecretLeakPattern(entry.pattern),
-        severity: this.parseSeverity(entry.severity),
+        severity: this.parseSeverity(entry.severity) ?? Severity.CRITICAL,
       }));
     this.enabled = config.enabled ?? true;
+    this.redact = config.redact ?? true;
+    this.severityThreshold = this.parseSeverity(config.severityThreshold) ?? Severity.ERROR;
   }
 
   handles(action: GuardAction): boolean {
@@ -80,15 +86,10 @@ export class SecretLeakGuard implements Guard {
     // Check for any secret in the output
     for (const secret of this.secrets) {
       if (text.includes(secret)) {
-        // Create hint (first 4 chars + "...")
-        const hint = secret.length > 4 ? secret.slice(0, 4) + "..." : secret.slice(0, 2) + "...";
-
-        return GuardResult.block(
-          this.name,
-          Severity.CRITICAL,
-          "Secret value exposed in output",
-        ).withDetails({
-          secret_hint: hint,
+        return this.resultForSeverity(Severity.CRITICAL, "Secret value exposed in output").withDetails({
+          secret_hint: "configured_secret",
+          redaction_requested: this.redact,
+          match_length: secret.length,
           action_type: action.customType ?? action.actionType,
         });
       }
@@ -96,11 +97,16 @@ export class SecretLeakGuard implements Guard {
 
     // Check configured regex patterns from policy YAML.
     for (const entry of this.patterns) {
-      if (entry.regex.test(text)) {
+      const match = entry.regex.exec(text);
+      if (match) {
         const hint = entry.name ?? entry.regex.source.slice(0, 24);
-        const baseResult = this.patternResult(entry.severity, "Secret pattern matched in output");
+        const matchedValue = match[0] ?? "";
+        const baseResult = this.resultForSeverity(entry.severity, "Secret pattern matched in output");
         return baseResult.withDetails({
           secret_hint: hint,
+          redaction_requested: this.redact,
+          match_length: matchedValue.length,
+          severity_threshold: this.severityThreshold,
           action_type: action.customType ?? action.actionType,
         });
       }
@@ -109,7 +115,7 @@ export class SecretLeakGuard implements Guard {
     return GuardResult.allow(this.name);
   }
 
-  private parseSeverity(value?: string): Severity {
+  private parseSeverity(value?: string): Severity | undefined {
     switch (value) {
       case "info":
         return Severity.INFO;
@@ -120,17 +126,29 @@ export class SecretLeakGuard implements Guard {
       case "critical":
         return Severity.CRITICAL;
       default:
-        return Severity.CRITICAL;
+        return undefined;
     }
   }
 
-  private patternResult(severity: Severity, message: string): GuardResult {
-    if (severity === Severity.ERROR || severity === Severity.CRITICAL) {
+  private severityRank(severity: Severity): number {
+    switch (severity) {
+      case Severity.INFO:
+        return 0;
+      case Severity.WARNING:
+        return 1;
+      case Severity.ERROR:
+        return 2;
+      case Severity.CRITICAL:
+        return 3;
+    }
+  }
+
+  private resultForSeverity(severity: Severity, message: string): GuardResult {
+    if (this.severityRank(severity) >= this.severityRank(this.severityThreshold)) {
       return GuardResult.block(this.name, severity, message);
     }
 
-    // Info/warning patterns are non-blocking findings.
-    return new GuardResult(true, this.name, severity, message);
+    return GuardResult.warn(this.name, message);
   }
 
   private extractText(action: GuardAction): string {

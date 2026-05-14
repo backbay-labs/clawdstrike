@@ -131,3 +131,63 @@ bash scripts/architecture-guardrails.sh
 [tasks.registry-smoke]
 description = "Run registry end-to-end smoke test"
 run = "bash tests/registry-smoke.sh"
+
+# ---------------------------------------------------------------------------
+# Formal verification tasks (Phase 5)
+# ---------------------------------------------------------------------------
+
+[tasks.verify-policies]
+description = "Run Z3 policy verification on all built-in rulesets"
+run = """
+for f in rulesets/*.yaml; do
+  echo "==> Verifying $f"
+  cargo run -p hush-cli --quiet -- policy verify "$f" || exit 1
+done
+echo "All policy rulesets verified."
+"""
+
+[tasks.verify-lean]
+description = "Build Lean 4 formal specification and check proofs"
+run = """
+cd formal/lean4/ClawdStrike && ~/.elan/bin/lake build
+"""
+
+[tasks.diff-test]
+description = "Run differential tests (spec vs impl) with configurable case count"
+env = { PROPTEST_CASES = "10000" }
+run = """
+echo "Running differential tests with PROPTEST_CASES=${PROPTEST_CASES}"
+cargo test -p formal-diff-tests --release -- --nocapture
+"""
+
+[tasks."diff-test-nightly"]
+description = "Run 100M differential tests in release mode (nightly Cedar-style)"
+env = { PROPTEST_CASES = "100000000" }
+run = """
+echo "=== Nightly Differential Test Run (100M cases) ==="
+echo "Start: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+time cargo test -p formal-diff-tests --release -- --nocapture
+echo "End: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+"""
+
+[tasks.regenerate-aeneas]
+description = "Regenerate Aeneas Lean output from Rust source"
+run = "./formal/scripts/regenerate-aeneas.sh"
+
+[tasks.check-aeneas]
+description = "Check that Aeneas Lean output matches committed Impl/ files"
+run = "./formal/scripts/regenerate-aeneas.sh --check"
+
+[tasks.verify-all]
+description = "Run all formal verification checks (policies + diff tests + Lean build)"
+depends = ["verify-policies", "diff-test", "verify-lean"]
+
+# ---------------------------------------------------------------------------
+# Documentation tasks
+# ---------------------------------------------------------------------------
+
+[tasks."docs:plugin-api"]
+description = "Generate TypeDoc API reference for @clawdstrike/plugin-sdk"
+run = """
+cd packages/sdk/plugin-sdk && npm install --ignore-scripts && npx typedoc
+"""

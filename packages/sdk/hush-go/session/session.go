@@ -59,13 +59,21 @@ func (s *ClawdstrikeSession) ID() string {
 
 // Check evaluates an action, updates counters, and returns a decision.
 func (s *ClawdstrikeSession) Check(action guards.GuardAction) guards.Decision {
-	ctx := guards.NewContext().WithSessionID(s.id)
-	if s.agentID != "" {
-		ctx = ctx.WithAgentID(s.agentID)
-	}
+	return s.CheckWithContext(action, nil)
+}
+
+// CheckWithContext evaluates an action with additional per-check context.
+func (s *ClawdstrikeSession) CheckWithContext(action guards.GuardAction, ctx *guards.GuardContext) guards.Decision {
+	merged := s.mergeContext(ctx)
 
 	s.checkCount.Add(1)
-	result := s.engine.CheckAction(action, ctx)
+
+	var result guards.GuardResult
+	if guards.IsOriginAwareRequest(action, merged) && !guards.SupportsOriginRuntime(s.engine) {
+		result = guards.Block("origin", guards.Critical, guards.LocalOriginUnsupportedMessage)
+	} else {
+		result = s.engine.CheckAction(action, merged)
+	}
 
 	decision := guards.DecisionFromResult(result)
 	switch decision.Status {
@@ -111,4 +119,31 @@ func (s *ClawdstrikeSession) GetSummary() SessionSummary {
 		BlockedActions: blocked,
 		Duration:       time.Since(s.createdAt),
 	}
+}
+
+func (s *ClawdstrikeSession) mergeContext(ctx *guards.GuardContext) *guards.GuardContext {
+	merged := guards.NewContext().WithSessionID(s.id)
+	if s.agentID != "" {
+		merged = merged.WithAgentID(s.agentID)
+	}
+	if ctx == nil {
+		return merged
+	}
+	if ctx.Cwd != "" {
+		merged = merged.WithCwd(ctx.Cwd)
+	}
+	if ctx.Context != nil {
+		merged = merged.WithContext(ctx.Context)
+	}
+	if len(ctx.Metadata) > 0 {
+		metadata := make(map[string]interface{}, len(ctx.Metadata))
+		for key, value := range ctx.Metadata {
+			metadata[key] = value
+		}
+		merged.Metadata = metadata
+	}
+	if ctx.Origin != nil {
+		merged = merged.WithOrigin(ctx.Origin.Clone())
+	}
+	return merged
 }

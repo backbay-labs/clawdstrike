@@ -1,0 +1,289 @@
+/**
+ * Detection Workflow — barrel export.
+ *
+ * Organizes the detection engineering workflow module into logical categories:
+ * types, adapters, stores, services, hooks, and swarm integration.
+ */
+
+// ---- Types ----
+
+export type {
+  DetectionDocumentRef,
+  DraftSeedKind,
+  DraftSeed,
+  EvidenceDatasetKind,
+  EvidenceItem,
+  RedactionState,
+  EvidencePack,
+  LabRunSummary,
+  LabCaseResult,
+  LabRun,
+  PublishTarget,
+  PublicationManifest,
+  CoverageGapCandidate,
+  ExplainabilityTrace,
+  EvaluationPathStep,
+  DetectionVisualPanelProps,
+  TranslationProvider,
+  TranslationRequest,
+  TranslationResult,
+  TranslationDiagnostic,
+  FieldMapping,
+  PublishTargetDescriptor,
+} from "./shared-types";
+
+export {
+  createEmptyDatasets,
+  BUILTIN_PUBLISH_TARGETS,
+  registerPublishTarget,
+  getPublishTarget,
+  getAllPublishTargets,
+} from "./shared-types";
+
+export type {
+  DetectionExecutionRequest,
+  DetectionExecutionResult,
+  ReportArtifact,
+  CoverageReport,
+  DraftBuildResult,
+  PublicationRequest,
+  PublicationBuildResult,
+} from "./execution-types";
+
+// ---- Adapters ----
+
+export type { DetectionWorkflowAdapter } from "./adapters";
+export {
+  registerAdapter,
+  unregisterAdapter,
+  getAdapter,
+  hasAdapter,
+  getRegisteredFileTypes,
+} from "./adapters";
+
+// Visual panel registry
+export {
+  registerVisualPanel,
+  getVisualPanel,
+  getRegisteredVisualPanelTypes,
+} from "./visual-panels";
+
+// Translation provider registry
+export {
+  registerTranslationProvider,
+  getTranslationPath,
+  getAllTranslationProviders,
+  getTranslatableTargets,
+  chainTranslation,
+} from "./translations";
+
+// Field mapping registry
+export type { FieldMappingEntry, FieldMappingTarget } from "./field-mappings";
+export {
+  BUILTIN_FIELD_MAPPINGS,
+  registerFieldMappings,
+  getFieldMapping,
+  translateField,
+  getAllFieldMappings,
+  getFieldMappingsByCategory,
+} from "./field-mappings";
+
+export { policyAdapter } from "./policy-adapter";
+export { sigmaAdapter } from "./sigma-adapter";
+export { yaraAdapter } from "./yara-adapter";
+export { ocsfAdapter } from "./ocsf-adapter";
+export { eqlAdapter } from "./eql-adapter";
+export { yaralAdapter } from "./yaral-adapter";
+export { kqlAdapter } from "./kql-adapter";
+export { kqlTranslationProvider } from "./kql-translation";
+export { eqlTranslationProvider } from "./eql-translation";
+export { yaralTranslationProvider } from "./yaral-translation";
+
+// YARA-L parser types
+export type { YaralEventPredicate, ParsedYaralRule } from "./yaral-adapter";
+
+// YARA-L parser functions
+export { parseYaralRule } from "./yaral-adapter";
+
+export { splAdapter } from "./spl-adapter";
+export { splTranslationProvider } from "./spl-translation-provider";
+
+// SPL parser types
+export type { SplCommand, SplFieldCondition } from "./spl-parser";
+
+// SPL parser functions
+export { parseSplPipeChain, parseSplFieldConditions, matchSplConditions, buildSplFromSeed } from "./spl-parser";
+
+// KQL parser types
+export type { KqlParsedQuery, KqlWhereClause } from "./kql-adapter";
+
+// KQL parser functions
+export { parseKqlQuery, extractKqlWhereFields, clientSideKqlMatch } from "./kql-adapter";
+
+// ---- Stores ----
+
+export {
+  DocumentIdentityStore,
+  getDocumentIdentityStore,
+  normalizePath,
+} from "./document-identity-store";
+
+export {
+  EvidencePackStore,
+  getEvidencePackStore,
+} from "./evidence-pack-store";
+
+export {
+  LabRunStore,
+  getLabRunStore,
+} from "./lab-run-store";
+
+export {
+  PublicationStore,
+  getPublicationStore,
+} from "./publication-store";
+
+// ---- Services ----
+
+// Draft mappers
+export type { MapEventsOptions } from "./draft-mappers";
+export {
+  mapEventsToDraftSeed,
+  mapInvestigationToDraftSeed,
+  mapPatternToDraftSeed,
+  inferDataSourceHints,
+  inferTechniqueHints,
+  recommendFormats,
+} from "./draft-mappers";
+
+// Draft generator
+export type { DraftResult } from "./draft-generator";
+export {
+  generateDraft,
+  generateDraftFromEvents,
+  generateDraftFromInvestigation,
+  generateDraftFromPattern,
+} from "./draft-generator";
+
+// Evidence redaction
+export type { RedactionResult, PackRedactionResult } from "./evidence-redaction";
+export {
+  MAX_STRUCTURED_EVENT_SIZE,
+  MAX_BYTE_SAMPLE_SIZE,
+  redactEvidenceItem,
+  redactEvidencePack,
+} from "./evidence-redaction";
+
+// Explainability
+export type {
+  TraceOutcome,
+  EnrichedTrace,
+  RunComparisonDelta,
+  TraceGroups,
+} from "./explainability";
+export {
+  extractTraces,
+  compareRuns,
+  groupTracesByOutcome,
+  getSourceLineRange,
+} from "./explainability";
+
+// Coverage gap engine
+export type {
+  DocumentCoverageEntry,
+  CoverageGapInput,
+} from "./coverage-gap-engine";
+export {
+  discoverCoverageGaps,
+  deduplicateGaps,
+  rankGaps,
+  suppressNoisyGaps,
+} from "./coverage-gap-engine";
+
+// ---- Hooks ----
+
+export type {
+  UseDraftDetectionOptions,
+  UseDraftDetectionResult,
+} from "./use-draft-detection";
+export {
+  useDraftDetection,
+  buildSeedFromEvents,
+  buildSeedFromInvestigation,
+  buildSeedFromPattern,
+  buildDraftFromSeed,
+} from "./use-draft-detection";
+
+export type { UseTranslationReturn } from "./use-translation";
+export { useTranslation } from "./use-translation";
+
+export type { ImportFailure, ImportResult } from "./use-evidence-packs";
+export { useEvidencePacks } from "./use-evidence-packs";
+
+export type { UseLabExecutionReturn } from "./use-lab-execution";
+export { useLabExecution } from "./use-lab-execution";
+
+export type {
+  PublishRequest,
+  PublishResult,
+  PublishGateStatus,
+  UsePublicationReturn,
+} from "./use-publication";
+export { usePublication, getAvailableTargets } from "./use-publication";
+
+export type {
+  UseCoverageGapsResult,
+  UseCoverageGapsOptions,
+} from "./use-coverage-gaps";
+export { useCoverageGaps } from "./use-coverage-gaps";
+
+export type {
+  SwarmLaunchActions,
+  SwarmLaunchOptions,
+  SwarmLaunchPayload,
+} from "./use-swarm-launch";
+export { useSwarmLaunch } from "./use-swarm-launch";
+
+// ---- Swarm ----
+
+export type {
+  SwarmBoardNode,
+  PublishStateVerification,
+} from "./swarm-detection-nodes";
+export {
+  createDetectionRuleNode,
+  createEvidencePackNode,
+  createLabRunNode,
+  createPublicationNode,
+  verifyPublishState,
+  countDatasetItems,
+} from "./swarm-detection-nodes";
+
+export type { SwarmSessionTemplate } from "./swarm-session-templates";
+export {
+  getSessionTemplates,
+  getReviewTemplate,
+  getPublishTemplate,
+  getHardenTemplate,
+  getConvertTemplate,
+} from "./swarm-session-templates";
+
+export { linkReceiptToPublication } from "./swarm-receipt-linking";
+
+// ---- Side-effect imports ----
+// These adapter modules call registerAdapter() on module load.
+// Importing them above (via named exports) already triggers registration,
+// but we list them explicitly here for clarity and to guarantee
+// registration even if tree-shaking removes unused named exports.
+import "./policy-adapter";
+import "./sigma-adapter";
+import "./yara-adapter";
+import "./ocsf-adapter";
+import "./eql-adapter";
+import "./yaral-adapter";
+import "./kql-adapter";
+import "./kql-translation";
+import "./eql-translation";
+import "./yaral-translation";
+import "./spl-adapter";
+import "./spl-translation-provider";

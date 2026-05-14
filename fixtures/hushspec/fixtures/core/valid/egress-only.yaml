@@ -1,0 +1,8 @@
+hushspec: "0.1.0"
+name: egress-only
+rules:
+  egress:
+    allow:
+      - "api.openai.com"
+      - "api.anthropic.com"
+    default: block

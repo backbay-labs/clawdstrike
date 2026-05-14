@@ -1,0 +1,10 @@
+hushspec: "0.1.0"
+extensions:
+  origins:
+    profiles:
+      - id: duplicate
+        match:
+          provider: slack
+      - id: duplicate
+        match:
+          provider: teams

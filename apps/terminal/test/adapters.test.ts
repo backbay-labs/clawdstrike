@@ -271,6 +271,17 @@ describe("Adapter availability", () => {
     expect(typeof result).toBe("boolean")
   })
 
+  test("OpenCodeAdapter.isAvailable returns false without API key or CLI", async () => {
+    const { configure } = await import("../src/dispatcher/adapters/opencode")
+    configure({ provider: "anthropic", apiKeyEnvVar: undefined })
+    delete process.env.ANTHROPIC_API_KEY
+    delete process.env.OPENAI_API_KEY
+    delete process.env.GOOGLE_API_KEY
+    process.env.PATH = ""
+
+    await expect(OpenCodeAdapter.isAvailable()).resolves.toBe(false)
+  })
+
   test("CrushAdapter.isAvailable returns boolean", async () => {
     const result = await CrushAdapter.isAvailable()
     expect(typeof result).toBe("boolean")
@@ -411,10 +422,10 @@ describe("Dispatcher execution", () => {
     await fs.writeFile(
       cliPath,
       `#!/bin/sh
-printf '%s\n' "$@" > ${JSON.stringify(captureArgsPath)}
+printf '%s\\n' "$@" > ${JSON.stringify(captureArgsPath)}
 cat > ${JSON.stringify(capturePromptPath)}
-printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"OK"}}'
-printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":2}}'
+printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"OK"}}'
+printf '%s\\n' '{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":2}}'
 `,
       { mode: 0o755 },
     )
@@ -449,7 +460,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":12,"output_token
     await fs.writeFile(
       cliPath,
       `#!/bin/sh
-printf '%s\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"input_tokens":8,"output_tokens":3},"modelUsage":{"claude-opus-4-6":{"inputTokens":8,"outputTokens":3}}}'
+printf '%s\\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"input_tokens":8,"output_tokens":3},"modelUsage":{"claude-opus-4-6":{"inputTokens":8,"outputTokens":3}}}'
 `,
       { mode: 0o755 },
     )
@@ -485,8 +496,8 @@ printf '%s\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"in
     await fs.writeFile(
       cliPath,
       `#!/bin/sh
-printf '%s\n' "$@" > "${captureArgsPath}"
-printf '%s\n' '{"type":"result","result":"OK"}'
+printf '%s\\n' "$@" > "${captureArgsPath}"
+printf '%s\\n' '{"type":"result","result":"OK"}'
 exit 0
 `,
       { mode: 0o755 },
@@ -527,8 +538,8 @@ exit 0
     await fs.writeFile(
       cliPath,
       `#!/bin/sh
-printf '%s\n' "$@" > "${captureArgsPath}"
-printf '%s\n' '{"type":"result","result":"OK"}'
+printf '%s\\n' "$@" > "${captureArgsPath}"
+printf '%s\\n' '{"type":"result","result":"OK"}'
 exit 0
 `,
       { mode: 0o755 },

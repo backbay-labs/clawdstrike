@@ -213,4 +213,41 @@ describe('plugin runtime hook compatibility', () => {
         .not.toContain('missing session ID');
     }
   });
+
+  it('registers tool_result_persist as a synchronous modern-runtime handler', () => {
+    const registerHook = vi.fn();
+    const api = {
+      ...makeBaseApi(),
+      registerHook,
+    };
+
+    clawdstrikePlugin(api);
+
+    const call = registerHook.mock.calls.find(
+      ([event, , options]) =>
+        event === 'tool_result_persist'
+        && options?.name === 'clawdstrike:tool-guard:tool-result-persist',
+    );
+    expect(call).toBeDefined();
+
+    const wrappedHandler = call?.[1] as
+      | ((event: unknown, ctx?: { sessionKey?: string }) => unknown)
+      | undefined;
+    const result = wrappedHandler?.(
+      {
+        toolName: 'read',
+        toolCallId: 'tool-call-1',
+        message: {
+          role: 'toolResult',
+          toolName: 'read',
+          toolCallId: 'tool-call-1',
+          content: [{ type: 'text', text: 'alice@example.com' }],
+        },
+      },
+      { sessionKey: 'session-from-context' },
+    ) as { then?: unknown; message?: { content?: Array<{ text?: string }> } } | undefined;
+
+    expect(typeof result?.then).toBe('undefined');
+    expect(result?.message?.content?.[0]?.text).toContain('[REDACTED:email]');
+  });
 });

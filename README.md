@@ -4,14 +4,11 @@
 
 <p align="center">
   <a href="https://github.com/backbay-labs/clawdstrike/actions"><img src="https://img.shields.io/github/actions/workflow/status/backbay-labs/clawdstrike/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI Status"></a>
-  <a href="https://crates.io/crates/clawdstrike"><img src="https://img.shields.io/crates/v/clawdstrike?style=flat-square&logo=rust" alt="crates.io"></a>
   <a href="https://www.npmjs.com/package/@clawdstrike/sdk"><img src="https://img.shields.io/npm/v/@clawdstrike/sdk?style=flat-square&logo=npm&label=npm" alt="npm"></a>
   <a href="https://pypi.org/project/clawdstrike/"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fpypi.org%2Fpypi%2Fclawdstrike%2Fjson&query=%24.info.version&prefix=v&label=PyPI&logo=python&logoColor=white&color=fe7d37&style=flat-square" alt="PyPI"></a>
-  <a href="https://docs.rs/clawdstrike"><img src="https://img.shields.io/docsrs/clawdstrike?style=flat-square&logo=docs.rs" alt="docs.rs"></a>
   <a href="https://github.com/backbay-labs/homebrew-tap/blob/main/Formula/clawdstrike.rb"><img src="https://img.shields.io/badge/homebrew-clawdstrike-FBB040?style=flat-square&logo=homebrew" alt="Homebrew"></a>
-  <a href="https://crates.io/crates/clawdstrike"><img src="https://img.shields.io/crates/d/clawdstrike?style=flat-square&logo=rust&label=downloads" alt="crates.io downloads"></a>
   <a href="https://artifacthub.io/packages/search?repo=clawdstrike"><img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/clawdstrike" alt="Artifact Hub"></a>
-  <a href="https://discord.gg/ZkDPrSag"><img src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/fdbCZHm8zM"><img src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/MSRV-1.93-orange?style=flat-square&logo=rust" alt="MSRV: 1.93">
 </p>
@@ -43,13 +40,15 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/boundary-dark.svg"><img src=".github/assets/sigils/boundary-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Kernel to chain
+  <span style="display:inline-block; white-space:nowrap;"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/boundary-dark.svg"><img src=".github/assets/sigils/boundary-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Kernel to chain</span>
    <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
-  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/seal-dark.svg"><img src=".github/assets/sigils/seal-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Tool-boundary enforcement
+  <span style="display:inline-block; white-space:nowrap;"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/seal-dark.svg"><img src=".github/assets/sigils/seal-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Tool-boundary enforcement</span>
   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
-  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/plugin-dark.svg"><img src=".github/assets/sigils/plugin-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Swarm-native security
+  <span style="display:inline-block; white-space:nowrap;"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/plugin-dark.svg"><img src=".github/assets/sigils/plugin-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Swarm-native security</span>
   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
-  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/registry-dark.svg"><img src=".github/assets/sigils/registry-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;AgentSec Registry
+  <span style="display:inline-block; white-space:nowrap;"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/registry-dark.svg"><img src=".github/assets/sigils/registry-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;AgentSec Registry</span>
+  <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
+  <span style="display:inline-block; white-space:nowrap;"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/seal-dark.svg"><img src=".github/assets/sigils/seal-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Formally verified</span>
 </p>
 
 <p align="center">
@@ -64,21 +63,25 @@
 
 ---
 
+<p align="center">
+  <img src="assets/promo-reel.gif" alt="Clawdstrike Workbench" width="960" />
+</p>
+
 ## The Problem
 
-Google's 2026 Cybersecurity Forecast calls it the **"Shadow Agent" crisis**: employees and teams spinning up AI agents without corporate oversight, creating invisible pipelines that exfiltrate sensitive data, violate compliance, and leak IP. No one sanctioned them. No one is watching them. And your security stack wasn't built for this.
+[Google's 2026 Cybersecurity Forecast](https://cloud.google.com/security/resources/cybersecurity-forecast) calls it the **"Shadow Agent" crisis**: employees and teams spinning up AI agents without corporate oversight, creating invisible pipelines that exfiltrate sensitive data, violate compliance, and leak IP. The AI agent hype cycle accelerates it: prototypes become deployments before anyone can threat-model the blast radius. No one sanctioned them. No one is watching them. And most security stacks were built for defined, static attacks — not continuous, goal-driven agentic behavior.
 
-Your org provisioned 50 agents. Shadow IT spun up 50 more outside your asset inventory. One is exfiltrating `.env` secrets to an unclassified endpoint. Another is patching auth middleware with no peer review, no receipt, no rollback. A third just ran `chmod 777` against a production filesystem. Your SIEM shows green across the board because none of these actions generate the signals it was built to detect.
+Your org provisioned 50 agents. Shadow IT spun up 50 more outside your asset inventory. One exfiltrates `.env` secrets to an unclassified endpoint. Another patches auth middleware with no peer review, no receipt, no rollback. A third runs `chmod 777` against a production filesystem. Your SIEM stays green because these actions don’t generate the signals it was built to detect.
 
 **Logs tell you what happened. Clawdstrike stops it before it happens.**
 
 **Every decision is signed. Every receipt is non-repudiable. If it didn't get a signature, it didn't get permission.**
 
+Clawdstrike enforces policy at the tool boundary — fail-closed, with signed proof.
+
 ## What Clawdstrike Is
 
 Clawdstrike is a **fail-closed policy engine and cryptographic attestation runtime** for AI agent systems. It sits at the tool boundary, the exact point where an agent's intent becomes a real-world action, and enforces security policy with signed proof. From a single SDK install to a fleet of thousands of managed agents, the same engine, the same receipts, the same guarantees.
-
-Every action. Every agent. Every time. No exceptions.
 
 ```mermaid
 flowchart LR
@@ -101,8 +104,6 @@ Three layers, one system:
 | **Swarm Trace** | Prevention + hunting at the agent tool boundary. Hunt across signed receipts, kernel telemetry (Tetragon, auditd), and network flows (Hubble), build timelines, run natural-language and structured queries, correlate against detection rules, and ship OCSF-formatted findings straight into your SIEM. |
 
 ---
-
-## Why This Matters
 
 <table>
 <tr>
@@ -130,6 +131,8 @@ Three layers, one system:
 </td>
 </tr>
 </table>
+
+ **Every action. Every agent. Every time. No exceptions.**
 
 ---
 
@@ -171,7 +174,7 @@ clawdstrike daemon start
 
 # Verify it's running
 clawdstrike daemon status
-# → Status: healthy | Version: 0.2.5 | Uptime: 2s
+# → Status: healthy | Version: 0.2.7 | Uptime: 2s
 
 # Stop when done
 clawdstrike daemon stop
@@ -202,6 +205,17 @@ clawdstrike policy diff strict default
 
 # Enforce policy while running a real command
 clawdstrike run --policy clawdstrike:strict -- python my_agent.py
+```
+
+#### Verify
+
+Prove your policy is internally consistent before deploying it.
+
+```bash
+clawdstrike verify --policy strict
+# Consistency:  PASS  (47 formulas, 0 conflicts)
+# Completeness: PASS  (4/4 action types covered)
+# Inheritance:  PASS  (0 weakened prohibitions)
 ```
 
 #### Hunt
@@ -553,7 +567,7 @@ clawdstrike hunt query --source receipt --verdict warn --start 24h --offline --l
 
 `PolicyLab` examples below require package builds that include PolicyLab bindings (`@clawdstrike/sdk` + `@clawdstrike/wasm` with PolicyLab exports, and Python `clawdstrike` native wheel support). If those versions are not yet on your registry mirror, install from a local checkout of this repository.
 
-TypeScript SDK automation (real SDK calls, no subprocess wrapper):
+TypeScript SDK automation:
 
 ```typescript
 import { readFileSync, writeFileSync } from "node:fs";
@@ -576,7 +590,7 @@ console.log("candidate.yaml validated");
 
 `PolicyLab.simulate()` is not available in the TypeScript WASM build. For replay simulation, use Python, Go, Rust, or the CLI.
 
-Python SDK automation (real SDK calls, no subprocess wrapper):
+Python SDK automation:
 
 ```python
 from pathlib import Path
@@ -603,6 +617,8 @@ blocked = simulation["summary"]["blocked"]
 if blocked > 0:
     raise SystemExit(f"tightening needed: blocked={blocked}")
 ```
+
+See the full workflow in [`docs/src/guides/observe-synth.md`](docs/src/guides/observe-synth.md).
 
 ### Spider-Sense Quick Start
 
@@ -633,8 +649,6 @@ clawdstrike run --policy ./spider-sense.quickstart.yaml -- your-agent-command --
 
 Full Spider-Sense example (threat-intel catalog, behavior profiles, signed manifest chain, and TS/Python/Go runners):
 [`examples/spider-sense-threat-intel/README.md`](examples/spider-sense-threat-intel/README.md)
-
-See the full workflow in [`docs/src/guides/observe-synth.md`](docs/src/guides/observe-synth.md).
 
 ### Additional SDKs & Bindings
 
@@ -710,6 +724,38 @@ clawdstrike policy diff clawdstrike:default candidate.yaml
 ```
 
 See [Policy Schema](docs/src/reference/policy-schema.md), [Posture Schema](docs/src/reference/posture-schema.md), and [Observe -> Synth -> Tighten](docs/src/guides/observe-synth.md).
+
+### Formal Verification
+
+The policy engine's core decision logic is formally specified in Lean 4 and verified against the actual Rust implementation via the Aeneas translation pipeline.
+
+**What's proved:**
+- If any guard denies, the overall verdict denies (deny monotonicity)
+- Severity ordering is a consistent total order
+- Circular `extends` chains are always caught and rejected
+- Ed25519 sign-then-verify roundtrips succeed
+- Disabled guards produce allow (no phantom denials)
+- 39+ properties machine-checked, 44/45 core functions translated
+
+**Policy analysis** (via `clawdstrike verify`):
+- Consistency: no action is both permitted and forbidden
+- Completeness: all configured action types are covered
+- Inheritance soundness: `extends` chains don't weaken parent rules
+
+**Differential testing:** Property-based tests compare the Lean specification against the Rust implementation across millions of random inputs nightly.
+
+```bash
+# Verify a policy
+clawdstrike verify --policy strict
+
+# Run differential tests
+cargo test -p formal-diff-tests
+
+# Build the Lean specification
+cd formal/lean4/ClawdStrike && lake build
+```
+
+See the [formal verification guide](docs/src/formal-verification.md) for details.
 
 ---
 

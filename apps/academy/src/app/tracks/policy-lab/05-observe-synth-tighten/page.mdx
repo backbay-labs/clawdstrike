@@ -1,0 +1,240 @@
+export const metadata = {
+  title: "Observe, Synthesize, Tighten",
+  order: 5,
+  track: "policy-lab",
+  description: "The iterative workflow for developing production policies",
+}
+
+# Observe, Synthesize, Tighten
+
+Real-world policies are never written in one pass. The observe-synth-tighten cycle is
+how security teams develop policies that are strict enough to catch threats but
+permissive enough to let agents work. Each iteration narrows the attack surface while
+preserving the agent's ability to do its job.
+
+## Phase 1: Observe
+
+Start with the `permissive` ruleset in a staging environment. This lets the agent
+operate freely while you watch what it does. The key is to enable `verbose_logging` so
+every guard evaluation is recorded:
+
+<PolicyEditor defaultValue={`version: "1.5.0"
+name: Observation Policy
+description: Permissive policy with logging for behavior observation
+extends: clawdstrike:permissive
+
+settings:
+  fail_fast: false
+  verbose_logging: true
+  session_timeout_secs: 7200
+`} />
+
+With this policy active, monitor the guard verdicts over a few days of normal operation.
+You are looking for:
+
+- **Which domains the agent calls** -- these become your egress allowlist
+- **Which files the agent accesses** -- these tell you where to draw forbidden path
+  boundaries
+- **Which shell commands the agent runs** -- these inform your shell command guard
+  configuration
+- **How large the agent's patches are** -- these set your patch integrity limits
+- **Which MCP tools the agent invokes** -- these determine your MCP tool allow/block lists
+
+Do not block anything yet. The goal is to build a behavioral profile of normal operation.
+
+## Phase 2: Synthesize
+
+From your observations, build a profile of what the agent normally does. Then create
+an initial policy extending `default` with domain-specific allowlists.
+
+The key insight: **start with what you KNOW is safe and block everything else.** This
+is safer than starting with everything allowed and trying to block the bad things. You
+will inevitably miss something if you take the block-bad approach, but the allow-good
+approach fails closed.
+
+Here is an example of a synthesized policy based on observing a documentation assistant:
+
+```yaml
+version: "1.5.0"
+name: Documentation Assistant (v1)
+description: Synthesized from 5 days of staging observation
+extends: clawdstrike:default
+
+guards:
+  egress_allowlist:
+    allow:
+      # Observed domains during normal operation:
+      - "api.github.com"       # Fetches README files
+      - "raw.githubusercontent.com"  # Raw content from repos
+      - "registry.npmjs.org"   # Package metadata lookups
+      - "docs.rs"              # Rust crate documentation
+      - "developer.mozilla.org" # Web API references
+    block: []
+    default_action: block      # Block everything not observed
+
+  patch_integrity:
+    max_additions: 500         # Observed max was 312 lines
+    max_deletions: 200         # Observed max was 87 lines
+    require_balance: false
+    max_imbalance_ratio: 10.0
+
+  mcp_tool:
+    allow:
+      - read_file
+      - list_directory
+      - search
+      - grep
+    block:
+      - shell_exec
+      - run_command
+      - raw_file_write
+    require_confirmation:
+      - file_write
+    default_action: block
+
+settings:
+  fail_fast: false
+  verbose_logging: true        # Keep logging during synthesis validation
+  session_timeout_secs: 3600
+```
+
+Notice the comments documenting why each domain is in the allowlist. This is important
+for the next phase -- when you tighten the policy, you need to know why each exception
+exists.
+
+## Phase 3: Tighten
+
+Deploy the synthesized policy and observe what happens. You will see false positives --
+legitimate actions that your policy blocks because you did not observe them during the
+initial staging period. This is expected and healthy.
+
+For each false positive, decide:
+
+1. **Add an exception** -- if the action is genuinely needed and safe
+2. **Keep the block** -- if the action is not critical or has a safer alternative
+3. **Investigate** -- if you are not sure whether the action should be allowed
+
+As the false positive rate drops, progressively tighten the policy:
+
+- **Lower patch limits** -- if the agent's patches are typically small, reduce
+  `max_additions` to catch anomalously large changes
+- **Add specific exceptions** -- if a tool needs a specific path, add it to the
+  exceptions list rather than relaxing the pattern
+- **Enable detection guards** -- once the basics are stable, turn on `prompt_injection`
+  and `jailbreak` detection to catch adversarial inputs
+
+Here is the tightened version of the documentation assistant policy:
+
+<PolicyEditor defaultValue={`version: "1.5.0"
+name: Documentation Assistant (v2 - tightened)
+description: Tightened after 2 weeks of production observation
+extends: clawdstrike:default
+
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/node_modules/.cache/**"
+    exceptions: []
+
+  egress_allowlist:
+    allow:
+      - "api.github.com"
+      - "raw.githubusercontent.com"
+      - "registry.npmjs.org"
+      - "docs.rs"
+      - "developer.mozilla.org"
+    block: []
+    default_action: block
+
+  patch_integrity:
+    max_additions: 400
+    max_deletions: 150
+    require_balance: false
+    max_imbalance_ratio: 8.0
+    forbidden_patterns:
+      - "(?i)disable[\\\\s_\\\\-]?(security|auth|ssl|tls)"
+      - "(?i)rm\\\\s+-rf\\\\s+/"
+
+  prompt_injection:
+    enabled: true
+    warn_at_or_above: suspicious
+    block_at_or_above: high
+    max_scan_bytes: 200000
+
+  jailbreak:
+    enabled: true
+    detector:
+      block_threshold: 60
+      warn_threshold: 25
+      max_input_bytes: 200000
+      session_aggregation: true
+
+  mcp_tool:
+    allow:
+      - read_file
+      - list_directory
+      - search
+      - grep
+    block:
+      - shell_exec
+      - run_command
+      - raw_file_write
+      - raw_file_delete
+    require_confirmation:
+      - file_write
+    default_action: block
+    max_args_size: 1048576
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600
+`} />
+
+Compare this to the v1 policy in Phase 2:
+
+- Patch limits lowered from 500/200 to 400/150 (observed maximums were well below v1 limits)
+- `prompt_injection` and `jailbreak` guards enabled (the basics are stable enough)
+- `verbose_logging` turned off (no longer needed for observation)
+- Forbidden patterns added to `patch_integrity` to catch security-disabling changes
+
+## The Cycle Continues
+
+Policy development is ongoing. New tools, new threats, new use cases -- each one
+triggers another cycle of observe, synthesize, and tighten.
+
+The first cycle is the biggest: you go from no policy to a production-ready one. After
+that, each cycle is incremental: a new API integration means adding one domain to the
+egress allowlist, a new vulnerability class means adding one pattern to secret leak
+detection.
+
+The important thing is that the cycle always moves toward tighter security. Each
+iteration narrows the attack surface. Each exception is documented and justified.
+Each false positive is resolved, not ignored.
+
+## Policy Development Checklist
+
+1. **Start with an appropriate base ruleset** -- `permissive` for greenfield observation,
+   `default` for most production workloads, `strict` for high-security environments
+2. **Monitor agent behavior in staging** -- run with `verbose_logging: true` and collect
+   a behavioral profile over several days
+3. **Synthesize observed safe patterns into allowlists** -- document why each domain,
+   path, and tool is in the allowlist
+4. **Tighten by setting default_action to block** -- force yourself to explicitly allow
+   every external interaction
+5. **Enable detection guards** -- turn on `prompt_injection` and `jailbreak` once the
+   base policy is stable
+6. **Review and adjust based on false positive rate** -- a high false positive rate means
+   the policy is too tight; zero false positives might mean it is too loose
+
+This checklist works whether you are securing a coding assistant, a documentation bot,
+a CI/CD pipeline agent, or a remote desktop automation. The scenarios differ but the
+method is the same: observe, synthesize, tighten, repeat.
+
+<LessonCompleteButton lessonSlug="policy-lab/05-observe-synth-tighten" />
+
+<LessonNav trackSlug="policy-lab" lessonSlug="05-observe-synth-tighten" />

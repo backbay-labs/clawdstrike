@@ -22,6 +22,7 @@
 - [Schema Governance](concepts/schema-governance.md)
 - [Decisions](concepts/decisions.md)
 - [Postures](concepts/postures.md)
+- [Origin Enclaves](concepts/origin-enclaves.md)
 - [Terminology](concepts/terminology.md)
 - [Adaptive Architecture](concepts/adaptive-architecture.md)
 
@@ -38,6 +39,7 @@
 
 # Guides
 
+- [Adopting HushSpec](guides/hushspec-migration.md)
 - [OpenClaw Integration](guides/openclaw-integration.md)
 - [Agent OpenClaw Operations](guides/agent-openclaw-operations.md)
 - [Agent Attribution Model](guides/agent-attribution-model.md)
@@ -55,6 +57,7 @@
 - [Enterprise Enrollment](guides/enterprise-enrollment.md)
 - [Audit Logging](guides/audit-logging.md)
 - [Marketplace Feed](guides/marketplace-feed.md)
+- [Origin Enclaves](guides/origin-enclaves.md)
 - [Computer Use Gateway](guides/computer-use-gateway.md)
 
 # Package Manager
@@ -111,8 +114,13 @@
   - [Rust](reference/api/rust.md)
   - [TypeScript](reference/api/typescript.md)
   - [Python](reference/api/python.md)
+  - [Go](reference/api/go.md)
   - [CLI](reference/api/cli.md)
 - [Benchmarks](reference/benchmarks.md)
+
+# Formal Verification
+
+- [Formal Verification](formal-verification.md)
 
 # Hunt (Threat Hunting)
 
@@ -127,6 +135,24 @@
   - [hunt report (planned)](hunt/report.md)
   - [Discovery Reference](hunt/discovery-reference.md)
   - [Models Reference](hunt/models-reference.md)
+
+# Plugin Development
+
+- [Overview](plugins/index.md)
+- [Getting Started](plugins/getting-started.md)
+- [Plugin Manifest](plugins/manifest.md)
+- [Contribution Points](plugins/contribution-points.md)
+  - [Guards](plugins/contribution-points/guards.md)
+  - [Commands](plugins/contribution-points/commands.md)
+  - [File Types](plugins/contribution-points/file-types.md)
+  - [UI Extensions](plugins/contribution-points/ui-extensions.md)
+  - [Threat Intel Sources](plugins/contribution-points/threat-intel.md)
+  - [Compliance Frameworks](plugins/contribution-points/compliance.md)
+- [Testing Plugins](plugins/testing.md)
+- [Dev Server](plugins/dev-server.md)
+- [Plugin Playground](plugins/playground.md)
+- [Publishing](plugins/publishing.md)
+- [API Reference](plugins/api-reference.md)
 
 # Recipes
 

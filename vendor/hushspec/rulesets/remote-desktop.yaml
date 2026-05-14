@@ -1,0 +1,33 @@
+hushspec: "0.1.0"
+name: remote-desktop
+description: Security rules for remote desktop and computer use agent sessions
+
+rules:
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions:
+      - remote.session.connect
+      - remote.session.disconnect
+      - remote.session.reconnect
+      - input.inject
+      - remote.clipboard
+      - remote.file_transfer
+      - remote.audio
+      - remote.drive_mapping
+      - remote.printing
+      - remote.session_share
+
+  remote_desktop_channels:
+    enabled: true
+    clipboard: false
+    file_transfer: false
+    audio: true
+    drive_mapping: false
+
+  input_injection:
+    enabled: true
+    allowed_types:
+      - keyboard
+      - mouse
+    require_postcondition_probe: false

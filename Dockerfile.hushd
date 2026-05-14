@@ -5,6 +5,9 @@ FROM rust:1.93-bookworm AS builder
 
 WORKDIR /build
 
+ARG CARGO_PROFILE=release
+ARG CARGO_BUILD_JOBS=2
+
 # Copy a minimal workspace manifest and lockfile.
 COPY infra/docker/workspace-hushd.toml Cargo.toml
 COPY Cargo.lock ./
@@ -20,12 +23,19 @@ COPY crates/libs/hunt-scan crates/libs/hunt-scan
 COPY crates/libs/hunt-query crates/libs/hunt-query
 COPY crates/libs/hush-certification crates/libs/hush-certification
 COPY crates/services/hushd crates/services/hushd
+COPY infra/vendor/nono infra/vendor/nono
 
-# Build release binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
-    cargo build --release --bin hushd && \
-    cp /build/target/release/hushd /usr/local/bin/hushd
+    set -eux; \
+    profile_dir="release"; \
+    profile_flag="--release"; \
+    if [ "$CARGO_PROFILE" = "dev" ]; then \
+      profile_dir="debug"; \
+      profile_flag=""; \
+    fi; \
+    cargo build ${profile_flag} --jobs "${CARGO_BUILD_JOBS}" --bin hushd; \
+    cp "/build/target/${profile_dir}/hushd" /usr/local/bin/hushd
 
 # Runtime stage
 FROM debian:bookworm-slim

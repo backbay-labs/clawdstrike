@@ -1,6 +1,6 @@
 [project]
 name = "clawdstrike"
-version = "0.2.5"
+version = "0.2.7"
 description = "Python SDK for clawdstrike security verification"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -37,6 +37,7 @@ dev = [
     "ruff>=0.1",
     "types-PyYAML>=6.0",
     "httpx>=0.25",
+    "openai-agents>=0.0.7",
 ]
 
 [build-system]

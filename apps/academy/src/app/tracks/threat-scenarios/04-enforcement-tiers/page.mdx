@@ -1,0 +1,163 @@
+export const metadata = {
+  title: "Enforcement Tiers",
+  order: 4,
+  track: "threat-scenarios",
+  description: "Three ways to deploy ClawdStrike: in-process, sidecar, and centralized",
+}
+
+# Enforcement Tiers
+
+ClawdStrike is not one-size-fits-all. It deploys at three enforcement tiers, each
+with different tradeoffs between latency, isolation, and control. Choosing the right
+tier depends on your threat model, your infrastructure, and your compliance requirements.
+
+## Tier 1: In-Process (Guards)
+
+Guards run inside the agent process itself. This is the deployment model you have been
+using in the playgrounds throughout this track.
+
+```text
++-------------------------------------------+
+|           Agent Process                    |
+|                                            |
+|   Action --> [Guard Pipeline] --> Execute   |
+|                |     |     |               |
+|              G1    G2    G3               |
++-------------------------------------------+
+```
+
+Every action is evaluated synchronously by the guard pipeline before execution.
+Latency is measured in microseconds -- the guards are just function calls.
+
+**Best for:** Development, single-agent setups, latency-sensitive operations where
+you control the agent code.
+
+**Tradeoff:** The guards run in the same process as the agent. A compromised agent
+could theoretically tamper with the guard pipeline (same address space). Use this
+tier when you trust the agent code but need to guard against prompt injection and
+accidental misuse.
+
+## Tier 2: Sidecar (brokerd)
+
+ClawdStrike runs as a separate local process -- the **broker daemon** (`brokerd`).
+The agent communicates with it over localhost. This is the capability-based model:
+
+```text
++----------------+     localhost     +------------------+     HTTPS     +----------------+
+|                | <--------------> |                  | <-----------> |                |
+|  Agent Process |                  |  brokerd Sidecar |               | Upstream API   |
+|                |   capability     |                  |   secret      |  (OpenAI, etc) |
+|  (no secrets)  |   request        |  (has secrets)   |   injection   |                |
++----------------+                  +------------------+               +----------------+
+```
+
+The agent requests a **capability** -- a time-bounded, path-scoped token signed by
+the capability authority. The sidecar validates the capability, injects the real API
+secret, and makes the upstream call. The agent never sees raw credentials.
+
+**Best for:** Production deployments with API access control and secret management.
+
+**Tradeoff:** Process isolation prevents tampering -- the agent cannot modify the
+sidecar's guard logic. Slightly higher latency (milliseconds for localhost IPC).
+The sidecar must be deployed alongside the agent.
+
+## Tier 3: Centralized (hushd)
+
+A remote HTTP daemon provides fleet-wide policy enforcement. The **hush daemon**
+(`hushd`) is the central authority that issues capabilities, enforces policies,
+and produces completion bundles as cryptographic proof.
+
+```text
++----------------+         +------------------+         +----------------+
+|   Agent 1      | <-----> |                  | <-----> |   Policy DB    |
++----------------+  HTTPS  |   hushd Server   |         +----------------+
+                           |                  |
++----------------+  HTTPS  |  (Ed25519 sigs)  |
+|   Agent 2      | <-----> |                  |
++----------------+         +------------------+
+                                    |
++----------------+  HTTPS           |
+|   Agent N      | <----------------+
++----------------+
+```
+
+Every agent in the fleet checks in with hushd. Policies are managed centrally.
+Every decision produces an Ed25519-signed receipt. Completion bundles provide
+end-to-end cryptographic proof of what happened.
+
+**Best for:** Multi-agent deployments, enterprise compliance, audit-heavy environments.
+
+**Tradeoff:** Full audit trail and fleet-wide control, but higher latency (network
+round-trip to the hushd server). Single point of policy enforcement means hushd
+availability is critical.
+
+## Comparison
+
+<table className="w-full text-sm border-collapse my-6">
+<thead className="border-b-2 border-border">
+<tr>
+<th className="text-left py-2 px-3 font-semibold">Dimension</th>
+<th className="text-left py-2 px-3 font-semibold">In-Process (Guards)</th>
+<th className="text-left py-2 px-3 font-semibold">Sidecar (brokerd)</th>
+<th className="text-left py-2 px-3 font-semibold">Centralized (hushd)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td className="py-2 px-3 border-b border-border"><strong>Latency</strong></td>
+<td className="py-2 px-3 border-b border-border">Microseconds</td>
+<td className="py-2 px-3 border-b border-border">Milliseconds (localhost)</td>
+<td className="py-2 px-3 border-b border-border">Milliseconds (network)</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><strong>Isolation</strong></td>
+<td className="py-2 px-3 border-b border-border">Same process</td>
+<td className="py-2 px-3 border-b border-border">Separate process</td>
+<td className="py-2 px-3 border-b border-border">Separate machine</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><strong>Secret Handling</strong></td>
+<td className="py-2 px-3 border-b border-border">Agent has access</td>
+<td className="py-2 px-3 border-b border-border">Agent never sees secrets</td>
+<td className="py-2 px-3 border-b border-border">Fleet-wide secret mgmt</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><strong>Audit Trail</strong></td>
+<td className="py-2 px-3 border-b border-border">Local logs</td>
+<td className="py-2 px-3 border-b border-border">Local + signed receipts</td>
+<td className="py-2 px-3 border-b border-border">Signed bundles + central DB</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border"><strong>Best For</strong></td>
+<td className="py-2 px-3 border-b border-border">Dev / prototyping</td>
+<td className="py-2 px-3 border-b border-border">Production APIs</td>
+<td className="py-2 px-3 border-b border-border">Enterprise / compliance</td>
+</tr>
+</tbody>
+</table>
+
+## When to Use Each
+
+A quick decision guide:
+
+- **Prototyping or development?** Start with in-process guards. Fastest to set up,
+  lowest friction.
+- **Production with API secrets?** Use the sidecar. Your agent should never touch
+  raw credentials.
+- **Enterprise, compliance, or multi-agent?** Deploy centralized. You need the audit
+  trail and fleet-wide policy enforcement.
+
+You can also **layer tiers**: in-process guards for fast local checks (prompt injection,
+forbidden paths) plus a sidecar for API egress control. The tiers are complementary,
+not mutually exclusive.
+
+## Try It: Prompt Injection Guard
+
+Regardless of which tier you deploy, the prompt injection guard works the same way.
+Try it here -- this is the in-process tier running in your browser via WASM:
+
+<GuardPlayground guard="prompt_injection" />
+
+<LessonCompleteButton lessonSlug="threat-scenarios/04-enforcement-tiers" />
+
+<LessonNav trackSlug="threat-scenarios" lessonSlug="04-enforcement-tiers" />

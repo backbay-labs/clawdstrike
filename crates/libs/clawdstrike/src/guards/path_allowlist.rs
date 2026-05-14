@@ -98,6 +98,7 @@ impl PathAllowlistGuard {
         patterns.iter().any(|p| p.matches(path))
     }
 
+    // @academy:start path-allowlist-match
     fn matches_allowlist(&self, patterns: &[Pattern], path: &str) -> bool {
         let lexical_path = normalize_path_for_policy(path);
         let resolved_path = normalize_path_for_policy_with_fs(path);
@@ -121,6 +122,7 @@ impl PathAllowlistGuard {
                 .map(|abs| Self::matches_any(patterns, abs))
                 .unwrap_or(false)
     }
+    // @academy:end path-allowlist-match
 
     pub fn is_file_access_allowed(&self, path: &str) -> bool {
         if !self.enabled {
@@ -172,6 +174,7 @@ impl Guard for PathAllowlistGuard {
         )
     }
 
+    // @academy:start path-allowlist-check
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
         if !self.enabled {
             return GuardResult::allow(&self.name);
@@ -198,6 +201,7 @@ impl Guard for PathAllowlistGuard {
             }))
         }
     }
+    // @academy:end path-allowlist-check
 }
 
 #[cfg(test)]

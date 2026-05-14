@@ -1,0 +1,79 @@
+export const metadata = {
+  title: "Path Allowlist Guard",
+  order: 2,
+  track: "guard-gallery",
+  description: "Deny-by-default filesystem access -- only explicitly allowed paths pass",
+}
+
+# Path Allowlist Guard
+
+## The Threat
+
+The inverse of ForbiddenPath. Instead of blocking known-bad paths, the PathAllowlistGuard blocks **everything** except explicitly allowed paths. This is the "deny by default" approach -- if a path isn't on the allowlist, it's denied.
+
+This is the strictest filesystem guard: rather than trying to enumerate every dangerous path, you enumerate only the safe ones.
+
+## How It Works
+
+The guard maintains separate allowlists for `file_access` (reads), `file_write`, and `patch` operations. When checking an action, it dispatches to the appropriate allowlist based on action type.
+
+Fallback chain:
+- If no `file_write_allow` is configured, it falls back to `file_access_allow`
+- If no `patch_allow` is configured, it falls back to `file_write_allow`
+
+For symlink-aware matching, when the resolved path differs from the lexical path, **only** the resolved path is checked -- this prevents allowlist escapes via symlinks.
+
+## Configuration
+
+```yaml
+guards:
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/repo/src/**"
+      - "**/repo/docs/**"
+    file_write_allow:
+      - "**/repo/src/**"
+    patch_allow: []  # Falls back to file_write_allow
+```
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="path-allowlist-check"
+  title="PathAllowlistGuard::check()"
+  annotations={[
+    { line: 3, label: "1", explanation: "Dispatch based on action type: file_access uses read allowlist, file_write uses write allowlist" },
+    { line: 8, label: "2", explanation: "Patch actions fall back to file_write_allow when patch_allow is empty" },
+    { line: 14, label: "3", explanation: "If NO allowlist is configured for this action type, deny by default" }
+  ]}
+/>
+
+## Try It Yourself
+
+<GuardPlayground guard="path_allowlist" actionType="file_access" placeholder="Enter a file path..." defaultInput="/etc/passwd" examples={[{label: "System file", value: "/etc/passwd"}, {label: "Repo source", value: "/home/user/repo/src/main.rs"}, {label: "Outside repo", value: "/var/log/syslog"}]} />
+
+## Bypass Challenges
+
+<BypassChallenge
+  guard="path_allowlist"
+  expectedVerdict="allow"
+  description="The Path Allowlist Guard only allows files inside the repo. Find a path it allows."
+  hint="The default allowlist includes **/repo/src/** and **/repo/docs/**. Try a path like /home/user/repo/src/main.rs."
+  challengeId="guard-gallery/02-path-allowlist/easy"
+  actionType="file_access"
+  placeholder="/path/to/file"
+/>
+
+<BypassChallenge
+  guard="path_allowlist"
+  expectedVerdict="allow"
+  description="The patch_allow list is empty. Can you submit a patch action that gets allowed? (Hint: think about fallback behavior)"
+  hint="When patch_allow is empty, the guard falls back to file_write_allow. A patch to a path in the write allowlist will be allowed."
+  challengeId="guard-gallery/02-path-allowlist/hard"
+  actionType="file_access"
+  placeholder="/path/to/file"
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/02-path-allowlist" />
+<LessonNav trackSlug="guard-gallery" lessonSlug="02-path-allowlist" />

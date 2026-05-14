@@ -155,9 +155,7 @@ dependencies = [
 
 [[package]]
 name = "async-nats"
-version = "0.39.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a798aab0c0203b31d67d501e5ed1f3ac6c36a329899ce47fc93c3bea53f3ae89"
+version = "0.40.0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -173,7 +171,7 @@ dependencies = [
  "ring",
  "rustls-native-certs 0.7.3",
  "rustls-pemfile",
- "rustls-webpki 0.102.8",
+ "rustls-webpki",
  "serde",
  "serde_json",
  "serde_nanos",
@@ -590,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-agent"
-version = "0.2.5"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1894,7 +1892,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hush-core"
-version = "0.2.5"
+version = "0.2.7"
 dependencies = [
  "chrono",
  "ed25519-dalek",
@@ -1913,7 +1911,7 @@ dependencies = [
 
 [[package]]
 name = "hush-spine"
-version = "0.2.5"
+version = "0.2.7"
 dependencies = [
  "async-nats",
  "chrono",
@@ -3892,7 +3890,7 @@ dependencies = [
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.9",
+ "rustls-webpki",
  "subtle",
  "zeroize",
 ]
@@ -3942,19 +3940,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.102.8"
+version = "0.103.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
-dependencies = [
- "rustls-pki-types",
- "untrusted",
-]
-
-[[package]]
-name = "rustls-webpki"
-version = "0.103.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7df23109aa6c1567d1c575b9952556388da57401e4ace1d15f79eedad0d8f53"
+checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
 dependencies = [
  "ring",
  "rustls-pki-types",

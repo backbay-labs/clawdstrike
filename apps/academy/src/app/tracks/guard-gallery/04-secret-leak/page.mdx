@@ -1,0 +1,79 @@
+export const metadata = {
+  title: "Secret Leak Guard",
+  order: 4,
+  track: "guard-gallery",
+  description: "Detects API keys, tokens, and credentials in file writes using regex patterns",
+}
+
+# Secret Leak Guard
+
+## The Threat
+
+AI agents that write files can accidentally (or deliberately via prompt injection) embed API keys, cloud credentials, private keys, and tokens in their output. Even writing a "helpful" configuration file might leak `OPENAI_API_KEY=sk-...` or embed an AWS secret access key.
+
+The SecretLeakGuard scans file content for known secret patterns before the write reaches disk, catching leaks at the tool boundary.
+
+## How It Works
+
+The guard compiles a set of regex patterns at initialization. When a `file_write` or `patch` action occurs, it scans the content against all patterns. Each match has an assigned severity (`critical` for AWS keys, `warning` for generic secrets).
+
+Key behaviors:
+- The guard **blocks** if any match exceeds the configured severity threshold
+- Matched values are **masked** in the evidence (showing only first/last characters)
+- Credit card-like patterns run a **Luhn checksum** to reduce false positives
+- Custom patterns can be added alongside the built-in set
+
+## Configuration
+
+```yaml
+guards:
+  secret_leak:
+    enabled: true
+    severity_threshold: warning  # block at warning or above
+    custom_patterns:
+      - name: "internal_token"
+        pattern: "int-tok-[A-Za-z0-9]{32}"
+        severity: critical
+```
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="secret-leak-scan"
+  title="SecretLeakGuard::scan()"
+  annotations={[
+    { line: 2, label: "1", explanation: "Iterate through all compiled regex patterns" },
+    { line: 5, label: "2", explanation: "For each match, check if it passes the Luhn checksum (for card number patterns)" },
+    { line: 8, label: "3", explanation: "Mask the matched value -- show only first 4 and last 4 characters" },
+    { line: 12, label: "4", explanation: "Collect all findings with their severity levels" }
+  ]}
+/>
+
+## Try It Yourself
+
+<GuardPlayground guard="secret_leak" actionType="file_write" placeholder="Enter file content to scan for secrets..." defaultInput="AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" examples={[{label: "AWS key", value: "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}, {label: "GitHub token", value: "ghp_1234567890abcdef1234567890abcdef12345678"}, {label: "Safe content", value: "Hello, this is a normal config file with no secrets."}, {label: "Anthropic key", value: "ANTHROPIC_API_KEY=sk-ant-api03-example-key-value-here"}]} />
+
+## Bypass Challenges
+
+<BypassChallenge
+  guard="secret_leak"
+  expectedVerdict="allow"
+  description="Write file content that the Secret Leak Guard allows -- no secrets."
+  hint="The guard scans for patterns like AWS keys, GitHub tokens, API keys. Normal code or text without any key-like patterns will pass."
+  challengeId="guard-gallery/04-secret-leak/easy"
+  actionType="file_write"
+  placeholder="Enter file content..."
+/>
+
+<BypassChallenge
+  guard="secret_leak"
+  expectedVerdict="allow"
+  description="Can you write something that LOOKS like a secret but doesn't match the regex patterns?"
+  hint="The AWS key regex expects exactly 40 characters of [A-Za-z0-9/+=] after the prefix. A key with fewer characters might not match. Also, generic_secret patterns only trigger at WARNING severity -- if the threshold is set higher, they pass."
+  challengeId="guard-gallery/04-secret-leak/hard"
+  actionType="file_write"
+  placeholder="Enter file content..."
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/04-secret-leak" />
+<LessonNav trackSlug="guard-gallery" lessonSlug="04-secret-leak" />

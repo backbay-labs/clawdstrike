@@ -23,6 +23,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::serde::rfc3339;
 
+#[cfg(feature = "server_2_11")]
+use time::OffsetDateTime;
+
 use super::context::RequestError;
 use super::stream::ClusterInfo;
 use super::Context;
@@ -147,14 +150,14 @@ pub struct Info {
     pub delivered: SequenceInfo,
     /// Statistics for acknowledged messages
     pub ack_floor: SequenceInfo,
-    /// The difference between delivered and acknowledged messages
+    /// The number of messages delivered but not yet acknowledged
     pub num_ack_pending: usize,
     /// The number of messages re-sent after acknowledgment was not received within the configured
     /// time threshold
     pub num_redelivered: usize,
-    /// The number of waiting
+    /// The number of pull requests waiting for messages
     pub num_waiting: usize,
-    /// The number of pending
+    /// The number of messages pending delivery
     pub num_pending: u64,
     /// Information about the consumer's cluster
     #[serde(skip_serializing_if = "is_default")]
@@ -162,6 +165,14 @@ pub struct Info {
     /// Indicates if any client is connected and receiving messages from a push consumer
     #[serde(default, skip_serializing_if = "is_default")]
     pub push_bound: bool,
+    #[cfg(feature = "server_2_11")]
+    /// Indicates if the consumer is paused
+    #[serde(default)]
+    pub paused: bool,
+    #[cfg(feature = "server_2_11")]
+    /// The remaining time the consumer is paused
+    #[serde(default, with = "serde_nanos")]
+    pub pause_remaining: Option<Duration>,
 }
 
 /// Information about a consumer and the stream it is consuming
@@ -321,6 +332,35 @@ pub struct Config {
     /// Custom backoff for missed acknowledgments.
     #[serde(default, skip_serializing_if = "is_default", with = "serde_nanos")]
     pub backoff: Vec<Duration>,
+    #[cfg(feature = "server_2_11")]
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub priority_policy: PriorityPolicy,
+    #[cfg(feature = "server_2_11")]
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub priority_groups: Vec<String>,
+    /// For suspending the consumer until the deadline.
+    #[cfg(feature = "server_2_11")]
+    #[serde(
+        default,
+        with = "rfc3339::option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pause_until: Option<OffsetDateTime>,
+}
+
+#[cfg(feature = "server_2_11")]
+#[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum PriorityPolicy {
+    #[serde(rename = "overflow")]
+    Overflow,
+    /// This feature is not yet supported by the client.
+    /// It's part of the enum to ensure that the client can deserialize
+    /// Consumer configurations that used [PriorityPolicy::PinnedClient].
+    #[serde(rename = "pinned_client")]
+    PinnedClient,
+    #[serde(rename = "none")]
+    #[default]
+    None,
 }
 
 impl From<&Config> for Config {

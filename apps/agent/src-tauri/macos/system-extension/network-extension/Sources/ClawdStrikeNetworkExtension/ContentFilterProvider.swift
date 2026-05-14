@@ -128,6 +128,8 @@ public final class ClawdStrikeContentFilterDataProvider: NEFilterDataProvider {
             return "user_logout"
         case .userSwitch:
             return "user_switch"
+        case .internalError:
+            return "internal_error"
         @unknown default:
             return "provider_stopped_unknown_reason"
         }

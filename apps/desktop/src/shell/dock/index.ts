@@ -12,6 +12,7 @@
  * - Social/connections (NEW)
  */
 
+export { capsuleRendererRegistry, registerCapsuleRenderer, getCapsuleRenderer } from "./capsule-renderer-registry";
 export { Capsule, CapsuleTab } from "./Capsule";
 export { DockProvider, useCapsule, useCapsulesByKind, useDock } from "./DockContext";
 export { DockSystem, default } from "./DockSystem";

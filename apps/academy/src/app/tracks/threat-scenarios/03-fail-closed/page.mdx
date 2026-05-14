@@ -1,0 +1,151 @@
+export const metadata = {
+  title: "Fail-Closed Design",
+  order: 3,
+  track: "threat-scenarios",
+  description: "Why ClawdStrike denies access even when a guard throws an error",
+}
+
+# Fail-Closed Design
+
+In security engineering, there are two ways a system can fail:
+
+- **Fail-open:** When something goes wrong, allow the action. This is what most
+  software does by default -- if the check crashes, let it through.
+- **Fail-closed:** When something goes wrong, deny the action. Errors are treated
+  as reasons to block, not reasons to skip.
+
+ClawdStrike is fail-closed at every layer. There is no code path where an error
+results in an action being allowed.
+
+## Why This Matters
+
+Imagine a guard that checks for forbidden file paths. It normally works perfectly:
+blocks `~/.ssh/id_rsa`, allows `/tmp/notes.txt`. But one day, the guard encounters
+an input it doesn't expect -- maybe a path with unusual Unicode characters, or the
+guard runs out of memory mid-evaluation.
+
+**In a fail-open system:** The guard crashes. The action is allowed. The attacker
+reads the private key. The guard error *becomes* the attack vector.
+
+**In a fail-closed system:** The guard crashes. The action is denied. The attacker
+is blocked. The guard error is logged, investigated, and fixed -- but no security
+boundary was breached.
+
+Fail-open is the default in most software because it optimizes for availability.
+Fail-closed optimizes for security. ClawdStrike chooses security every time.
+
+## Side by Side
+
+Consider what happens when a guard encounters an error:
+
+```text
+Scenario A: Fail-Open (DANGEROUS)
+---------------------------------
+Agent requests: read ~/.ssh/id_rsa
+Guard evaluation: ERROR (unexpected input)
+Decision: ALLOW (error = skip check)
+Result: Private key exposed
+
+Scenario B: Fail-Closed (ClawdStrike)
+--------------------------------------
+Agent requests: read ~/.ssh/id_rsa
+Guard evaluation: ERROR (unexpected input)
+Decision: DENY (error = block access)
+Result: Private key protected
+```
+
+The difference is a single design decision, but it determines whether errors
+become attack vectors or safety nets.
+
+## The Code
+
+In ClawdStrike's engine, every guard error maps to DENY:
+
+```rust
+// ClawdStrike's guard evaluation -- fail-closed by design
+match guard.check(&action) {
+    Ok(Verdict::Allow) => continue_pipeline(),  // Only explicit Allow passes
+    Ok(Verdict::Deny(reason)) => return Deny(reason),  // Explicit deny
+    Err(e) => return Deny(format!("Guard error: {}", e)),  // Fail-closed!
+}
+```
+
+There is no `Ok(Verdict::Allow)` default. There is no `unwrap_or(Allow)`. Every
+code path must explicitly produce a verdict, and errors always produce DENY.
+
+## Three Levels of Fail-Closed
+
+ClawdStrike applies fail-closed at three levels:
+
+### Level 1: Guard Evaluation Errors
+
+When a guard throws an error during evaluation, the verdict is DENY. The error
+is logged with full context, but the action is never allowed to proceed.
+
+### Level 2: Policy Parse Errors
+
+Invalid policies are rejected at load time. If your YAML has a typo, a missing
+field, or an invalid value, ClawdStrike refuses to load the policy. An agent with
+a broken policy configuration will deny everything rather than run without rules.
+
+```yaml
+# This policy has a typo: "pathss" instead of "paths"
+guards:
+  forbidden_path:
+    pathss:  # REJECTED at load time
+      - "~/.ssh/*"
+```
+
+The engine will not silently ignore `pathss` and run without path protection.
+It will fail loudly, telling you exactly what's wrong.
+
+### Level 3: Configuration Errors
+
+Every serde type in ClawdStrike uses `deny_unknown_fields`. This means that if
+you add an extra field to a configuration struct -- whether by typo or by using
+an outdated config format -- deserialization fails instead of silently ignoring
+the unknown field.
+
+```rust
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]  // No silent misconfiguration
+struct GuardConfig {
+    enabled: bool,
+    threshold: f64,
+}
+```
+
+A config with `threshhold: 0.9` (double 'h') won't silently use the default
+threshold. It will error, telling you the field name is wrong.
+
+## The #[must_use] Pattern
+
+ClawdStrike marks verdict types with `#[must_use]`:
+
+```rust
+#[must_use]  // Compiler warning if verdict is ignored
+pub enum Verdict {
+    Allow,
+    Deny(String),
+}
+```
+
+This means if any code path accidentally discards a verdict -- forgetting to check
+the return value of a guard evaluation -- the Rust compiler emits a warning. With
+ClawdStrike's CI configuration (`-D warnings`), that warning becomes a build failure.
+
+You literally cannot ship code that ignores a security verdict.
+
+## Try It: Prompt Injection Detection
+
+The prompt injection guard uses fail-closed semantics. If detection encounters an
+error, the input is denied. Try sending text through the guard:
+
+<GuardPlayground guard="prompt_injection" />
+
+Even if you find an input that causes unexpected behavior, the guard will err on
+the side of caution and deny rather than allow.
+
+<LessonCompleteButton lessonSlug="threat-scenarios/03-fail-closed" />
+
+<LessonNav trackSlug="threat-scenarios" lessonSlug="03-fail-closed" />

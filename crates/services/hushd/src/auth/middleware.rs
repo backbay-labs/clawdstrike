@@ -107,71 +107,57 @@ pub async fn require_scope(
         return Ok(next.run(req).await);
     };
 
-    match actor {
-        AuthenticatedActor::ApiKey(key) => {
-            if !key.has_scope(scope) {
-                tracing::debug!(
-                    key_name = %key.name,
-                    required_scope = %scope,
-                    "Insufficient scope"
-                );
-                return Err(StatusCode::FORBIDDEN);
-            }
+    if !actor_has_scope(actor, scope) {
+        if let AuthenticatedActor::ApiKey(key) = actor {
+            tracing::debug!(
+                key_name = %key.name,
+                required_scope = %scope,
+                "Insufficient scope"
+            );
         }
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    Ok(next.run(req).await)
+}
+
+pub fn actor_has_scope(actor: &AuthenticatedActor, scope: Scope) -> bool {
+    match actor {
+        AuthenticatedActor::ApiKey(key) => key.has_scope(scope),
         AuthenticatedActor::User(principal) => {
             // Temporary scope mapping (replaced by RBAC in Phase 4).
             match scope {
-                Scope::Check => {}
-                Scope::Read => {
-                    let ok = principal.roles.iter().any(|r| {
-                        r == "policy-viewer"
-                            || r == "audit-viewer"
-                            || r == "policy-admin"
-                            || r == "super-admin"
-                    });
-                    if !ok {
-                        return Err(StatusCode::FORBIDDEN);
-                    }
-                }
-                Scope::Admin => {
-                    let ok = principal
-                        .roles
-                        .iter()
-                        .any(|r| r == "policy-admin" || r == "super-admin");
-                    if !ok {
-                        return Err(StatusCode::FORBIDDEN);
-                    }
-                }
+                Scope::Check => true,
+                Scope::Read => principal.roles.iter().any(|r| {
+                    r == "policy-viewer"
+                        || r == "audit-viewer"
+                        || r == "policy-admin"
+                        || r == "super-admin"
+                }),
+                Scope::Admin => principal
+                    .roles
+                    .iter()
+                    .any(|r| r == "policy-admin" || r == "super-admin"),
                 Scope::CertificationsRead | Scope::CertificationsVerify | Scope::EvidenceRead => {
-                    let ok = principal.roles.iter().any(|r| {
+                    principal.roles.iter().any(|r| {
                         r == "policy-viewer"
                             || r == "audit-viewer"
                             || r == "policy-admin"
                             || r == "super-admin"
                             || r == "certification-viewer"
                             || r == "certification-admin"
-                    });
-                    if !ok {
-                        return Err(StatusCode::FORBIDDEN);
-                    }
+                    })
                 }
                 Scope::CertificationsWrite
                 | Scope::EvidenceExport
                 | Scope::BadgesGenerate
-                | Scope::WebhooksManage => {
-                    let ok = principal.roles.iter().any(|r| {
-                        r == "policy-admin" || r == "super-admin" || r == "certification-admin"
-                    });
-                    if !ok {
-                        return Err(StatusCode::FORBIDDEN);
-                    }
-                }
-                Scope::All => {}
+                | Scope::WebhooksManage => principal.roles.iter().any(|r| {
+                    r == "policy-admin" || r == "super-admin" || r == "certification-admin"
+                }),
+                Scope::All => true,
             }
         }
     }
-
-    Ok(next.run(req).await)
 }
 
 /// Create a closure for scope checking that can be used with middleware::from_fn

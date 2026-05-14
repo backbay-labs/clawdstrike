@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Non-secret OpenClaw gateway metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OpenClawGatewayMetadata {
     pub id: String,
@@ -16,7 +15,6 @@ pub struct OpenClawGatewayMetadata {
     pub pinned_ips: Vec<String>,
 }
 
-/// OpenClaw settings stored in agent config.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OpenClawSettings {
     #[serde(default)]
@@ -25,7 +23,6 @@ pub struct OpenClawSettings {
     pub active_gateway_id: Option<String>,
 }
 
-/// SIEM integration settings configured from the dashboard.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiemIntegrationSettings {
     #[serde(default = "default_siem_provider")]
@@ -53,7 +50,6 @@ fn default_siem_provider() -> String {
     "datadog".to_string()
 }
 
-/// Webhook integration settings configured from the dashboard.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WebhookIntegrationSettings {
     #[serde(default)]
@@ -64,7 +60,6 @@ pub struct WebhookIntegrationSettings {
     pub enabled: bool,
 }
 
-/// Integration settings configured from dashboard pages.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IntegrationSettings {
     #[serde(default)]
@@ -73,7 +68,6 @@ pub struct IntegrationSettings {
     pub webhooks: WebhookIntegrationSettings,
 }
 
-/// Runtime-agent identity registered by local integrations (Claude Code/OpenClaw/MCP/etc).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuntimeAgentRegistration {
     pub runtime_agent_id: String,
@@ -91,35 +85,26 @@ pub struct RuntimeAgentRegistration {
     pub policy_event_count: u64,
 }
 
-/// Persisted runtime registration store.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuntimeRegistrySettings {
     #[serde(default)]
     pub runtimes: Vec<RuntimeAgentRegistration>,
 }
 
-/// Local API security hardening settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalApiSecuritySettings {
-    /// Rotate the local bearer token this often.
     #[serde(default = "default_local_api_token_rotation_interval_hours")]
     pub token_rotation_interval_hours: u32,
-    /// Keep the previous token valid for this many minutes after rotation.
     #[serde(default = "default_local_api_token_grace_minutes")]
     pub token_grace_minutes: u32,
-    /// Enable optional mTLS listener for local API hardening.
     #[serde(default)]
     pub mtls_enabled: bool,
-    /// Port for optional mTLS listener.
     #[serde(default = "default_local_api_mtls_port")]
     pub mtls_port: u16,
-    /// Server certificate path for optional mTLS.
     #[serde(default)]
     pub mtls_server_cert_path: Option<PathBuf>,
-    /// Server private key path for optional mTLS.
     #[serde(default)]
     pub mtls_server_key_path: Option<PathBuf>,
-    /// Client CA bundle path for optional mTLS.
     #[serde(default)]
     pub mtls_client_ca_path: Option<PathBuf>,
 }
@@ -138,40 +123,28 @@ impl Default for LocalApiSecuritySettings {
     }
 }
 
-/// NATS connectivity settings for enterprise cloud management.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsSettings {
-    /// Whether NATS enterprise connectivity is enabled.
     #[serde(default)]
     pub enabled: bool,
-    /// NATS server URL (e.g., "nats://nats.example.com:4222").
     #[serde(default)]
     pub nats_url: Option<String>,
-    /// Path to a `.creds` file for NATS authentication.
     #[serde(default)]
     pub creds_file: Option<String>,
-    /// Bearer token for NATS authentication.
     #[serde(default)]
     pub token: Option<String>,
-    /// NKey seed for NATS authentication.
     #[serde(default)]
     pub nkey_seed: Option<String>,
-    /// Tenant identifier for NATS subject namespacing.
     #[serde(default)]
     pub tenant_id: Option<String>,
-    /// Agent identifier for NATS subject namespacing.
     #[serde(default)]
     pub agent_id: Option<String>,
-    /// NATS account identifier assigned during enrollment.
     #[serde(default)]
     pub nats_account: Option<String>,
-    /// Subject prefix for NATS topics assigned during enrollment.
     #[serde(default)]
     pub subject_prefix: Option<String>,
-    /// Whether approval responses must be Spine-signed envelopes.
     #[serde(default = "default_require_signed_approval_responses")]
     pub require_signed_approval_responses: bool,
-    /// Trusted Spine issuer for approval responses from cloud.
     #[serde(default)]
     pub approval_response_trusted_issuer: Option<String>,
 }
@@ -194,145 +167,177 @@ impl Default for NatsSettings {
     }
 }
 
-/// Enrollment state for cloud-managed agents.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EnrollmentState {
-    /// Whether the agent has completed enrollment.
     #[serde(default)]
     pub enrolled: bool,
-    /// Server-assigned agent UUID from the Control API.
     #[serde(default)]
     pub agent_uuid: Option<String>,
-    /// Tenant ID assigned during enrollment.
     #[serde(default)]
     pub tenant_id: Option<String>,
-    /// Flag indicating enrollment is currently in progress (for crash recovery).
     #[serde(default)]
     pub enrollment_in_progress: bool,
 }
 
-/// Agent settings persisted to disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokerdSecretBackendSettings {
+    #[serde(default = "default_broker_secret_backend_kind")]
+    pub kind: String,
+    #[serde(default = "default_broker_secret_file_path")]
+    pub file_path: PathBuf,
+    #[serde(default = "default_broker_secret_env_prefix")]
+    pub env_prefix: String,
+    #[serde(default)]
+    pub http_base_url: Option<String>,
+    #[serde(default)]
+    pub http_bearer_token: Option<String>,
+    #[serde(default = "default_broker_secret_http_path_prefix")]
+    pub http_path_prefix: String,
+}
+
+impl Default for BrokerdSecretBackendSettings {
+    fn default() -> Self {
+        Self {
+            kind: default_broker_secret_backend_kind(),
+            file_path: default_broker_secret_file_path(),
+            env_prefix: default_broker_secret_env_prefix(),
+            http_base_url: None,
+            http_bearer_token: None,
+            http_path_prefix: default_broker_secret_http_path_prefix(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokerdSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_broker_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub binary_path: Option<PathBuf>,
+    #[serde(default)]
+    pub allow_http_loopback: bool,
+    #[serde(default)]
+    pub allow_private_upstream_hosts: bool,
+    #[serde(default)]
+    pub allow_invalid_upstream_tls: bool,
+    #[serde(default)]
+    pub secret_backend: BrokerdSecretBackendSettings,
+    /// Optional bearer token required for admin and mutation endpoints on
+    /// the local brokerd instance.  When absent, brokerd skips auth.
+    #[serde(default)]
+    pub admin_token: Option<String>,
+}
+
+impl Default for BrokerdSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: default_broker_port(),
+            binary_path: None,
+            allow_http_loopback: false,
+            allow_private_upstream_hosts: false,
+            allow_invalid_upstream_tls: false,
+            secret_backend: BrokerdSecretBackendSettings::default(),
+            admin_token: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
-    /// Path to the policy file.
     #[serde(default = "default_policy_path")]
     pub policy_path: PathBuf,
 
-    /// Port for the hushd daemon HTTP API.
     #[serde(default = "default_daemon_port")]
     pub daemon_port: u16,
 
-    /// Port for the MCP server.
     #[serde(default = "default_mcp_port")]
     pub mcp_port: u16,
 
-    /// Port for the local authenticated agent API.
     #[serde(default = "default_agent_api_port")]
     pub agent_api_port: u16,
 
-    /// Whether enforcement is enabled.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
 
-    /// Whether to start the agent at login.
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
 
-    /// Whether to show desktop notifications.
     #[serde(default = "default_notifications_enabled")]
     pub notifications_enabled: bool,
 
-    /// Minimum severity for notifications (block, warn, info).
     #[serde(default = "default_notification_severity")]
     pub notification_severity: String,
 
-    /// Whether to play sound on notifications.
     #[serde(default)]
     pub notification_sound: bool,
 
-    /// Debug-only: include hushd error bodies in tool-visible policy-check JSON.
-    ///
-    /// This can leak internal details; keep disabled in normal operation.
+    /// Can leak internal details; keep disabled in normal operation.
     #[serde(default)]
     pub debug_include_daemon_error_body: bool,
 
-    /// Path to hushd binary (if not using bundled).
     #[serde(default)]
     pub hushd_binary_path: Option<PathBuf>,
 
-    /// API key for hushd (if authentication is enabled).
     #[serde(default)]
     pub api_key: Option<String>,
 
-    /// Non-secret OpenClaw metadata.
+    #[serde(default)]
+    pub brokerd: BrokerdSettings,
+
     #[serde(default)]
     pub openclaw: OpenClawSettings,
 
-    /// URL for the local web dashboard.
     #[serde(default = "default_dashboard_url")]
     pub dashboard_url: String,
 
-    /// Stable local endpoint identifier used when cloud enrollment is not configured.
     #[serde(default)]
     pub local_agent_id: Option<String>,
 
-    /// Integration settings synchronized from the local dashboard.
     #[serde(default)]
     pub integrations: IntegrationSettings,
 
-    /// Runtime registration catalog used to map AI-runtime identities to stable IDs.
     #[serde(default)]
     pub runtime_registry: RuntimeRegistrySettings,
 
-    /// Local API security hardening controls.
     #[serde(default)]
     pub local_api_security: LocalApiSecuritySettings,
 
-    /// Enable automatic hushd OTA checks and updates.
     #[serde(default = "default_ota_enabled")]
     pub ota_enabled: bool,
 
-    /// OTA behavior mode: "auto" or "manual".
     #[serde(default = "default_ota_mode")]
     pub ota_mode: String,
 
-    /// OTA release channel ("stable" or "beta").
     #[serde(default = "default_ota_channel")]
     pub ota_channel: String,
 
-    /// Optional override URL for signed OTA manifest.
     #[serde(default)]
     pub ota_manifest_url: Option<String>,
 
-    /// Whether manifest override is allowed to fall back to default URL.
     #[serde(default)]
     pub ota_allow_fallback_to_default: bool,
 
-    /// Periodic OTA check interval in minutes.
     #[serde(default = "default_ota_check_interval_minutes")]
     pub ota_check_interval_minutes: u32,
 
-    /// Additional trusted OTA signer keys (hex-encoded Ed25519 public keys).
     #[serde(default)]
     pub ota_pinned_public_keys: Vec<String>,
 
-    /// RFC3339 timestamp of the last OTA check attempt.
     #[serde(default)]
     pub ota_last_check_at: Option<String>,
 
-    /// Human-readable summary of the last OTA action result.
     #[serde(default)]
     pub ota_last_result: Option<String>,
 
-    /// Current hushd version observed/applied by OTA.
     #[serde(default)]
     pub ota_current_hushd_version: Option<String>,
 
-    /// NATS enterprise connectivity settings.
     #[serde(default)]
     pub nats: NatsSettings,
 
-    /// Enrollment state for cloud-managed agents.
     #[serde(default)]
     pub enrollment: EnrollmentState,
 }
@@ -369,6 +374,10 @@ fn default_local_api_mtls_port() -> u16 {
     9880
 }
 
+fn default_broker_port() -> u16 {
+    9889
+}
+
 fn default_enabled() -> bool {
     true
 }
@@ -391,6 +400,22 @@ fn default_dashboard_url() -> String {
 
 fn default_dashboard_url_for_port(agent_api_port: u16) -> String {
     format!("http://127.0.0.1:{}/ui", agent_api_port)
+}
+
+fn default_broker_secret_backend_kind() -> String {
+    "file".to_string()
+}
+
+fn default_broker_secret_file_path() -> PathBuf {
+    get_config_dir().join("broker-secrets.json")
+}
+
+fn default_broker_secret_env_prefix() -> String {
+    "CLAWDSTRIKE_SECRET_".to_string()
+}
+
+fn default_broker_secret_http_path_prefix() -> String {
+    "/v1/secrets".to_string()
 }
 
 fn default_ota_enabled() -> bool {
@@ -424,6 +449,7 @@ impl Default for Settings {
             debug_include_daemon_error_body: false,
             hushd_binary_path: None,
             api_key: None,
+            brokerd: BrokerdSettings::default(),
             openclaw: OpenClawSettings::default(),
             dashboard_url: default_dashboard_url(),
             local_agent_id: None,
@@ -447,7 +473,6 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// Load settings from disk, or create defaults if not found.
     pub fn load() -> Result<Self> {
         let path = get_settings_path();
 
@@ -455,9 +480,9 @@ impl Settings {
             let contents = std::fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read settings from {:?}", path))?;
             let settings_json: serde_json::Value =
-                serde_json::from_str(&contents).with_context(|| "Failed to parse settings JSON")?;
+                serde_json::from_str(&contents).context("Failed to parse settings JSON")?;
             let mut settings: Settings = serde_json::from_value(settings_json.clone())
-                .with_context(|| "Failed to parse settings JSON")?;
+                .context("Failed to parse settings JSON")?;
             let dashboard_url_present = settings_json
                 .as_object()
                 .map(|obj| obj.contains_key("dashboard_url"))
@@ -471,7 +496,6 @@ impl Settings {
         }
     }
 
-    /// Save settings to disk.
     pub fn save(&self) -> Result<()> {
         let path = get_settings_path();
 
@@ -481,13 +505,12 @@ impl Settings {
         }
 
         let contents =
-            serde_json::to_string_pretty(self).with_context(|| "Failed to serialize settings")?;
+            serde_json::to_string_pretty(self).context("Failed to serialize settings")?;
         write_settings_file(&path, &contents)?;
 
         Ok(())
     }
 
-    /// Get the daemon URL based on current settings.
     pub fn daemon_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.daemon_port)
     }
@@ -499,7 +522,7 @@ fn backfill_dashboard_url_if_missing(settings: &mut Settings, dashboard_url_pres
     }
 }
 
-fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
+fn write_settings_file(path: &std::path::Path, contents: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::fs::OpenOptions;
@@ -541,24 +564,20 @@ pub(crate) fn enforce_private_mode(path: &std::path::Path, target: &str) -> Resu
     Ok(())
 }
 
-/// Get the configuration directory for clawdstrike.
 pub fn get_config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("clawdstrike")
 }
 
-/// Get the path to the settings file.
 pub fn get_settings_path() -> PathBuf {
     get_config_dir().join("agent.json")
 }
 
-/// Get the path to the local API auth token file.
 pub fn get_agent_token_path() -> PathBuf {
     get_config_dir().join("agent-local-token")
 }
 
-/// Best-effort hostname retrieval via a safe wrapper.
 pub fn hostname_best_effort() -> String {
     hostname::get()
         .ok()
@@ -567,7 +586,6 @@ pub fn hostname_best_effort() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// Ensure the default policy file exists, copying from bundled if needed.
 pub fn ensure_default_policy(bundled_policy: &str) -> Result<PathBuf> {
     let policy_path = default_policy_path();
 

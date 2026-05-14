@@ -1,0 +1,36 @@
+[package]
+name = "hushspec"
+version = "0.1.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "Portable specification types for AI agent security rules"
+repository = "https://github.com/backbay-labs/hush"
+readme = "README.md"
+keywords = ["ai", "security", "policy", "agent", "hushspec"]
+categories = ["config", "parser-implementations"]
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+thiserror = "2"
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], optional = true }
+url = { version = "2", optional = true }
+ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
+base64 = { version = "0.22", optional = true }
+rand = { version = "0.8", optional = true }
+
+[dev-dependencies]
+pretty_assertions = "1"
+
+[features]
+default = ["std"]
+std = []
+http = ["dep:reqwest", "dep:url"]
+signing = ["dep:ed25519-dalek", "dep:base64", "dep:rand"]

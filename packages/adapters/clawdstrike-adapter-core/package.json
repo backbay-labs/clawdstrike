@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/adapter-core",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "Framework-agnostic adapter interfaces for Clawdstrike",
   "type": "module",
   "main": "dist/index.js",

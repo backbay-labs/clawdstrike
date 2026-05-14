@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>AllowedSystemExtensions</key>
+      <dict>
+        <key>{{TEAM_ID}}</key>
+        <array>
+          <string>{{SYSTEM_EXTENSION_BUNDLE_ID}}</string>
+        </array>
+      </dict>
+      <key>AllowedSystemExtensionTypes</key>
+      <dict>
+        <key>{{TEAM_ID}}</key>
+        <array>
+          <string>com.apple.system_extension.endpoint_security</string>
+          <string>com.apple.system_extension.network_extension</string>
+        </array>
+      </dict>
+      <key>AllowUserOverrides</key>
+      <false/>
+      <key>PayloadDescription</key>
+      <string>Approves the ClawdStrike combined EndpointSecurity and NetworkExtension system extension.</string>
+      <key>PayloadDisplayName</key>
+      <string>ClawdStrike System Extension Approval</string>
+      <key>PayloadIdentifier</key>
+      <string>{{ORG_IDENTIFIER}}.clawdstrike.system-extension-policy</string>
+      <key>PayloadOrganization</key>
+      <string>{{ORG_IDENTIFIER}}</string>
+      <key>PayloadType</key>
+      <string>com.apple.system-extension-policy</string>
+      <key>PayloadUUID</key>
+      <string>{{PAYLOAD_UUID}}</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+    </dict>
+  </array>
+  <key>PayloadDescription</key>
+  <string>Managed approval profile for ClawdStrike macOS endpoint security.</string>
+  <key>PayloadDisplayName</key>
+  <string>ClawdStrike System Extension Approval</string>
+  <key>PayloadIdentifier</key>
+  <string>{{ORG_IDENTIFIER}}.clawdstrike.system-extension-approval</string>
+  <key>PayloadOrganization</key>
+  <string>{{ORG_IDENTIFIER}}</string>
+  <key>PayloadRemovalDisallowed</key>
+  <true/>
+  <key>PayloadScope</key>
+  <string>System</string>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>{{PROFILE_UUID}}</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+</dict>
+</plist>

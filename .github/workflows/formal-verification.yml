@@ -1,0 +1,474 @@
+name: Formal Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/libs/clawdstrike/src/core/**'
+      - 'crates/libs/clawdstrike/src/policy.rs'
+      - 'crates/libs/clawdstrike/src/engine.rs'
+      - 'crates/libs/clawdstrike-logos/**'
+      - 'crates/libs/logos-ffi/**'
+      - 'crates/libs/logos-z3/**'
+      - 'crates/services/hush-cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/libs/hush-core/src/merkle.rs'
+      - 'crates/libs/hush-core/src/canonical.rs'
+      - 'crates/tests/formal-diff-tests/**'
+      - 'formal/**'
+      - 'rulesets/**'
+      - '.github/workflows/formal-verification.yml'
+  pull_request:
+    paths:
+      - 'crates/libs/clawdstrike/src/core/**'
+      - 'crates/libs/clawdstrike/src/policy.rs'
+      - 'crates/libs/clawdstrike/src/engine.rs'
+      - 'crates/libs/clawdstrike-logos/**'
+      - 'crates/libs/logos-ffi/**'
+      - 'crates/libs/logos-z3/**'
+      - 'crates/services/hush-cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/libs/hush-core/src/merkle.rs'
+      - 'crates/libs/hush-core/src/canonical.rs'
+      - 'crates/tests/formal-diff-tests/**'
+      - 'formal/**'
+      - 'rulesets/**'
+      - '.github/workflows/formal-verification.yml'
+  # Aeneas regeneration is heavy (OCaml toolchain) -- run weekly + on demand
+  # Nightly differential tests (100M cases) run at 03:00 UTC daily
+  schedule:
+    - cron: '0 3 * * *'  # Nightly diff tests at 03:00 UTC
+    - cron: '0 6 * * 1'  # Aeneas check: Monday at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      run_aeneas_check:
+        description: 'Run Aeneas regeneration check'
+        type: boolean
+        default: true
+      run_nightly_diff_tests:
+        description: 'Run 100M nightly differential tests'
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  detect-core-changes:
+    name: Detect core changes
+    runs-on: ubuntu-latest
+    outputs:
+      core_changed: ${{ steps.detect.outputs.core_changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed core files
+        id: detect
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- 'crates/libs/clawdstrike/src/core/**' > changed_core_files.txt
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            if [ -z "${GITHUB_EVENT_BEFORE}" ] || [ "${GITHUB_EVENT_BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+              git ls-files -- crates/libs/clawdstrike/src/core > changed_core_files.txt
+            else
+              git diff --name-only "${GITHUB_EVENT_BEFORE}...${GITHUB_SHA}" -- 'crates/libs/clawdstrike/src/core/**' > changed_core_files.txt
+            fi
+          else
+            : > changed_core_files.txt
+          fi
+
+          if [ -s changed_core_files.txt ]; then
+            echo "core_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "core_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # --------------------------------------------------------------------------
+  # Job 1: Policy verification (prefer Z3, fall back to formula inspection)
+  # --------------------------------------------------------------------------
+  policy-verification:
+    name: Policy Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Z3 toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y z3 libz3-dev clang libclang-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-formal-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-formal-
+
+      - name: Verify all built-in rulesets
+        run: |
+          set -euo pipefail
+
+          cargo_pkg_args=(-p hush-cli --bin hush)
+          feature_args=()
+
+          if command -v z3 >/dev/null 2>&1 && [ -f /usr/include/z3.h ]; then
+            feature_args=(--features z3)
+            echo "Using Z3 verification backend."
+          else
+            echo "Falling back to formula inspection backend."
+          fi
+
+          cargo build "${cargo_pkg_args[@]}" "${feature_args[@]}"
+
+          if [ "${#feature_args[@]}" -ne 0 ]; then
+            cargo test --manifest-path crates/libs/logos-z3/Cargo.toml
+          fi
+
+          # Some example rulesets intentionally widen a parent policy. Those
+          # should still remain internally consistent and complete, but they are
+          # not expected to pass inheritance soundness.
+          expected_inheritance_failures=(
+            "rulesets/origin-enclaves-example.yaml"
+            "rulesets/remote-desktop-permissive.yaml"
+          )
+
+          is_expected_inheritance_failure() {
+            local candidate="$1"
+            for expected in "${expected_inheritance_failures[@]}"; do
+              if [[ "$expected" == "$candidate" ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          for f in rulesets/*.yaml; do
+            echo "==> Verifying $f"
+            report_file="$(mktemp)"
+
+            if cargo run "${cargo_pkg_args[@]}" "${feature_args[@]}" --quiet -- \
+              policy verify --json "$f" >"$report_file"; then
+              verify_exit=0
+            else
+              verify_exit=$?
+            fi
+
+            consistency="$(jq -r '.report.consistency.outcome // empty' "$report_file")"
+            completeness="$(jq -r '.report.completeness.outcome // empty' "$report_file")"
+            inheritance="$(jq -r '.report.inheritance.outcome // empty' "$report_file")"
+
+            if [[ "$consistency" != "pass" || "$completeness" != "pass" ]]; then
+              cat "$report_file"
+              echo "Policy verification failed consistency/completeness checks for $f"
+              exit 1
+            fi
+
+            if [[ $verify_exit -eq 0 ]]; then
+              echo "  PASS: all checks passed"
+              continue
+            fi
+
+            if [[ "$inheritance" == "fail" ]] && is_expected_inheritance_failure "$f"; then
+              echo "  INFO: expected inheritance widening in $f"
+              jq -r '.report.inheritance.weakened[]?.atom' "$report_file" | sed 's/^/    - /'
+              continue
+            fi
+
+            cat "$report_file"
+            echo "Unexpected verification failure for $f"
+            exit "$verify_exit"
+          done
+
+          echo "All policy rulesets verified."
+
+  # --------------------------------------------------------------------------
+  # Job 2: Differential tests (spec vs impl, 1M cases on push/PR)
+  # --------------------------------------------------------------------------
+  differential-tests:
+    name: Differential Tests (spec vs impl)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    timeout-minutes: 30
+    env:
+      PROPTEST_CASES: ${{ vars.PROPTEST_CASES || '1000000' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-formal-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-formal-
+
+      - name: Run differential tests
+        run: |
+          echo "Running with PROPTEST_CASES=${PROPTEST_CASES}"
+          cargo test -p formal-diff-tests --release -- --nocapture
+
+      - name: Upload proptest regressions
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: proptest-regressions
+          path: '**/proptest-regressions/**'
+          if-no-files-found: ignore
+
+  # --------------------------------------------------------------------------
+  # Job 2b: Nightly differential tests (100M cases, Cedar-style)
+  # --------------------------------------------------------------------------
+  nightly-diff-tests:
+    name: Nightly Differential Tests (100M cases)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 3 * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.run_nightly_diff_tests)
+    timeout-minutes: 240
+    env:
+      PROPTEST_CASES: '100000000'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-formal-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-formal-release-
+
+      - name: Build release binary
+        run: cargo test -p formal-diff-tests --release --no-run
+
+      - name: Run 100M differential tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Nightly Differential Test Run ==="
+          echo "PROPTEST_CASES=${PROPTEST_CASES}"
+          echo "Start: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          start_ts=$(date +%s)
+          if cargo test -p formal-diff-tests --release -- --nocapture 2>&1 | tee /tmp/diff-test-output.txt; then
+            test_status=0
+          else
+            test_status=$?
+          fi
+          end_ts=$(date +%s)
+          elapsed=$(( end_ts - start_ts ))
+          echo "End: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "Elapsed: ${elapsed}s"
+
+          if [[ "$test_status" -ne 0 ]]; then
+            exit "$test_status"
+          fi
+
+          # Parse test count from output
+          total_tests=$(grep -oP '\d+ passed' /tmp/diff-test-output.txt | tail -1 | grep -oP '\d+' || echo "?")
+
+          echo "### Nightly Differential Tests" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Cases per test | **${PROPTEST_CASES}** |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Test functions | **${total_tests}** |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Wall time | **${elapsed}s** |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Result | **PASS** |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload proptest regressions
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nightly-proptest-regressions
+          path: '**/proptest-regressions/**'
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Failure summary
+        if: failure()
+        run: |
+          echo "### Nightly Differential Tests - FAILED" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "One or more differential tests found a spec/impl mismatch at ${PROPTEST_CASES} cases." >> "$GITHUB_STEP_SUMMARY"
+          echo "Regression files have been uploaded as artifacts." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "To reproduce locally:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "PROPTEST_CASES=${PROPTEST_CASES} cargo test -p formal-diff-tests --release -- --nocapture" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # --------------------------------------------------------------------------
+  # Job 3: Lean 4 formal specification build
+  # --------------------------------------------------------------------------
+  lean-build:
+    name: Lean 4 Spec Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lake packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.elan/toolchains
+            formal/lean4/ClawdStrike/.lake
+          key: ${{ runner.os }}-lean-${{ hashFiles('formal/lean4/ClawdStrike/lean-toolchain', 'formal/lean4/ClawdStrike/lakefile.lean', 'formal/lean4/ClawdStrike/lake-manifest.json') }}
+          restore-keys: |
+            ${{ runner.os }}-lean-
+
+      - name: Build Lean project
+        working-directory: formal/lean4/ClawdStrike
+        run: lake build
+
+      - name: Count sorry occurrences (informational)
+        if: always()
+        working-directory: formal/lean4/ClawdStrike
+        run: |
+          echo "=== sorry audit (project files only) ==="
+          # Strip single-line comments (--) before counting sorry to avoid false positives
+          sorry_count=$(grep -Rh --include='*.lean' '' ClawdStrike/ 2>/dev/null | sed 's/--.*$//' | grep -cE '(^|[[:space:]]|=>)sorry([[:space:]]|$)' || true)
+          theorem_count=$(grep -RcE '^[[:space:]]*theorem([[:space:]]|$)' ClawdStrike/ --include='*.lean' 2>/dev/null | awk -F: '{s+=$NF}END{print s+0}')
+          echo "Total theorems: ${theorem_count}"
+          echo "Remaining sorry: ${sorry_count}"
+          echo "### Lean 4 Proof Status" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Theorems: **${theorem_count}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Remaining sorry: **${sorry_count}**" >> "$GITHUB_STEP_SUMMARY"
+
+  # --------------------------------------------------------------------------
+  # Job 4: Aeneas regeneration drift check
+  #
+  # Verifies that the committed Lean Impl/ files match what Charon + Aeneas
+  # would produce from the current Rust core/ source.  This is expensive
+  # (~15 min for the OCaml toolchain) so it runs on:
+  #   - Weekly schedule (Monday 06:00 UTC)
+  #   - Manual workflow_dispatch
+  #   - Push/PR only when core/ source files actually changed
+  # --------------------------------------------------------------------------
+  aeneas-check:
+    name: Aeneas Regeneration Check
+    runs-on: ubuntu-latest
+    needs: detect-core-changes
+    timeout-minutes: 30
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && inputs.run_aeneas_check) ||
+      ((github.event_name == 'push' || github.event_name == 'pull_request') &&
+       needs.detect-core-changes.outputs.core_changed == 'true')
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-03-01
+
+      - name: Install OCaml toolchain
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: '5.2'
+
+      - name: Cache opam packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.opam
+          key: ${{ runner.os }}-opam-aeneas-${{ hashFiles('.github/workflows/formal-verification.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-opam-aeneas-
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-aeneas-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-aeneas-
+
+      - name: Install Charon
+        env:
+          CHARON_RELEASE_TAG: build-2026.03.13.163309-923e13bfe090916ec9384508e1c1b73bb3b7f4ed
+          CHARON_LINUX_X86_64_SHA256: 6c8790a41d9736c2ccf0b46430db0602c171526d989f32b4ae268888d6e86a48
+        run: |
+          if command -v charon &>/dev/null; then
+            echo "Charon already available"
+          else
+            curl -fsSL \
+              "https://github.com/AeneasVerif/charon/releases/download/${CHARON_RELEASE_TAG}/charon-linux-x86_64.tar.gz" \
+              -o /tmp/charon.tar.gz
+            echo "${CHARON_LINUX_X86_64_SHA256}  /tmp/charon.tar.gz" | sha256sum -c -
+            rm -rf /tmp/charon-bin
+            mkdir -p /tmp/charon-bin
+            tar -xzf /tmp/charon.tar.gz -C /tmp/charon-bin
+            chmod +x /tmp/charon-bin/charon /tmp/charon-bin/charon-driver
+            echo "/tmp/charon-bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Install Aeneas
+        env:
+          AENEAS_RELEASE_TAG: build-2026.03.17.182718-f4b3593e112d539904702fda4f929110fa8ef897
+          AENEAS_LINUX_X86_64_SHA256: 5c5af6e8c0f90646e128168c93190f2b630b202ec57b3dcc43eff8300da88c16
+        run: |
+          if command -v aeneas &>/dev/null; then
+            echo "Aeneas already available"
+          else
+            curl -fsSL \
+              "https://github.com/AeneasVerif/aeneas/releases/download/${AENEAS_RELEASE_TAG}/aeneas-linux-x86_64.tar.gz" \
+              -o /tmp/aeneas.tar.gz
+            echo "${AENEAS_LINUX_X86_64_SHA256}  /tmp/aeneas.tar.gz" | sha256sum -c -
+            rm -rf /tmp/aeneas-bin
+            mkdir -p /tmp/aeneas-bin
+            tar -xzf /tmp/aeneas.tar.gz -C /tmp/aeneas-bin
+            chmod +x /tmp/aeneas-bin/aeneas
+            echo "/tmp/aeneas-bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Check Aeneas output for drift
+        env:
+          CHARON_BIN: /tmp/charon-bin/charon
+          AENEAS_BIN: /tmp/aeneas-bin/aeneas
+        run: ./formal/scripts/regenerate-aeneas.sh --check
+
+      - name: Summary
+        if: failure()
+        run: |
+          echo "### Aeneas Drift Detected" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The Lean Impl/ files are out of date with the Rust core/ source." >> "$GITHUB_STEP_SUMMARY"
+          echo "Run \`./formal/scripts/regenerate-aeneas.sh\` locally and commit the updated files." >> "$GITHUB_STEP_SUMMARY"

@@ -168,7 +168,8 @@ impl PublicEncryptingKey {
     /// # Errors
     /// * `Unspecified` for any error that occurs deserializing from bytes.
     pub fn from_der(value: &[u8]) -> Result<Self, KeyRejected> {
-        Ok(Self(encoding::rfc5280::decode_public_key_der(value)?))
+        let key = encoding::rfc5280::decode_public_key_der(value)?;
+        Ok(Self::new(key)?)
     }
 
     /// Returns the RSA signature size in bytes.

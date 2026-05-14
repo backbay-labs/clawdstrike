@@ -1,0 +1,39 @@
+hushspec_test: "0.1.0"
+description: "Egress control evaluation"
+policy:
+  hushspec: "0.1.0"
+  rules:
+    egress:
+      allow:
+        - "api.openai.com"
+        - "*.anthropic.com"
+        - "github.com"
+      block:
+        - "*.evil.com"
+      default: block
+cases:
+  - description: "allow listed domain"
+    action:
+      type: egress
+      target: "api.openai.com"
+    expect: allow
+  - description: "allow wildcard match"
+    action:
+      type: egress
+      target: "api.anthropic.com"
+    expect: allow
+  - description: "deny unlisted domain (default block)"
+    action:
+      type: egress
+      target: "unknown-api.com"
+    expect: deny
+  - description: "deny explicitly blocked domain"
+    action:
+      type: egress
+      target: "phishing.evil.com"
+    expect: deny
+  - description: "block takes precedence over allow"
+    action:
+      type: egress
+      target: "api.evil.com"
+    expect: deny

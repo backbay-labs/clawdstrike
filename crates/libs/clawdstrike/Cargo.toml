@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 keywords = ["security", "ai-agent", "policy", "clawdstrike"]
 categories = ["authentication", "command-line-utilities"]
-readme = "../../README.md"
+readme = "README.md"
 
 [dependencies]
 # Always available (WASM-compatible detection modules)
@@ -30,6 +30,7 @@ tokio = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
 nono = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
+hushspec = { version = "0.1.1", path = "../../../vendor/hushspec", optional = true }
 toml = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
@@ -77,19 +78,30 @@ harness = false
 default = ["full"]
 spine = ["dep:spine"]
 policy-event = [
-  "dep:async-trait",
-  "dep:hush-proxy",
-  "dep:serde_yaml",
-  "dep:toml",
-  "dep:glob",
-  "dep:chrono",
-  "dep:globset",
+    "dep:async-trait",
+    "dep:hush-proxy",
+    "dep:hushspec",
+    "dep:serde_yaml",
+    "dep:toml",
+    "dep:glob",
+    "dep:chrono",
+    "dep:globset",
 ]
 full = [
-  "policy-event",
-  "spine",
-  "dep:tokio", "dep:dirs", "dep:nono", "dep:dashmap", "dep:futures", "dep:uuid",
-  "dep:reqwest", "dep:sha2", "dep:semver", "dep:pubgrub", "dep:tar", "dep:zstd",
+    "policy-event",
+    "spine",
+    "dep:tokio",
+    "dep:dirs",
+    "dep:nono",
+    "dep:dashmap",
+    "dep:futures",
+    "dep:uuid",
+    "dep:reqwest",
+    "dep:sha2",
+    "dep:semver",
+    "dep:pubgrub",
+    "dep:tar",
+    "dep:zstd",
 ]
 ipfs = ["full"]
 llm-judge-openai = ["full"]

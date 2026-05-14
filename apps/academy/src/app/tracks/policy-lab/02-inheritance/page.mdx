@@ -1,0 +1,202 @@
+export const metadata = {
+  title: "Policy Inheritance",
+  order: 2,
+  track: "policy-lab",
+  description: "How policies extend and override built-in rulesets",
+}
+
+# Policy Inheritance
+
+Instead of writing policies from scratch, you can extend built-in rulesets and override
+specific guards. The `extends` field creates a parent-child relationship where the child
+inherits everything from the parent and only overrides what it explicitly specifies.
+
+## How Extends Works
+
+Here is a simple example -- a policy that extends the default ruleset and adds a custom
+forbidden path:
+
+```yaml
+version: "1.5.0"
+name: My Custom Policy
+extends: clawdstrike:default
+
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/my-custom-path/**"
+```
+
+The child inherits **all** guards and settings from the `default` ruleset. Only the
+`forbidden_path.patterns` field is overridden. Every other guard -- `egress_allowlist`,
+`secret_leak`, `patch_integrity`, `mcp_tool` -- keeps its default configuration
+unchanged.
+
+The `extends` field accepts several forms:
+
+<table className="w-full text-sm border-collapse my-6">
+<thead className="border-b-2 border-border">
+<tr>
+<th className="text-left py-2 px-3 font-semibold">Form</th>
+<th className="text-left py-2 px-3 font-semibold">Example</th>
+<th className="text-left py-2 px-3 font-semibold">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td className="py-2 px-3 border-b border-border">Built-in ruleset</td>
+<td className="py-2 px-3 border-b border-border"><code>clawdstrike:default</code></td>
+<td className="py-2 px-3 border-b border-border">One of 10 built-in rulesets</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border">Local file</td>
+<td className="py-2 px-3 border-b border-border"><code>./base-policy.yaml</code></td>
+<td className="py-2 px-3 border-b border-border">A YAML file on disk</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border">Remote URL</td>
+<td className="py-2 px-3 border-b border-border"><code>https://example.com/policy.yaml</code></td>
+<td className="py-2 px-3 border-b border-border">Fetched at load time</td>
+</tr>
+<tr>
+<td className="py-2 px-3 border-b border-border">Git ref</td>
+<td className="py-2 px-3 border-b border-border"><code>git://repo@branch:path/policy.yaml</code></td>
+<td className="py-2 px-3 border-b border-border">Pinned to a specific commit</td>
+</tr>
+</tbody>
+</table>
+
+## Merge Strategies
+
+When a child policy overrides a parent field, the `merge_strategy` controls how they
+combine. There are three strategies:
+
+### `deep_merge` (default)
+
+Recursively merges child fields into parent fields. Objects are merged key-by-key,
+arrays are replaced:
+
+```yaml
+# Parent (default ruleset)
+guards:
+  egress_allowlist:
+    allow:
+      - "api.github.com"
+      - "registry.npmjs.org"
+    default_action: block
+
+# Child
+extends: clawdstrike:default
+guards:
+  egress_allowlist:
+    allow:
+      - "api.mycompany.com"
+
+# Result: allow list is REPLACED (arrays replace, not append)
+# default_action: block is INHERITED from parent
+guards:
+  egress_allowlist:
+    allow:
+      - "api.mycompany.com"          # child's array replaces parent's
+    default_action: block             # inherited from parent
+```
+
+### `merge`
+
+Shallow merge: child top-level keys replace parent top-level keys entirely.
+
+```yaml
+merge_strategy: merge
+extends: clawdstrike:default
+guards:
+  egress_allowlist:
+    allow:
+      - "api.mycompany.com"
+
+# Result: entire egress_allowlist is child's version
+# Other guards (forbidden_path, etc.) still inherited
+```
+
+### `replace`
+
+Child replaces the parent entirely. No inheritance -- the child is a standalone policy
+that just happens to reference a parent:
+
+```yaml
+merge_strategy: replace
+extends: clawdstrike:default
+
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+
+# Result: ONLY forbidden_path is configured.
+# All other guards from default are gone.
+```
+
+## The Inheritance Tree
+
+ClawdStrike ships 10 built-in rulesets. Most are root rulesets (no parent), but some
+form an inheritance chain. The tree below visualizes these relationships:
+
+<InheritanceTree />
+
+There are 6 root rulesets that do not extend any parent:
+
+- **default** -- Balanced security with common forbidden paths and egress controls
+- **strict** -- Maximum security with empty egress allowlist and enabled detection guards
+- **permissive** -- Development-friendly with open egress and high patch limits
+- **ai-agent** -- Optimized for AI coding assistants with broader egress and relaxed patch limits
+- **cicd** -- Designed for CI/CD pipeline environments with container registry access
+- **spider-sense** -- Hierarchical threat screening via embedding similarity
+
+The remaining 4 rulesets extend a parent:
+
+- **ai-agent-posture** extends **ai-agent** -- Adds posture states (restricted / standard / elevated)
+- **remote-desktop** extends **ai-agent** -- Adds CUA-specific guards for remote desktop sessions
+- **remote-desktop-permissive** extends **remote-desktop** -- Development-friendly CUA settings
+- **remote-desktop-strict** extends **remote-desktop** -- Maximum CUA security
+
+Notice that `strict` is a root ruleset -- it does **not** extend `default`. This is
+intentional: `strict` defines completely different thresholds (empty egress allowlist,
+fail-fast mode, lower patch limits) and enabling prompt injection and jailbreak
+detection by default. Extending `default` and overriding everything would be misleading.
+
+## Try It
+
+Use the editor below to experiment with inheritance. The starter policy extends
+`clawdstrike:default` and overrides one guard. Try changing the `extends` target to
+`clawdstrike:strict` or `clawdstrike:permissive` and see how the validation behavior
+changes:
+
+<PolicyEditor defaultValue={`version: "1.5.0"
+name: My Extended Policy
+description: Exploring inheritance
+extends: clawdstrike:default
+
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/my-project/secrets/**"
+    exceptions:
+      - "**/my-project/secrets/public-keys/**"
+
+settings:
+  fail_fast: false
+  verbose_logging: true
+`} />
+
+Experiments to try:
+
+1. Change `extends` to `clawdstrike:strict` -- the policy now inherits strict's empty egress allowlist
+2. Change `extends` to `clawdstrike:permissive` -- a much more relaxed base
+3. Add `merge_strategy: replace` -- the policy becomes standalone
+4. Remove the `extends` field entirely -- the policy has no parent and only the guards you configure are active
+
+<LessonCompleteButton lessonSlug="policy-lab/02-inheritance" />
+
+<LessonNav trackSlug="policy-lab" lessonSlug="02-inheritance" />

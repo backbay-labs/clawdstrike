@@ -63,10 +63,13 @@ mod tests {
                     runtime: ProviderRuntimeState::Degraded {
                         reason: "missing full disk access".to_string(),
                     },
+                    ..ProviderStatus::unknown()
                 },
                 network_extension: ProviderStatus {
                     runtime: ProviderRuntimeState::Active,
+                    ..ProviderStatus::unknown()
                 },
+                ..CombinedSystemExtensionStatus::default()
             })
             .await;
 
@@ -82,12 +85,14 @@ mod tests {
                 runtime: ProviderRuntimeState::Degraded {
                     reason: "missing full disk access".to_string(),
                 },
+                ..ProviderStatus::unknown()
             }
         );
         assert_eq!(
             snapshot.network_extension,
             ProviderStatus {
                 runtime: ProviderRuntimeState::Active,
+                ..ProviderStatus::unknown()
             }
         );
         assert!(snapshot.is_degraded());

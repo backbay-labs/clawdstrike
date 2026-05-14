@@ -1,0 +1,141 @@
+export const metadata = {
+  title: "Security Regression: URL Spoofing",
+  order: 5,
+  track: "threat-scenarios",
+  description: "How a URL userinfo attack bypassed the egress guard -- and how it was fixed",
+}
+
+# Security Regression: URL Spoofing
+
+Security is a cat-and-mouse game. Even well-designed guards can have blind spots.
+This lesson walks through a real security regression from ClawdStrike's test suite --
+a URL spoofing attack that tricked the egress allowlist guard.
+
+## The Attack
+
+RFC 3986 defines the syntax of URIs. One feature most developers forget about is
+the **userinfo** component:
+
+```text
+https://user:password@host/path
+        ^^^^^^^^^^^^^^
+        This is "userinfo" -- everything before the @
+```
+
+A clever attacker exploits this by crafting:
+
+```text
+https://api.openai.com:443@evil.example/path
+```
+
+To a naive URL parser, the host looks like `api.openai.com`. But the **real** host
+is `evil.example`. The `api.openai.com:443` part is just the userinfo -- a username
+that happens to look like a trusted domain.
+
+## Why It Matters
+
+If the egress allowlist guard checks the *apparent* host (`api.openai.com`) instead
+of the *real* host (`evil.example`), the attacker can exfiltrate data to any domain
+by prepending an allowed domain as userinfo.
+
+The attacker's request looks like it's going to a trusted API. In reality, it's
+sending your data to `evil.example`. The guard sees `api.openai.com` in the URL
+and waves it through.
+
+This is not a theoretical attack. URL userinfo spoofing has been used in real-world
+phishing and data exfiltration campaigns.
+
+## The Vulnerable Code
+
+A naive host extraction function might look like this:
+
+```rust
+// VULNERABLE: naive host extraction
+fn extract_host_naive(url: &str) -> Option<&str> {
+    let without_scheme = url.strip_prefix("https://")?;
+    // Takes everything before the first '/' or ':'
+    // Would return "api.openai.com" for the spoofed URL!
+    without_scheme.split(&['/', ':'][..]).next()
+}
+```
+
+This function strips the scheme and grabs the first segment. For
+`https://api.openai.com:443@evil.example/path`, it returns `api.openai.com` --
+exactly what the attacker wants.
+
+## The Fix
+
+ClawdStrike's actual implementation uses a proper URL parser that handles
+RFC 3986 userinfo correctly:
+
+<AnnotatedSource
+  tag="net-irm-extract-host"
+  title="NetworkIrm::extract_host_from_url() -- The Fix"
+  annotations={[
+    { line: 3, label: "1", explanation: "Uses Url::parse() which correctly handles RFC 3986 userinfo syntax. The parser knows that api.openai.com:443 before @ is userinfo, not the host." },
+    { line: 4, label: "2", explanation: "host_str() returns the REAL host after the @ sign -- 'evil.example', not 'api.openai.com'. The attacker's spoofed domain is correctly identified." }
+  ]}
+/>
+
+The key insight: **never roll your own URL parser.** Use a well-tested library that
+handles the full RFC 3986 specification, including edge cases like userinfo, IPv6
+bracket notation, and percent-encoding.
+
+## The Regression Test
+
+After fixing the vulnerability, a regression test was added to ensure it never
+comes back. This test is part of ClawdStrike's security regression suite:
+
+<AnnotatedSource
+  tag="security-regression-url-spoof"
+  title="Security Regression Test: URL Userinfo Spoofing"
+  annotations={[
+    { line: 10, label: "1", explanation: "Policy only allows api.openai.com -- the domain the attacker is impersonating in the userinfo field." },
+    { line: 19, label: "2", explanation: "Attacker crafts a URL with the allowed domain as userinfo: api.openai.com:443@evil.example. The real destination is evil.example." },
+    { line: 23, label: "3", explanation: "The guard correctly identifies evil.example as the real host and DENIES the request. The spoofed userinfo is ignored." }
+  ]}
+/>
+
+Every security fix in ClawdStrike gets a regression test. If someone accidentally
+reintroduces the vulnerability, this test catches it immediately in CI.
+
+## Try It Yourself
+
+The egress guard blocks domains not in the allowlist. Try different domains to see
+what gets through and what gets blocked:
+
+<GuardPlayground guard="egress_allowlist" actionType="network_egress" placeholder="Enter a domain or URL..." defaultInput="evil.example" examples={[{label: "Spoofed URL host", value: "evil.example"}, {label: "Allowed API", value: "api.openai.com"}, {label: "Random domain", value: "malware-c2.xyz"}]} />
+
+## Bypass Challenge
+
+Can you find a domain that the egress guard actually allows through?
+
+<BypassChallenge
+  guard="egress_allowlist"
+  expectedVerdict="allow"
+  description="The egress guard blocks unknown domains. Can you find a domain that IS allowed?"
+  hint="Check which domains are in the default allowlist. Try api.openai.com or api.anthropic.com."
+  challengeId="threat-scenarios/05-url-spoofing/easy"
+  actionType="network_egress"
+  placeholder="Enter a domain..."
+/>
+
+## The Lesson
+
+Every parser bug is a potential bypass. URL parsing, path normalization, header
+injection, encoding edge cases -- attackers exploit the gap between what code
+*appears* to do and what it *actually* does.
+
+Three rules from this regression:
+
+1. **Never roll your own parser.** Use well-tested libraries for URL parsing, path
+   normalization, and any format with a spec.
+2. **Write regression tests for every security fix.** The test is the proof that the
+   fix works and the guarantee that the bug won't return.
+3. **Think in RFC, not in vibes.** If you're writing security-critical code, read the
+   spec. RFC 3986 section 3.2.1 defines userinfo. If you didn't know that section
+   existed, your parser probably doesn't handle it correctly.
+
+<LessonCompleteButton lessonSlug="threat-scenarios/05-url-spoofing" />
+
+<LessonNav trackSlug="threat-scenarios" lessonSlug="05-url-spoofing" />

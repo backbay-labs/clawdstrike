@@ -43,6 +43,20 @@ find_package_json_files() {
         | sort
 }
 
+find_openclaw_plugin_files() {
+    find packages \
+        \( -type d -name node_modules -o -type d -name .turbo \) -prune \
+        -o -type f -name openclaw.plugin.json -print \
+        | sort
+}
+
+find_package_lock_files() {
+    find packages apps \
+        \( -type d -name node_modules -o -type d -name .turbo \) -prune \
+        -o -type f -name package-lock.json -print \
+        | sort
+}
+
 # Update root Cargo.toml workspace version
 echo "  Updating Cargo.toml workspace version..."
 sed_inplace "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" Cargo.toml
@@ -53,12 +67,17 @@ for crate in \
     hush-core \
     hush-proxy \
     clawdstrike \
+    clawdstrike-broker-protocol \
     hush-certification \
     spine \
     bridge-runtime \
+    hush-multi-agent \
     hunt-scan \
     hunt-query \
     hunt-correlate \
+    clawdstrike-logos \
+    logos-ffi \
+    logos-z3 \
     clawdstrike-ocsf \
     clawdstrike-policy-event
 do
@@ -68,15 +87,35 @@ done
 # Update package.json files across published npm packages
 echo "  Updating packages/**/package.json versions..."
 if command -v node &> /dev/null; then
+    INTERNAL_PACKAGE_NAMES=()
+    while IFS= read -r INTERNAL_PKG_JSON; do
+        INTERNAL_PACKAGE_NAMES+=("$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).name" "$INTERNAL_PKG_JSON")")
+    done < <(find_package_json_files)
+
+    if [[ -f "crates/libs/hush-wasm/package.json" ]]; then
+        INTERNAL_PACKAGE_NAMES+=("$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).name" crates/libs/hush-wasm/package.json)")
+    fi
+
     while IFS= read -r PKG_JSON; do
         node -e "
             const fs = require('fs');
             const path = process.argv[1];
             const version = process.argv[2];
+            const internalPackageNames = new Set(process.argv.slice(3));
             const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
             pkg.version = version;
+            for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+                const deps = pkg[field];
+                if (!deps) continue;
+                for (const [name, current] of Object.entries(deps)) {
+                    if (!internalPackageNames.has(name) || typeof current !== 'string') continue;
+                    const match = current.match(/^([~^]?)([0-9]+\.[0-9]+\.[0-9]+)$/);
+                    if (!match) continue;
+                    deps[name] = match[1] + version;
+                }
+            }
             fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
-        " "$PKG_JSON" "$VERSION"
+        " "$PKG_JSON" "$VERSION" "${INTERNAL_PACKAGE_NAMES[@]}"
     done < <(find_package_json_files)
 
     if [[ -f "crates/libs/hush-wasm/package.json" ]]; then
@@ -150,6 +189,76 @@ fi
 if [[ -n "$PY_INIT_PATH" ]]; then
     echo "  Updating ${PY_INIT_PATH} __version__..."
     sed_inplace "s/^__version__ = \"[^\"]*\"/__version__ = \"$VERSION\"/" "$PY_INIT_PATH"
+fi
+
+if [[ -f "crates/libs/logos-z3/Cargo.toml" ]]; then
+    echo "  Updating crates/libs/logos-z3/Cargo.toml..."
+    sed_inplace "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" crates/libs/logos-z3/Cargo.toml
+    sed_inplace "s/\\(logos-ffi = {[^}]*version = \\)\"[^\"]*\"/\\1\"$VERSION\"/" crates/libs/logos-z3/Cargo.toml
+fi
+
+for docker_workspace in \
+    infra/docker/workspace-control-api.toml \
+    infra/docker/workspace-hushd.toml \
+    infra/docker/workspace-registry.toml
+do
+    if [[ -f "$docker_workspace" ]]; then
+        echo "  Updating ${docker_workspace}..."
+        sed_inplace "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" "$docker_workspace"
+        for crate in \
+            hush-core \
+            hush-proxy \
+            clawdstrike \
+            hush-certification \
+            spine \
+            hunt-scan \
+            hunt-query \
+            clawdstrike-ocsf \
+            clawdstrike-policy-event
+        do
+            sed_inplace "s/\\(${crate} = {[^}]*version = \\)\"[^\"]*\"/\\1\"$VERSION\"/" "$docker_workspace"
+        done
+    fi
+done
+
+while IFS= read -r PLUGIN_JSON; do
+    echo "  Updating ${PLUGIN_JSON}..."
+    sed_inplace "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$PLUGIN_JSON"
+done < <(find_openclaw_plugin_files)
+
+if command -v npm &> /dev/null && [[ -f "package-lock.json" ]]; then
+    echo "  Refreshing root package-lock.json workspace metadata..."
+    npm install --package-lock-only --ignore-scripts >/dev/null
+fi
+
+if command -v npm &> /dev/null; then
+    while IFS= read -r LOCK_JSON; do
+        LOCK_DIR="$(dirname "$LOCK_JSON")"
+        echo "  Refreshing ${LOCK_JSON} resolved dependency graph..."
+        (
+            cd "$LOCK_DIR"
+            npm install --package-lock-only --ignore-scripts >/dev/null
+        )
+    done < <(find_package_lock_files)
+fi
+
+if command -v node &> /dev/null; then
+    echo "  Syncing package-local lockfiles to local workspace links..."
+    node scripts/sync-package-locks.mjs
+fi
+
+if command -v node &> /dev/null && [[ -f "package-lock.json" ]] && [[ -f "package.json" ]]; then
+    echo "  Sanitizing root package-lock.json metadata..."
+    node -e "
+        const fs = require('fs');
+        const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+        const lockPath = 'package-lock.json';
+        const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        if (!Object.hasOwn(pkg, 'name')) {
+            delete lock.name;
+        }
+        fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\\n');
+    "
 fi
 
 echo ""

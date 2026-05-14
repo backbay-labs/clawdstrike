@@ -1,0 +1,113 @@
+export const metadata = {
+  title: "Input Injection Capability Guard",
+  order: 13,
+  track: "guard-gallery",
+  description: "Restricts input injection capabilities (keyboard, mouse, touch) in CUA environments",
+}
+
+# Input Injection Capability Guard
+
+Computer Use Agents inject inputs (keyboard strokes, mouse clicks, touch events) into
+remote sessions. Without controls, an agent could type arbitrary commands, click on any
+UI element, or use touch gestures to navigate to malicious content.
+
+## The Threat
+
+Input injection is the mechanism through which CUA agents interact with remote desktops.
+The risks include:
+
+- **Keyboard** -- Typing arbitrary commands into terminals, password fields, or code editors
+- **Mouse** -- Clicking on any UI element: download buttons, security dialogs, admin panels
+- **Touch** -- Touch gestures that navigate to malicious content or approve actions
+- **Unknown types** -- New input mechanisms (gamepad, voice, eye tracking) that could be
+  exploited before the guard knows about them
+
+The key insight: the guard fails closed on a **missing** field rather than a dangerous
+value. If an `input.inject` action does not declare its `input_type`, it is denied
+immediately -- no exceptions.
+
+## How It Works
+
+The guard validates `input.inject` actions through a strict validation chain:
+
+1. **Missing field = DENY** -- The action MUST have an `input_type` field. Missing
+   `input_type` is an automatic DENY (fail-closed).
+2. **Allowlist check** -- The `input_type` must be in the allowed set (default: keyboard,
+   mouse, touch).
+3. **Postcondition probe** -- Optionally, a `postcondition_probe_hash` can be required to
+   verify the result of the input injection.
+
+This is the only guard that fails closed on a MISSING field rather than a dangerous value.
+Every other guard fails on what you send -- this one fails on what you forget to send.
+
+## Configuration
+
+```yaml
+guards:
+  input_injection_capability:
+    enabled: true
+    allowed_input_types:
+      - keyboard
+      - mouse
+      - touch
+    require_postcondition_probe: false
+```
+
+- **`allowed_input_types`** -- List of allowed input types (default: keyboard, mouse, touch)
+- **`require_postcondition_probe`** -- Require a postcondition probe hash for verification (default: false)
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="input-injection-check"
+  title="InputInjectionCapabilityGuard::check()"
+  annotations={[
+    { line: 3, label: "1", explanation: "Extract the input_type field -- if missing, DENY immediately (fail-closed)" },
+    { line: 7, label: "2", explanation: "Check if input_type is in the allowed set (default: keyboard, mouse, touch)" },
+    { line: 11, label: "3", explanation: "If postcondition probe is required, validate the probe hash is present" },
+    { line: 15, label: "4", explanation: "Only explicit matches pass -- everything else is denied" }
+  ]}
+/>
+
+## Playground
+
+Select an input type below to see how the InputInjectionCapability guard evaluates it.
+Try allowed types (keyboard, mouse, touch) and unknown types to see the fail-closed behavior.
+
+<GuardPlayground guard="computer_use" actionType="custom" customActionType="computer_use" placeholder="Enter an input type (keyboard, mouse, touch)..." defaultInput="keyboard" examples={[{label: "Keyboard", value: "keyboard"}, {label: "Mouse", value: "mouse"}, {label: "Touch", value: "touch"}, {label: "Unknown type", value: "gamepad"}]} />
+
+## Bypass Challenges
+
+### Challenge 1: Allowed Input Type (Easy)
+
+<BypassChallenge
+  guard="computer_use"
+  expectedVerdict="allow"
+  description="Send an input injection with an allowed input type."
+  hint="The default allowed types are keyboard, mouse, and touch. Send input.inject with one of these types."
+  challengeId="guard-gallery/13-input-injection/easy"
+  actionType="custom"
+  customActionType="computer_use"
+  placeholder="Enter input.inject action..."
+/>
+
+### Challenge 2: Missing Field (Hard)
+
+<BypassChallenge
+  guard="computer_use"
+  expectedVerdict="deny"
+  description="What happens when you send input.inject WITHOUT an input_type? Does the guard allow it?"
+  hint="Fail-closed! Missing input_type = DENY, even if everything else looks fine. This is a deliberate design choice -- the guard requires explicit type declaration."
+  challengeId="guard-gallery/13-input-injection/hard"
+  actionType="custom"
+  customActionType="computer_use"
+  placeholder="Enter input.inject action (try omitting input_type)..."
+/>
+
+The hard challenge uses `expectedVerdict="deny"` -- you need to understand that the
+**absence** of a field causes denial. This is different from other guards where the
+challenge is to find a way to get ALLOWED.
+
+<LessonCompleteButton lessonSlug="guard-gallery/13-input-injection" />
+
+<LessonNav trackSlug="guard-gallery" lessonSlug="13-input-injection" />

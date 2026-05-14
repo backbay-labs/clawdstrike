@@ -96,6 +96,7 @@ impl ShellCommandGuard {
         }
     }
 
+    // @academy:start shell-command-extract
     fn extract_candidate_paths(&self, commandline: &str) -> Vec<String> {
         let tokens = shlex_split_best_effort(commandline);
         if tokens.is_empty() {
@@ -147,6 +148,7 @@ impl ShellCommandGuard {
 
         out
     }
+    // @academy:end shell-command-extract
 }
 
 impl Default for ShellCommandGuard {
@@ -169,6 +171,7 @@ impl Guard for ShellCommandGuard {
         matches!(action, GuardAction::ShellCommand(_))
     }
 
+    // @academy:start shell-command-check
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
         if !self.enabled {
             return GuardResult::allow(&self.name);
@@ -229,6 +232,7 @@ impl Guard for ShellCommandGuard {
 
         GuardResult::allow(&self.name)
     }
+    // @academy:end shell-command-check
 }
 
 fn shlex_split_best_effort(input: &str) -> Vec<String> {

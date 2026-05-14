@@ -29,6 +29,7 @@ import type {
 } from "../../types.js";
 import { type ApprovalResolutionType, peekApproval, recordApproval } from "../approval-state.js";
 import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
+import { clearAllToolInvocations, rememberToolInvocation } from "../tool-invocation-state.js";
 
 /**
  * Initialize the hook with configuration.
@@ -36,6 +37,7 @@ import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
  */
 export function initialize(config: ClawdstrikeConfig): void {
   initializeEngine(config);
+  clearAllToolInvocations();
 }
 
 /**
@@ -471,6 +473,14 @@ const handler: HookHandler = async (
   const sessionId = isModern
     ? (hookCtx?.sessionKey ?? hookCtx?.agentId ?? "openclaw-runtime")
     : legacyToolEvent!.context.sessionId;
+  const toolCallId =
+    isModern && typeof hookCtx?.toolCallId === "string" && hookCtx.toolCallId.length > 0
+      ? hookCtx.toolCallId
+      : undefined;
+
+  if (isModern) {
+    rememberToolInvocation(sessionId, toolName, params, toolCallId);
+  }
 
   // Determine if this tool is destructive
   const eventType = inferPolicyEventType(toolName, params);

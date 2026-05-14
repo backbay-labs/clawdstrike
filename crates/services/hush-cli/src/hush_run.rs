@@ -4,11 +4,15 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::io::Write;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
-use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
+
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt as _;
+#[cfg(windows)]
+use std::os::windows::process::ExitStatusExt as _;
 
 use anyhow::Context as _;
 use chrono::Utc;
@@ -26,6 +30,7 @@ use crate::policy_event::{
     PolicyEventType,
 };
 use crate::remote_extends;
+#[cfg(unix)]
 use crate::sandbox_nono;
 use crate::ExitCode;
 use crate::SandboxMode;
@@ -382,124 +387,147 @@ pub async fn cmd_run(
 
     let (sandbox_execution, sandbox_note) = match sandbox {
         SandboxMode::Nono => {
-            let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            #[cfg(unix)]
+            {
+                let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-            // Extract proxy port from proxy URL
-            let proxy_port = env_proxy_url
-                .as_ref()
-                .and_then(|url| url.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()));
+                // Extract proxy port from proxy URL
+                let proxy_port = env_proxy_url
+                    .as_ref()
+                    .and_then(|url| url.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()));
 
-            // Build capability set from policy using CapabilityBuilder
-            let supervisor_policy = if supervised {
-                Some(sandbox_policy.clone())
-            } else {
-                None
-            };
-            let mut builder =
-                clawdstrike::sandbox::CapabilityBuilder::new(sandbox_policy, working_dir.clone());
-            if let Some(port) = proxy_port {
-                builder = builder.with_proxy_port(port);
-            }
+                // Build capability set from policy using CapabilityBuilder
+                let supervisor_policy = if supervised {
+                    Some(sandbox_policy.clone())
+                } else {
+                    None
+                };
+                let mut builder = clawdstrike::sandbox::CapabilityBuilder::new(
+                    sandbox_policy,
+                    working_dir.clone(),
+                );
+                if let Some(port) = proxy_port {
+                    builder = builder.with_proxy_port(port);
+                }
 
-            match builder.build_with_diagnostics() {
-                Ok((caps, translation_warnings)) => {
-                    // Log translation warnings
-                    for tw in &translation_warnings {
-                        match tw.severity {
-                            clawdstrike::sandbox::WarningSeverity::Warning => {
-                                let _ = writeln!(
-                                    stderr,
-                                    "[nono] warning: {}: {}",
-                                    tw.guard, tw.message
-                                );
-                            }
-                            clawdstrike::sandbox::WarningSeverity::Info => {
-                                // Only show info in verbose mode (skip for now)
+                match builder.build_with_diagnostics() {
+                    Ok((caps, translation_warnings)) => {
+                        // Log translation warnings
+                        for tw in &translation_warnings {
+                            match tw.severity {
+                                clawdstrike::sandbox::WarningSeverity::Warning => {
+                                    let _ = writeln!(
+                                        stderr,
+                                        "[nono] warning: {}: {}",
+                                        tw.guard, tw.message
+                                    );
+                                }
+                                clawdstrike::sandbox::WarningSeverity::Info => {
+                                    // Only show info in verbose mode (skip for now)
+                                }
                             }
                         }
-                    }
 
-                    // Pre-flight validation
-                    let preflight =
-                        clawdstrike::sandbox::preflight_check(&caps, &command, &working_dir);
-                    for e in &preflight.errors {
-                        let _ = writeln!(stderr, "[nono] error: {}", e);
-                    }
-                    for w in &preflight.warnings {
-                        let _ = writeln!(stderr, "[nono] warning: {}", w);
-                    }
+                        // Pre-flight validation
+                        let preflight =
+                            clawdstrike::sandbox::preflight_check(&caps, &command, &working_dir);
+                        for e in &preflight.errors {
+                            let _ = writeln!(stderr, "[nono] error: {}", e);
+                        }
+                        for w in &preflight.warnings {
+                            let _ = writeln!(stderr, "[nono] warning: {}", w);
+                        }
 
-                    if !preflight.is_ok() {
-                        let _ = writeln!(
-                            stderr,
-                            "[nono] aborting: sandbox pre-flight failed (fail-closed)"
-                        );
-                        drop(event_emitter);
-                        await_event_writer(writer_handle, stderr).await;
-                        return ExitCode::RuntimeError.as_i32();
-                    } else {
-                        // Check platform support
-                        if !nono::Sandbox::is_supported() {
-                            let support = nono::Sandbox::support_info();
+                        if !preflight.is_ok() {
                             let _ = writeln!(
                                 stderr,
-                                "[nono] warning: sandbox not supported: {}",
-                                support.details
+                                "[nono] aborting: sandbox pre-flight failed (fail-closed)"
                             );
-                        }
-
-                        if let Some(ref sp) = supervisor_policy {
-                            // Build never-grant list and supervisor context
-                            let never_grant_paths =
-                                clawdstrike::sandbox::build_never_grant_list(sp);
-                            match nono::NeverGrantChecker::new(&never_grant_paths) {
-                                Ok(never_grant) => {
-                                    let context = GuardContext::new();
-                                    let _ = writeln!(
-                                        stderr,
-                                        "[nono] supervised mode: {} never-grant paths",
-                                        never_grant.len()
-                                    );
-                                    (
-                                        SandboxExecution::Supervised(Box::new(SupervisedData {
-                                            caps: Box::new(caps),
-                                            engine: Arc::clone(&engine),
-                                            context,
-                                            never_grant,
-                                        })),
-                                        "nono+supervised".to_string(),
-                                    )
-                                }
-                                Err(e) => {
-                                    let _ = writeln!(
-                                        stderr,
-                                        "[nono] error: failed to activate supervised mode: {}",
-                                        e
-                                    );
-                                    drop(event_emitter);
-                                    await_event_writer(writer_handle, stderr).await;
-                                    return ExitCode::RuntimeError.as_i32();
-                                }
-                            }
+                            drop(event_emitter);
+                            await_event_writer(writer_handle, stderr).await;
+                            return ExitCode::RuntimeError.as_i32();
                         } else {
-                            (
-                                SandboxExecution::Nono {
-                                    caps: Box::new(caps),
-                                    working_dir,
-                                },
-                                "nono".to_string(),
-                            )
+                            // Check platform support
+                            if !nono::Sandbox::is_supported() {
+                                let support = nono::Sandbox::support_info();
+                                let _ = writeln!(
+                                    stderr,
+                                    "[nono] warning: sandbox not supported: {}",
+                                    support.details
+                                );
+                            }
+
+                            if let Some(ref sp) = supervisor_policy {
+                                // Build never-grant list and supervisor context
+                                let never_grant_paths =
+                                    clawdstrike::sandbox::build_never_grant_list(sp);
+                                match nono::NeverGrantChecker::new(&never_grant_paths) {
+                                    Ok(never_grant) => {
+                                        let context = GuardContext::new();
+                                        let _ = writeln!(
+                                            stderr,
+                                            "[nono] supervised mode: {} never-grant paths",
+                                            never_grant.len()
+                                        );
+                                        (
+                                            SandboxExecution::Supervised(Box::new(
+                                                SupervisedData {
+                                                    caps: Box::new(caps),
+                                                    engine: Arc::clone(&engine),
+                                                    context,
+                                                    never_grant,
+                                                },
+                                            )),
+                                            "nono+supervised".to_string(),
+                                        )
+                                    }
+                                    Err(e) => {
+                                        let _ = writeln!(
+                                            stderr,
+                                            "[nono] error: failed to activate supervised mode: {}",
+                                            e
+                                        );
+                                        drop(event_emitter);
+                                        await_event_writer(writer_handle, stderr).await;
+                                        return ExitCode::RuntimeError.as_i32();
+                                    }
+                                }
+                            } else {
+                                (
+                                    SandboxExecution::Nono {
+                                        caps: Box::new(caps),
+                                        working_dir,
+                                    },
+                                    "nono".to_string(),
+                                )
+                            }
                         }
                     }
+                    Err(e) => {
+                        let _ = writeln!(
+                            stderr,
+                            "[nono] FATAL: failed to build sandbox: {}. Aborting -- will not run unsandboxed.",
+                            e
+                        );
+                        return ExitCode::RuntimeError.as_i32();
+                    }
                 }
-                Err(e) => {
+            }
+
+            #[cfg(not(unix))]
+            {
+                if supervised {
                     let _ = writeln!(
                         stderr,
-                        "[nono] FATAL: failed to build sandbox: {}. Aborting -- will not run unsandboxed.",
-                        e
+                        "[nono] warning: supervised mode requires Linux; sandbox disabled on this OS"
                     );
-                    return ExitCode::RuntimeError.as_i32();
+                } else {
+                    let _ = writeln!(
+                        stderr,
+                        "[nono] warning: nono sandbox is not supported on this OS; sandbox disabled"
+                    );
                 }
+                (SandboxExecution::None, "disabled".to_string())
             }
         }
         SandboxMode::Legacy => match maybe_prepare_sandbox(true, stderr) {
@@ -513,6 +541,7 @@ pub async fn cmd_run(
     };
 
     let sandbox_run = match sandbox_execution {
+        #[cfg(unix)]
         SandboxExecution::Nono { caps, .. } => {
             // Build env overrides for the child
             let mut env_overrides = HashMap::new();
@@ -545,6 +574,7 @@ pub async fn cmd_run(
                 }
             }
         }
+        #[cfg(unix)]
         SandboxExecution::Supervised(data) => {
             let SupervisedData {
                 caps,
@@ -882,7 +912,21 @@ fn child_exit_code(status: std::process::ExitStatus) -> i32 {
 }
 
 fn exit_status_from_code(code: i32) -> std::process::ExitStatus {
-    std::process::ExitStatus::from_raw(code << 8)
+    #[cfg(unix)]
+    {
+        std::process::ExitStatus::from_raw(code << 8)
+    }
+
+    #[cfg(windows)]
+    {
+        std::process::ExitStatus::from_raw(code as u32)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = code;
+        panic!("exit_status_from_code is unsupported on this platform");
+    }
 }
 
 async fn await_event_writer(
@@ -996,6 +1040,7 @@ enum SandboxWrapper {
 }
 
 /// Data for supervised nono execution, boxed to keep enum variant sizes balanced.
+#[cfg(unix)]
 struct SupervisedData {
     caps: Box<nono::CapabilitySet>,
     engine: Arc<HushEngine>,
@@ -1043,12 +1088,14 @@ fn finalize_sandbox_contract_status(
 /// Execution mode for the child process sandbox.
 enum SandboxExecution {
     /// Nono kernel-level sandbox
+    #[cfg(unix)]
     Nono {
         caps: Box<nono::CapabilitySet>,
         #[allow(dead_code)] // reserved for Phase 2 diagnostics
         working_dir: PathBuf,
     },
     /// Nono kernel-level sandbox with supervisor dynamic enforcement
+    #[cfg(unix)]
     Supervised(Box<SupervisedData>),
     /// Legacy sandbox-exec/bwrap wrapper
     Legacy(SandboxWrapper),

@@ -1,0 +1,131 @@
+export const metadata = {
+  title: "Remote Desktop Side Channel Guard",
+  order: 12,
+  track: "guard-gallery",
+  description: "Controls 6 side channels: clipboard, file transfer, audio, drive mapping, printing, session share",
+}
+
+# Remote Desktop Side Channel Guard
+
+Remote desktop sessions expose side channels that can leak data even when the primary
+session is locked down. The RemoteDesktopSideChannelGuard individually controls 6
+channels to prevent data exfiltration and unauthorized access.
+
+## The Threat
+
+Even with the Computer Use Guard controlling which CUA actions are allowed, side
+channels offer alternative data paths:
+
+- **Clipboard** -- Copy sensitive data from the remote session to the local machine
+- **File transfer** -- Download files from the remote session
+- **Session sharing** -- Grant unauthorized users access to the session
+- **Drive mapping** -- Mount the local filesystem inside the remote session
+- **Audio** -- Capture audio streams (voice data, notifications)
+- **Printing** -- Print documents from the remote session to local printers
+
+An agent could exfiltrate data via clipboard copy, transfer files to the local machine,
+share sessions with unauthorized users, or use drive mapping to access the local
+filesystem -- all without triggering the Computer Use Guard.
+
+## How It Works
+
+The guard matches on 6 specific `remote.*` action types, each with its own
+enabled/disabled toggle:
+
+1. **`remote.clipboard`** -- Clipboard read/write
+2. **`remote.file_transfer`** -- File transfer, with optional `max_transfer_size_bytes` limit
+3. **`remote.session_share`** -- Sharing the session with others
+4. **`remote.audio`** -- Audio channels
+5. **`remote.drive_mapping`** -- Mounting local drives in the remote session
+6. **`remote.printing`** -- Printing from the remote session
+
+Any `remote.*` type NOT in these 6 known channels is **denied** (fail-closed for unknown
+channels). The guard accepts both snake_case and camelCase for the transfer size field.
+
+The `is_remote_side_channel_candidate()` function filters which actions this guard
+evaluates -- session management actions (`remote.session.connect`, `remote.session.disconnect`,
+`remote.session.reconnect`) are handled by the Computer Use Guard, not this one.
+
+## Configuration
+
+```yaml
+guards:
+  remote_desktop_side_channel:
+    enabled: true
+    clipboard_enabled: false
+    file_transfer_enabled: true
+    max_transfer_size_bytes: 10485760  # 10MB
+    session_share_enabled: false
+    audio_enabled: true
+    drive_mapping_enabled: false
+    printing_enabled: true
+```
+
+- **`clipboard_enabled`** -- Allow clipboard read/write (default: false)
+- **`file_transfer_enabled`** -- Allow file transfers (default: true)
+- **`max_transfer_size_bytes`** -- Maximum file transfer size in bytes (default: 10MB)
+- **`session_share_enabled`** -- Allow session sharing (default: false)
+- **`audio_enabled`** -- Allow audio channels (default: true)
+- **`drive_mapping_enabled`** -- Allow drive mapping (default: false)
+- **`printing_enabled`** -- Allow printing (default: true)
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="remote-desktop-check"
+  title="RemoteDesktopSideChannelGuard::check()"
+  annotations={[
+    { line: 3, label: "1", explanation: "Match on the action_type -- dispatches to channel-specific logic" },
+    { line: 8, label: "2", explanation: "Each channel has an enabled/disabled toggle -- disabled = DENY" },
+    { line: 15, label: "3", explanation: "file_transfer also checks transfer_size against max_transfer_size_bytes" },
+    { line: 25, label: "4", explanation: "Unknown remote.* types are denied -- fail-closed for new/unknown channels" }
+  ]}
+/>
+
+<AnnotatedSource
+  tag="remote-desktop-candidate"
+  title="is_remote_side_channel_candidate()"
+  annotations={[
+    { line: 2, label: "1", explanation: "Only remote.* types that are NOT session management (connect/disconnect/reconnect) are candidates" },
+    { line: 4, label: "2", explanation: "remote.session.connect is handled by ComputerUseGuard, not this guard" }
+  ]}
+/>
+
+## Playground
+
+Select a remote desktop channel below to see how the guard evaluates it. Try enabled
+channels (audio, printing) and disabled ones (clipboard, drive mapping).
+
+<GuardPlayground guard="remote_desktop_side_channel" actionType="custom" customActionType="remote_desktop" placeholder="Enter a remote desktop channel (e.g., remote.clipboard)..." defaultInput="remote.clipboard" examples={[{label: "Clipboard", value: "remote.clipboard"}, {label: "File transfer", value: "remote.file_transfer"}, {label: "Session share", value: "remote.session_share"}, {label: "Audio", value: "remote.audio"}]} />
+
+## Bypass Challenges
+
+### Challenge 1: Enabled Channel (Easy)
+
+<BypassChallenge
+  guard="remote_desktop_side_channel"
+  expectedVerdict="allow"
+  description="Use a side channel that's enabled by default."
+  hint="Check which channels are enabled in the default config. Audio and printing are typically enabled."
+  challengeId="guard-gallery/12-remote-desktop/easy"
+  actionType="custom"
+  customActionType="remote_desktop"
+  placeholder="Enter a remote desktop channel..."
+/>
+
+### Challenge 2: Not My Jurisdiction (Hard)
+
+<BypassChallenge
+  guard="remote_desktop_side_channel"
+  expectedVerdict="allow"
+  description="Try sending remote.session.connect -- does this guard handle it?"
+  hint="remote.session.connect is NOT a side channel -- it's a session management action handled by the ComputerUseGuard. The is_remote_side_channel_candidate() function excludes it, so this guard doesn't evaluate it at all. It returns ALLOW because it's not this guard's jurisdiction."
+  challengeId="guard-gallery/12-remote-desktop/hard"
+  actionType="custom"
+  customActionType="remote_desktop"
+  placeholder="Enter a remote desktop action..."
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/12-remote-desktop" />
+
+<LessonNav trackSlug="guard-gallery" lessonSlug="12-remote-desktop" />

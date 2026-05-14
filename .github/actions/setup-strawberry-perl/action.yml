@@ -1,0 +1,39 @@
+name: Setup Strawberry Perl
+description: Install or locate Strawberry Perl on Windows runners and configure PATH/ENV
+
+runs:
+  using: composite
+  steps:
+    - name: Prefer Strawberry Perl on Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $perlBinCandidates = @(
+          "${env:ChocolateyInstall}\lib\strawberryperl\tools\perl\bin",
+          "C:\Strawberry\perl\bin"
+        )
+        $cBinCandidates = @(
+          "${env:ChocolateyInstall}\lib\strawberryperl\tools\c\bin",
+          "C:\Strawberry\c\bin"
+        )
+
+        $perlBin = $perlBinCandidates | Where-Object { Test-Path (Join-Path $_ "perl.exe") } | Select-Object -First 1
+        if (-not $perlBin) {
+          choco install strawberryperl -y --no-progress
+          $perlBin = $perlBinCandidates | Where-Object { Test-Path (Join-Path $_ "perl.exe") } | Select-Object -First 1
+        }
+        if (-not $perlBin) {
+          throw "Unable to install or find Strawberry Perl on the Windows runner"
+        }
+
+        $perlExe = Join-Path $perlBin "perl.exe"
+        $perlBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        "PERL=$perlExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "OPENSSL_SRC_PERL=$perlExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        $cBin = $cBinCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($cBin) {
+          $cBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        }
+
+        & where.exe perl
+        & $perlExe -v

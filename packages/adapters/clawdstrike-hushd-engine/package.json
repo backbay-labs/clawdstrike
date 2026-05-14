@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/engine-remote",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "Policy engine adapter that calls hushd /api/v1/eval",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,7 @@
     "format:check": "biome check src/"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.2.1"
+    "@clawdstrike/adapter-core": "^0.2.7"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",

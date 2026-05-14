@@ -1,6 +1,6 @@
 [package]
 name = "clawdstrike-agent"
-version = "0.2.5"
+version = "0.2.7"
 description = "Clawdstrike Agent - Security enforcement runtime for AI coding tools"
 edition = "2021"
 rust-version = "1.80"
@@ -62,7 +62,7 @@ base64 = "0.22"
 
 # NATS / Spine (adaptive SDR)
 spine = { package = "hush-spine", path = "../../../crates/libs/spine" }
-async-nats = "0.39"
+async-nats = "0.40"
 ed25519-dalek = { version = "2.2", features = ["pem", "pkcs8"] }
 zeroize = "1"
 subtle = "2"
@@ -80,6 +80,9 @@ mac-notification-sys = "0.6"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[patch.crates-io]
+async-nats = { path = "../../../infra/vendor/async-nats" }
 
 [lints.clippy]
 unwrap_used = "deny"

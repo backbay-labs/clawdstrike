@@ -9,14 +9,19 @@ use crate::api::v1::V1Error;
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::guards::{GuardAction, GuardContext, GuardResult, Severity};
-use clawdstrike::{HushEngine, PostureRuntimeState, PostureTransitionRecord, RequestContext};
+use clawdstrike::{
+    EnclaveResolver, HushEngine, OriginContext, OriginRuntimeState, PostureRuntimeState,
+    PostureTransitionRecord, RequestContext,
+};
 use hush_certification::audit::NewAuditEventV2;
 
 use crate::audit::AuditEvent;
 use crate::auth::AuthenticatedActor;
 use crate::certification_webhooks::emit_webhook_event;
 use crate::identity_rate_limit::IdentityRateLimitError;
-use crate::session::{posture_state_from_session, posture_state_patch};
+use crate::session::{
+    origin_state_from_session, origin_state_patch, posture_state_from_session, posture_state_patch,
+};
 use crate::siem::types::SecurityEvent;
 use crate::state::{AppState, DaemonEvent};
 
@@ -67,7 +72,7 @@ fn parse_egress_target(target: &str) -> Result<(String, u16), String> {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct CheckRequest {
-    /// Action type: file_access, file_write, egress, shell, mcp_tool, patch
+    /// Action type: file_access, file_write, egress, shell, mcp_tool, patch, output_send
     pub action_type: String,
     /// Target (path, host:port, tool name)
     pub target: String,
@@ -77,6 +82,9 @@ pub struct CheckRequest {
     /// Optional arguments (for mcp_tool)
     #[serde(default)]
     pub args: Option<serde_json::Value>,
+    /// Optional origin context for origin-aware enforcement.
+    #[serde(default, alias = "originContext")]
+    pub origin: Option<OriginContext>,
     /// Optional session ID
     #[serde(default)]
     pub session_id: Option<String>,
@@ -213,6 +221,43 @@ fn posture_info_from_runtime(
     }
 }
 
+fn resolve_request_origin_enclave(
+    request: &CheckRequest,
+    policy: &clawdstrike::Policy,
+) -> Option<clawdstrike::ResolvedEnclave> {
+    request
+        .origin
+        .as_ref()
+        .and_then(|origin| policy.origins.as_ref().map(|origins| (origin, origins)))
+        .and_then(|(origin, origins)| EnclaveResolver::resolve(origin, origins).ok())
+}
+
+fn origin_budget_session_required(
+    request: &CheckRequest,
+    enclave: Option<&clawdstrike::ResolvedEnclave>,
+) -> bool {
+    let budget_key = match request.action_type.as_str() {
+        "mcp_tool" => Some("mcp_tool_calls"),
+        "egress" => Some("egress_calls"),
+        "shell" => Some("shell_commands"),
+        _ => None,
+    };
+
+    request.session_id.is_none()
+        && budget_key
+            .and_then(|key| {
+                enclave
+                    .and_then(|resolved| resolved.budgets.as_ref())
+                    .and_then(|budgets| match key {
+                        "mcp_tool_calls" => budgets.mcp_tool_calls,
+                        "egress_calls" => budgets.egress_calls,
+                        "shell_commands" => budgets.shell_commands,
+                        _ => None,
+                    })
+            })
+            .is_some()
+}
+
 fn deep_merge_json(target: &mut serde_json::Value, patch: serde_json::Value) {
     let serde_json::Value::Object(patch_obj) = patch else {
         *target = patch;
@@ -290,10 +335,10 @@ pub async fn check_action(
 
     if let Some(session_id) = request.session_id.clone() {
         // Validate session existence + liveness.
-        let validation = state
-            .sessions
-            .validate_session(&session_id)
-            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+        let validation = state.sessions.validate_session(&session_id).map_err(|e| {
+            tracing::error!(error = %e, "session validation failed");
+            V1Error::internal("INTERNAL_ERROR", "internal server error")
+        })?;
 
         if !validation.valid {
             return Err(V1Error::forbidden(
@@ -367,7 +412,10 @@ pub async fn check_action(
             let perms = state
                 .rbac
                 .effective_permission_strings_for_roles(&roles)
-                .map_err(|e| V1Error::internal("RBAC_RESOLUTION_ERROR", e.to_string()))?;
+                .map_err(|e| {
+                    tracing::error!(error = %e, "RBAC permission resolution failed");
+                    V1Error::internal("RBAC_RESOLUTION_ERROR", "internal server error")
+                })?;
             principal_for_audit = Some(principal.clone());
             roles_for_audit = Some(roles.clone());
             permissions_for_audit = Some(perms.clone());
@@ -389,6 +437,10 @@ pub async fn check_action(
         context = context.with_agent_id(agent_id);
     }
 
+    if let Some(origin) = request.origin.clone() {
+        context = context.with_origin(origin);
+    }
+
     // Identity-based rate limiting (per-user/per-org sliding window).
     let identity_for_rate_limit: Option<&clawdstrike::IdentityPrincipal> = session_for_audit
         .as_ref()
@@ -407,7 +459,10 @@ pub async fn check_action(
                     format!("identity_rate_limited_retry_after_secs={retry_after_secs}"),
                 )
                 .with_retry_after(retry_after_secs)),
-                other => Err(V1Error::internal("INTERNAL_ERROR", other.to_string())),
+                other => {
+                    tracing::error!(error = %other, "identity rate limit check failed");
+                    Err(V1Error::internal("INTERNAL_ERROR", "internal server error"))
+                }
             };
         }
     }
@@ -416,13 +471,28 @@ pub async fn check_action(
     let resolved = state
         .policy_resolver
         .resolve_policy(&default_policy, &context)
-        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "policy resolution failed");
+            V1Error::internal("INTERNAL_ERROR", "internal server error")
+        })?;
 
-    let resolved_yaml = resolved
-        .policy
-        .to_yaml()
-        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+    let resolved_yaml = resolved.policy.to_yaml().map_err(|e| {
+        tracing::error!(error = %e, "policy YAML serialization failed");
+        V1Error::internal("INTERNAL_ERROR", "internal server error")
+    })?;
     let policy_hash = hush_core::sha256(resolved_yaml.as_bytes()).to_hex();
+
+    let resolved_origin_enclave = resolve_request_origin_enclave(&request, &resolved.policy);
+
+    if let Some(enclave) = resolved_origin_enclave.clone() {
+        if origin_budget_session_required(&request, Some(&enclave)) {
+            return Err(V1Error::bad_request(
+                "SESSION_ID_REQUIRED",
+                "session_id_required_for_origin_budgets",
+            ));
+        }
+        context = context.with_enclave(enclave);
+    }
 
     let engine: Arc<HushEngine> = match keypair {
         Some(keypair) => state
@@ -444,19 +514,32 @@ pub async fn check_action(
     let mut posture_runtime = session_for_audit
         .as_ref()
         .and_then(posture_state_from_session);
+    let mut origin_runtime: Option<OriginRuntimeState> = session_for_audit
+        .as_ref()
+        .and_then(origin_state_from_session);
 
     let posture_report = match request.action_type.as_str() {
         "file_access" => {
             let action = GuardAction::FileAccess(&request.target);
             engine
-                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .check_action_report_with_runtime(
+                    &action,
+                    &context,
+                    &mut posture_runtime,
+                    &mut origin_runtime,
+                )
                 .await
         }
         "file_write" => {
             let content = request.content.as_deref().unwrap_or("").as_bytes();
             let action = GuardAction::FileWrite(&request.target, content);
             engine
-                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .check_action_report_with_runtime(
+                    &action,
+                    &context,
+                    &mut posture_runtime,
+                    &mut origin_runtime,
+                )
                 .await
         }
         "egress" => {
@@ -464,27 +547,71 @@ pub async fn check_action(
                 .map_err(|e| V1Error::bad_request("INVALID_EGRESS_TARGET", e))?;
             let action = GuardAction::NetworkEgress(&host, port);
             engine
-                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .check_action_report_with_runtime(
+                    &action,
+                    &context,
+                    &mut posture_runtime,
+                    &mut origin_runtime,
+                )
                 .await
         }
         "shell" => {
             let action = GuardAction::ShellCommand(&request.target);
             engine
-                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .check_action_report_with_runtime(
+                    &action,
+                    &context,
+                    &mut posture_runtime,
+                    &mut origin_runtime,
+                )
                 .await
         }
         "mcp_tool" => {
             let args = request.args.clone().unwrap_or(serde_json::json!({}));
             let action = GuardAction::McpTool(&request.target, &args);
             engine
-                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .check_action_report_with_runtime(
+                    &action,
+                    &context,
+                    &mut posture_runtime,
+                    &mut origin_runtime,
+                )
                 .await
         }
         "patch" => {
             let diff = request.content.as_deref().unwrap_or("");
             let action = GuardAction::Patch(&request.target, diff);
             engine
-                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .check_action_report_with_runtime(
+                    &action,
+                    &context,
+                    &mut posture_runtime,
+                    &mut origin_runtime,
+                )
+                .await
+        }
+        "output_send" => {
+            let text = request.content.clone().ok_or_else(|| {
+                V1Error::bad_request("INVALID_OUTPUT_SEND", "content is required for output_send")
+            })?;
+            let payload = serde_json::json!({
+                "text": text,
+                "target": request.target.clone(),
+                "mime_type": request
+                    .args
+                    .as_ref()
+                    .and_then(|args| args.get("mime_type"))
+                    .and_then(|value| value.as_str()),
+                "metadata": request.args.clone(),
+            });
+            let action = GuardAction::Custom("origin.output_send", &payload);
+            engine
+                .check_action_report_with_runtime(
+                    &action,
+                    &context,
+                    &mut posture_runtime,
+                    &mut origin_runtime,
+                )
                 .await
         }
         _ => {
@@ -494,7 +621,10 @@ pub async fn check_action(
             ));
         }
     }
-    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+    .map_err(|e| {
+        tracing::error!(error = %e, "guard evaluation failed");
+        V1Error::internal("INTERNAL_ERROR", "internal server error")
+    })?;
 
     let result = posture_report.guard_report.overall.clone();
     let mut response_posture: Option<PostureInfo> = posture_runtime
@@ -502,13 +632,28 @@ pub async fn check_action(
         .map(|state| posture_info_from_runtime(state, posture_report.transition.as_ref()));
 
     if let Some(session_id) = request.session_id.as_deref() {
+        let mut combined_patch: HashMap<String, serde_json::Value> = HashMap::new();
         if let Some(posture) = posture_runtime.as_ref() {
-            let patch = posture_state_patch(posture)
-                .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+            combined_patch.extend(posture_state_patch(posture).map_err(|e| {
+                tracing::error!(error = %e, "posture state patch failed");
+                V1Error::internal("INTERNAL_ERROR", "internal server error")
+            })?);
+        }
+        if let Some(origin) = origin_runtime.as_ref() {
+            combined_patch.extend(origin_state_patch(origin).map_err(|e| {
+                tracing::error!(error = %e, "origin state patch failed");
+                V1Error::internal("INTERNAL_ERROR", "internal server error")
+            })?);
+        }
+
+        if !combined_patch.is_empty() {
             let updated = state
                 .sessions
-                .merge_state(session_id, patch)
-                .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+                .merge_state(session_id, combined_patch)
+                .map_err(|e| {
+                    tracing::error!(error = %e, "session state merge failed");
+                    V1Error::internal("INTERNAL_ERROR", "internal server error")
+                })?;
 
             let updated_session = updated.ok_or_else(|| {
                 V1Error::not_found(
@@ -525,10 +670,10 @@ pub async fn check_action(
                     });
         }
 
-        state
-            .sessions
-            .touch_session(session_id)
-            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+        state.sessions.touch_session(session_id).map_err(|e| {
+            tracing::error!(error = %e, "session touch failed");
+            V1Error::internal("INTERNAL_ERROR", "internal server error")
+        })?;
     }
     drop(session_lock);
 
@@ -688,6 +833,38 @@ pub async fn check_action(
         audit_event.metadata = Some(metadata);
     }
 
+    if let Some(metadata) = posture_report.guard_report.metadata.as_ref() {
+        let mut audit_metadata = match audit_event.metadata.take() {
+            Some(value) if value.is_object() => value,
+            Some(other) => serde_json::json!({ "details": other }),
+            None => serde_json::json!({}),
+        };
+
+        if let Some(origin) = metadata.origin.as_ref() {
+            deep_merge_json(
+                &mut audit_metadata,
+                serde_json::json!({
+                    "clawdstrike": {
+                        "origin": origin,
+                    }
+                }),
+            );
+        }
+
+        if let Some(enclave) = metadata.enclave.as_ref() {
+            deep_merge_json(
+                &mut audit_metadata,
+                serde_json::json!({
+                    "clawdstrike": {
+                        "enclave": enclave,
+                    }
+                }),
+            );
+        }
+
+        audit_event.metadata = Some(audit_metadata);
+    }
+
     // Emit canonical SecurityEvent for exporters.
     {
         let ctx = state.security_ctx.read().await.clone();
@@ -724,6 +901,28 @@ pub async fn check_action(
         let mut extensions = serde_json::Map::new();
         if let Some(details) = result.details.clone() {
             extensions.insert("guardDetails".to_string(), details);
+        }
+        if let Some(origin) = posture_report
+            .guard_report
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.origin.as_ref())
+        {
+            extensions.insert(
+                "origin".to_string(),
+                serde_json::to_value(origin).unwrap_or(serde_json::Value::Null),
+            );
+        }
+        if let Some(enclave) = posture_report
+            .guard_report
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.enclave.as_ref())
+        {
+            extensions.insert(
+                "enclave".to_string(),
+                serde_json::to_value(enclave).unwrap_or(serde_json::Value::Null),
+            );
         }
 
         if let Some(session) = session_for_audit.as_ref() {
@@ -795,6 +994,8 @@ pub async fn check_action(
             "message": &result.message,
             "policy_hash": &policy_hash,
             "session_id": &session_id,
+            "origin": posture_report.guard_report.metadata.as_ref().and_then(|metadata| metadata.origin.as_ref()),
+            "enclave": posture_report.guard_report.metadata.as_ref().and_then(|metadata| metadata.enclave.as_ref()),
             "endpoint_agent_id": &agent_id,
             "agent_id": &agent_id,
             "runtime_agent_id": &runtime_agent_id,
@@ -813,6 +1014,8 @@ pub async fn check_action(
                 "severity": canonical_guard_severity(&result.severity),
                 "policyHash": &policy_hash_sha256,
                 "sessionId": &session_id,
+                "origin": posture_report.guard_report.metadata.as_ref().and_then(|metadata| metadata.origin.as_ref()),
+                "enclave": posture_report.guard_report.metadata.as_ref().and_then(|metadata| metadata.enclave.as_ref()),
                 "endpointAgentId": &agent_id,
                 "agentId": &agent_id,
                 "runtimeAgentId": &runtime_agent_id,
@@ -831,4 +1034,181 @@ pub async fn check_action(
     });
 
     Ok(Json(response))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clawdstrike::policy::{
+        OriginBudgets, OriginDefaultBehavior, OriginMatch, OriginProfile, OriginsConfig,
+    };
+    use clawdstrike::{OriginProvider, Policy};
+
+    fn policy_with_budgeted_origin() -> Policy {
+        let mut policy = Policy::new();
+        policy.version = "1.4.0".to_string();
+        policy.name = "budgeted-origin".to_string();
+        policy.origins = Some(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![OriginProfile {
+                id: "slack-budgeted".to_string(),
+                match_rules: OriginMatch {
+                    provider: Some(OriginProvider::Slack),
+                    ..Default::default()
+                },
+                mcp: None,
+                posture: None,
+                egress: None,
+                data: None,
+                budgets: Some(OriginBudgets {
+                    mcp_tool_calls: Some(1),
+                    ..Default::default()
+                }),
+                bridge_policy: None,
+                explanation: None,
+            }],
+        });
+        policy
+    }
+
+    #[test]
+    fn check_request_accepts_origin_context_alias() {
+        let request: CheckRequest = serde_json::from_value(serde_json::json!({
+            "action_type": "mcp_tool",
+            "target": "safe_tool",
+            "originContext": {
+                "provider": "slack",
+                "tenantId": "T123",
+                "spaceId": "C123",
+                "externalParticipants": true,
+                "tags": ["provider:slack"]
+            }
+        }))
+        .expect("request should deserialize");
+
+        let origin = request.origin.expect("origin should be present");
+        assert_eq!(origin.provider, OriginProvider::Slack);
+        assert_eq!(origin.tenant_id.as_deref(), Some("T123"));
+        assert_eq!(origin.space_id.as_deref(), Some("C123"));
+        assert_eq!(origin.external_participants, Some(true));
+    }
+
+    #[test]
+    fn budgeted_origin_requires_session_id() {
+        let request = CheckRequest {
+            action_type: "mcp_tool".to_string(),
+            target: "safe_tool".to_string(),
+            content: None,
+            args: None,
+            origin: Some(OriginContext {
+                provider: OriginProvider::Slack,
+                tags: vec!["provider:slack".to_string()],
+                ..OriginContext::default()
+            }),
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+        };
+
+        let enclave = resolve_request_origin_enclave(&request, &policy_with_budgeted_origin())
+            .expect("origin should resolve");
+        assert!(origin_budget_session_required(&request, Some(&enclave)));
+
+        let mut request_with_session = request;
+        request_with_session.session_id = Some("sess-123".to_string());
+        assert!(!origin_budget_session_required(
+            &request_with_session,
+            Some(&enclave)
+        ));
+    }
+
+    #[test]
+    fn unbudgeted_origin_action_does_not_require_session_id() {
+        let request = CheckRequest {
+            action_type: "file_access".to_string(),
+            target: "safe_tool".to_string(),
+            content: None,
+            args: None,
+            origin: Some(OriginContext {
+                provider: OriginProvider::Slack,
+                tags: vec!["provider:slack".to_string()],
+                ..OriginContext::default()
+            }),
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+        };
+
+        let enclave = resolve_request_origin_enclave(&request, &policy_with_budgeted_origin())
+            .expect("origin should resolve");
+        assert!(!origin_budget_session_required(&request, Some(&enclave)));
+    }
+
+    #[test]
+    fn empty_origin_budgets_do_not_require_session_id() {
+        let request = CheckRequest {
+            action_type: "mcp_tool".to_string(),
+            target: "safe_tool".to_string(),
+            content: None,
+            args: None,
+            origin: Some(OriginContext {
+                provider: OriginProvider::Slack,
+                tags: vec!["provider:slack".to_string()],
+                ..OriginContext::default()
+            }),
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+        };
+
+        let mut policy = policy_with_budgeted_origin();
+        policy.origins.as_mut().expect("origins").profiles[0].budgets =
+            Some(OriginBudgets::default());
+
+        let enclave =
+            resolve_request_origin_enclave(&request, &policy).expect("origin should resolve");
+        assert!(!origin_budget_session_required(&request, Some(&enclave)));
+    }
+
+    #[test]
+    fn parse_egress_target_supports_host_port_and_ipv6() {
+        assert_eq!(
+            parse_egress_target("api.example.com").expect("default port"),
+            ("api.example.com".to_string(), 443)
+        );
+        assert_eq!(
+            parse_egress_target("api.example.com:8443").expect("custom port"),
+            ("api.example.com".to_string(), 8443)
+        );
+        assert_eq!(
+            parse_egress_target("[2001:db8::1]:9443").expect("ipv6 literal"),
+            ("2001:db8::1".to_string(), 9443)
+        );
+        assert!(parse_egress_target("[2001:db8::1").is_err());
+    }
+
+    #[test]
+    fn normalize_and_validate_agent_identity_enforces_pairing_rules() {
+        let missing_kind = normalize_and_validate_agent_identity(None, Some("runtime"), None)
+            .expect_err("runtime id without kind should fail");
+        assert_eq!(missing_kind.code, "INVALID_AGENT_IDENTITY");
+
+        let missing_endpoint =
+            normalize_and_validate_agent_identity(None, Some("runtime"), Some("claude_code"))
+                .expect_err("runtime attribution requires endpoint id");
+        assert_eq!(missing_endpoint.code, "INVALID_AGENT_IDENTITY");
+
+        let (endpoint, runtime_id, runtime_kind) = normalize_and_validate_agent_identity(
+            Some(" endpoint-1 "),
+            Some(" runtime-1 "),
+            Some(" Claude_Code "),
+        )
+        .expect("valid identity tuple");
+        assert_eq!(endpoint.as_deref(), Some("endpoint-1"));
+        assert_eq!(runtime_id.as_deref(), Some("runtime-1"));
+        assert_eq!(runtime_kind.as_deref(), Some("claude_code"));
+    }
 }

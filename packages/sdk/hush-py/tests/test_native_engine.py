@@ -5,6 +5,8 @@ All tests in this module are skipped if clawdstrike._native is not available.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from clawdstrike.native import NATIVE_AVAILABLE, init_native
@@ -111,6 +113,32 @@ class TestNativeEngineChecks:
         report = engine.check_shell("ls", {"cwd": "/app", "session_id": "test-123"})
         assert report["overall"]["allowed"] is True
 
+    def test_check_with_origin_context(self, engine) -> None:
+        report = engine.check_shell(
+            "ls",
+            {
+                "cwd": "/app",
+                "origin": {
+                    "provider": "slack",
+                    "tenantId": "T123",
+                    "actorRole": "owner",
+                },
+            },
+        )
+        assert report["overall"]["allowed"] is True
+
+    def test_check_custom_output_send_with_origin_context(self, engine) -> None:
+        report = engine.check_custom(
+            "origin.output_send",
+            json.dumps({"text": "ok", "target": "slack://room"}),
+            {"origin": {"provider": "slack", "tenantId": "T123"}},
+        )
+        assert "overall" in report
+
+    def test_check_with_invalid_origin_context_raises(self, engine) -> None:
+        with pytest.raises(ValueError, match="Invalid origin JSON"):
+            engine.check_shell("ls", {"origin": {"tenantId": "T123"}})
+
     def test_policy_yaml(self, engine) -> None:
         yaml = engine.policy_yaml()
         assert isinstance(yaml, str)
@@ -145,7 +173,6 @@ class TestNativeVsPurePythonParity:
 
     def test_shell_command_parity(self) -> None:
         from clawdstrike import _native as native_mod
-
         from clawdstrike.backend import PurePythonBackend
         from clawdstrike.policy import Policy, PolicyEngine
 
@@ -171,7 +198,6 @@ class TestNativeVsPurePythonParity:
 
     def test_file_access_parity(self) -> None:
         from clawdstrike import _native as native_mod
-
         from clawdstrike.backend import PurePythonBackend
         from clawdstrike.policy import Policy, PolicyEngine
 

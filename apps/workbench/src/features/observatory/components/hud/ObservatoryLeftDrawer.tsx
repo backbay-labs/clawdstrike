@@ -1,0 +1,164 @@
+/**
+ * ObservatoryLeftDrawer.tsx — Phase 31 HUD-13, VIS-03; Phase 33 GLS-01, GLS-02, DRW-01, DRW-02
+ *
+ * A 360px wide glassmorphism panel that slides in from the left edge of the
+ * observatory canvas when `activePanel` is non-null.
+ *
+ * Layout:
+ *   - Always mounted (like SpaceFlightHud) — visibility driven by CSS transform
+ *   - Positioned absolute, top 0 → bottom HUD_STATUS_STRIP_HEIGHT (clears footer)
+ *   - z-index 18 — above SpaceFlightHud (z:15), below StatusStrip (z:20)
+ *
+ * Transitions (VIS-03):
+ *   - Slide: translateX(-100%) → translateX(0), 250ms ease-out
+ *   - Content fade: opacity 0 → 1, 200ms ease-out with 100ms delay (fades in after
+ *     drawer is partially slid into position)
+ *
+ * Header bar (Phase 33 DRW-01/DRW-02):
+ *   - Shows the active panel name in uppercase monospace (PANEL_LABELS mapping)
+ *   - Close button (×) calls closePanel() — mouse-based dismiss alongside Escape hotkey
+ *   - 36px fixed height with bottom border separator; hidden when drawer is closed
+ *
+ * Content (Phase 31):
+ *   - Routes to ExplainabilityDrawerPanel, MissionDrawerPanel,
+ *     ReplayDrawerPanel, or GhostMemoryDrawerPanel based on activePanel value
+ *
+ * Performance:
+ *   - Subscribes to activePanel via useObservatoryStore.use.activePanel() — panel
+ *     changes are rare user actions, React subscription is appropriate here.
+ */
+
+import type { JSX } from "react";
+import { useObservatoryStore } from "../../stores/observatory-store";
+import type { HudPanelId } from "../../types";
+import {
+  HUD_DRAWER_HEADER_HEIGHT,
+  HUD_LEFT_DRAWER_WIDTH,
+  HUD_STATUS_STRIP_HEIGHT,
+  PANEL_LABELS,
+} from "./hud-constants";
+import { ExplainabilityDrawerPanel } from "./panels/ExplainabilityDrawerPanel";
+import { MissionDrawerPanel } from "./panels/MissionDrawerPanel";
+import { ReplayDrawerPanel } from "./panels/ReplayDrawerPanel";
+import { GhostMemoryDrawerPanel } from "./panels/GhostMemoryDrawerPanel";
+
+// ---------------------------------------------------------------------------
+// Panel router
+// ---------------------------------------------------------------------------
+
+function renderPanel(panelId: HudPanelId): JSX.Element {
+  switch (panelId) {
+    case "explainability":
+      return <ExplainabilityDrawerPanel />;
+    case "mission":
+      return <MissionDrawerPanel />;
+    case "replay":
+      return <ReplayDrawerPanel />;
+    case "ghost":
+      return <GhostMemoryDrawerPanel />;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export function ObservatoryLeftDrawer() {
+  // React subscription — panel opens/closes are rare user actions, not per-frame
+  const activePanel = useObservatoryStore.use.activePanel();
+
+  const isOpen = activePanel !== null;
+
+  return (
+    <div
+      data-testid="observatory-left-drawer"
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        bottom: HUD_STATUS_STRIP_HEIGHT,
+        width: HUD_LEFT_DRAWER_WIDTH,
+        zIndex: 18,
+        // Glassmorphism treatment (Phase 33 GLS-01/GLS-02: drawer-specific tokens)
+        // --hud-drawer-bg at 0.55 opacity lets 3D scene bleed through the blur
+        background: "var(--hud-drawer-bg, rgba(8, 12, 24, 0.55))",
+        backdropFilter: "var(--hud-blur, blur(12px))",
+        WebkitBackdropFilter: "var(--hud-blur, blur(12px))",
+        // Right-edge border at 0.12 opacity (up from 0.06) — perceptible glass edge
+        borderRight: "var(--hud-drawer-edge, 1px solid rgba(255, 255, 255, 0.12))",
+        // Depth shadow + subtle right-edge glow (GLS-02)
+        boxShadow: "var(--hud-shadow, 0 8px 32px rgba(0, 0, 0, 0.4)), var(--hud-drawer-glow, 0 0 12px rgba(100, 160, 255, 0.06))",
+        // Slide transition (VIS-03): translateX(-100%) when hidden, translateX(0) when open
+        transform: isOpen ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 250ms ease-out",
+        // Hidden drawer must not intercept pointer events
+        pointerEvents: isOpen ? "auto" : "none",
+        fontFamily: "'JetBrains Mono', 'Fira Mono', 'Consolas', monospace",
+      }}
+    >
+      {/* Content wrapper: fade-in after slide partially completes (100ms delay) */}
+      <div
+        style={{
+          opacity: isOpen ? 1 : 0,
+          transition: "opacity 200ms ease-out 100ms",
+          paddingLeft: 16,
+          paddingRight: 16,
+          paddingTop: 12,
+          paddingBottom: 16,
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          overflow: "hidden",
+        }}
+      >
+        {activePanel !== null && (
+          <div
+            data-testid="drawer-header"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              height: HUD_DRAWER_HEADER_HEIGHT,
+              minHeight: HUD_DRAWER_HEADER_HEIGHT,
+              borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+              marginBottom: 8,
+              paddingBottom: 4,
+            }}
+          >
+            <span
+              data-testid="drawer-header-label"
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))",
+                userSelect: "none",
+              }}
+            >
+              {PANEL_LABELS[activePanel]}
+            </span>
+            <button
+              data-testid="drawer-close-button"
+              onClick={() => useObservatoryStore.getState().actions.closePanel()}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))",
+                cursor: "pointer",
+                padding: "2px 4px",
+                fontSize: 14,
+                lineHeight: 1,
+                opacity: 0.7,
+              }}
+              aria-label="Close panel"
+            >
+              &#x2715;
+            </button>
+          </div>
+        )}
+        {activePanel !== null && renderPanel(activePanel)}
+      </div>
+    </div>
+  );
+}

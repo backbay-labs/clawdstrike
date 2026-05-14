@@ -5,9 +5,13 @@ import type {
 } from "@clawdstrike/adapter-core";
 import { FrameworkToolBoundary, wrapFrameworkToolDispatcher } from "@clawdstrike/adapter-core";
 
+import type { OpenAIBrokerOptions } from "./broker.js";
+import { createOpenAIBrokerExecutor } from "./broker.js";
 import { openAICuaTranslator } from "./openai-cua-translator.js";
 
-export type OpenAIToolBoundaryOptions = FrameworkToolBoundaryOptions;
+export type OpenAIToolBoundaryOptions = FrameworkToolBoundaryOptions & {
+  broker?: OpenAIBrokerOptions;
+};
 export type OpenAIToolDispatcher<TOutput = unknown> = FrameworkToolDispatcher<TOutput>;
 
 function composeOptions(options: OpenAIToolBoundaryOptions = {}): OpenAIToolBoundaryOptions {
@@ -17,6 +21,9 @@ function composeOptions(options: OpenAIToolBoundaryOptions = {}): OpenAIToolBoun
     ...options,
     config: {
       ...cfg,
+      ...(options.broker
+        ? { broker: { executor: createOpenAIBrokerExecutor(options.broker) } }
+        : {}),
       translateToolCall: (input: ToolCallTranslationInput) => {
         const translated = openAICuaTranslator(input);
         if (translated) return translated;

@@ -107,6 +107,7 @@ impl Guard for RemoteDesktopSideChannelGuard {
         matches!(action, GuardAction::Custom(ct, _) if is_remote_side_channel_candidate(ct))
     }
 
+    // @academy:start remote-desktop-check
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
         if !self.enabled {
             return GuardResult::allow(&self.name);
@@ -273,8 +274,10 @@ impl Guard for RemoteDesktopSideChannelGuard {
             })),
         }
     }
+    // @academy:end remote-desktop-check
 }
 
+// @academy:start remote-desktop-candidate
 fn is_remote_side_channel_candidate(custom_type: &str) -> bool {
     if !custom_type.starts_with("remote.") {
         return false;
@@ -285,6 +288,7 @@ fn is_remote_side_channel_candidate(custom_type: &str) -> bool {
         "remote.session.connect" | "remote.session.disconnect" | "remote.session.reconnect"
     )
 }
+// @academy:end remote-desktop-candidate
 
 #[cfg(test)]
 mod tests {

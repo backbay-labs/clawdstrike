@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 
 use clawdstrike::{
-    decision_taxonomy::summarize_decision, GuardReport, HushEngine, PostureRuntimeState, Severity,
+    decision_taxonomy::summarize_decision, GuardReport, HushEngine, OriginRuntimeState,
+    PostureRuntimeState, Severity,
 };
 use serde::Serialize;
 
@@ -90,16 +91,18 @@ pub async fn replay_events(
     let mut summary = SimulationSummary::default();
     let mut results = Vec::with_capacity(events.len());
     let mut posture_state: Option<PostureRuntimeState> = None;
+    let mut origin_state: Option<OriginRuntimeState> = None;
 
     for event in events {
         let mapped = map_policy_event(event)?;
 
         let (report, posture_snapshot) = if track_posture {
             let posture_report = engine
-                .check_action_report_with_posture(
+                .check_action_report_with_runtime(
                     &mapped.action.as_guard_action(),
                     &mapped.context,
                     &mut posture_state,
+                    &mut origin_state,
                 )
                 .await?;
 
@@ -111,9 +114,17 @@ pub async fn replay_events(
                 ),
             )
         } else {
+            let mut ephemeral_posture: Option<PostureRuntimeState> = None;
+            let mut ephemeral_origin: Option<OriginRuntimeState> = None;
             let report = engine
-                .check_action_report(&mapped.action.as_guard_action(), &mapped.context)
-                .await?;
+                .check_action_report_with_runtime(
+                    &mapped.action.as_guard_action(),
+                    &mapped.context,
+                    &mut ephemeral_posture,
+                    &mut ephemeral_origin,
+                )
+                .await?
+                .guard_report;
             engine.reset().await;
             (report, None)
         };

@@ -1,0 +1,81 @@
+export const metadata = {
+  title: "Egress Allowlist Guard",
+  order: 3,
+  track: "guard-gallery",
+  description: "Controls which domains an agent can make network requests to",
+}
+
+# Egress Allowlist Guard
+
+## The Threat
+
+An AI agent making network requests can exfiltrate data to attacker-controlled servers, call unauthorized APIs, or connect to command-and-control infrastructure. The EgressAllowlistGuard ensures agents can only reach approved domains.
+
+Even well-intentioned API calls can be dangerous -- an agent might decide to "helpfully" upload logs to an analytics endpoint, leaking sensitive data in the process.
+
+## How It Works
+
+The guard extracts the host from the network egress action and evaluates it against a domain policy. The domain policy supports:
+
+- **Exact matches**: `api.openai.com`
+- **Wildcard subdomains**: `*.example.com` (matches `sub.example.com` and `example.com`)
+- **Configurable default action**: `allow` or `deny` (applied when no list matches)
+
+The evaluation chain: check **blocked** domains first, then **allowed** domains, then fall back to the default action.
+
+## Configuration
+
+```yaml
+guards:
+  egress_allowlist:
+    enabled: true
+    allowed_domains:
+      - "api.openai.com"
+      - "api.anthropic.com"
+      - "*.googleapis.com"
+    blocked_domains:
+      - "evil.com"
+      - "*.malware.xyz"
+    default_action: deny
+```
+
+## Annotated Source
+
+<AnnotatedSource
+  tag="egress-allowlist-check"
+  title="EgressAllowlistGuard::check()"
+  annotations={[
+    { line: 2, label: "1", explanation: "Extract the host and port from the NetworkEgress action" },
+    { line: 5, label: "2", explanation: "Build the domain policy from config -- allowed domains, blocked domains, default action" },
+    { line: 8, label: "3", explanation: "Evaluate the host against the domain policy" }
+  ]}
+/>
+
+## Try It Yourself
+
+<GuardPlayground guard="egress_allowlist" actionType="network_egress" placeholder="Enter a domain..." defaultInput="evil.com" examples={[{label: "Evil domain", value: "evil.com"}, {label: "Allowed API", value: "api.openai.com"}, {label: "Subdomain test", value: "sub.googleapis.com"}, {label: "Unknown domain", value: "random-server.xyz"}]} />
+
+## Bypass Challenges
+
+<BypassChallenge
+  guard="egress_allowlist"
+  expectedVerdict="allow"
+  description="The egress guard blocks unknown domains. Can you find one it allows?"
+  hint="Check the default allowlist. Domains like api.openai.com and api.anthropic.com are typically allowed."
+  challengeId="guard-gallery/03-egress-allowlist/easy"
+  actionType="network_egress"
+  placeholder="Enter a domain..."
+/>
+
+<BypassChallenge
+  guard="egress_allowlist"
+  expectedVerdict="allow"
+  description="Can you use a subdomain to get through? Try crafting a domain that matches the wildcard pattern."
+  hint="If *.googleapis.com is allowed, then storage.googleapis.com will match. But openai.com.evil.example will NOT match *.openai.com -- the guard does suffix matching, not substring matching."
+  challengeId="guard-gallery/03-egress-allowlist/hard"
+  actionType="network_egress"
+  placeholder="Enter a domain..."
+/>
+
+<LessonCompleteButton lessonSlug="guard-gallery/03-egress-allowlist" />
+<LessonNav trackSlug="guard-gallery" lessonSlug="03-egress-allowlist" />

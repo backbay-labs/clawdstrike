@@ -278,6 +278,8 @@ const PATH_TO_PROCESS: Record<string, string> = {
   "/compliance": "compliance-report",
   "/replay": "replay-mode",
   "/chat": "agent-chat",
+  "/broker": "broker-mission-control",
+  "/broker/mission-control": "broker-mission-control",
 };
 
 function AutoLaunch() {

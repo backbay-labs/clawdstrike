@@ -276,9 +276,20 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     };
   };
 
+  const withFreshEngineSync = (
+    handler: HookHandler,
+    onRefreshed?: (config: PluginRuntimeConfig) => void,
+  ): HookHandler => {
+    return (event, ctx) => {
+      const latestConfig = refreshSharedEngine();
+      onRefreshed?.(latestConfig);
+      return handler(event, ctx);
+    };
+  };
+
   const wrappedCuaBridgeHandler = withFreshEngine(cuaBridgeHandler);
   const wrappedToolPreflightHandler = withFreshEngine(toolPreflightHandler);
-  const wrappedToolGuardHandler = withFreshEngine(toolGuardHandler);
+  const wrappedToolGuardHandler = withFreshEngineSync(toolGuardHandler);
   const wrappedAgentBootstrapHandler = withFreshEngine(agentBootstrapHandler);
   const wrappedInboundMessageHandler = withFreshEngine(
     inboundMessageHandler,

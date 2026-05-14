@@ -8,7 +8,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 use clawdstrike::guards::GuardAction;
 use clawdstrike::{
-    GuardContext, IdentityPrincipal, OrganizationContext, RequestContext, SessionContext,
+    GuardContext, IdentityPrincipal, OrganizationContext, OriginContext, RequestContext,
+    SessionContext,
 };
 use serde::{Deserialize, Serialize};
 
@@ -227,6 +228,12 @@ impl PolicyEvent {
             if let Some(value) = obj.get("session") {
                 if let Ok(session) = serde_json::from_value::<SessionContext>(value.clone()) {
                     ctx.session = Some(session);
+                }
+            }
+
+            if let Some(value) = obj.get("origin").or_else(|| obj.get("originContext")) {
+                if let Ok(origin) = serde_json::from_value::<OriginContext>(value.clone()) {
+                    ctx.origin = Some(origin);
                 }
             }
 
@@ -1096,6 +1103,37 @@ mod tests {
         assert_eq!(identity["endpoint_agent_id"], "endpoint-a");
         assert_eq!(identity["runtime_agent_id"], "runtime-a");
         assert_eq!(identity["runtime_agent_kind"], "claude_code");
+    }
+
+    #[test]
+    fn to_guard_context_accepts_origin_context_alias() {
+        let event = PolicyEvent {
+            event_id: "evt-origin-context".to_string(),
+            event_type: PolicyEventType::ToolCall,
+            timestamp: Utc::now(),
+            session_id: Some("sess-origin-context".to_string()),
+            data: PolicyEventData::Tool(ToolEventData {
+                tool_name: "safe_tool".to_string(),
+                parameters: serde_json::json!({}),
+            }),
+            metadata: Some(serde_json::json!({
+                "originContext": {
+                    "provider": "slack",
+                    "tenantId": "T123",
+                    "spaceId": "C123",
+                    "actorRole": "maintainer",
+                    "tags": ["provider:slack"]
+                }
+            })),
+            context: None,
+        };
+
+        let context = event.to_guard_context();
+        let origin = context.origin.expect("origin context should be present");
+        assert_eq!(origin.provider.to_string(), "slack");
+        assert_eq!(origin.tenant_id.as_deref(), Some("T123"));
+        assert_eq!(origin.space_id.as_deref(), Some("C123"));
+        assert_eq!(origin.actor_role.as_deref(), Some("maintainer"));
     }
 
     #[test]

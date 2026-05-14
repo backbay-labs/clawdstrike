@@ -50,6 +50,7 @@
 pub mod hygiene;
 pub mod instruction_hierarchy;
 pub mod jailbreak;
+pub mod origin;
 pub mod output_sanitizer;
 pub mod spider_sense;
 pub mod text_utils;
@@ -70,6 +71,9 @@ pub use jailbreak::{
     JailbreakCanonicalizationStats, JailbreakCategory, JailbreakDetectionResult, JailbreakDetector,
     JailbreakGuardConfig, JailbreakSeverity, JailbreakSignal, LayerResult, LayerResults,
     LinearModelConfig, SessionAggPersisted, SessionRiskSnapshot,
+};
+pub use origin::{
+    ActorType, OriginContext, OriginProvider, ProvenanceConfidence, SpaceType, Visibility,
 };
 pub use output_sanitizer::{
     AllowlistConfig, DenylistConfig, DetectorType, EntityFinding, EntityRecognizer,
@@ -93,17 +97,23 @@ pub mod curator_config;
 #[cfg(feature = "full")]
 pub mod decision_taxonomy;
 #[cfg(feature = "full")]
+pub mod enclave;
+#[cfg(feature = "full")]
 pub mod engine;
 #[cfg(any(feature = "full", feature = "policy-event"))]
 pub mod error;
 #[cfg(any(feature = "full", feature = "policy-event"))]
 pub mod guards;
 #[cfg(any(feature = "full", feature = "policy-event"))]
+pub mod hushspec_compiler;
+#[cfg(any(feature = "full", feature = "policy-event"))]
 pub mod identity;
 #[cfg(feature = "full")]
 pub mod irm;
 #[cfg(feature = "full")]
 pub mod marketplace_feed;
+#[cfg(feature = "full")]
+pub mod origin_runtime;
 #[cfg(feature = "full")]
 pub mod pipeline;
 #[cfg(feature = "full")]
@@ -133,6 +143,8 @@ pub use curator_config::{
     RichCuratorConfigFile, TrustLevel, ValidatedCurator,
 };
 #[cfg(feature = "full")]
+pub use enclave::{EnclaveResolver, ResolvedEnclave};
+#[cfg(feature = "full")]
 pub use engine::{GuardReport, HushEngine, PostureAwareReport};
 #[cfg(any(feature = "full", feature = "policy-event"))]
 pub use error::{Error, Result};
@@ -158,6 +170,8 @@ pub use marketplace_feed::{
 #[cfg(feature = "ipfs")]
 pub mod ipfs;
 
+#[cfg(any(feature = "full", feature = "policy-event"))]
+pub use hushspec_compiler::{compile_hushspec, is_hushspec};
 #[cfg(feature = "full")]
 pub use pipeline::{EvaluationPath, EvaluationStage};
 #[cfg(feature = "full")]
@@ -199,8 +213,24 @@ pub use irm::{
     HostCallMetadata, IrmEvent, IrmRouter, Monitor, NetOperation, NetworkIrm, Sandbox,
     SandboxConfig, SandboxStats,
 };
+#[cfg(feature = "full")]
+pub use origin_runtime::{OriginFingerprint, OriginRuntimeState};
 
-/// Re-export core types
-pub mod core {
+pub mod crypto {
     pub use hush_core::*;
+}
+
+/// Preserves the historical `hush_core::*` re-export while adding the
+/// pure decision core (`CoreSeverity`, `CoreVerdict`, etc.).
+pub mod core;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn core_namespace_preserves_hush_core_and_decision_core_exports() {
+        let _ = crate::core::sha256(b"clawdstrike");
+        let _ = crate::core::CoreSeverity::Info;
+        let _ = std::mem::size_of::<crate::core::Error>();
+        let _: crate::core::Result<()> = Ok(());
+    }
 }

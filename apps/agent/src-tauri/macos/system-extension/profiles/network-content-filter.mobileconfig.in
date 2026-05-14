@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>FilterBrowsers</key>
+      <false/>
+      <key>FilterDataProviderBundleIdentifier</key>
+      <string>{{SYSTEM_EXTENSION_BUNDLE_ID}}</string>
+      <key>FilterGrade</key>
+      <string>firewall</string>
+      <key>FilterName</key>
+      <string>ClawdStrike Network Content Filter</string>
+      <key>FilterSockets</key>
+      <true/>
+      <key>FilterType</key>
+      <string>Plugin</string>
+      <key>Organization</key>
+      <string>{{ORG_IDENTIFIER}}</string>
+      <key>PluginBundleID</key>
+      <string>{{SYSTEM_EXTENSION_BUNDLE_ID}}</string>
+      <key>PayloadDescription</key>
+      <string>Approves the ClawdStrike NetworkExtension content filter provider.</string>
+      <key>PayloadDisplayName</key>
+      <string>ClawdStrike Network Content Filter</string>
+      <key>PayloadIdentifier</key>
+      <string>{{ORG_IDENTIFIER}}.clawdstrike.webcontent-filter</string>
+      <key>PayloadOrganization</key>
+      <string>{{ORG_IDENTIFIER}}</string>
+      <key>PayloadType</key>
+      <string>com.apple.webcontent-filter</string>
+      <key>PayloadUUID</key>
+      <string>{{PAYLOAD_UUID}}</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>VendorConfig</key>
+      <dict>
+        <key>PolicySource</key>
+        <string>ClawdStrike App Group run-policy snapshot</string>
+      </dict>
+    </dict>
+  </array>
+  <key>PayloadDescription</key>
+  <string>Managed NetworkExtension content-filter profile for ClawdStrike macOS endpoint security.</string>
+  <key>PayloadDisplayName</key>
+  <string>ClawdStrike Network Content Filter</string>
+  <key>PayloadIdentifier</key>
+  <string>{{ORG_IDENTIFIER}}.clawdstrike.network-content-filter</string>
+  <key>PayloadOrganization</key>
+  <string>{{ORG_IDENTIFIER}}</string>
+  <key>PayloadRemovalDisallowed</key>
+  <true/>
+  <key>PayloadScope</key>
+  <string>System</string>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>{{PROFILE_UUID}}</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+</dict>
+</plist>

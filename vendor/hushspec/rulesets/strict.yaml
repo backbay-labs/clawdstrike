@@ -1,0 +1,102 @@
+hushspec: "0.1.0"
+name: strict
+description: Strict security rules with minimal permissions
+
+rules:
+  forbidden_paths:
+    patterns:
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/id_ecdsa*"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.git-credentials"
+      - "**/.gitconfig"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      - "**/.password-store/**"
+      - "**/pass/**"
+      - "**/.1password/**"
+      - "/etc/shadow"
+      - "/etc/passwd"
+      - "/etc/sudoers"
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      - "**/NTUSER.DAT"
+      - "**/NTUSER.DAT.*"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
+      - "**/AppData/Roaming/Microsoft/SystemCertificates/**"
+      - "**/*.reg"
+      - "**/.vault/**"
+      - "**/.secrets/**"
+      - "**/credentials/**"
+      - "**/private/**"
+    exceptions: []
+
+  egress:
+    allow: []
+    block: []
+    default: block
+
+  secret_patterns:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{48}"
+        severity: critical
+      - name: anthropic_key
+        pattern: "sk-ant-[A-Za-z0-9\\-]{95}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+      - name: npm_token
+        pattern: "npm_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: slack_token
+        pattern: "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*"
+        severity: critical
+      - name: generic_api_key
+        pattern: "(?i)(api[_\\-]?key|apikey)\\s*[:=]\\s*[A-Za-z0-9]{32,}"
+        severity: error
+    skip_paths:
+      - "**/test/**"
+      - "**/tests/**"
+
+  patch_integrity:
+    max_additions: 500
+    max_deletions: 200
+    require_balance: true
+    max_imbalance_ratio: 5.0
+    forbidden_patterns:
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)"
+      - "(?i)skip[\\s_\\-]?(verify|validation|check)"
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)chmod\\s+777"
+      - "(?i)eval\\s*\\("
+      - "(?i)exec\\s*\\("
+      - "(?i)reverse[_\\-]?shell"
+      - "(?i)bind[_\\-]?shell"
+
+  tool_access:
+    allow:
+      - read_file
+      - list_directory
+      - search
+      - grep
+    block: []
+    require_confirmation: []
+    default: block
+    max_args_size: 524288

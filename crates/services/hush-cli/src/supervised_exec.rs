@@ -77,7 +77,7 @@ pub fn spawn_supervised_child(
         let _ = (engine, context, never_grant);
         let _ = (caps, command, env_overrides);
         let runtime = SandboxRuntimeState::supervised_preflight_refused(
-            "macos_authorization_contract_unavailable",
+            supervised_preflight_failure_reason(),
         )
         .with_provider_states(macos_provider_states_for_preflight_refusal());
 
@@ -387,12 +387,18 @@ fn macos_provider_states_for_preflight_refusal() -> Vec<ProviderState> {
             "seatbelt",
             "sandbox_not_invoked_due_to_supervised_preflight_refusal",
         ),
-        ProviderState::unknown(
-            "endpoint_security",
-            "macos_authorization_contract_unavailable",
-        ),
+        ProviderState::unknown("endpoint_security", supervised_preflight_failure_reason()),
         ProviderState::unknown("network_extension", "provider_state_unknown"),
     ]
+}
+
+#[cfg(not(target_os = "linux"))]
+fn supervised_preflight_failure_reason() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos_authorization_contract_unavailable"
+    } else {
+        "supervised_interception_inactive"
+    }
 }
 
 #[cfg(target_os = "linux")]

@@ -27,11 +27,14 @@ path = "src/bin/clawdstriked.rs"
 hush-core.workspace = true
 hush-proxy.workspace = true
 clawdstrike = { workspace = true, features = ["full"] }
+clawdstrike-logos.workspace = true
+clawdstrike-broker-protocol.workspace = true
+hush-multi-agent.workspace = true
 clawdstrike-ocsf.workspace = true
 clawdstrike-policy-event = { workspace = true, features = ["simulate"] }
 hush-certification.workspace = true
 spine.workspace = true
-async-nats = "0.39"
+async-nats = "0.40"
 clap.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
@@ -52,7 +55,7 @@ base64.workspace = true
 ring = "0.17"
 
 # HTTP server
-axum.workspace = true
+axum = { workspace = true, features = ["ws"] }
 tower.workspace = true
 tower-http.workspace = true
 rustls = { workspace = true, features = ["ring"] }
@@ -88,11 +91,12 @@ reqwest = { workspace = true, features = ["blocking"] }
 jsonwebtoken.workspace = true
 flate2.workspace = true
 url.workspace = true
+tempfile = "3"
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking", "stream"] }
-tempfile = "3"
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect"] }
 
 [features]
 default = []

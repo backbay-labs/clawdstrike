@@ -16,7 +16,7 @@ hubble-bridge = { path = "../../bridges/hubble-bridge", version = "0.2.0" }
 k8s-audit-bridge = { path = "../../bridges/k8s-audit-bridge", version = "0.2.0" }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-async-nats = "0.39"
+async-nats = "0.40"
 reqwest = { workspace = true, default-features = false, features = ["json", "rustls"] }
 futures.workspace = true
 

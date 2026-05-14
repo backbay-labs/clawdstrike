@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "rustls-webpki"
-version = "0.103.9"
+version = "0.103.10"
 build = false
 include = [
     "Cargo.toml",
@@ -145,6 +145,9 @@ features = ["derive"]
 
 [dev-dependencies.serde_json]
 version = "1.0"
+
+[dev-dependencies.x509-parser]
+version = "0.18.1"
 
 [lints.rust.unexpected_cfgs]
 level = "warn"

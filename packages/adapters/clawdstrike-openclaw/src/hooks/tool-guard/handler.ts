@@ -13,11 +13,15 @@ import type {
   Decision,
   HookEvent,
   HookHandler,
+  ModernToolResultPersistEvent,
+  OpenClawHookContext,
   PolicyEvent,
   ToolResultPersistEvent,
+  ToolResultPersistHookResult,
 } from "../../types.js";
 import { checkAndConsumeApproval } from "../approval-state.js";
 import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
+import { clearAllToolInvocations, takeToolInvocationParams } from "../tool-invocation-state.js";
 
 // ── LRU Decision Cache ──────────────────────────────────────────────
 
@@ -154,6 +158,7 @@ export function initialize(config: ClawdstrikeConfig): void {
   const engine = initializeEngine(config);
   currentConfig = config;
   decisionCache = new DecisionCache();
+  clearAllToolInvocations();
   cachedPolicyKey = policyCacheKey(engine.getPolicy());
 }
 
@@ -196,28 +201,474 @@ function extractResourceKey(event: PolicyEvent): string {
   }
 }
 
-/**
- * Hook handler for tool_result_persist events
- */
-const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== "tool_result_persist") {
+function sanitizeUnknown(
+  value: unknown,
+  sanitizeString: (s: string) => string,
+  seen: WeakSet<object>,
+  depth: number,
+): { value: unknown; changed: boolean } {
+  if (typeof value === "string") {
+    const sanitized = sanitizeString(value);
+    return { value: sanitized, changed: sanitized !== value };
+  }
+
+  if (!value || typeof value !== "object") {
+    return { value, changed: false };
+  }
+
+  if (seen.has(value)) {
+    return { value, changed: false };
+  }
+
+  if (depth > 32) {
+    return { value, changed: false };
+  }
+
+  const isArray = Array.isArray(value);
+  const isPlainObject = Object.prototype.toString.call(value) === "[object Object]";
+  if (!isArray && !isPlainObject) {
+    return { value, changed: false };
+  }
+
+  seen.add(value);
+
+  if (isArray) {
+    let changed = false;
+    const out = (value as unknown[]).map((item) => {
+      const result = sanitizeUnknown(item, sanitizeString, seen, depth + 1);
+      changed = changed || result.changed;
+      return result.value;
+    });
+    return { value: changed ? out : value, changed };
+  }
+
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  let changed = false;
+  for (const [key, entry] of Object.entries(obj)) {
+    const result = sanitizeUnknown(entry, sanitizeString, seen, depth + 1);
+    out[key] = result.value;
+    changed = changed || result.changed;
+  }
+  return { value: changed ? out : value, changed };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isLegacyToolResultEvent(
+  event: HookEvent | ModernToolResultPersistEvent,
+): event is ToolResultPersistEvent {
+  return (
+    typeof event === "object" &&
+    event !== null &&
+    "type" in event &&
+    (event as { type?: unknown }).type === "tool_result_persist"
+  );
+}
+
+function isModernToolResultPersistEvent(
+  event: HookEvent | ModernToolResultPersistEvent,
+): event is ModernToolResultPersistEvent {
+  return typeof event === "object" && event !== null && !("type" in event) && "message" in event;
+}
+
+function extractTextContent(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const textParts = value
+    .map((entry) => {
+      const record = asRecord(entry);
+      return typeof record?.text === "string" ? record.text : undefined;
+    })
+    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+
+  return textParts.length > 0 ? textParts.join("\n\n") : undefined;
+}
+
+function extractModernToolParams(message: Record<string, unknown>): Record<string, unknown> {
+  const details = asRecord(message.details);
+  const candidates = [details?.params, details?.input, details?.arguments, details];
+
+  for (const candidate of candidates) {
+    const record = asRecord(candidate);
+    if (record) {
+      return { ...record };
+    }
+  }
+
+  return {};
+}
+
+function extractModernToolResult(message: unknown): unknown {
+  if (typeof message === "string") {
+    return message;
+  }
+
+  const record = asRecord(message);
+  if (!record) {
+    return message;
+  }
+
+  if ("result" in record) {
+    return record.result;
+  }
+  if ("output" in record) {
+    return record.output;
+  }
+
+  const details = asRecord(record.details);
+  if (details && "result" in details) {
+    return details.result;
+  }
+  if (details && "output" in details) {
+    return details.output;
+  }
+
+  const contentText = extractTextContent(record.content);
+  if (contentText !== undefined) {
+    return contentText;
+  }
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+
+  return message;
+}
+
+function mergeToolParams(
+  explicitParams: Record<string, unknown>,
+  rememberedParams: Record<string, unknown> | null,
+): Record<string, unknown> {
+  if (!rememberedParams) {
+    return explicitParams;
+  }
+
+  return {
+    ...rememberedParams,
+    ...explicitParams,
+  };
+}
+
+function sanitizeModernToolMessage(
+  message: unknown,
+  sanitizeString: (value: string) => string,
+): { message: unknown; changed: boolean } {
+  if (typeof message === "string") {
+    const sanitized = sanitizeString(message);
+    return { message: sanitized, changed: sanitized !== message };
+  }
+
+  const record = asRecord(message);
+  if (!record) {
+    return { message, changed: false };
+  }
+
+  const next: Record<string, unknown> = { ...record };
+  let changed = false;
+
+  if (typeof record.content === "string") {
+    const sanitized = sanitizeString(record.content);
+    if (sanitized !== record.content) {
+      next.content = sanitized;
+      changed = true;
+    }
+  } else if (Array.isArray(record.content)) {
+    let contentChanged = false;
+    const nextContent = record.content.map((entry) => {
+      const item = asRecord(entry);
+      if (!item || typeof item.text !== "string") {
+        return entry;
+      }
+      const sanitized = sanitizeString(item.text);
+      if (sanitized === item.text) {
+        return entry;
+      }
+      contentChanged = true;
+      return { ...item, text: sanitized };
+    });
+    if (contentChanged) {
+      next.content = nextContent;
+      changed = true;
+    }
+  }
+
+  if (typeof record.text === "string") {
+    const sanitized = sanitizeString(record.text);
+    if (sanitized !== record.text) {
+      next.text = sanitized;
+      changed = true;
+    }
+  }
+
+  if (typeof record.result === "string") {
+    const sanitized = sanitizeString(record.result);
+    if (sanitized !== record.result) {
+      next.result = sanitized;
+      changed = true;
+    }
+  } else if (record.result && typeof record.result === "object") {
+    const sanitized = sanitizeUnknown(record.result, sanitizeString, new WeakSet<object>(), 0);
+    if (sanitized.changed) {
+      next.result = sanitized.value;
+      changed = true;
+    }
+  }
+
+  if (typeof record.output === "string") {
+    const sanitized = sanitizeString(record.output);
+    if (sanitized !== record.output) {
+      next.output = sanitized;
+      changed = true;
+    }
+  }
+
+  if (typeof record.details === "string") {
+    const sanitized = sanitizeString(record.details);
+    if (sanitized !== record.details) {
+      next.details = sanitized;
+      changed = true;
+    }
+  } else if (record.details && typeof record.details === "object") {
+    const sanitized = sanitizeUnknown(record.details, sanitizeString, new WeakSet<object>(), 0);
+    if (sanitized.changed) {
+      next.details = sanitized.value;
+      changed = true;
+    }
+  }
+
+  return { message: changed ? next : message, changed };
+}
+
+function buildBlockedToolResultMessage(
+  message: unknown,
+  toolName: string,
+  guard: string | undefined,
+  reason: string,
+): unknown {
+  const blockedText = `[clawdstrike] Blocked by ${guard ?? "policy"}: ${reason}`;
+  const base = asRecord(message);
+  const next: Record<string, unknown> = base ? { ...base } : {};
+
+  next.role = typeof next.role === "string" ? next.role : "toolResult";
+  next.toolName = asNonEmptyString(next.toolName) ?? toolName;
+  next.isError = true;
+  next.content = [{ type: "text", text: blockedText }];
+  next.text = blockedText;
+  if ("result" in next) {
+    next.result = blockedText;
+  }
+  if ("output" in next) {
+    next.output = blockedText;
+  }
+  if ("details" in next) {
+    delete next.details;
+  }
+
+  return next;
+}
+
+function annotateWarningOnToolResultMessage(message: unknown, warning: string): unknown {
+  const base = asRecord(message);
+  if (!base) {
+    return message;
+  }
+
+  const details = asRecord(base.details);
+  return {
+    ...base,
+    details: {
+      ...(details ?? {}),
+      clawdstrikeWarning: warning,
+    },
+  };
+}
+
+type NormalizedToolPersistEvent = {
+  sessionId: string;
+  toolName: string;
+  params: Record<string, unknown>;
+  result: unknown;
+  deny: (decision: Decision) => void;
+  warn: (decision: Decision) => void;
+  sanitize: (policyEngine: PolicyEngine) => void;
+  flush: () => ToolResultPersistHookResult | void;
+};
+
+function normalizeToolResultEvent(
+  event: HookEvent | ModernToolResultPersistEvent,
+  hookCtx?: OpenClawHookContext,
+): NormalizedToolPersistEvent | null {
+  if (isLegacyToolResultEvent(event)) {
+    const sessionId =
+      event.context.sessionId || hookCtx?.sessionKey || hookCtx?.agentId || "openclaw-runtime";
+    const toolResult = event.context.toolResult;
+
+    return {
+      sessionId,
+      toolName: toolResult.toolName,
+      params: toolResult.params,
+      result: toolResult.result,
+      deny(decision) {
+        toolResult.error = decision.reason ?? "Policy violation";
+        event.messages.push(
+          `[clawdstrike] Blocked by ${decision.guard ?? "policy"}: ${decision.reason ?? "Policy violation"}`,
+        );
+      },
+      warn(decision) {
+        event.messages.push(`[clawdstrike] Warning: ${decision.message ?? decision.reason}`);
+      },
+      sanitize(policyEngine) {
+        const result = toolResult.result;
+        if (typeof result === "string") {
+          const sanitized = policyEngine.sanitizeOutput(result);
+          if (sanitized !== result) {
+            toolResult.result = sanitized;
+          }
+          return;
+        }
+        if (result && typeof result === "object") {
+          const sanitized = sanitizeUnknown(
+            result,
+            (value) => policyEngine.sanitizeOutput(value),
+            new WeakSet<object>(),
+            0,
+          );
+          if (sanitized.changed) {
+            toolResult.result = sanitized.value;
+          }
+        }
+      },
+      flush() {
+        return;
+      },
+    };
+  }
+
+  if (!isModernToolResultPersistEvent(event)) {
+    return null;
+  }
+
+  let currentMessage = event.message;
+  let changed = false;
+  const messageRecord = asRecord(currentMessage);
+  const toolName =
+    asNonEmptyString(event.toolName) ??
+    asNonEmptyString(hookCtx?.toolName) ??
+    asNonEmptyString(messageRecord?.toolName) ??
+    "unknown";
+  const sessionId =
+    asNonEmptyString((event as { sessionId?: unknown }).sessionId) ??
+    hookCtx?.sessionKey ??
+    hookCtx?.agentId ??
+    "openclaw-runtime";
+  const toolCallId = asNonEmptyString(event.toolCallId) ?? hookCtx?.toolCallId;
+  const explicitParams = messageRecord ? extractModernToolParams(messageRecord) : {};
+  const rememberedParams = takeToolInvocationParams(sessionId, toolName, toolCallId);
+
+  return {
+    sessionId,
+    toolName,
+    params: mergeToolParams(explicitParams, rememberedParams),
+    result: extractModernToolResult(currentMessage),
+    deny(decision) {
+      currentMessage = buildBlockedToolResultMessage(
+        currentMessage,
+        toolName,
+        decision.guard,
+        decision.reason ?? "Policy violation",
+      );
+      changed = true;
+    },
+    warn(decision) {
+      const warning = `[clawdstrike] Warning: ${decision.message ?? decision.reason ?? "Policy warning"}`;
+      const nextMessage = annotateWarningOnToolResultMessage(currentMessage, warning);
+      if (nextMessage !== currentMessage) {
+        currentMessage = nextMessage;
+        changed = true;
+      }
+    },
+    sanitize(policyEngine) {
+      const sanitized = sanitizeModernToolMessage(currentMessage, (value) =>
+        policyEngine.sanitizeOutput(value),
+      );
+      if (sanitized.changed) {
+        currentMessage = sanitized.message;
+        changed = true;
+      }
+    },
+    flush() {
+      return changed ? { message: currentMessage } : undefined;
+    },
+  };
+}
+
+function maybeRunAsyncFollowUp(
+  policyEngine: PolicyEngine,
+  policyEvent: PolicyEvent,
+  toolName: string,
+): void {
+  if (!policyEngine.hasAsyncGuards()) {
     return;
   }
 
-  const toolEvent = event as ToolResultPersistEvent;
-  const { toolName, params, result } = toolEvent.context.toolResult;
-  const sessionId = toolEvent.context.sessionId;
+  void policyEngine
+    .evaluateAsyncGuards(policyEvent)
+    .then((decision) => {
+      if (decision.status === "allow") {
+        return;
+      }
+
+      const detail = decision.message ?? decision.reason ?? "policy follow-up violation";
+      console.warn(
+        `[clawdstrike] Async post-persist guard for ${toolName} returned ${decision.status}: ${detail}`,
+      );
+    })
+    .catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn(`[clawdstrike] Async post-persist evaluation failed for ${toolName}: ${detail}`);
+    });
+}
+
+/**
+ * Hook handler for tool_result_persist events
+ */
+const handler: HookHandler = (
+  event: HookEvent | ModernToolResultPersistEvent,
+  hookCtx?: OpenClawHookContext,
+): ToolResultPersistHookResult | void => {
+  const toolEvent = normalizeToolResultEvent(event, hookCtx);
+  if (!toolEvent) {
+    return;
+  }
+
+  const { sessionId, toolName, params, result } = toolEvent;
   const policyEngine = getEngine();
 
   // Check if preflight already approved this action — skip policy evaluation
   // but still run output sanitization below.
   const resource = normalizeApprovalResource(policyEngine, toolName, params);
   const priorApproval = checkAndConsumeApproval(sessionId, toolName, resource);
+  const policyEvent = createPolicyEvent(sessionId, toolName, params, result);
 
   if (!priorApproval) {
-    // Create policy event from tool result
-    const policyEvent = createPolicyEvent(sessionId, toolName, params, result);
-
     // Check decision cache (skip for destructive ops and advisory/audit modes)
     const mode = currentConfig.mode ?? "deterministic";
     const useCache =
@@ -228,95 +679,28 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
 
     let decision = useCache ? decisionCache.get(cacheKey) : undefined;
     if (!decision) {
-      decision = await policyEngine.evaluate(policyEvent);
+      decision = policyEngine.evaluateSync(policyEvent);
       if (useCache && decision.status === "allow") {
         decisionCache.set(cacheKey, decision);
       }
     }
 
     if (decision.status === "deny") {
-      // Block the tool result
-      toolEvent.context.toolResult.error = decision.reason ?? "Policy violation";
-      toolEvent.messages.push(`[clawdstrike] Blocked by ${decision.guard}: ${decision.reason}`);
-      return;
+      toolEvent.deny(decision);
+      return toolEvent.flush();
     }
 
     if (decision.status === "warn") {
-      // Add warning message
-      toolEvent.messages.push(`[clawdstrike] Warning: ${decision.message ?? decision.reason}`);
+      toolEvent.warn(decision);
+    }
+
+    if (decision.status === "allow") {
+      maybeRunAsyncFollowUp(policyEngine, policyEvent, toolName);
     }
   }
 
-  function sanitizeUnknown(
-    value: unknown,
-    sanitizeString: (s: string) => string,
-    seen: WeakSet<object>,
-    depth: number,
-  ): { value: unknown; changed: boolean } {
-    if (typeof value === "string") {
-      const sanitized = sanitizeString(value);
-      return { value: sanitized, changed: sanitized !== value };
-    }
-
-    if (!value || typeof value !== "object") {
-      return { value, changed: false };
-    }
-
-    if (seen.has(value)) {
-      return { value, changed: false };
-    }
-
-    if (depth > 32) {
-      return { value, changed: false };
-    }
-
-    // Preserve non-plain objects (Dates, Buffers, class instances, etc).
-    const isArray = Array.isArray(value);
-    const isPlainObject = Object.prototype.toString.call(value) === "[object Object]";
-    if (!isArray && !isPlainObject) {
-      return { value, changed: false };
-    }
-
-    seen.add(value);
-
-    if (isArray) {
-      let changed = false;
-      const out = (value as unknown[]).map((item) => {
-        const r = sanitizeUnknown(item, sanitizeString, seen, depth + 1);
-        changed = changed || r.changed;
-        return r.value;
-      });
-      return { value: changed ? out : value, changed };
-    }
-
-    const obj = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    let changed = false;
-    for (const [k, v] of Object.entries(obj)) {
-      const r = sanitizeUnknown(v, sanitizeString, seen, depth + 1);
-      out[k] = r.value;
-      changed = changed || r.changed;
-    }
-    return { value: changed ? out : value, changed };
-  }
-
-  // Redact secrets from output
-  if (result && typeof result === "string") {
-    const sanitized = policyEngine.sanitizeOutput(result);
-    if (sanitized !== result) {
-      toolEvent.context.toolResult.result = sanitized;
-    }
-  } else if (result && typeof result === "object") {
-    const { value: sanitized, changed } = sanitizeUnknown(
-      result,
-      (s) => policyEngine.sanitizeOutput(s),
-      new WeakSet<object>(),
-      0,
-    );
-    if (changed) {
-      toolEvent.context.toolResult.result = sanitized;
-    }
-  }
+  toolEvent.sanitize(policyEngine);
+  return toolEvent.flush();
 };
 
 /**

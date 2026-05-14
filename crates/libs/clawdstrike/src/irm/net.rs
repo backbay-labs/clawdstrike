@@ -97,6 +97,7 @@ impl NetworkIrm {
         None
     }
 
+    // @academy:start net-irm-extract-host
     /// Extract host from URL
     fn extract_host_from_url(&self, url: &str) -> Option<String> {
         let parsed = Url::parse(url).ok()?;
@@ -108,6 +109,7 @@ impl NetworkIrm {
             Some(host)
         }
     }
+    // @academy:end net-irm-extract-host
 
     fn normalize_host(&self, host: &str) -> String {
         host.trim().trim_end_matches('.').to_ascii_lowercase()

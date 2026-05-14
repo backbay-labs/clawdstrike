@@ -116,6 +116,7 @@ impl Guard for PromptInjectionGuard {
             && matches!(action, GuardAction::Custom(kind, _) if is_untrusted_text_action_kind(kind))
     }
 
+    // @academy:start prompt-injection-check
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
         if !self.enabled {
             return GuardResult::allow(&self.name);
@@ -185,6 +186,7 @@ impl Guard for PromptInjectionGuard {
 
         GuardResult::allow(&self.name)
     }
+    // @academy:end prompt-injection-check
 }
 
 #[cfg(test)]

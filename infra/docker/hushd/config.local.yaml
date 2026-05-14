@@ -1,0 +1,15 @@
+listen: "0.0.0.0:9876"
+ruleset: "default"
+audit_db: "/var/lib/hushd/audit.db"
+log_level: "info"
+cors_enabled: true
+
+auth:
+  enabled: true
+  api_keys:
+    - name: "default"
+      key: "${CLAWDSTRIKE_API_KEY}"
+      scopes: ["check", "read"]
+    - name: "admin"
+      key: "${CLAWDSTRIKE_ADMIN_KEY}"
+      scopes: ["*"]

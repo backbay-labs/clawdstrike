@@ -7,166 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- No unreleased changes yet.
+
+## [0.2.7] - 2026-03-18
+
 ### Added
 
-#### Agent Identity + Liveness Operations
-
-- Added endpoint/runtime liveness telemetry in `hushd`:
-  - `POST /api/v1/agent/heartbeat`
-  - `GET /api/v1/agents/status`
-  - persistent `endpoint_liveness`, `runtime_liveness`, and `heartbeat_history` control DB tables.
-- Added runtime-aware audit ingestion and query controls:
-  - `POST /api/v1/audit/batch` for queued replay uploads from agents
-  - cursor pagination fields (`next_cursor`, `has_more`)
-  - runtime filters (`runtime_agent_id`, `runtime_agent_kind`) for audit queries.
-- Added agent-side runtime registration and identity propagation across policy checks for Claude Code, OpenClaw, and MCP integrations.
-- Added desktop-agent diagnostics bundle generation (redacted settings, connectivity checks, version matrix, queue state, log tails) with local API route and tray action.
-- Added scheduled local API token rotation with grace-window auth fallback and configurable local API security settings.
-- Added control-console stream backpressure controls (pause/resume, buffer caps, dropped-event counters, clear buffer) and event-table virtualization for long sessions.
-- Added control-console liveness surfacing in Agent Explorer (online/offline heartbeat age) and server-driven runtime filters in Audit Log.
-
-#### Desktop Policy Workbench Rollout (Forensics River)
-
-- Forensics River now supports an integrated Policy Workbench with in-place policy editing, validation, save/revert flow, and canonical `PolicyEvent` test execution.
-- Desktop now supports policy bridge commands for `load policy`, `validate policy`, `evaluate test event`, and `save policy` against `hushd`.
-- Added desktop rollout controls for the Policy Workbench: `VITE_POLICY_WORKBENCH`/`VITE_ENABLE_POLICY_WORKBENCH` plus local override key `sdr:feature:policy-workbench`.
-
-#### Core Cryptographic Primitives (`hush-core`)
-
-- Ed25519 keypair generation and digital signatures via `ed25519-dalek`
-- SHA-256 and Keccak-256 hashing
-- Merkle tree construction with configurable hash algorithm
-- Merkle proof generation and verification
-- Canonical JSON serialization (RFC 8785) for deterministic cross-language hashing
-- Signed receipt creation with UUID, timestamps, and metadata
-- Receipt verification with signer and optional cosigner
-
-#### Security Guards (`clawdstrike`)
-
-- **ForbiddenPathGuard**: Block access to sensitive paths with glob patterns and exceptions
-- **EgressAllowlistGuard**: Control network egress via domain allowlist/blocklist with wildcards
-- **SecretLeakGuard**: Detect secrets using configurable regex patterns with severity levels
-- **PatchIntegrityGuard**: Validate patches with size limits and forbidden pattern detection
-- **McpToolGuard**: Restrict MCP tool invocations with allow/block/require_confirmation actions
-- **PromptInjectionGuard**: Detect prompt injection attempts in untrusted text
-- **JailbreakGuard**: 4-layer jailbreak detection (heuristic → statistical → ML → optional LLM-as-judge)
-
-#### Prompt Security Features (`clawdstrike`)
-
-- **Jailbreak Detection**: Multi-layer analysis with 9 attack categories (role_play, authority_confusion, encoding_attack, context_manipulation, instruction_override, system_prompt_extraction, multi_turn_attack, hypothetical_framing, emotional_manipulation)
-- **Session Aggregation**: Rolling risk tracking with configurable decay for multi-turn attacks
-- **Output Sanitization**: Redact secrets, PII, PHI, PCI data from LLM output with streaming support
-- **Redaction Strategies**: full, partial, type_label, hash, none
-- **Prompt Watermarking**: Embed signed provenance markers using zero-width, homoglyph, whitespace, or metadata encoding
-
-#### Policy Engine
-
-- YAML-based policy configuration (`version: "1.1.0"` for Rust)
-- Pre-configured rulesets: `default`, `strict`, `ai-agent`, `cicd`, `permissive`
-- Policy inheritance and merging
-- Runtime policy validation with fail-closed semantics
-- `HushEngine` facade for unified guard orchestration
-
-#### CLI (`hush-cli`)
-
-- `hush check` - Check file access, egress, or MCP tool against policy
-- `hush verify` - Verify a signed receipt with public key
-- `hush keygen` - Generate Ed25519 signing keypair (hex seed + `.pub`)
-- `hush keygen --tpm-seal` - Generate a TPM2-sealed Ed25519 seed (best-effort, requires `tpm2-tools`)
-- `hush policy show` - Display ruleset policy
-- `hush policy validate` - Validate a policy YAML file
-- `hush policy list` - List available rulesets
-- `hush guard inspect|validate` - Inspect and validate plugin manifests/load plans
-- `hush policy rego compile|eval` - Embedded Rego compile/eval with optional trace output
-- `hush policy test generate` - Generate baseline policy test suites from policy + observed events
-- `hush policy test` enhancements - `--min-coverage`, `--format` (`text|json|html|junit`), `--output`, `--snapshots`, `--update-snapshots`, `--mutation`
-- `hush run` - Best-effort process wrapper (CONNECT proxy egress enforcement + audit log + signed receipt)
-- `hush completions` - Generate shell completions (bash, zsh, fish, powershell, elvish)
-
-#### Daemon (`hushd`)
-
-- Central policy enforcement with HTTP API
-- Native TLS support (optional)
-- Prometheus `/metrics` endpoint
-- Canonical PolicyEvent evaluation (`POST /api/v1/eval`)
-- SQLite audit ledger with optional at-rest encryption for metadata
-- Certification badge PNG rendering (`format=png`, `size=1x|2x`)
-
-#### TypeScript SDK (`@clawdstrike/sdk`, `hush-ts`)
-
-- Crypto: `sha256`, `keccak256`, Ed25519 signing/verification
-- Canonical JSON (RFC 8785): `canonicalize`, `canonicalHash`
-- Merkle trees and receipt verification
-- **JailbreakDetector**: Multi-layer detection with session aggregation
-- **OutputSanitizer**: Streaming-compatible sanitization with multiple redaction strategies
-- **PromptWatermarker** / **WatermarkExtractor**: Embed and extract signed provenance markers
-- Built-in prompt security guards in policy path: `prompt_injection`, `jailbreak_detection`
-
-#### Framework Adapters
-
-- `@clawdstrike/adapter-core` - Framework-agnostic primitives (PolicyEventFactory, SecurityContext, BaseToolInterceptor)
-- `@clawdstrike/engine-local` - Node.js bridge to Rust CLI for policy evaluation
-- `@clawdstrike/engine-remote` - Node.js engine that evaluates events via `hushd` (`POST /api/v1/eval`)
-- `@clawdstrike/vercel-ai` - Middleware and stream guarding for Vercel AI SDK
-- `@clawdstrike/langchain` - Tool wrappers and callback handlers for LangChain
+- Added formal verification across the policy toolchain with Lean 4 proofs, solver-backed Z3 checks, Aeneas regeneration coverage, CLI attestation reporting, and CI verification lanes (#202).
 
 ### Changed
 
-- Agent identity validation is now strict across check/eval paths: runtime attribution must provide `runtime_agent_id` and `runtime_agent_kind` as a complete pair.
-- Agent audit outbox durability now enforces stable event IDs and dedupes by event ID before replay.
-- Local API settings now expose hardening controls (`token_rotation_interval_hours`, `token_grace_minutes`, mTLS configuration) through the authenticated settings API.
-- Canonical-first policy handling across SDKs: canonical `version: "1.1.0"/"1.2.0"` is primary, with legacy `clawdstrike-v1.0` accepted via translation and deprecation warning.
-- WASM plugin runtime now executes via Rust Wasmtime path with capability checks and resource ceilings; TS `executionMode: wasm` uses the CLI bridge path instead of a stub failure.
-- `hushd` auth pepper is now instance-bound (resolved at store creation) to eliminate global env race conditions in parallel test/runtime paths.
-- Local TS file-dependency workflows are now clean-install safe via `@clawdstrike/adapter-core` `prepare` build and CI smoke coverage.
+- Normalized `0.2.7` release metadata across the Rust workspace, npm workspace, Python SDK, docker workspace manifests, OpenClaw plugin manifest, and packaging assets, and hardened the release scripts/preflight to cover those surfaces in future cuts.
 
-#### OpenClaw Integration (`@clawdstrike/openclaw`)
+### Fixed
 
-- OpenClaw plugin with `policy_check` tool for preflight security checks
-- CLI commands via `openclaw clawdstrike status|check`
-- Tool-boundary enforcement with `tool_result_persist` hook
-- Bundled rulesets: `clawdstrike:ai-agent-minimal`, `clawdstrike:ai-agent`
-- Separate policy schema (`version: "clawdstrike-v1.0"`) for OpenClaw context
+- Fixed the OpenClaw `tool_result_persist` hook so synchronous post-result enforcement, redaction, and async scanner follow-up now run on real tool traffic instead of being silently dropped (#205).
+- Hardened policy verification and extends loading semantics so strict inheritance checks, backend attestation levels, and formal verification CI behave consistently across CLI, library, and workbench flows (#202).
 
-#### Inline Reference Monitors (IRMs)
+## [0.2.6] - 2026-03-16
 
-- **FilesystemIrm**: Intercept file read/write/delete/list operations
-- **NetworkIrm**: Intercept TCP/UDP connect, DNS resolve, listen operations
-- **ExecutionIrm**: Intercept command execution from sandboxed modules
+### Added
 
-#### WebAssembly Bindings (`@clawdstrike/wasm`)
+- Added HushSpec support across the policy toolchain with dual-format auto-loading, bidirectional compilation, CLI migration, vendored spec sources, and fixture-backed conformance coverage (#197).
+- Added the Detection Engineering IDE in Workbench with multi-format editing, visual panels, ATT&CK coverage, evidence packs, validation lab flows, and publish-time provenance controls (#196).
+- Added secret-broker trust-plane work, origin-aware policy enforcement, Python and Go origin transport parity, and inbound OpenClaw message hooks across the SDK and adapter surface (#191, #181, #177, #174).
+- Added the fleet security control plane plus the next wave of workbench policy-builder, origin profile, simulator, and hunt lab flows (#176, #184, #185, #186, #187, #190, #193).
 
-- Browser and Node.js compatible WASM module
-- SHA-256 and Keccak-256 hashing
-- Ed25519 signature verification
-- Signed receipt verification
-- Merkle root calculation and proof operations
-- Canonical JSON serialization
+### Changed
 
-#### Python SDK (`hush-py`)
+- Integrated nono kernel-level sandboxing and hardened the operator cockpit, agent/runtime handoff, and related CI flows for release readiness (#178, #175).
+- Aligned release metadata to `0.2.6` across Rust, npm, Python, agent, docker workspace, and packaging manifests, and now keep internal npm package dependency ranges in sync during version bumps.
 
-- Pure Python implementation of security guards
-- `Policy` class with YAML configuration loading
-- `HushEngine` for action checking
-- Ed25519 receipt signing and verification
-- Async and sync APIs
+### Fixed
 
-#### Documentation
-
-- mdBook documentation site
-- Getting Started guides (Rust, TypeScript, Python)
-- Guard reference documentation (all 12 guards + output sanitizer + watermarking)
-- Framework integration guides (OpenClaw, Vercel AI, LangChain)
-- Architecture and design philosophy docs
-- Terminology glossary
-
-### Security
-
-- Fail-closed design: invalid policies reject at load time, errors deny access
-- Clippy pedantic lints enabled
-- Release builds with LTO
-- Dependabot configured for automated security updates
-- Added hushd eval-surface regression coverage for path traversal targets, userinfo-spoofed egress host inputs, and private-IP egress attempts.
+- HushSpec decompile now fails closed on lossy egress and severity translations, and the CLI migration path now surfaces those failures cleanly instead of silently downgrading policy intent (#197).
+- Hardened CI and repo validation for the vendored `vendor/hushspec` tree, offline test disk pressure, and release-time moved-path checks (#197).
+- Fixed auth, registry, remote tempdir, and FFI cache hardening issues, and removed namespace-wide Cilium L7 DNS proxy rules that were breaking DNS resolution (#188, #183).
 
 ## [0.1.2] - 2026-02-26
 
@@ -215,6 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release pipeline: protoc installation, npm publish race conditions, crate ordering
 - Adapters: bump `adapter-core` minimum to `^0.1.1` and sync lock files
 
-[Unreleased]: https://github.com/backbay-labs/clawdstrike/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/backbay-labs/clawdstrike/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/backbay-labs/clawdstrike/compare/v0.2.6...v0.2.7
+[0.2.6]: https://github.com/backbay-labs/clawdstrike/compare/v0.2.5...v0.2.6
 [0.1.2]: https://github.com/backbay-labs/clawdstrike/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/backbay-labs/clawdstrike/compare/v0.1.0...v0.1.1

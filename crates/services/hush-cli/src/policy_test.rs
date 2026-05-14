@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use clawdstrike::{
-    GuardReport, HushEngine, PostureRuntimeState, PostureTransitionRecord, Severity,
+    GuardReport, HushEngine, OriginRuntimeState, PostureRuntimeState, PostureTransitionRecord,
+    Severity,
 };
 use serde::{Deserialize, Serialize};
 
@@ -535,11 +536,13 @@ async fn evaluate_policy_event(
 ) -> anyhow::Result<GuardReport> {
     let mapped = map_policy_event(event)?;
     let mut posture_state = None;
+    let mut origin_state: Option<OriginRuntimeState> = None;
     let posture_report = engine
-        .check_action_report_with_posture(
+        .check_action_report_with_runtime(
             &mapped.action.as_guard_action(),
             &mapped.context,
             &mut posture_state,
+            &mut origin_state,
         )
         .await?;
     engine.reset().await;

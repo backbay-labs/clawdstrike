@@ -1,0 +1,106 @@
+hushspec: "0.1.0"
+name: ai-agent
+description: Security rules optimized for AI coding assistants
+
+rules:
+  forbidden_paths:
+    patterns:
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/id_ecdsa*"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.git-credentials"
+      - "**/.gitconfig"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      - "**/.password-store/**"
+      - "**/pass/**"
+      - "**/.1password/**"
+      - "/etc/shadow"
+      - "/etc/passwd"
+      - "/etc/sudoers"
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      - "**/NTUSER.DAT"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
+    exceptions:
+      - "**/.env.example"
+      - "**/.env.template"
+
+  egress:
+    allow:
+      - "*.openai.com"
+      - "*.anthropic.com"
+      - "api.together.xyz"
+      - "api.fireworks.ai"
+      - "api.github.com"
+      - "github.com"
+      - "*.githubusercontent.com"
+      - "gitlab.com"
+      - "bitbucket.org"
+      - "*.npmjs.org"
+      - "registry.npmjs.org"
+      - "pypi.org"
+      - "files.pythonhosted.org"
+      - "crates.io"
+      - "static.crates.io"
+    block: []
+    default: block
+
+  secret_patterns:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{48}"
+        severity: critical
+      - name: anthropic_key
+        pattern: "sk-ant-[A-Za-z0-9\\-]{95}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+    skip_paths:
+      - "**/test/**"
+      - "**/tests/**"
+      - "**/fixtures/**"
+      - "**/mocks/**"
+
+  patch_integrity:
+    max_additions: 2000
+    max_deletions: 1000
+    require_balance: false
+    max_imbalance_ratio: 20.0
+    forbidden_patterns:
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)chmod\\s+777"
+
+  shell_commands:
+    forbidden_patterns:
+      - "(?i)rm\\s+-rf\\s+/"
+      - "curl.*\\|.*bash"
+      - "wget.*\\|.*bash"
+
+  tool_access:
+    allow: []
+    block:
+      - shell_exec
+      - run_command
+    require_confirmation:
+      - git_push
+      - deploy
+      - publish
+    default: allow
+    max_args_size: 2097152

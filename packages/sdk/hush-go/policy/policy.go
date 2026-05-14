@@ -16,6 +16,29 @@ var supportedVersions = map[string]bool{
 	"1.3.0": true,
 }
 
+// UnsupportedOriginFeatureError is returned when a caller requests origin-aware
+// policy behavior on the local Go SDK before origin enforcement exists there.
+type UnsupportedOriginFeatureError struct {
+	Backend string
+	Feature string
+}
+
+func (e *UnsupportedOriginFeatureError) Error() string {
+	backend := e.Backend
+	if backend == "" {
+		backend = "local Go SDK"
+	}
+	feature := e.Feature
+	if feature == "" {
+		feature = "origin-aware policy"
+	}
+	return fmt.Sprintf(
+		"policy: %s is not supported by %s; use a daemon-backed Clawdstrike instance for origin enforcement",
+		feature,
+		backend,
+	)
+}
+
 // MergeStrategy controls how policies are combined via extends.
 type MergeStrategy string
 
@@ -51,6 +74,7 @@ type Policy struct {
 	Description   string         `yaml:"description,omitempty"`
 	Extends       []string       `yaml:"extends,omitempty"`
 	MergeStrategy MergeStrategy  `yaml:"merge_strategy,omitempty"`
+	Origins       *OriginsConfig `yaml:"origins,omitempty"`
 	Guards        GuardConfigs   `yaml:"guards"`
 	Settings      PolicySettings `yaml:"settings"`
 	settingsSet   bool           `yaml:"-"`
@@ -89,6 +113,7 @@ type decodedPolicy struct {
 	Description   string          `yaml:"description,omitempty"`
 	Extends       extendsField    `yaml:"extends,omitempty"`
 	MergeStrategy MergeStrategy   `yaml:"merge_strategy,omitempty"`
+	Origins       *OriginsConfig  `yaml:"origins,omitempty"`
 	Guards        GuardConfigs    `yaml:"guards"`
 	Settings      *PolicySettings `yaml:"settings,omitempty"`
 }
@@ -129,6 +154,7 @@ func FromYAML(data []byte) (*Policy, error) {
 		Description:   decoded.Description,
 		Extends:       append([]string(nil), decoded.Extends...),
 		MergeStrategy: decoded.MergeStrategy,
+		Origins:       decoded.Origins,
 		Guards:        decoded.Guards,
 	}
 	if decoded.Settings != nil {
@@ -154,6 +180,12 @@ func FromYAMLFile(path string) (*Policy, error) {
 
 // Validate checks that the policy is well-formed. Fail-closed: invalid policies are rejected.
 func (p *Policy) Validate() error {
+	if p.Origins != nil {
+		return &UnsupportedOriginFeatureError{
+			Backend: "the local Go policy loader",
+			Feature: "policy.origins",
+		}
+	}
 	if p.Version == "" {
 		return fmt.Errorf("policy: missing version")
 	}

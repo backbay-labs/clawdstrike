@@ -213,7 +213,10 @@ pub async fn eval_policy_event(
     let report = engine
         .check_action_report(&mapped.action.as_guard_action(), &mapped.context)
         .await
-        .map_err(|e| V1Error::internal("ENGINE_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "engine evaluation failed");
+            V1Error::internal("ENGINE_ERROR", "internal evaluation error")
+        })?;
 
     let decision = decision_from_report(&report, mapped.decision_reason.clone());
 

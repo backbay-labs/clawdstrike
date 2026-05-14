@@ -10,7 +10,7 @@ import { mkdir, writeFile } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
 import { callAnthropicApi, callOpenAiApi } from "./llm-api"
-import { commandExists } from "../../system"
+import { commandExists, resolveCommandPath } from "../../system"
 
 /**
  * OpenCode configuration
@@ -69,7 +69,8 @@ export const OpenCodeAdapter: Adapter = {
       return true
     }
 
-    return commandExists("opencode")
+    const cliAvailable = await commandExists("opencode")
+    return cliAvailable
   },
 
   async execute(
@@ -80,7 +81,7 @@ export const OpenCodeAdapter: Adapter = {
     const startTime = Date.now()
 
     // Try CLI first if available
-    const cliAvailable = commandExists("opencode")
+    const cliAvailable = await commandExists("opencode")
 
     if (cliAvailable) {
       return executeViaCli(workcell, task, signal, startTime)
@@ -147,6 +148,15 @@ async function executeViaCli(
   signal: AbortSignal,
   startTime: number
 ): Promise<AdapterResult> {
+  const openCodeCli = await resolveCommandPath("opencode")
+  if (!openCodeCli) {
+    return {
+      success: false,
+      output: "",
+      error: "opencode CLI not found",
+    }
+  }
+
   // Write prompt to file
   const metaDir = join(workcell.directory, ".clawdstrike")
   const promptPath = join(metaDir, "prompt.md")
@@ -165,7 +175,7 @@ async function executeViaCli(
   }
 
   try {
-    const proc = Bun.spawn(["opencode", ...args], {
+    const proc = Bun.spawn([openCodeCli, ...args], {
       cwd: workcell.directory,
       env: {
         ...process.env,

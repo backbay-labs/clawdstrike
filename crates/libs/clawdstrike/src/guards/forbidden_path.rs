@@ -41,6 +41,7 @@ fn default_enabled() -> bool {
     true
 }
 
+// @academy:start forbidden-path-defaults
 fn default_forbidden_patterns() -> Vec<String> {
     let mut patterns = vec![
         // SSH keys
@@ -102,6 +103,7 @@ fn default_forbidden_patterns() -> Vec<String> {
 
     patterns
 }
+// @academy:end forbidden-path-defaults
 
 impl ForbiddenPathConfig {
     /// Create config with default forbidden patterns
@@ -217,6 +219,7 @@ impl ForbiddenPathGuard {
         }
     }
 
+    // @academy:start forbidden-path-check
     /// Check if a path is forbidden
     pub fn is_forbidden(&self, path: &str) -> bool {
         let lexical_path = normalize_path_for_policy(path);
@@ -259,6 +262,7 @@ impl ForbiddenPathGuard {
 
         false
     }
+    // @academy:end forbidden-path-check
 }
 
 impl Default for ForbiddenPathGuard {

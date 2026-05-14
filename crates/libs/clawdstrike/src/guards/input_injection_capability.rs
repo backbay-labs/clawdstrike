@@ -96,6 +96,7 @@ impl Guard for InputInjectionCapabilityGuard {
         matches!(action, GuardAction::Custom("input.inject", _))
     }
 
+    // @academy:start input-injection-check
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
         if !self.enabled {
             return GuardResult::allow(&self.name);
@@ -163,6 +164,7 @@ impl Guard for InputInjectionCapabilityGuard {
 
         GuardResult::allow(&self.name)
     }
+    // @academy:end input-injection-check
 }
 
 #[cfg(test)]

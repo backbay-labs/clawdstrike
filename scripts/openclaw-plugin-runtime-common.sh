@@ -128,6 +128,16 @@ for i, ch in enumerate(text):
 '
 }
 
+openclaw_runtime_plugin_info_from_output() {
+  openclaw_runtime_json_from_output | jq -c '
+    if type == "object" and (.plugin? | type == "object") then
+      .plugin
+    else
+      .
+    end
+  ' 2>/dev/null || true
+}
+
 openclaw_runtime_version() {
   openclaw --version 2>&1 | tail -n 1 | tr -d '\r'
 }

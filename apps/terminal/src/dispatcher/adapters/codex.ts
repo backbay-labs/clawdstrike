@@ -9,7 +9,7 @@ import { join } from "path"
 import { stat } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
-import { commandExists, homeDirFromEnv } from "../../system"
+import { commandExists, homeDirFromEnv, resolveCommandPath } from "../../system"
 
 /**
  * Codex CLI configuration
@@ -76,8 +76,13 @@ export function configure(newConfig: Partial<CodexConfig>): void {
 }
 
 async function checkCodexAuthStatus(): Promise<boolean> {
+  const codexCli = await resolveCommandPath("codex")
+  if (!codexCli) {
+    return false
+  }
+
   try {
-    const proc = Bun.spawn(["codex", "login", "status"], {
+    const proc = Bun.spawn([codexCli, "login", "status"], {
       stdout: "ignore",
       stderr: "ignore",
     })
@@ -109,7 +114,7 @@ export const CodexAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    if (!commandExists("codex")) {
+    if (!(await commandExists("codex"))) {
       return false
     }
 
@@ -133,11 +138,19 @@ export const CodexAdapter: Adapter = {
     signal: AbortSignal
   ): Promise<AdapterResult> {
     const startTime = Date.now()
+    const codexCli = await resolveCommandPath("codex")
+    if (!codexCli) {
+      return {
+        success: false,
+        output: "",
+        error: "codex CLI not found",
+      }
+    }
     const args = buildCodexExecArgs(workcell.directory)
 
     try {
       // Execute codex CLI
-      const proc = Bun.spawn(["codex", ...args], {
+      const proc = Bun.spawn([codexCli, ...args], {
         cwd: workcell.directory,
         env: {
           ...process.env,

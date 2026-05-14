@@ -1,0 +1,102 @@
+hushspec: "0.1.0"
+name: default
+description: Default security rules for AI agent execution
+
+rules:
+  forbidden_paths:
+    patterns:
+      # SSH keys
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/id_ecdsa*"
+      # Cloud/infra credentials
+      - "**/.aws/**"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      # Environment files
+      - "**/.env"
+      - "**/.env.*"
+      # Git credentials
+      - "**/.git-credentials"
+      - "**/.gitconfig"
+      # Password stores
+      - "**/.password-store/**"
+      - "**/pass/**"
+      - "**/.1password/**"
+      # Unix system paths
+      - "/etc/shadow"
+      - "/etc/passwd"
+      - "/etc/sudoers"
+      # Windows credentials and registry hives
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      - "**/NTUSER.DAT"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
+    exceptions: []
+
+  egress:
+    allow:
+      - "*.openai.com"
+      - "*.anthropic.com"
+      - "api.github.com"
+      - "github.com"
+      - "*.githubusercontent.com"
+      - "*.npmjs.org"
+      - "registry.npmjs.org"
+      - "pypi.org"
+      - "files.pythonhosted.org"
+      - "crates.io"
+      - "static.crates.io"
+    block: []
+    default: block
+
+  secret_patterns:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{48}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+    skip_paths:
+      - "**/test/**"
+      - "**/tests/**"
+      - "**/*_test.*"
+      - "**/*.test.*"
+
+  patch_integrity:
+    max_additions: 1000
+    max_deletions: 500
+    require_balance: false
+    max_imbalance_ratio: 10.0
+    forbidden_patterns:
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)"
+      - "(?i)skip[\\s_\\-]?(verify|validation|check)"
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)chmod\\s+777"
+
+  tool_access:
+    allow: []
+    block:
+      - shell_exec
+      - run_command
+      - raw_file_write
+      - raw_file_delete
+    require_confirmation:
+      - file_write
+      - file_delete
+      - git_push
+    default: allow
+    max_args_size: 1048576

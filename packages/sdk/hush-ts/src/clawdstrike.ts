@@ -630,7 +630,14 @@ function toEgressAllowlistConfig(value: unknown): EgressAllowlistConfig | undefi
   if (!isPlainObject(value)) {
     return undefined;
   }
-  const defaultAction = value.default_action === 'allow' ? 'allow' : value.default_action === 'block' ? 'block' : undefined;
+  const defaultAction =
+    value.default_action === 'allow'
+      ? 'allow'
+      : value.default_action === 'block'
+      ? 'block'
+      : value.default_action === 'log'
+      ? 'log'
+      : undefined;
   return {
     enabled: toBoolean(value.enabled),
     allow: toStringArray(value.allow),
@@ -704,6 +711,8 @@ function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
     secrets,
     patterns,
     enabled: toBoolean(value.enabled),
+    redact: toBoolean(value.redact),
+    severityThreshold: toSecretLeakSeverity(value.severity_threshold),
   };
 }
 

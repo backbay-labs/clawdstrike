@@ -107,6 +107,7 @@ impl PatchIntegrityGuard {
         }
     }
 
+    // @academy:start patch-integrity-analyze
     /// Analyze a unified diff
     pub fn analyze(&self, diff: &str) -> PatchAnalysis {
         let mut additions = 0;
@@ -150,6 +151,7 @@ impl PatchIntegrityGuard {
                 && imbalance_ratio > self.config.max_imbalance_ratio,
         }
     }
+    // @academy:end patch-integrity-analyze
 }
 
 impl Default for PatchIntegrityGuard {
@@ -201,6 +203,7 @@ impl Guard for PatchIntegrityGuard {
         matches!(action, GuardAction::Patch(_, _))
     }
 
+    // @academy:start patch-integrity-check
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
         if !self.enabled {
             return GuardResult::allow(&self.name);
@@ -269,6 +272,7 @@ impl Guard for PatchIntegrityGuard {
             }),
         )
     }
+    // @academy:end patch-integrity-check
 }
 
 #[cfg(test)]

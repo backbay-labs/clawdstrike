@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # ClawdStrike E2E Local Test — Full enrollment, policy sync, posture commands,
-# and approval flow against real NATS + Postgres + control-api.
+# and approval flow against the Compose-managed local stack.
 #
 # Usage:
 #   ./scripts/e2e-local-test.sh              # Run all phases
@@ -9,9 +9,8 @@
 #   ./scripts/e2e-local-test.sh --cleanup    # Only run cleanup
 #
 # Prerequisites:
-#   - Docker (for NATS + Postgres)
-#   - Rust toolchain (cargo)
-#   - psql (PostgreSQL client)
+#   - Docker + docker compose
+#   - Rust toolchain (for e2e-posture-cmd)
 #   - curl, jq, python3
 # =============================================================================
 set -euo pipefail
@@ -19,24 +18,41 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+COMPOSE_FILE="${ROOT_DIR}/infra/docker/docker-compose.services.yaml"
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 PG_CONTAINER="clawdstrike-e2e-pg"
-PG_PORT=5433
-PG_USER=postgres
-PG_PASS=postgres
-PG_DB=cloud_api
-PG_URL="postgres://${PG_USER}:${PG_PASS}@127.0.0.1:${PG_PORT}/${PG_DB}"
+PG_PORT="${CONTROL_API_POSTGRES_PORT:-5433}"
+PG_USER="${CONTROL_API_POSTGRES_USER:-clawdstrike}"
+PG_PASS="${CONTROL_API_POSTGRES_PASSWORD:-clawdstrike}"
+PG_DB="${CONTROL_API_POSTGRES_DB:-cloud_api}"
 
-NATS_URL="nats://localhost:4222"
-CONTROL_API_ADDR="127.0.0.1:8090"
+NATS_URL="${CONTROL_API_AGENT_NATS_URL:-nats://localhost:4222}"
+CONTROL_API_PORT="${CONTROL_API_PORT:-8090}"
+CONTROL_API_ADDR="127.0.0.1:${CONTROL_API_PORT}"
 CONTROL_API_URL="http://${CONTROL_API_ADDR}"
+HUSHD_PORT="${HUSHD_PORT:-9876}"
+HUSHD_URL="http://127.0.0.1:${HUSHD_PORT}"
 
-API_KEY="cs_local_dev_key"
-SEED_FILE="/tmp/clawdstrike-e2e-approval.key"
+TENANT_SLUG="${CONTROL_API_BOOTSTRAP_TENANT_SLUG:-localdev}"
+TENANT_ID_DEFAULT="${CONTROL_API_BOOTSTRAP_TENANT_ID:-11111111-1111-4111-8111-111111111111}"
+API_KEY="${CONTROL_API_BOOTSTRAP_API_KEY:-cs_local_dev_key}"
 
-COMPOSE_FILE="${ROOT_DIR}/infra/docker/docker-compose.services.yaml"
+# Used by the direct NATS posture-command publisher in phase 5.
+SEED_FILE="/tmp/clawdstrike-e2e-posture.key"
+
+export CONTROL_API_POSTGRES_PORT="$PG_PORT"
+export CONTROL_API_POSTGRES_USER="$PG_USER"
+export CONTROL_API_POSTGRES_PASSWORD="$PG_PASS"
+export CONTROL_API_POSTGRES_DB="$PG_DB"
+export CONTROL_API_PORT
+export CONTROL_API_AGENT_NATS_URL="$NATS_URL"
+export CONTROL_API_BOOTSTRAP_TENANT_SLUG="$TENANT_SLUG"
+export CONTROL_API_BOOTSTRAP_TENANT_ID="$TENANT_ID_DEFAULT"
+export CONTROL_API_BOOTSTRAP_API_KEY="$API_KEY"
+export HUSHD_PORT
 
 # State files (written between phases)
 STATE_DIR="/tmp/clawdstrike-e2e-state"
@@ -68,6 +84,10 @@ step()  { echo -e "\033[0;33m  → $1\033[0m"; }
 ok()    { echo -e "\033[0;32m  ✓ $1\033[0m"; }
 fail()  { echo -e "\033[0;31m  ✗ $1\033[0m"; return 1; }
 
+compose() {
+    docker compose -f "$COMPOSE_FILE" "$@"
+}
+
 wait_for_port() {
     local host=$1 port=$2 label=$3 retries=${4:-30}
     step "Waiting for ${label} on ${host}:${port}..."
@@ -81,8 +101,60 @@ wait_for_port() {
     fail "${label} did not start within ${retries}s"
 }
 
+wait_for_url() {
+    local url=$1 label=$2 retries=${3:-30}
+    step "Waiting for ${label} at ${url}..."
+    for _ in $(seq 1 "$retries"); do
+        if curl -fsS "$url" >/dev/null 2>&1; then
+            ok "${label} is up"
+            return 0
+        fi
+        sleep 1
+    done
+    fail "${label} did not become healthy within ${retries}s"
+}
+
+compose_psql() {
+    compose exec -T control-api-postgres \
+        env PGPASSWORD="$PG_PASS" \
+        psql -U "$PG_USER" -d "$PG_DB" "$@"
+}
+
 save_state() { echo "$2" > "${STATE_DIR}/$1"; }
 load_state() { cat "${STATE_DIR}/$1" 2>/dev/null || echo ""; }
+
+ensure_posture_seed() {
+    if [[ -s "$SEED_FILE" ]]; then
+        return 0
+    fi
+
+    step "Generating posture signing seed..."
+    python3 -c "import secrets; print(secrets.token_hex(32))" > "$SEED_FILE"
+    ok "Seed written to ${SEED_FILE}"
+}
+
+resolve_tenant_id() {
+    local tenant_id
+    local tenant_slug_sql
+
+    tenant_id="$(load_state tenant_id)"
+    if [[ -n "$tenant_id" ]]; then
+        printf '%s\n' "$tenant_id"
+        return 0
+    fi
+
+    tenant_slug_sql=${TENANT_SLUG//\'/\'\'}
+    tenant_id="$(
+        compose_psql \
+            -Atqc "SELECT id FROM tenants WHERE slug = '${tenant_slug_sql}' LIMIT 1"
+    )"
+
+    if [[ -n "$tenant_id" ]]; then
+        save_state "tenant_id" "$tenant_id"
+    fi
+
+    printf '%s\n' "$tenant_id"
+}
 
 # ---------------------------------------------------------------------------
 # Phase 7: Cleanup (also used at the start for idempotency)
@@ -90,7 +162,7 @@ load_state() { cat "${STATE_DIR}/$1" 2>/dev/null || echo ""; }
 cleanup() {
     phase 7 "Cleanup"
 
-    step "Stopping control-api..."
+    step "Stopping any leftover manual control-api process..."
     if [[ -f "${STATE_DIR}/control-api.pid" ]]; then
         local pid
         pid=$(cat "${STATE_DIR}/control-api.pid")
@@ -99,12 +171,12 @@ cleanup() {
         rm -f "${STATE_DIR}/control-api.pid"
     fi
 
-    step "Stopping Postgres container..."
+    step "Stopping any leftover manual Postgres container..."
     docker stop "$PG_CONTAINER" 2>/dev/null || true
     docker rm "$PG_CONTAINER" 2>/dev/null || true
 
-    step "Stopping NATS..."
-    docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+    step "Stopping Compose stack..."
+    compose down -v --remove-orphans 2>/dev/null || true
 
     step "Cleaning state files..."
     rm -rf "$STATE_DIR"
@@ -124,29 +196,13 @@ fi
 if [[ $START_PHASE -le 1 ]]; then
     phase 1 "Infrastructure"
 
-    step "Starting NATS via docker compose..."
-    docker compose -f "$COMPOSE_FILE" up -d nats
-
-    step "Starting Postgres container..."
-    docker rm -f "$PG_CONTAINER" 2>/dev/null || true
-    docker run -d --name "$PG_CONTAINER" \
-        -e POSTGRES_USER="$PG_USER" \
-        -e POSTGRES_PASSWORD="$PG_PASS" \
-        -e POSTGRES_DB="$PG_DB" \
-        -p "${PG_PORT}:5432" \
-        postgres:16-alpine
+    step "Starting Compose-managed local stack..."
+    compose up -d --build nats control-api-postgres control-api hushd
 
     wait_for_port 127.0.0.1 4222 "NATS"
     wait_for_port 127.0.0.1 "$PG_PORT" "Postgres"
-
-    # Postgres needs a moment after port is open before accepting connections
-    sleep 2
-
-    step "Applying migrations..."
-    for f in "${ROOT_DIR}"/crates/services/control-api/migrations/*.sql; do
-        step "  $(basename "$f")"
-        psql "$PG_URL" -q -f "$f"
-    done
+    wait_for_url "${CONTROL_API_URL}/api/v1/health/ready" "control-api" 90
+    wait_for_url "${HUSHD_URL}/health" "hushd" 90
 
     ok "Infrastructure ready"
 fi
@@ -157,66 +213,17 @@ fi
 if [[ $START_PHASE -le 2 ]]; then
     phase 2 "Control API"
 
-    step "Generating signing keypair..."
-    python3 -c "import secrets; print(secrets.token_hex(32))" > "$SEED_FILE"
-    ok "Keypair seed written to ${SEED_FILE}"
+    ensure_posture_seed
 
-    step "Seeding tenant + API key..."
-    TENANT_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
-    # The control-api auth middleware hashes the raw API key with SHA-256
-    API_KEY_HASH=$(printf '%s' "$API_KEY" | shasum -a 256 | cut -d' ' -f1)
+    step "Seeding tenant + API key via Compose bootstrap job..."
+    compose run --rm control-api-seed
 
-    # On rerun, reuse the existing tenant to avoid FK violations on agents/api_keys.
-    EXISTING_ID=$(psql "$PG_URL" -tAq -c "SELECT id FROM tenants WHERE slug = 'localdev' LIMIT 1")
-    if [[ -n "$EXISTING_ID" ]]; then
-        TENANT_ID="$EXISTING_ID"
-        step "Reusing existing tenant ${TENANT_ID}"
+    TENANT_ID="$(resolve_tenant_id)"
+    if [[ -z "$TENANT_ID" ]]; then
+        fail "Failed to resolve seeded tenant id for slug ${TENANT_SLUG}"
     fi
 
-    psql "$PG_URL" -q <<SQL
-INSERT INTO tenants (id, name, slug, plan, status, agent_limit, retention_days)
-VALUES ('${TENANT_ID}', 'E2E Local Dev', 'localdev', 'enterprise', 'active', 100, 30)
-ON CONFLICT (slug) DO UPDATE
-    SET name = EXCLUDED.name, plan = EXCLUDED.plan, status = EXCLUDED.status,
-        agent_limit = EXCLUDED.agent_limit, retention_days = EXCLUDED.retention_days;
-
-DELETE FROM api_keys WHERE tenant_id = '${TENANT_ID}' AND key_prefix = 'cs_local';
-INSERT INTO api_keys (tenant_id, name, key_hash, key_prefix, scopes)
-VALUES ('${TENANT_ID}', 'e2e-admin', '${API_KEY_HASH}', 'cs_local', ARRAY['admin']);
-SQL
-    save_state "tenant_id" "$TENANT_ID"
-    ok "Tenant ${TENANT_ID} + API key seeded"
-
-    step "Building control-api..."
-    cargo build -p clawdstrike-control-api --manifest-path "${ROOT_DIR}/Cargo.toml"
-
-    step "Starting control-api..."
-    DATABASE_URL="$PG_URL" \
-    NATS_URL="$NATS_URL" \
-    NATS_PROVISIONING_MODE="mock" \
-    NATS_ALLOW_INSECURE_MOCK_PROVISIONER="true" \
-    JWT_SECRET="dev-jwt-secret-local-e2e" \
-    STRIPE_SECRET_KEY="sk_test_fake" \
-    STRIPE_WEBHOOK_SECRET="whsec_test_fake" \
-    APPROVAL_SIGNING_ENABLED="true" \
-    APPROVAL_SIGNING_KEYPAIR_PATH="$SEED_FILE" \
-    APPROVAL_RESOLUTION_OUTBOX_ENABLED="true" \
-    AUDIT_CONSUMER_ENABLED="false" \
-    LISTEN_ADDR="$CONTROL_API_ADDR" \
-    RUST_LOG="info,clawdstrike_control_api=debug" \
-        "${ROOT_DIR}/target/debug/clawdstrike-control-api" &
-    CONTROL_PID=$!
-    save_state "control-api.pid" "$CONTROL_PID"
-
-    wait_for_port 127.0.0.1 8090 "control-api" 30
-
-    # Verify health
-    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "${CONTROL_API_URL}/api/v1/health" || echo "000")
-    if [[ "$HTTP_CODE" == "200" ]]; then
-        ok "control-api healthy (HTTP ${HTTP_CODE})"
-    else
-        fail "control-api health check returned HTTP ${HTTP_CODE}"
-    fi
+    ok "Tenant ${TENANT_ID} seeded for slug ${TENANT_SLUG}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -224,7 +231,11 @@ fi
 # ---------------------------------------------------------------------------
 if [[ $START_PHASE -le 3 ]]; then
     phase 3 "Enrollment"
-    TENANT_ID=$(load_state "tenant_id")
+    TENANT_ID="$(resolve_tenant_id)"
+
+    if [[ -z "$TENANT_ID" ]]; then
+        fail "Missing tenant_id state; run phases 1-2 first or start the local stack before resuming"
+    fi
 
     step "Creating enrollment token..."
     TOKEN_RESPONSE=$(curl -sf -X POST \
@@ -351,13 +362,13 @@ fi
 # ---------------------------------------------------------------------------
 if [[ $START_PHASE -le 6 ]]; then
     phase 6 "Approval Flow"
-    TENANT_ID=$(load_state "tenant_id")
+    TENANT_ID="$(resolve_tenant_id)"
     AGENT_ID=$(load_state "agent_id")
 
     step "Inserting a synthetic approval request into the DB..."
     APPROVAL_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
     REQUEST_ID="e2e-req-$(python3 -c "import uuid; print(uuid.uuid4().hex[:8])")"
-    psql "$PG_URL" -q <<SQL
+    compose_psql -q <<SQL
 INSERT INTO approvals (id, tenant_id, agent_id, request_id, event_type, event_data, status)
 VALUES (
     '${APPROVAL_ID}',
@@ -419,6 +430,7 @@ echo "  Tenant ID:    $(load_state tenant_id)"
 echo "  Agent ID:     $(load_state agent_id)"
 echo "  Approval ID:  $(load_state approval_id)"
 echo "  Control API:  ${CONTROL_API_URL}"
+echo "  hushd:        ${HUSHD_URL}"
 echo "  NATS:         ${NATS_URL}"
 echo ""
 echo "  Run './scripts/e2e-local-test.sh --cleanup' when done."

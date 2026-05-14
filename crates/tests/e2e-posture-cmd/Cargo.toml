@@ -15,7 +15,7 @@ path = "src/main.rs"
 [dependencies]
 hush-core.workspace = true
 spine.workspace = true
-async-nats = "0.39"
+async-nats = "0.40"
 serde_json.workspace = true
 clap.workspace = true
 tokio.workspace = true

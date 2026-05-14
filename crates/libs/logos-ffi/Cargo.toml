@@ -1,0 +1,31 @@
+[package]
+name = "logos-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "FFI bindings to Logos (LEAN 4) proof system for formal reasoning"
+
+[features]
+default = []
+# Enable LEAN 4 runtime linking (requires LEAN installed via elan)
+lean-runtime = []
+
+[dependencies]
+# Core types
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+
+# For formula hashing
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+# For testing without LEAN runtime
+proptest = "1"
+
+[lints]
+workspace = true

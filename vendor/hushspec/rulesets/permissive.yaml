@@ -1,0 +1,16 @@
+hushspec: "0.1.0"
+name: permissive
+description: Permissive rules for development (use with caution)
+
+rules:
+  egress:
+    allow:
+      - "*"
+    block: []
+    default: allow
+
+  patch_integrity:
+    max_additions: 10000
+    max_deletions: 5000
+    require_balance: false
+    max_imbalance_ratio: 50.0
