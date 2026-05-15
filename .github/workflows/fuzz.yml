@@ -17,11 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust stable for cargo-fuzz
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked --version 0.13.1
+        run: cargo +stable install cargo-fuzz --locked --version 0.13.1
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Run fuzz targets (time-boxed)
         run: |
