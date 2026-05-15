@@ -592,8 +592,8 @@ pub fn lockfile_from_resolution(resolved: &[ResolvedPackage], registry_url: &str
     for rp in resolved {
         let deps: Vec<LockedDependency> = rp
             .dependencies
-            .iter()
-            .filter_map(|(dep_name, _constraint)| {
+            .keys()
+            .filter_map(|dep_name| {
                 // Find the resolved version for this dependency.
                 resolved
                     .iter()

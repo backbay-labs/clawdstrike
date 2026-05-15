@@ -186,7 +186,7 @@ impl RoutingSpec {
     pub fn match_rule(&self, issue_state: &IssueState) -> Option<&RoutingRule> {
         // Sort by priority (descending) and find first match
         let mut sorted_rules: Vec<_> = self.rules.iter().collect();
-        sorted_rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+        sorted_rules.sort_by_key(|rule| std::cmp::Reverse(rule.priority));
 
         sorted_rules
             .into_iter()
