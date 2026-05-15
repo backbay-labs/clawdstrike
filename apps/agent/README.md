@@ -83,6 +83,7 @@ The agent runs an MCP server on port 9877 that exposes the `policy_check` tool. 
 The agent also runs a local authenticated API (default `127.0.0.1:9878`) for:
 
 - hook policy checks (`/api/v1/agent/policy-check`)
+- endpoint EDR analysis (`/api/v1/agent/edr/*`)
 - desktop OpenClaw operations (`/api/v1/openclaw/*`)
 - health/settings control (`/api/v1/agent/*`)
 
@@ -91,6 +92,18 @@ The agent also runs a local authenticated API (default `127.0.0.1:9878`) for:
 Auth token file:
 
 - `~/.config/clawdstrike/agent-local-token`
+
+EDR endpoints accept canonical endpoint observations from the agent, system
+extension, or developer-tool collectors:
+
+- `POST /api/v1/agent/edr/findings` records observations and evaluates them for
+  supply-chain runtime risk and honey artifact access.
+- `POST /api/v1/agent/edr/causal-graph` returns a local process/file/network
+  causality graph for the supplied observations, or the in-memory recorder graph
+  when called with an empty observation list.
+- `POST /api/v1/agent/edr/deception-plan` renders a standard deception plan.
+- `POST /api/v1/agent/edr/deception-plan/materialize` creates the honey files
+  with safe no-overwrite semantics.
 
 ## Configuration
 
