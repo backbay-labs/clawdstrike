@@ -2,9 +2,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PolicyEventFactory } from "@clawdstrike/adapter-core";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolCallEvent } from "../../types.js";
 import handler, {
+  buildCuaDeveloperActivity,
   buildCuaEvent,
   CUA_ERROR_CODES,
   classifyCuaAction,
@@ -77,7 +78,22 @@ guards:
     enabled: true
 `,
     );
+    delete process.env.CLAWDSTRIKE_AGENT_TOKEN;
+    delete process.env.CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL;
+    delete process.env.CLAWDSTRIKE_AGENT_URL;
+    delete process.env.CLAWDSTRIKE_APPROVAL_URL;
+    process.env.CLAWDSTRIKE_AGENT_TOKEN_PATH = join(testDir, "missing-agent-local-token");
     initialize({ policy: policyPath });
+  });
+
+  afterEach(() => {
+    delete process.env.CLAWDSTRIKE_AGENT_TOKEN;
+    delete process.env.CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL;
+    delete process.env.CLAWDSTRIKE_AGENT_URL;
+    delete process.env.CLAWDSTRIKE_APPROVAL_URL;
+    delete process.env.CLAWDSTRIKE_AGENT_TOKEN_PATH;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   describe("isCuaToolCall", () => {
@@ -294,6 +310,91 @@ guards:
     });
   });
 
+  describe("buildCuaDeveloperActivity", () => {
+    it("maps CUA input injection to browser automation developer activity", () => {
+      const activity = buildCuaDeveloperActivity(
+        "sess-1",
+        "cua_click",
+        "input_inject",
+        {
+          x: 100,
+          y: 200,
+          browser: "chrome",
+          url: "https://app.example/action?token=MY_RAW_SECRET#fragment",
+          authToken: "ghp_MY_RAW_SECRET_1234567890",
+          prompt: "click using MY_RAW_SECRET",
+        },
+        {
+          status: "allow",
+          guard: "computer_use",
+          severity: "info",
+        } as any,
+      );
+
+      expect(activity).toMatchObject({
+        kind: "browser_automation",
+        sessionId: "sess-1",
+        workloadId: "openclaw-cua",
+        toolName: "cua_click",
+        browser: "chrome",
+        action: "input_inject",
+        metadata: expect.objectContaining({
+          collectorKind: "openclaw_cua_bridge",
+          policyAllowed: true,
+          policyStatus: "allow",
+          cuaActionKind: "input_inject",
+        }),
+      });
+      expect((activity.parameters as any).x).toBe(100);
+      expect(activity.target).toBe("https://app.example/action");
+      expect((activity.parameters as any).authToken).toMatchObject({
+        omitted: true,
+        reason: "sensitive",
+      });
+      expect((activity.parameters as any).prompt).toMatchObject({
+        omitted: true,
+        reason: "content",
+      });
+      expect(JSON.stringify(activity)).not.toContain("MY_RAW_SECRET");
+    });
+
+    it("maps CUA file downloads with paths to browser download developer activity", () => {
+      const activity = buildCuaDeveloperActivity(
+        "sess-2",
+        "cua_download",
+        "file_download",
+        {
+          downloadPath: "/Users/alice/Downloads/payload.zip",
+          sourceUrl: "https://files.example/payload.zip?token=MY_RAW_SECRET#fragment",
+          browserName: "chromium",
+        },
+        {
+          status: "warn",
+          guard: "remote_desktop_side_channel",
+          severity: "medium",
+          reason: "large transfer",
+        } as any,
+      );
+
+      expect(activity).toMatchObject({
+        kind: "browser_download",
+        sessionId: "sess-2",
+        workloadId: "openclaw-cua",
+        browser: "chromium",
+        path: "/Users/alice/Downloads/payload.zip",
+        sourceUrl: "https://files.example/payload.zip",
+        metadata: expect.objectContaining({
+          collectorKind: "openclaw_cua_bridge",
+          policyAllowed: true,
+          policyStatus: "warn",
+          policyGuard: "remote_desktop_side_channel",
+          policyReason: "large transfer",
+        }),
+      });
+      expect(JSON.stringify(activity)).not.toContain("MY_RAW_SECRET");
+    });
+  });
+
   describe("handler integration", () => {
     it("passes through non-CUA tool calls", async () => {
       const event = makeToolCallEvent("file_read", { path: "/tmp/test" });
@@ -357,6 +458,92 @@ guards:
       await handler(event);
       expect(event.preventDefault).toBe(false);
       expect(event.messages.some((m) => m.includes("CUA input_inject allowed"))).toBe(true);
+    });
+
+    it("posts CUA developer activity when a local agent token is configured", async () => {
+      process.env.CLAWDSTRIKE_AGENT_TOKEN = "test-token";
+      process.env.CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL =
+        "http://127.0.0.1:9878/api/v1/agent/edr/developer-activity";
+      const fetchMock = vi.fn(async () => ({ ok: true }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const event = makeToolCallEvent("cua_download", {
+        downloadPath: "/Users/alice/Downloads/payload.zip",
+        sourceUrl: "https://files.example/payload.zip?token=MY_RAW_SECRET#fragment",
+        browser: "chrome",
+      });
+
+      await handler(event);
+
+      expect(event.preventDefault).toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe("http://127.0.0.1:9878/api/v1/agent/edr/developer-activity");
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+      const body = JSON.parse(String(init.body));
+      expect(body.activities).toHaveLength(1);
+      expect(body.activities[0]).toMatchObject({
+        kind: "browser_download",
+        sessionId: "test-session-001",
+        browser: "chrome",
+        path: "/Users/alice/Downloads/payload.zip",
+        sourceUrl: "https://files.example/payload.zip",
+        metadata: expect.objectContaining({
+          collectorKind: "openclaw_cua_bridge",
+          policyAllowed: true,
+          cuaActionKind: "file_download",
+        }),
+      });
+      expect(JSON.stringify(body)).not.toContain("MY_RAW_SECRET");
+    });
+
+    it("binds modern endpoint identity into posted CUA developer activity", async () => {
+      process.env.CLAWDSTRIKE_AGENT_TOKEN = "test-token";
+      process.env.CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL =
+        "http://127.0.0.1:9878/api/v1/agent/edr/developer-activity";
+      const fetchMock = vi.fn(async () => ({ ok: true }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await handler(
+        {
+          toolName: "cua_download",
+          params: {
+            downloadPath: "/Users/alice/Downloads/payload.zip",
+            sourceUrl: "https://files.example/payload.zip",
+            browser: "chrome",
+          },
+        },
+        {
+          agentId: "agent:openclaw",
+          sessionKey: "sess-cua-identity",
+          toolCallId: "tool-call-cua-identity-1",
+          hostId: "endpoint:devbook",
+          userId: "principal:alice",
+          workloadId: "workload:openclaw-agent",
+          approvalId: "approval:change-999",
+        },
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(String(init.body));
+      expect(body.activities[0]).toMatchObject({
+        kind: "browser_download",
+        hostId: "endpoint:devbook",
+        userId: "principal:alice",
+        sessionId: "sess-cua-identity",
+        agentId: "agent:openclaw",
+        workloadId: "workload:openclaw-agent",
+        approvalId: "approval:change-999",
+        browser: "chrome",
+        path: "/Users/alice/Downloads/payload.zip",
+        metadata: expect.objectContaining({
+          collectorKind: "openclaw_cua_bridge",
+          policyAllowed: true,
+          cuaActionKind: "file_download",
+          toolCallId: "tool-call-cua-identity-1",
+        }),
+      });
     });
 
     it("handles plain computer_use + action shape", async () => {

@@ -30,8 +30,15 @@ export type {
   BrokerExecutionResult,
   BrokerExecutor,
 } from "./broker-types.js";
+export type {
+  CiAgentEnvironmentInput,
+  CiAgentEnvironmentPublishResult,
+} from "./ci-agent-telemetry.js";
+export { publishCiAgentEnvironmentToLocalEdr } from "./ci-agent-telemetry.js";
 export type { ContextSummary, SecurityContext } from "./context.js";
 export { createSecurityContext, DefaultSecurityContext } from "./context.js";
+export type { CuaTranslatorConfig } from "./cua/cua-translator-base.js";
+export { createCuaTranslator } from "./cua/cua-translator-base.js";
 export { DefaultOutputSanitizer } from "./default-output-sanitizer.js";
 export type { PolicyEngineLike } from "./engine.js";
 export type { PolicyEvalResponseV1 } from "./engine-response.js";
@@ -52,8 +59,6 @@ export {
   FrameworkToolBoundary,
   wrapFrameworkToolDispatcher,
 } from "./framework-tool-boundary.js";
-export { allowInboundBypass, interceptInboundMessage } from "./inbound-message-interceptor.js";
-
 export type {
   GenericToolBoundaryOptions,
   GenericToolDispatcher,
@@ -63,18 +68,46 @@ export {
   GenericToolCallBlockedError,
   wrapGenericToolDispatcher,
 } from "./generic-tool-runner.js";
+export { allowInboundBypass, interceptInboundMessage } from "./inbound-message-interceptor.js";
 export type {
   InterceptResult,
   ProcessedOutput,
   ToolInterceptor,
 } from "./interceptor.js";
 export type {
+  LocalEdrBrowserRuntimeActivity,
+  LocalEdrConfig,
+  LocalEdrRepoScannerCredentialFinding,
+} from "./local-edr-publisher.js";
+export {
+  buildBrowserRuntimeActivityForLocalEdr,
+  buildPackageManagerLifecycleEventFromEnvironmentForLocalEdr,
+  buildRepoScannerCredentialActivityForLocalEdr,
+  publishBrowserRuntimeActivityToLocalEdr,
+  publishPackageManagerLifecycleEventToLocalEdr,
+  publishPolicyEventToLocalEdr,
+  publishRepoScannerCredentialFindingToLocalEdr,
+} from "./local-edr-publisher.js";
+export type {
   ParsedNetworkTarget,
   ParseNetworkTargetOptions,
 } from "./network-target.js";
 export { parseNetworkTarget } from "./network-target.js";
 export { PolicyEventFactory } from "./policy-event-factory.js";
+export type {
+  RepoCredentialScannerInput,
+  RepoCredentialScannerResult,
+} from "./repo-credential-scanner.js";
+export { scanRepositoryCredentialPathsForLocalEdr } from "./repo-credential-scanner.js";
+export type { ClawdstrikeLike, SecuritySource } from "./resolve-interceptor.js";
+export {
+  isClawdstrikeLike,
+  isToolInterceptor,
+  resolveInterceptor,
+} from "./resolve-interceptor.js";
 export type { OutputSanitizer, RedactionInfo } from "./sanitizer.js";
+export type { ExecuteOrCallToolLike, SecureToolSetOptions } from "./secure-tool-wrapper.js";
+export { secureToolSet, wrapExecuteWithInterceptor } from "./secure-tool-wrapper.js";
 export type {
   ClawdstrikeConfig,
   CommandEventData,
@@ -103,14 +136,3 @@ export {
   sanitizeDecision,
   warnDecision,
 } from "./types.js";
-
-export type { CuaTranslatorConfig } from "./cua/cua-translator-base.js";
-export { createCuaTranslator } from "./cua/cua-translator-base.js";
-export type { ClawdstrikeLike, SecuritySource } from "./resolve-interceptor.js";
-export {
-  isClawdstrikeLike,
-  isToolInterceptor,
-  resolveInterceptor,
-} from "./resolve-interceptor.js";
-export type { ExecuteOrCallToolLike, SecureToolSetOptions } from "./secure-tool-wrapper.js";
-export { secureToolSet, wrapExecuteWithInterceptor } from "./secure-tool-wrapper.js";

@@ -1,9 +1,13 @@
 import type { PolicyEngineLike, ToolInterceptor } from "@clawdstrike/adapter-core";
 
 import { ClawdstrikeBlockedError } from "@clawdstrike/adapter-core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { secureTool, secureTools, wrapTool, wrapToolWithConfig } from "./wrap.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("secureTool", () => {
   it("wraps invoke() and allows execution when policy allows", async () => {
@@ -90,6 +94,78 @@ describe("secureTool", () => {
     expect(tool.invoke).toHaveBeenCalledWith("safe input", undefined);
     expect((secured as { getLastDecision?: () => unknown }).getLastDecision?.()).toMatchObject({
       status: "sanitize",
+    });
+  });
+
+  it("passes adapter config through the modern API for local EDR publishing", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: "allow" }),
+    };
+    const tool = {
+      name: "bash",
+      invoke: vi.fn(async () => "installed"),
+    };
+
+    const secured = secureTool(tool, engine, {
+      config: {
+        edr: {
+          enabled: true,
+          token: "local-token",
+          policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
+          developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        },
+      },
+    });
+
+    await expect(secured.invoke({ cmd: "npm install" })).resolves.toBe("installed");
+
+    const policyEventCall = fetchMock.mock.calls.find(
+      ([url]) => url === "http://agent.test/api/v1/agent/edr/policy-events",
+    );
+    expect(policyEventCall).toBeDefined();
+    expect(policyEventCall?.[1]).toMatchObject({
+      method: "POST",
+      headers: {
+        Authorization: "Bearer local-token",
+      },
+    });
+
+    const policyEventBody = JSON.parse(String(policyEventCall?.[1]?.body));
+    expect(policyEventBody.events[0]).toMatchObject({
+      eventType: "command_exec",
+      data: {
+        type: "command",
+        command: "npm",
+        args: ["install"],
+      },
+      metadata: {
+        collectorKind: "adapter_core_tool_interceptor",
+        source: "adapter-core",
+        framework: "langchain",
+        toolName: "bash",
+        payloadScrubbed: true,
+      },
+    });
+
+    const developerActivityCall = fetchMock.mock.calls.find(
+      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+    );
+    expect(developerActivityCall).toBeDefined();
+    const developerActivityBody = JSON.parse(String(developerActivityCall?.[1]?.body));
+    expect(developerActivityBody.activities[0]).toMatchObject({
+      kind: "package_script",
+      manager: "npm",
+      phase: "install",
+      image: "npm",
+      commandLine: "npm install",
+      metadata: {
+        collectorKind: "adapter_core_tool_interceptor",
+        shellClassifier: "package_script",
+        toolName: "bash",
+      },
     });
   });
 });

@@ -5,6 +5,10 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "clawdstrike-ci-env": "./dist/ci-agent-environment-hook.js",
+    "clawdstrike-package-lifecycle": "./dist/package-manager-lifecycle-hook.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",

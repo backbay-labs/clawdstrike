@@ -86,6 +86,37 @@ describe("claudeCuaTranslator", () => {
     }
   });
 
+  it("preserves browser download metadata for local EDR enrichment", () => {
+    const translated = claudeCuaTranslator({
+      framework: "claude",
+      toolName: "computer",
+      parameters: {
+        action: "download",
+        browser: "chrome",
+        downloadPath: "/Users/alice/Downloads/payload.zip",
+        sourceUrl: "https://downloads.example.invalid/payload.zip?token=MY_RAW_SECRET",
+        transfer_size: 4096,
+      },
+      rawInput: {},
+      sessionId: "sess-download-claude-1",
+      contextMetadata: {},
+    });
+
+    expect(translated).not.toBeNull();
+    expect(translated?.eventType).toBe("remote.file_transfer");
+    expect(translated?.data.type).toBe("cua");
+    if (translated?.data.type === "cua") {
+      expect(translated.data.cuaAction).toBe("file_transfer");
+      expect(translated.data.direction).toBe("download");
+      expect(translated.data.transfer_size).toBe(4096);
+      expect(translated.data.browser).toBe("chrome");
+      expect(translated.data.downloadPath).toBe("/Users/alice/Downloads/payload.zip");
+      expect(translated.data.sourceUrl).toBe(
+        "https://downloads.example.invalid/payload.zip?token=MY_RAW_SECRET",
+      );
+    }
+  });
+
   it("throws on unknown Claude CUA action", () => {
     expect(() =>
       claudeCuaTranslator({

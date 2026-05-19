@@ -22,6 +22,81 @@ describe("PolicyEventFactory", () => {
     expect(factory.inferEventType("unknown", { foo: "bar" })).toBe("tool_call");
   });
 
+  it("computes a file content hash without retaining raw content in file events", () => {
+    const factory = new PolicyEventFactory();
+    const event = factory.create("write_file", {
+      path: "/repo/src/index.ts",
+      content: "const token = 'MY_RAW_SECRET_1234567890';",
+    });
+
+    expect(event.eventType).toBe("file_write");
+    expect(event.data.type).toBe("file");
+    if (event.data.type === "file") {
+      expect(event.data.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(event.data.content).toBeUndefined();
+    }
+    expect(JSON.stringify(event)).not.toContain("MY_RAW_SECRET");
+  });
+
+  it("computes a file content hash from base64 content without retaining raw content", () => {
+    const factory = new PolicyEventFactory();
+    const rawContent = "binary bytes with MY_RAW_SECRET_1234567890";
+    const event = factory.create("write_file", {
+      path: "/repo/blob.bin",
+      contentBase64: Buffer.from(rawContent, "utf8").toString("base64"),
+    });
+
+    expect(event.eventType).toBe("file_write");
+    expect(event.data.type).toBe("file");
+    if (event.data.type === "file") {
+      expect(event.data.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(event.data.contentBase64).toBeUndefined();
+      expect(event.data.content).toBeUndefined();
+    }
+    expect(JSON.stringify(event)).not.toContain("MY_RAW_SECRET");
+    expect(JSON.stringify(event)).not.toContain(Buffer.from(rawContent, "utf8").toString("base64"));
+  });
+
+  it("computes a file content hash from binary content without retaining raw bytes", () => {
+    const factory = new PolicyEventFactory();
+    const rawContent = Buffer.from("binary bytes with MY_RAW_SECRET_1234567890", "utf8");
+    const event = factory.create("write_file", {
+      path: "/repo/blob.bin",
+      content: rawContent,
+    });
+
+    expect(event.eventType).toBe("file_write");
+    expect(event.data.type).toBe("file");
+    if (event.data.type === "file") {
+      expect(event.data.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(event.data.contentBase64).toBeUndefined();
+      expect(event.data.content).toBeUndefined();
+    }
+    expect(JSON.stringify(event)).not.toContain("MY_RAW_SECRET");
+  });
+
+  it("computes a patch hash from raw patch input", () => {
+    const factory = new PolicyEventFactory();
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: /repo/src/index.ts",
+      "+const token = 'MY_RAW_SECRET_1234567890';",
+      "*** End Patch",
+    ].join("\n");
+
+    const event = factory.create("apply_patch", {
+      file: "/repo/src/index.ts",
+      patch,
+    });
+
+    expect(event.eventType).toBe("patch_apply");
+    expect(event.data.type).toBe("patch");
+    if (event.data.type === "patch") {
+      expect(event.data.patchHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(event.data.patchContent).toBe(patch);
+    }
+  });
+
   it("drops invalid numeric port suffixes when parsing network targets", () => {
     const factory = new PolicyEventFactory();
 

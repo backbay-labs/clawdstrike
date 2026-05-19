@@ -418,15 +418,23 @@ export interface BeforeToolCallHookEvent {
  */
 export interface OpenClawHookContext {
   agentId?: string;
+  hostId?: string;
   sessionKey?: string;
   toolName?: string;
   toolCallId?: string;
+  userId?: string;
+  workloadId?: string;
+  approvalId?: string;
 }
 
 /**
  * Generic hook event type
  */
-export type HookEvent = ToolResultPersistEvent | AgentBootstrapEvent | ToolCallEvent | InboundMessageEvent;
+export type HookEvent =
+  | ToolResultPersistEvent
+  | AgentBootstrapEvent
+  | ToolCallEvent
+  | InboundMessageEvent;
 
 /**
  * Hook handler function type

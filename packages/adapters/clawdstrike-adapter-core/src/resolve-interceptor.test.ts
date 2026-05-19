@@ -20,7 +20,7 @@ describe("resolveInterceptor", () => {
     expect(resolveInterceptor(interceptor)).toBe(interceptor);
   });
 
-  it("fails closed when translator config is provided for non-configurable ToolInterceptor sources", () => {
+  it("fails closed when adapter config is provided for non-configurable ToolInterceptor sources", () => {
     const interceptor = {
       beforeExecute: vi.fn(async () => ({
         proceed: true,
@@ -35,7 +35,13 @@ describe("resolveInterceptor", () => {
       resolveInterceptor(interceptor, {
         translateToolCall: vi.fn(() => null),
       }),
-    ).toThrow(/does not support adapter translator config/);
+    ).toThrow(/does not support adapter translator, broker, or EDR config/);
+
+    expect(() =>
+      resolveInterceptor(interceptor, {
+        edr: { enabled: true, token: "local-token" },
+      }),
+    ).toThrow(/does not support adapter translator, broker, or EDR config/);
   });
 
   it("applies config via withConfig for configurable ToolInterceptor sources", async () => {
@@ -154,7 +160,9 @@ describe("resolveInterceptor", () => {
       }),
     });
 
-    await expect(resolved.onError("tool", {}, new Error("x"), {} as never)).resolves.toBeUndefined();
+    await expect(
+      resolved.onError("tool", {}, new Error("x"), {} as never),
+    ).resolves.toBeUndefined();
   });
 
   it("wraps PolicyEngineLike inputs in BaseToolInterceptor", () => {

@@ -11,7 +11,14 @@ import { emitAuditEvent } from "./audit-event-emitter.js";
 import { sanitizeAuditText } from "./audit-sanitizer.js";
 import type { SecurityContext } from "./context.js";
 import type { PolicyEngineLike } from "./engine.js";
-import { allowDecision, denyDecision, warnDecision, type Decision, type PolicyEvent } from "./types.js";
+import { publishPolicyEventToLocalEdr } from "./local-edr-publisher.js";
+import {
+  allowDecision,
+  type Decision,
+  denyDecision,
+  type PolicyEvent,
+  warnDecision,
+} from "./types.js";
 
 const DEFAULT_CUSTOM_TYPE = "untrusted_text";
 const DEFAULT_REDACTED_SNIPPET_LENGTH = 160;
@@ -79,18 +86,10 @@ function buildInboundAuditDetails(
   };
 
   if (contentMode === "raw") {
-    details.content = sanitizeAuditText(
-      message.text,
-      redactSecrets,
-      config.audit?.redactPII,
-    );
+    details.content = sanitizeAuditText(message.text, redactSecrets, config.audit?.redactPII);
   } else if (contentMode === "redacted_snippet") {
     const length = config.inbound?.redactedSnippetLength ?? DEFAULT_REDACTED_SNIPPET_LENGTH;
-    const sanitized = sanitizeAuditText(
-      message.text,
-      redactSecrets,
-      config.audit?.redactPII,
-    );
+    const sanitized = sanitizeAuditText(message.text, redactSecrets, config.audit?.redactPII);
     details.contentSnippet = sanitized.slice(0, Math.max(0, length));
     details.contentSnippetTruncated = sanitized.length > length;
   }
@@ -121,6 +120,80 @@ function decisionToInboundAuditType(decision: Decision): AuditEventType {
     default:
       return "inbound_message_allowed";
   }
+}
+
+function decisionReasonCode(decision: Decision): string | undefined {
+  return "reason_code" in decision ? decision.reason_code : undefined;
+}
+
+function buildInboundPolicyEventForLocalEdr(
+  context: SecurityContext,
+  message: GenericInboundMessage,
+  config: AdapterConfig,
+  decision: Decision,
+  duration: number,
+  sanitizedText?: string | null,
+): PolicyEvent {
+  const customType = config.inbound?.customType ?? DEFAULT_CUSTOM_TYPE;
+  const contentHash = fingerprintText(message.text);
+  const sanitizedHash =
+    typeof sanitizedText === "string" ? fingerprintText(sanitizedText) : undefined;
+  const senderNameHash = message.senderName ? fingerprintText(message.senderName) : undefined;
+
+  return {
+    eventId: `adapter-core-inbound-${context.sessionId}-${message.id}-${contentHash.slice(0, 16)}`,
+    eventType: "custom",
+    timestamp: message.timestamp.toISOString(),
+    sessionId: context.sessionId,
+    data: {
+      type: "custom",
+      customType,
+      source: message.source,
+      messageId: message.id,
+      contentHash,
+      contentSize: message.text.length,
+      contentOmitted: true,
+      ...(sanitizedHash
+        ? {
+            modifiedContentHash: sanitizedHash,
+            modifiedContentSize: sanitizedText?.length,
+            modifiedContentOmitted: true,
+          }
+        : {}),
+      decisionStatus: decision.status,
+      decisionGuard: decision.guard,
+      decisionSeverity: decision.severity,
+      decisionReasonCode: decisionReasonCode(decision),
+      decisionReason: decision.reason,
+      decisionMessage: decision.message,
+      senderId: message.senderId,
+      senderNameHash,
+      channel: message.channel,
+      chatType: message.chatType,
+      durationMs: duration,
+    },
+    metadata: {
+      ...(context.metadata ?? {}),
+      collectorKind: "adapter_core_inbound_message",
+      source: "adapter-core.inbound",
+      inbound: true,
+      messageId: message.id,
+      messageSource: message.source,
+      senderId: message.senderId,
+      senderNameHash,
+      channel: message.channel,
+      chatType: message.chatType,
+      contentOmitted: true,
+      policyAllowed: decision.status !== "deny",
+      policyStatus: decision.status,
+      policyGuard: decision.guard,
+      policySeverity: decision.severity,
+      policyReasonCode: decisionReasonCode(decision),
+      policyReason: decision.reason,
+      contextId: context.id,
+      payloadScrubbed: true,
+    },
+  };
 }
 
 export async function interceptInboundMessage(
@@ -188,6 +261,18 @@ export async function interceptInboundMessage(
       },
     );
 
+    void publishPolicyEventToLocalEdr(
+      buildInboundPolicyEventForLocalEdr(
+        context,
+        message,
+        config,
+        decision,
+        Date.now() - startTime,
+        sanitizedText,
+      ),
+      config.edr,
+    );
+
     if (decision.status === "deny") {
       context.violationCount++;
       context.recordBlocked("inbound_message", decision);
@@ -218,7 +303,7 @@ export async function interceptInboundMessage(
     return {
       proceed: true,
       decision,
-      warning: decision.status === "warn" ? decision.message ?? decision.reason : undefined,
+      warning: decision.status === "warn" ? (decision.message ?? decision.reason) : undefined,
       duration: Date.now() - startTime,
     };
   } catch (error) {
@@ -298,13 +383,15 @@ export async function interceptInboundMessage(
     return {
       proceed: decision.status !== "deny",
       decision,
-      warning: decision.status === "warn" ? decision.message ?? decision.reason : undefined,
+      warning: decision.status === "warn" ? (decision.message ?? decision.reason) : undefined,
       duration: Date.now() - startTime,
     };
   }
 }
 
-export function allowInboundBypass(message = "Inbound interception disabled"): InboundInterceptResult {
+export function allowInboundBypass(
+  message = "Inbound interception disabled",
+): InboundInterceptResult {
   return {
     proceed: true,
     decision: allowDecision({ guard: "inbound_disabled", message }),

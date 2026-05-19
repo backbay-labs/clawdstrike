@@ -5,6 +5,9 @@
  */
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 import { inferEventTypeFromName } from "../../classification.js";
 import { getSharedEngine, initializeEngine } from "../../engine-holder.js";
 import type { PolicyEngine } from "../../policy/engine.js";
@@ -504,6 +507,12 @@ function annotateWarningOnToolResultMessage(message: unknown, warning: string): 
 type NormalizedToolPersistEvent = {
   sessionId: string;
   toolName: string;
+  toolCallId?: string;
+  hostId?: string;
+  userId?: string;
+  agentId?: string;
+  workloadId?: string;
+  approvalId?: string;
   params: Record<string, unknown>;
   result: unknown;
   deny: (decision: Decision) => void;
@@ -524,6 +533,26 @@ function normalizeToolResultEvent(
     return {
       sessionId,
       toolName: toolResult.toolName,
+      toolCallId: hookCtx?.toolCallId,
+      hostId: toolResultTelemetryString(
+        hookCtx?.hostId,
+        process.env.CLAWDSTRIKE_HOST_ID,
+        process.env.CLAWDSTRIKE_ENDPOINT_ID,
+      ),
+      userId: toolResultTelemetryString(
+        hookCtx?.userId,
+        process.env.CLAWDSTRIKE_USER_ID,
+        process.env.CLAWDSTRIKE_PRINCIPAL_ID,
+      ),
+      agentId: toolResultTelemetryString(hookCtx?.agentId, process.env.CLAWDSTRIKE_AGENT_ID),
+      workloadId: toolResultTelemetryString(
+        hookCtx?.workloadId,
+        process.env.CLAWDSTRIKE_WORKLOAD_ID,
+      ),
+      approvalId: toolResultTelemetryString(
+        hookCtx?.approvalId,
+        process.env.CLAWDSTRIKE_APPROVAL_ID,
+      ),
       params: toolResult.params,
       result: toolResult.result,
       deny(decision) {
@@ -586,6 +615,20 @@ function normalizeToolResultEvent(
   return {
     sessionId,
     toolName,
+    toolCallId,
+    hostId: toolResultTelemetryString(
+      hookCtx?.hostId,
+      process.env.CLAWDSTRIKE_HOST_ID,
+      process.env.CLAWDSTRIKE_ENDPOINT_ID,
+    ),
+    userId: toolResultTelemetryString(
+      hookCtx?.userId,
+      process.env.CLAWDSTRIKE_USER_ID,
+      process.env.CLAWDSTRIKE_PRINCIPAL_ID,
+    ),
+    agentId: toolResultTelemetryString(hookCtx?.agentId, process.env.CLAWDSTRIKE_AGENT_ID),
+    workloadId: toolResultTelemetryString(hookCtx?.workloadId, process.env.CLAWDSTRIKE_WORKLOAD_ID),
+    approvalId: toolResultTelemetryString(hookCtx?.approvalId, process.env.CLAWDSTRIKE_APPROVAL_ID),
     params: mergeToolParams(explicitParams, rememberedParams),
     result: extractModernToolResult(currentMessage),
     deny(decision) {
@@ -659,7 +702,7 @@ const handler: HookHandler = (
     return;
   }
 
-  const { sessionId, toolName, params, result } = toolEvent;
+  const { sessionId, toolName, toolCallId, agentId, params, result } = toolEvent;
   const policyEngine = getEngine();
 
   // Check if preflight already approved this action — skip policy evaluation
@@ -667,6 +710,20 @@ const handler: HookHandler = (
   const resource = normalizeApprovalResource(policyEngine, toolName, params);
   const priorApproval = checkAndConsumeApproval(sessionId, toolName, resource);
   const policyEvent = createPolicyEvent(sessionId, toolName, params, result);
+  const telemetryIdentity = {
+    hostId: toolEvent.hostId,
+    userId: toolEvent.userId,
+    sessionId,
+    agentId,
+    workloadId: toolEvent.workloadId ?? "openclaw-tool-result",
+    approvalId: toolEvent.approvalId,
+    toolCallId,
+  };
+  let telemetryDecision: Decision = {
+    status: "allow",
+    guard: priorApproval ? "approval" : undefined,
+    reason: priorApproval ? `prior ${priorApproval} approval` : undefined,
+  };
 
   if (!priorApproval) {
     // Check decision cache (skip for destructive ops and advisory/audit modes)
@@ -684,8 +741,18 @@ const handler: HookHandler = (
         decisionCache.set(cacheKey, decision);
       }
     }
+    telemetryDecision = decision;
 
     if (decision.status === "deny") {
+      publishToolResultTelemetry(
+        policyEvent,
+        toolName,
+        params,
+        result,
+        decision,
+        telemetryIdentity,
+        false,
+      );
       toolEvent.deny(decision);
       return toolEvent.flush();
     }
@@ -699,9 +766,824 @@ const handler: HookHandler = (
     }
   }
 
+  publishToolResultTelemetry(
+    policyEvent,
+    toolName,
+    params,
+    result,
+    telemetryDecision,
+    telemetryIdentity,
+    Boolean(priorApproval),
+  );
   toolEvent.sanitize(policyEngine);
   return toolEvent.flush();
 };
+
+type EdrDeveloperActivity = Record<string, unknown>;
+
+type ToolResultTelemetryIdentity = {
+  hostId?: string;
+  userId?: string;
+  sessionId?: string;
+  agentId?: string;
+  workloadId?: string;
+  approvalId?: string;
+  toolCallId?: string;
+};
+
+function toolResultTelemetryString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const trimmed = asNonEmptyString(value);
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+type CredentialActivityCandidate = {
+  kind: "repo_secret" | "ci_token" | "local_api_key" | "browser_cookie";
+  path?: string;
+  name?: string;
+  credentialKind?: string;
+  classifier: string;
+};
+
+const MAX_TOOL_RESULT_DEVELOPER_ACTIVITIES = 16;
+const RESULT_STRING_SCAN_LIMIT = 512_000;
+const REDACTED = "[REDACTED]";
+const SECRET_LIKE_VALUE =
+  /(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
+
+function publishToolResultTelemetry(
+  policyEvent: PolicyEvent,
+  toolName: string,
+  params: Record<string, unknown>,
+  result: unknown,
+  decision: Decision,
+  identity: ToolResultTelemetryIdentity,
+  priorApproval: boolean,
+): void {
+  void publishToolResultPolicyEvent(
+    buildToolResultPolicyEventForEdr(policyEvent, toolName, decision, identity, priorApproval),
+  );
+
+  const activities = buildToolResultDeveloperActivitiesForEdr(
+    policyEvent,
+    toolName,
+    params,
+    result,
+    decision,
+    identity,
+    priorApproval,
+  );
+  if (activities.length > 0) {
+    void publishToolResultDeveloperActivities(activities);
+  }
+}
+
+export function buildToolResultPolicyEventForEdr(
+  policyEvent: PolicyEvent,
+  toolName: string,
+  decision: Decision,
+  identity: ToolResultTelemetryIdentity = {},
+  priorApproval = false,
+): PolicyEvent {
+  const scrubbed = scrubPolicyEventDataForEdr(policyEvent.data);
+
+  return {
+    ...policyEvent,
+    data: scrubbed.data,
+    metadata: {
+      ...(policyEvent.metadata ?? {}),
+      ...scrubbed.metadata,
+      collectorKind: "openclaw_tool_result",
+      toolName,
+      postExecution: true,
+      policyAllowed: decision.status !== "deny",
+      policyStatus: decision.status,
+      policyGuard: decision.guard,
+      policySeverity: decision.severity,
+      policyReason: decision.reason,
+      hostId: identity.hostId,
+      userId: identity.userId,
+      sessionId: identity.sessionId ?? policyEvent.sessionId,
+      agentId: identity.agentId,
+      workloadId: identity.workloadId ?? "openclaw-tool-result",
+      approvalId: identity.approvalId,
+      toolCallId: identity.toolCallId,
+      priorApproval,
+    },
+  };
+}
+
+export function buildToolResultDeveloperActivitiesForEdr(
+  policyEvent: PolicyEvent,
+  toolName: string,
+  params: Record<string, unknown>,
+  result: unknown,
+  decision: Decision,
+  identity: ToolResultTelemetryIdentity = {},
+  priorApproval = false,
+): EdrDeveloperActivity[] {
+  const activities: EdrDeveloperActivity[] = [];
+  const metadata = toolResultTelemetryMetadata(toolName, result, decision, identity, priorApproval);
+  const common = {
+    observedAt: policyEvent.timestamp,
+    hostId: identity.hostId,
+    userId: identity.userId,
+    sessionId: policyEvent.sessionId,
+    agentId: identity.agentId,
+    workloadId: identity.workloadId ?? "openclaw-tool-result",
+    approvalId: identity.approvalId,
+  };
+
+  const download = findDownloadActivityCandidate(toolName, params, result);
+  if (download) {
+    activities.push({
+      ...common,
+      activityId: `${policyEvent.eventId}:download:${sha256Hex(download.path).slice(0, 16)}`,
+      kind: "browser_download",
+      browser: download.browser,
+      path: download.path,
+      sourceUrl: download.sourceUrl ? redactTelemetryUrl(download.sourceUrl) : undefined,
+      metadata: {
+        ...metadata,
+        activityClassifier: "browser_download",
+      },
+    });
+  }
+
+  const browserExtension = findBrowserExtensionActivityCandidate(toolName, params, result);
+  if (browserExtension) {
+    activities.push({
+      ...common,
+      activityId: `${policyEvent.eventId}:browser-extension:${sha256Hex(browserExtension.path).slice(0, 16)}`,
+      kind: "browser_extension",
+      browser: browserExtension.browser,
+      extensionId: browserExtension.extensionId,
+      path: browserExtension.path,
+      source: browserExtension.source ? redactTelemetryUrl(browserExtension.source) : undefined,
+      metadata: {
+        ...metadata,
+        activityClassifier: "browser_extension",
+      },
+    });
+  }
+
+  const credentialCandidates = collectCredentialActivityCandidates(params, result);
+  const seenCredentials = new Set<string>();
+  for (const candidate of credentialCandidates) {
+    const key = `${candidate.kind}\0${candidate.path ?? ""}\0${candidate.name ?? ""}`;
+    if (seenCredentials.has(key)) continue;
+    seenCredentials.add(key);
+
+    activities.push({
+      ...common,
+      activityId: `${policyEvent.eventId}:credential:${sha256Hex(key).slice(0, 16)}`,
+      kind: candidate.kind,
+      path: candidate.path,
+      name: candidate.name,
+      credentialKind: candidate.credentialKind,
+      metadata: {
+        ...metadata,
+        activityClassifier: candidate.classifier,
+        rawSecretOmitted: true,
+      },
+    });
+
+    if (activities.length >= MAX_TOOL_RESULT_DEVELOPER_ACTIVITIES) {
+      return activities;
+    }
+  }
+
+  const secretOutputNames = detectStrongSecretOutputNames(result, decision);
+  for (const name of secretOutputNames) {
+    const key = `local_api_key\0\0${name}`;
+    if (seenCredentials.has(key)) continue;
+    seenCredentials.add(key);
+
+    activities.push({
+      ...common,
+      activityId: `${policyEvent.eventId}:secret-output:${sha256Hex(key).slice(0, 16)}`,
+      kind: "local_api_key",
+      name,
+      credentialKind: credentialKindForSecretName(name),
+      metadata: {
+        ...metadata,
+        activityClassifier: "secret_output",
+        rawSecretOmitted: true,
+      },
+    });
+
+    if (activities.length >= MAX_TOOL_RESULT_DEVELOPER_ACTIVITIES) {
+      return activities;
+    }
+  }
+
+  return activities;
+}
+
+function scrubPolicyEventDataForEdr(data: PolicyEvent["data"]): {
+  data: PolicyEvent["data"];
+  metadata: Record<string, unknown>;
+} {
+  if (data.type === "tool") {
+    const result = typeof data.result === "string" ? data.result : undefined;
+    if (!result) {
+      return { data, metadata: {} };
+    }
+    return {
+      data: {
+        ...data,
+        result: `[omitted by openclaw_tool_result sha256:${sha256Hex(result)}]`,
+      },
+      metadata: {
+        resultOmitted: true,
+        resultHash: sha256Hex(result),
+        resultSizeBytes: Buffer.byteLength(result, "utf8"),
+      },
+    };
+  }
+
+  if (data.type === "file") {
+    const content = data.content ?? data.contentBase64;
+    if (!content) {
+      return { data, metadata: {} };
+    }
+    return {
+      data: {
+        ...data,
+        content: undefined,
+        contentBase64: undefined,
+        contentHash: data.contentHash ?? sha256Hex(content),
+      },
+      metadata: {
+        artifactContentOmitted: true,
+        artifactContentHash: sha256Hex(content),
+        artifactContentEncoding: data.contentBase64 ? "base64" : "utf8",
+        artifactContentSizeBytes: Buffer.byteLength(content, "utf8"),
+      },
+    };
+  }
+
+  if (data.type === "patch" && data.patchContent) {
+    return {
+      data: {
+        ...data,
+        patchContent: `[omitted by openclaw_tool_result sha256:${sha256Hex(data.patchContent)}]`,
+        patchHash: data.patchHash ?? sha256Hex(data.patchContent),
+      },
+      metadata: {
+        patchContentOmitted: true,
+        patchContentHash: sha256Hex(data.patchContent),
+        patchContentSizeBytes: Buffer.byteLength(data.patchContent, "utf8"),
+      },
+    };
+  }
+
+  return { data, metadata: {} };
+}
+
+function toolResultTelemetryMetadata(
+  toolName: string,
+  result: unknown,
+  decision: Decision,
+  identity: ToolResultTelemetryIdentity,
+  priorApproval: boolean,
+): Record<string, unknown> {
+  const resultEvidence = resultEvidenceMetadata(result);
+  return {
+    collectorKind: "openclaw_tool_result",
+    toolName,
+    postExecution: true,
+    policyAllowed: decision.status !== "deny",
+    policyStatus: decision.status,
+    policyGuard: decision.guard,
+    policySeverity: decision.severity,
+    policyReason: decision.reason,
+    agentId: identity.agentId,
+    workloadId: identity.workloadId ?? "openclaw-tool-result",
+    approvalId: identity.approvalId,
+    toolCallId: identity.toolCallId,
+    priorApproval,
+    ...resultEvidence,
+  };
+}
+
+function resultEvidenceMetadata(result: unknown): Record<string, unknown> {
+  if (result === undefined) {
+    return { resultKind: "undefined" };
+  }
+
+  const encoded = typeof result === "string" ? result : stableStringify(result);
+  return {
+    resultKind: Array.isArray(result) ? "array" : result === null ? "null" : typeof result,
+    resultHash: sha256Hex(encoded),
+    resultSizeBytes: Buffer.byteLength(encoded, "utf8"),
+    resultOmitted: true,
+  };
+}
+
+function redactSensitiveTelemetryString(value: string): string {
+  if (SECRET_LIKE_VALUE.test(value)) return REDACTED;
+  return value.replace(
+    /((?:token|secret|password|passwd|api[_-]?key|authorization|cookie)=)[^\s&]+/gi,
+    `$1${REDACTED}`,
+  );
+}
+
+function redactTelemetryUrl(value: string): string {
+  if (!value) return "";
+  try {
+    const parsed = new URL(value);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return redactSensitiveTelemetryString(value);
+  }
+}
+
+function findDownloadActivityCandidate(
+  toolName: string,
+  params: Record<string, unknown>,
+  result: unknown,
+): { browser: string; path: string; sourceUrl?: string } | null {
+  const hasDownloadSignal =
+    /\b(download|browser|fetch|receive[_-]?file|get[_-]?file)\b/i.test(toolName) ||
+    hasKeyRecursive(result, ["downloadPath", "download_path", "localPath", "local_path"]) ||
+    hasKeyRecursive(params, ["downloadPath", "download_path", "localPath", "local_path"]);
+
+  const strongPath =
+    firstStringForKeys(result, [
+      "downloadPath",
+      "download_path",
+      "localPath",
+      "local_path",
+      "saveAs",
+      "save_as",
+      "outputPath",
+      "output_path",
+      "destination",
+    ]) ??
+    firstStringForKeys(params, [
+      "downloadPath",
+      "download_path",
+      "localPath",
+      "local_path",
+      "saveAs",
+      "save_as",
+      "outputPath",
+      "output_path",
+      "destination",
+    ]);
+
+  const genericPath = hasDownloadSignal
+    ? (firstStringForKeys(result, ["path", "filePath", "file_path", "target"]) ??
+      firstStringForKeys(params, ["path", "filePath", "file_path", "target"]))
+    : undefined;
+  const path = strongPath ?? genericPath;
+  if (!path || !hasDownloadSignal) {
+    return null;
+  }
+
+  const sourceUrl =
+    firstStringForKeys(result, ["sourceUrl", "source_url", "remoteUrl", "remote_url", "url"]) ??
+    firstStringForKeys(params, ["sourceUrl", "source_url", "remoteUrl", "remote_url", "url"]);
+
+  return {
+    browser: firstStringForKeys(params, ["browser", "browserName", "browser_name"]) ?? "openclaw",
+    path,
+    sourceUrl,
+  };
+}
+
+function findBrowserExtensionActivityCandidate(
+  toolName: string,
+  params: Record<string, unknown>,
+  result: unknown,
+): { browser: string; path: string; extensionId?: string; source?: string } | null {
+  const hasExtensionSignal =
+    /\b(extension|addon|add-on|crx|xpi)\b/i.test(toolName) ||
+    hasKeyRecursive(result, ["extensionId", "extension_id", "extensionPath", "extension_path"]) ||
+    hasKeyRecursive(params, ["extensionId", "extension_id", "extensionPath", "extension_path"]);
+  if (!hasExtensionSignal) {
+    return null;
+  }
+
+  const path =
+    firstStringForKeys(result, [
+      "extensionPath",
+      "extension_path",
+      "installPath",
+      "install_path",
+      "path",
+      "filePath",
+      "file_path",
+      "crxPath",
+      "crx_path",
+      "xpiPath",
+      "xpi_path",
+    ]) ??
+    firstStringForKeys(params, [
+      "extensionPath",
+      "extension_path",
+      "installPath",
+      "install_path",
+      "path",
+      "filePath",
+      "file_path",
+      "crxPath",
+      "crx_path",
+      "xpiPath",
+      "xpi_path",
+    ]);
+  if (!path) {
+    return null;
+  }
+
+  return {
+    browser: firstStringForKeys(params, ["browser", "browserName", "browser_name"]) ?? "openclaw",
+    extensionId:
+      firstStringForKeys(result, ["extensionId", "extension_id", "id"]) ??
+      firstStringForKeys(params, ["extensionId", "extension_id", "id"]),
+    path,
+    source:
+      firstStringForKeys(result, ["source", "sourceUrl", "source_url", "url"]) ??
+      firstStringForKeys(params, ["source", "sourceUrl", "source_url", "url"]),
+  };
+}
+
+function collectCredentialActivityCandidates(
+  params: Record<string, unknown>,
+  result: unknown,
+): CredentialActivityCandidate[] {
+  const candidates: CredentialActivityCandidate[] = [];
+  const strings = collectStrings([params, result], 96);
+
+  for (const value of strings) {
+    const candidate = classifyCredentialString(value);
+    if (candidate) {
+      candidates.push(candidate);
+    }
+  }
+
+  return candidates;
+}
+
+function classifyCredentialString(value: string): CredentialActivityCandidate | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 4096) {
+    return null;
+  }
+
+  const urlCandidate = classifyCredentialUrl(trimmed);
+  if (urlCandidate) {
+    return urlCandidate;
+  }
+
+  const lower = trimmed.toLowerCase();
+  const looksPath =
+    /^(?:\/|~\/|\.{1,2}\/|[a-z]:\\)/i.test(trimmed) ||
+    /^\.env(?:\.|$)/i.test(trimmed) ||
+    /^(?:\.npmrc|\.pypirc|\.netrc)$/i.test(trimmed) ||
+    (/[\\/]/.test(trimmed) &&
+      /(secret|token|credential|cookie|\.env|\.npmrc|\.pypirc|id_rsa)/i.test(trimmed));
+  if (!looksPath) {
+    return null;
+  }
+
+  if (
+    /(?:^|[\\/])(cookies(?:\.sqlite)?|login data)(?:$|[\\/])/i.test(trimmed) ||
+    /[\\/]application support[\\/](google[\\/]chrome|chromium|brave|microsoft edge|firefox|safari)/i.test(
+      lower,
+    )
+  ) {
+    return {
+      kind: "browser_cookie",
+      path: trimmed,
+      name: "browser_cookie_store",
+      credentialKind: "browser_cookie",
+      classifier: "browser_cookie_path",
+    };
+  }
+
+  if (
+    /[\\/]\.github[\\/]/i.test(trimmed) ||
+    /[\\/](github-actions|gitlab-ci|circleci|buildkite|jenkins)[\\/]/i.test(lower) ||
+    (/\bci\b/i.test(lower) && /(token|secret|credential)/i.test(lower))
+  ) {
+    return {
+      kind: "ci_token",
+      path: trimmed,
+      name: credentialNameFromPath(trimmed, "ci_token"),
+      credentialKind: "api_token",
+      classifier: "ci_token_path",
+    };
+  }
+
+  if (
+    /(?:^|[\\/])(\.aws[\\/]credentials|\.azure|\.config[\\/]gcloud|application_default_credentials\.json|credentials\.json|token\.json|\.npmrc|\.pypirc|\.netrc)(?:$|[\\/])/i.test(
+      trimmed,
+    )
+  ) {
+    return {
+      kind: "local_api_key",
+      path: trimmed,
+      name: credentialNameFromPath(trimmed, "local_api_key"),
+      credentialKind: lower.includes(".npmrc") ? "package_registry_token" : "cloud_credential",
+      classifier: "local_api_key_path",
+    };
+  }
+
+  if (
+    /(?:^|[\\/])\.env(?:\.|$)/i.test(trimmed) ||
+    /(secret|credential|private[_-]?key|api[_-]?key|token|id_rsa)/i.test(lower)
+  ) {
+    return {
+      kind: "repo_secret",
+      path: trimmed,
+      name: credentialNameFromPath(trimmed, "repo_secret"),
+      credentialKind: /id_rsa|private[_-]?key/i.test(lower) ? "ssh_key" : "api_token",
+      classifier: "repo_secret_path",
+    };
+  }
+
+  return null;
+}
+
+function classifyCredentialUrl(value: string): CredentialActivityCandidate | null {
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    return null;
+  }
+  try {
+    const parsed = new URL(value);
+    const sensitive =
+      Boolean(parsed.username || parsed.password) ||
+      [...parsed.searchParams.keys()].some((key) =>
+        /(?:secret|token|password|passwd|credential|api[_-]?key|authorization|cookie)/i.test(key),
+      ) ||
+      SECRET_LIKE_VALUE.test(value);
+    if (!sensitive) {
+      return null;
+    }
+    return {
+      kind: "local_api_key",
+      path: redactTelemetryUrl(value),
+      name: "url_credential",
+      credentialKind: "api_token",
+      classifier: "url_secret",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function credentialNameFromPath(path: string, fallback: string): string {
+  const name = basename(path.replace(/[/\\]+$/, ""));
+  return name && name !== "." && name !== "/" ? name : fallback;
+}
+
+function detectStrongSecretOutputNames(result: unknown, decision: Decision): string[] {
+  const names = new Set<string>();
+  if (decision.guard === "secret_leak") {
+    for (const name of String(decision.reason ?? decision.message ?? "")
+      .split(/[^A-Za-z0-9_-]+/)
+      .filter(Boolean)) {
+      if (
+        /^(?:aws|github|openai|anthropic|google|gcp|private|stripe|slack|azure|gitlab|jwt|database)/i.test(
+          name,
+        )
+      ) {
+        names.add(name.toLowerCase());
+      }
+    }
+    if (names.size === 0) {
+      names.add("tool_result_secret");
+    }
+  }
+
+  const text = resultTextForSecretScan(result);
+  if (!text) {
+    return [...names];
+  }
+
+  const patterns: Array<[string, RegExp]> = [
+    ["github_token", /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b/],
+    ["github_fine_grained_token", /\bgithub_pat_[A-Za-z0-9_]{20,}\b/],
+    ["openai_api_key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b/],
+    ["anthropic_api_key", /\bsk-ant-[A-Za-z0-9_-]{32,}\b/],
+    ["aws_access_key", /\bAKIA[0-9A-Z]{16}\b/],
+    ["private_key", /-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----/],
+    ["stripe_secret_key", /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{24,}\b/],
+    ["slack_token", /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/],
+    ["gitlab_token", /\bglpat-[A-Za-z0-9_-]{20,}\b/],
+    ["jwt_token", /\beyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\b/],
+    ["database_url", /\b(?:postgres|mysql|mongodb|redis):\/\/[^:\s]+:[^@\s]+@/],
+  ];
+  for (const [name, pattern] of patterns) {
+    if (pattern.test(text)) {
+      names.add(name);
+    }
+  }
+  return [...names];
+}
+
+function credentialKindForSecretName(name: string): string {
+  if (/aws|gcp|google|azure|database/i.test(name)) return "cloud_credential";
+  if (/npm|pypi|registry/i.test(name)) return "package_registry_token";
+  if (/private_key|ssh/i.test(name)) return "ssh_key";
+  if (/cookie/i.test(name)) return "browser_cookie";
+  return "api_token";
+}
+
+function resultTextForSecretScan(result: unknown): string | null {
+  if (typeof result === "string") {
+    return result.slice(0, RESULT_STRING_SCAN_LIMIT);
+  }
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  return stableStringify(result).slice(0, RESULT_STRING_SCAN_LIMIT);
+}
+
+function collectStrings(value: unknown, limit: number, out: string[] = [], depth = 0): string[] {
+  if (out.length >= limit || depth > 8) {
+    return out;
+  }
+  if (typeof value === "string") {
+    out.push(value);
+    return out;
+  }
+  if (!value || typeof value !== "object") {
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStrings(item, limit, out, depth + 1);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+  for (const entry of Object.values(value as Record<string, unknown>)) {
+    collectStrings(entry, limit, out, depth + 1);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function firstStringForKeys(value: unknown, keys: string[], depth = 0): string | undefined {
+  if (depth > 6 || !value || typeof value !== "object") {
+    return undefined;
+  }
+  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+  const record = Array.isArray(value) ? null : (value as Record<string, unknown>);
+  if (record) {
+    for (const [key, entry] of Object.entries(record)) {
+      if (wanted.has(key.toLowerCase()) && typeof entry === "string" && entry.trim()) {
+        return entry.trim();
+      }
+    }
+    for (const entry of Object.values(record)) {
+      const nested = firstStringForKeys(entry, keys, depth + 1);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+  for (const entry of value as unknown[]) {
+    const nested = firstStringForKeys(entry, keys, depth + 1);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function hasKeyRecursive(value: unknown, keys: string[], depth = 0): boolean {
+  if (depth > 6 || !value || typeof value !== "object") {
+    return false;
+  }
+  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+  if (Array.isArray(value)) {
+    return value.some((entry) => hasKeyRecursive(entry, keys, depth + 1));
+  }
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => wanted.has(key.toLowerCase()))) {
+    return true;
+  }
+  return Object.values(record).some((entry) => hasKeyRecursive(entry, keys, depth + 1));
+}
+
+async function publishToolResultDeveloperActivities(
+  activities: EdrDeveloperActivity[],
+): Promise<void> {
+  const endpoint = resolveDeveloperActivityEndpoint();
+  if (!endpoint) return;
+
+  try {
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${endpoint.token}`,
+      },
+      signal: AbortSignal.timeout(250),
+      body: JSON.stringify({ activities }),
+    });
+    if (!response.ok) {
+      return;
+    }
+  } catch {
+    // Tool-result telemetry is enrichment only. Synchronous post-result
+    // enforcement above remains the authoritative block/redact path.
+  }
+}
+
+async function publishToolResultPolicyEvent(policyEvent: PolicyEvent): Promise<void> {
+  const endpoint = resolvePolicyEventsEndpoint();
+  if (!endpoint) return;
+
+  try {
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${endpoint.token}`,
+      },
+      signal: AbortSignal.timeout(250),
+      body: JSON.stringify({ events: [policyEvent] }),
+    });
+    if (!response.ok) {
+      return;
+    }
+  } catch {
+    // EDR capture is evidence enrichment only. The tool-result guard still
+    // returns its synchronous policy decision and sanitization result.
+  }
+}
+
+function resolveDeveloperActivityEndpoint(): { url: string; token: string } | null {
+  const token = localAgentToken();
+  if (!token) return null;
+
+  const explicitUrl = process.env.CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL?.trim();
+  if (explicitUrl) {
+    return { url: explicitUrl, token };
+  }
+
+  const baseUrl =
+    process.env.CLAWDSTRIKE_AGENT_URL?.trim() ??
+    process.env.CLAWDSTRIKE_APPROVAL_URL?.trim() ??
+    "http://127.0.0.1:9878";
+  return {
+    url: `${baseUrl.replace(/\/+$/, "")}/api/v1/agent/edr/developer-activity`,
+    token,
+  };
+}
+
+function resolvePolicyEventsEndpoint(): { url: string; token: string } | null {
+  const token = localAgentToken();
+  if (!token) return null;
+
+  const explicitUrl = process.env.CLAWDSTRIKE_POLICY_EVENTS_URL?.trim();
+  if (explicitUrl) {
+    return { url: explicitUrl, token };
+  }
+
+  const baseUrl =
+    process.env.CLAWDSTRIKE_AGENT_URL?.trim() ??
+    process.env.CLAWDSTRIKE_APPROVAL_URL?.trim() ??
+    "http://127.0.0.1:9878";
+  return {
+    url: `${baseUrl.replace(/\/+$/, "")}/api/v1/agent/edr/policy-events`,
+    token,
+  };
+}
+
+function localAgentToken(): string | null {
+  const envToken = process.env.CLAWDSTRIKE_AGENT_TOKEN?.trim();
+  if (envToken) return envToken;
+
+  const tokenPath =
+    process.env.CLAWDSTRIKE_AGENT_TOKEN_PATH?.trim() ??
+    join(
+      process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config"),
+      "clawdstrike",
+      "agent-local-token",
+    );
+  try {
+    const token = readFileSync(tokenPath, "utf8").trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
+function sha256Hex(value: unknown): string {
+  const h = createHash("sha256");
+  if (typeof value === "string") h.update(value);
+  else h.update(stableStringify(value));
+  return h.digest("hex");
+}
 
 /**
  * Create a PolicyEvent from tool execution context

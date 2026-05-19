@@ -9,6 +9,9 @@
  * forbidden paths when a read targets a sensitive location.
  */
 
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   classifyTool,
   DESTRUCTIVE_EVENT_MAP,
@@ -20,6 +23,7 @@ import type {
   BeforeToolCallHookEvent,
   BeforeToolCallHookResult,
   ClawdstrikeConfig,
+  Decision,
   EventType,
   HookEvent,
   HookHandler,
@@ -30,6 +34,14 @@ import type {
 import { type ApprovalResolutionType, peekApproval, recordApproval } from "../approval-state.js";
 import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
 import { clearAllToolInvocations, rememberToolInvocation } from "../tool-invocation-state.js";
+
+const REDACTED = "[REDACTED]";
+const SECRET_LIKE_VALUE =
+  /(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
+const SENSITIVE_COMMAND_KEY =
+  /^(?:-+)?(?:secret|token|auth[_-]?token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)$/i;
+const SENSITIVE_VALUE_FLAG =
+  /^-+(?:token|auth[_-]?token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)$/i;
 
 /**
  * Initialize the hook with configuration.
@@ -477,6 +489,7 @@ const handler: HookHandler = async (
     isModern && typeof hookCtx?.toolCallId === "string" && hookCtx.toolCallId.length > 0
       ? hookCtx.toolCallId
       : undefined;
+  const telemetryIdentity = preflightTelemetryIdentity(hookCtx, sessionId, toolCallId);
 
   if (isModern) {
     rememberToolInvocation(sessionId, toolName, params, toolCallId);
@@ -492,6 +505,18 @@ const handler: HookHandler = async (
   const policyEngine = getEngine();
   const policyEvent = buildPolicyEvent(sessionId, toolName, params, eventType);
   const decision = await policyEngine.evaluate(policyEvent);
+  void publishPreflightPolicyEvent(
+    buildPreflightPolicyEventForEdr(policyEvent, toolName, decision, telemetryIdentity),
+  );
+  const developerActivity = buildPreflightDeveloperActivityForCommand(
+    policyEvent,
+    toolName,
+    decision,
+    telemetryIdentity,
+  );
+  if (developerActivity) {
+    void publishPreflightDeveloperActivity(developerActivity);
+  }
 
   if (decision.status === "deny") {
     const resource = normalizeApprovalResource(policyEngine, toolName, params);
@@ -555,3 +580,845 @@ const handler: HookHandler = async (
 };
 
 export default handler;
+
+type EdrDeveloperActivity = Record<string, unknown>;
+
+export type PreflightTelemetryIdentity = {
+  hostId?: string;
+  userId?: string;
+  sessionId?: string;
+  agentId?: string;
+  workloadId?: string;
+  approvalId?: string;
+  toolCallId?: string;
+};
+
+function preflightTelemetryIdentity(
+  hookCtx: OpenClawHookContext | undefined,
+  sessionId: string,
+  toolCallId: string | undefined,
+): PreflightTelemetryIdentity {
+  return {
+    hostId: firstNonEmptyString(
+      hookCtx?.hostId,
+      process.env.CLAWDSTRIKE_HOST_ID,
+      process.env.CLAWDSTRIKE_ENDPOINT_ID,
+    ),
+    userId: firstNonEmptyString(
+      hookCtx?.userId,
+      process.env.CLAWDSTRIKE_USER_ID,
+      process.env.CLAWDSTRIKE_PRINCIPAL_ID,
+    ),
+    sessionId: firstNonEmptyString(
+      sessionId,
+      hookCtx?.sessionKey,
+      process.env.CLAWDSTRIKE_SESSION_ID,
+    ),
+    agentId: firstNonEmptyString(hookCtx?.agentId, process.env.CLAWDSTRIKE_AGENT_ID),
+    workloadId:
+      firstNonEmptyString(hookCtx?.workloadId, process.env.CLAWDSTRIKE_WORKLOAD_ID) ??
+      "openclaw-tool-preflight",
+    approvalId: firstNonEmptyString(hookCtx?.approvalId, process.env.CLAWDSTRIKE_APPROVAL_ID),
+    toolCallId,
+  };
+}
+
+function firstNonEmptyString(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+export function buildPreflightDeveloperActivityForCommand(
+  policyEvent: PolicyEvent,
+  toolName: string,
+  decision: Decision,
+  identity: PreflightTelemetryIdentity = {},
+): EdrDeveloperActivity | null {
+  if (policyEvent.eventType !== "command_exec") return null;
+  const command = commandTokensFromPolicyEvent(policyEvent);
+  if (command.length === 0) return null;
+
+  const scrubbedCommand = scrubCommandArgs(command);
+  const commandLine = scrubbedCommand.join(" ");
+  const scrubbedArgs = scrubbedCommand.slice(1);
+  const metadata = {
+    collectorKind: "openclaw_tool_preflight",
+    policyAllowed: decision.status !== "deny",
+    policyStatus: decision.status,
+    policyGuard: decision.guard,
+    policySeverity: decision.severity,
+    policyReason: decision.reason,
+    toolName,
+    toolCallId: identity.toolCallId,
+  };
+  const common = {
+    hostId: identity.hostId,
+    userId: identity.userId,
+    sessionId: policyEvent.sessionId,
+    agentId: identity.agentId,
+    workloadId: identity.workloadId ?? "openclaw-tool-preflight",
+    approvalId: identity.approvalId,
+  };
+
+  const packageCommand = classifyPackageCommand(command);
+  if (packageCommand) {
+    return {
+      ...common,
+      kind: "package_script",
+      manager: packageCommand.manager,
+      package: packageCommand.packageName,
+      phase: packageCommand.phase,
+      script: commandLine,
+      image: command[0],
+      commandLine,
+      metadata: {
+        ...metadata,
+        shellClassifier: "package_script",
+      },
+    };
+  }
+
+  const packageRegistryTokenCommand = classifyPackageRegistryTokenCommand(command);
+  if (packageRegistryTokenCommand) {
+    return {
+      ...common,
+      kind: packageRegistryTokenCommand.kind,
+      path: packageRegistryTokenCommand.path,
+      name: packageRegistryTokenCommand.name,
+      credentialKind: packageRegistryTokenCommand.credentialKind,
+      image: command[0],
+      commandLine,
+      args: scrubbedArgs,
+      metadata: {
+        ...metadata,
+        shellClassifier: packageRegistryTokenCommand.classifier,
+      },
+    };
+  }
+
+  const cloudCommand = classifyCloudCommand(command);
+  if (cloudCommand) {
+    return {
+      ...common,
+      kind: "cloud_cli",
+      provider: cloudCommand.provider,
+      operation: cloudCommand.operation,
+      args: scrubCommandArgs(cloudCommand.args),
+      image: command[0],
+      commandLine,
+      metadata: {
+        ...metadata,
+        shellClassifier: "cloud_cli",
+      },
+    };
+  }
+
+  return null;
+}
+
+export function buildPreflightPolicyEventForEdr(
+  policyEvent: PolicyEvent,
+  toolName: string,
+  decision: Decision,
+  identity: PreflightTelemetryIdentity = {},
+): PolicyEvent {
+  return {
+    ...policyEvent,
+    metadata: {
+      ...(policyEvent.metadata ?? {}),
+      collectorKind: "openclaw_tool_preflight",
+      toolName,
+      policyAllowed: decision.status !== "deny",
+      policyStatus: decision.status,
+      policyGuard: decision.guard,
+      policySeverity: decision.severity,
+      policyReason: decision.reason,
+      hostId: identity.hostId,
+      userId: identity.userId,
+      sessionId: identity.sessionId ?? policyEvent.sessionId,
+      agentId: identity.agentId,
+      workloadId: identity.workloadId,
+      approvalId: identity.approvalId,
+      toolCallId: identity.toolCallId,
+    },
+  };
+}
+
+async function publishPreflightDeveloperActivity(activity: EdrDeveloperActivity): Promise<void> {
+  const endpoint = resolveDeveloperActivityEndpoint();
+  if (!endpoint) return;
+
+  try {
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${endpoint.token}`,
+      },
+      signal: AbortSignal.timeout(250),
+      body: JSON.stringify({ activities: [activity] }),
+    });
+    if (!response.ok) {
+      return;
+    }
+  } catch {
+    // Developer-activity telemetry is enrichment only. Preflight policy
+    // enforcement above remains the authoritative allow/block path.
+  }
+}
+
+async function publishPreflightPolicyEvent(policyEvent: PolicyEvent): Promise<void> {
+  const endpoint = resolvePolicyEventsEndpoint();
+  if (!endpoint) return;
+
+  try {
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${endpoint.token}`,
+      },
+      signal: AbortSignal.timeout(250),
+      body: JSON.stringify({ events: [policyEvent] }),
+    });
+    if (!response.ok) {
+      return;
+    }
+  } catch {
+    // EDR capture is evidence enrichment only. Preflight policy enforcement
+    // above remains the authoritative allow/block path.
+  }
+}
+
+function resolveDeveloperActivityEndpoint(): { url: string; token: string } | null {
+  const token = localAgentToken();
+  if (!token) return null;
+
+  const explicitUrl = process.env.CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL?.trim();
+  if (explicitUrl) {
+    return { url: explicitUrl, token };
+  }
+
+  const baseUrl =
+    process.env.CLAWDSTRIKE_AGENT_URL?.trim() ??
+    process.env.CLAWDSTRIKE_APPROVAL_URL?.trim() ??
+    "http://127.0.0.1:9878";
+  return {
+    url: `${baseUrl.replace(/\/+$/, "")}/api/v1/agent/edr/developer-activity`,
+    token,
+  };
+}
+
+function resolvePolicyEventsEndpoint(): { url: string; token: string } | null {
+  const token = localAgentToken();
+  if (!token) return null;
+
+  const explicitUrl = process.env.CLAWDSTRIKE_POLICY_EVENTS_URL?.trim();
+  if (explicitUrl) {
+    return { url: explicitUrl, token };
+  }
+
+  const baseUrl =
+    process.env.CLAWDSTRIKE_AGENT_URL?.trim() ??
+    process.env.CLAWDSTRIKE_APPROVAL_URL?.trim() ??
+    "http://127.0.0.1:9878";
+  return {
+    url: `${baseUrl.replace(/\/+$/, "")}/api/v1/agent/edr/policy-events`,
+    token,
+  };
+}
+
+function localAgentToken(): string | null {
+  const envToken = process.env.CLAWDSTRIKE_AGENT_TOKEN?.trim();
+  if (envToken) return envToken;
+
+  const tokenPath =
+    process.env.CLAWDSTRIKE_AGENT_TOKEN_PATH?.trim() ??
+    join(
+      process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config"),
+      "clawdstrike",
+      "agent-local-token",
+    );
+  try {
+    const token = readFileSync(tokenPath, "utf8").trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
+function commandTokensFromPolicyEvent(policyEvent: PolicyEvent): string[] {
+  const data = policyEvent.data as {
+    type?: unknown;
+    command?: unknown;
+    args?: unknown;
+  };
+  if (data.type !== "command" || typeof data.command !== "string" || !data.command.trim()) {
+    return [];
+  }
+  const args = Array.isArray(data.args)
+    ? data.args.filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    : [];
+  return [data.command.trim(), ...args.map((value) => value.trim())];
+}
+
+function scrubCommandArgs(args: string[]): string[] {
+  const scrubbed: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    const next = args[index + 1];
+    const keyValue = /^(-{1,2}[^=\s]+)=([\s\S]*)$/.exec(arg);
+    if (keyValue) {
+      const [, key, value] = keyValue;
+      scrubbed.push(
+        SENSITIVE_COMMAND_KEY.test(key) || SECRET_LIKE_VALUE.test(value)
+          ? `${key}=${REDACTED}`
+          : redactSensitiveCommandString(arg),
+      );
+      continue;
+    }
+
+    if (SENSITIVE_VALUE_FLAG.test(arg)) {
+      scrubbed.push(arg);
+      if (typeof next === "string" && next.trim() && !next.startsWith("-")) {
+        scrubbed.push(REDACTED);
+        index += 1;
+      }
+      continue;
+    }
+
+    scrubbed.push(redactSensitiveCommandString(arg));
+  }
+  return scrubbed;
+}
+
+function redactSensitiveCommandString(value: string): string {
+  if (SECRET_LIKE_VALUE.test(value)) return REDACTED;
+  return value.replace(
+    /((?:token|secret|password|passwd|api[_-]?key|authorization|cookie)=)[^\s&]+/gi,
+    `$1${REDACTED}`,
+  );
+}
+
+function classifyPackageCommand(command: string[]): {
+  manager: string;
+  phase: string;
+  packageName?: string;
+} | null {
+  const [image, ...rawArgs] = command;
+  const executable = executableName(image);
+  let manager: string;
+  let args = rawArgs;
+  if (
+    ["python", "python2", "python3"].includes(executable) &&
+    rawArgs[0] === "-m" &&
+    executableName(rawArgs[1] ?? "") === "pip"
+  ) {
+    manager = "pip";
+    args = rawArgs.slice(2);
+  } else if (
+    [
+      "npm",
+      "pnpm",
+      "yarn",
+      "bun",
+      "pip",
+      "pip3",
+      "cargo",
+      "brew",
+      "go",
+      "gem",
+      "composer",
+      "mvn",
+      "mvnw",
+      "gradle",
+      "gradlew",
+      "uv",
+      "poetry",
+      "pipenv",
+      "dotnet",
+      "nuget",
+      "swift",
+      "mix",
+    ].includes(executable)
+  ) {
+    if (executable === "pip3") {
+      manager = "pip";
+    } else if (["mvn", "mvnw"].includes(executable)) {
+      manager = "maven";
+    } else if (["gradle", "gradlew"].includes(executable)) {
+      manager = "gradle";
+    } else {
+      manager = executable;
+    }
+  } else {
+    return null;
+  }
+
+  const commandIndex = firstNonOptionArgIndex(args);
+  if (commandIndex === null) return null;
+  const commandName = args[commandIndex]?.toLowerCase();
+  if (!commandName) return null;
+  const afterCommand = args.slice(commandIndex + 1);
+  const phase = packagePhase(manager, commandName, afterCommand);
+  if (!phase) return null;
+
+  return {
+    manager,
+    phase,
+    packageName: packageNameFromPackageCommand(manager, commandName, afterCommand),
+  };
+}
+
+function classifyPackageRegistryTokenCommand(command: string[]): {
+  kind: "repo_secret";
+  path: string;
+  name: string;
+  credentialKind: "package_registry_token";
+  classifier: string;
+} | null {
+  const [image, ...args] = command;
+  const manager = packageRegistryManager(image);
+  if (!manager) return null;
+
+  const commandIndex = firstNonOptionArgIndex(args);
+  if (commandIndex === null) return null;
+  const commandName = args[commandIndex]?.toLowerCase();
+  if (!commandName) return null;
+  const commandArgs = args.slice(commandIndex + 1);
+  if (!packageRegistryTokenCommandIsSensitive(commandName, commandArgs)) return null;
+
+  return {
+    kind: "repo_secret",
+    path: `${manager}:token`,
+    name: `${manager}-token`,
+    credentialKind: "package_registry_token",
+    classifier: "package_registry_token_command",
+  };
+}
+
+function classifyCloudCommand(command: string[]): {
+  provider: string;
+  operation: string;
+  args: string[];
+} | null {
+  const [image, ...args] = command;
+  const executable = executableName(image);
+  const provider =
+    executable === "flyctl"
+      ? "fly"
+      : executable === "sentry-cli"
+        ? "sentry"
+        : executable === "bw"
+          ? "bitwarden"
+          : executable === "buildkite-agent" || executable === "bk"
+            ? "buildkite"
+            : executable === "tofu"
+              ? "opentofu"
+              : executable;
+  if (
+    ![
+      "aws",
+      "gcloud",
+      "az",
+      "gh",
+      "vercel",
+      "netlify",
+      "wrangler",
+      "doctl",
+      "fly",
+      "op",
+      "vault",
+      "doppler",
+      "heroku",
+      "supabase",
+      "firebase",
+      "railway",
+      "sentry",
+      "snyk",
+      "bitwarden",
+      "kubectl",
+      "pulumi",
+      "circleci",
+      "glab",
+      "buildkite",
+      "terraform",
+      "terragrunt",
+      "opentofu",
+    ].includes(provider)
+  )
+    return null;
+  const operationIndex = firstNonOptionArgIndex(args);
+  if (operationIndex === null) return null;
+  const operation = args[operationIndex];
+  if (!operation) return null;
+  const operationArgs = args.slice(operationIndex + 1);
+  const sensitiveArgs = [operation, ...operationArgs];
+  if (!cloudCliArgsAreSensitive(provider, sensitiveArgs)) return null;
+  return { provider, operation, args: operationArgs };
+}
+
+function packageRegistryManager(image: string): string | null {
+  const executable = executableName(image);
+  return ["npm", "pnpm", "yarn"].includes(executable) ? executable : null;
+}
+
+function packageRegistryTokenCommandIsSensitive(commandName: string, args: string[]): boolean {
+  const joined = args.join(" ").toLowerCase();
+  if (commandName === "token") {
+    return ["list", "create", "revoke", "delete"].includes(args[0]?.toLowerCase() ?? "");
+  }
+  if (commandName === "config") {
+    const subcommand = args[0]?.toLowerCase();
+    return (
+      ["get", "set", "delete"].includes(subcommand ?? "") &&
+      packageRegistryAuthConfigReference(joined)
+    );
+  }
+  return false;
+}
+
+function packageRegistryAuthConfigReference(value: string): boolean {
+  return (
+    value.includes("_authtoken") ||
+    value.includes("node_auth_token") ||
+    value.includes("npm_token") ||
+    value.includes("npm_config_")
+  );
+}
+
+function packagePhase(manager: string, commandName: string, args: string[]): string | null {
+  switch (manager) {
+    case "npm":
+    case "pnpm":
+      if (["install", "i", "ci", "add", "rebuild"].includes(commandName)) return "install";
+      if (["run", "run-script", "exec", "dlx"].includes(commandName)) {
+        return packageScriptName(args) ?? commandName;
+      }
+      return packageLifecyclePhase(commandName) ? commandName : null;
+    case "yarn":
+      if (["install", "add", "upgrade"].includes(commandName)) return "install";
+      if (commandName === "run") return packageScriptName(args) ?? "run";
+      return packageLifecyclePhase(commandName) ? commandName : null;
+    case "pip":
+      if (commandName === "install") return "install";
+      if (commandName === "wheel") return "build";
+      return null;
+    case "cargo":
+      return ["install", "build", "run", "test"].includes(commandName) ? commandName : null;
+    case "brew":
+      return ["install", "reinstall", "upgrade", "bundle"].includes(commandName) ? "install" : null;
+    case "go":
+      if (["install", "get"].includes(commandName)) return "install";
+      return ["run", "build", "test"].includes(commandName) ? commandName : null;
+    case "gem":
+      return ["install", "build"].includes(commandName) ? commandName : null;
+    case "composer":
+      if (["install", "update", "require", "create-project"].includes(commandName)) {
+        return "install";
+      }
+      if (["run-script", "exec"].includes(commandName))
+        return packageScriptName(args) ?? commandName;
+      return packageLifecyclePhase(commandName) ? commandName : null;
+    case "maven":
+      return ["validate", "compile", "test", "package", "verify", "install", "deploy"].includes(
+        commandName,
+      )
+        ? commandName
+        : null;
+    case "gradle":
+      return ["build", "test", "check", "assemble", "publish", "run"].includes(commandName)
+        ? commandName
+        : null;
+    case "uv":
+      if (commandName === "pip") {
+        const pipCommand = args[0]?.toLowerCase();
+        if (["install", "sync"].includes(pipCommand ?? "")) return "install";
+        if (pipCommand === "compile") return "build";
+        return null;
+      }
+      if (["add", "sync"].includes(commandName)) return "install";
+      if (["run", "build", "test"].includes(commandName)) return commandName;
+      if (commandName === "tool") {
+        const toolCommand = args[0]?.toLowerCase();
+        if (toolCommand === "install") return "install";
+        if (toolCommand === "run") return "run";
+      }
+      return null;
+    case "poetry":
+      if (["install", "add", "update"].includes(commandName)) return "install";
+      if (commandName === "run") return packageScriptName(args) ?? "run";
+      return ["build", "test"].includes(commandName) ? commandName : null;
+    case "pipenv":
+      if (["install", "sync", "update"].includes(commandName)) return "install";
+      if (commandName === "run") return packageScriptName(args) ?? "run";
+      return null;
+    case "dotnet":
+      if (commandName === "restore") return "install";
+      if (commandName === "add" && args[0]?.toLowerCase() === "package") return "install";
+      return ["build", "test", "pack", "publish", "run"].includes(commandName) ? commandName : null;
+    case "nuget":
+      if (["install", "restore"].includes(commandName)) return "install";
+      if (commandName === "pack") return "build";
+      if (commandName === "push") return "publish";
+      return null;
+    case "swift":
+      if (commandName === "package") {
+        const packageCommand = args[0]?.toLowerCase();
+        if (["resolve", "update"].includes(packageCommand ?? "")) return "install";
+        return null;
+      }
+      return ["build", "test", "run"].includes(commandName) ? commandName : null;
+    case "mix":
+      if (["deps.get", "deps.update"].includes(commandName)) return "install";
+      if (commandName === "deps" && ["get", "update"].includes(args[0]?.toLowerCase() ?? "")) {
+        return "install";
+      }
+      if (commandName === "compile") return "build";
+      return ["test", "release"].includes(commandName) ? commandName : null;
+    default:
+      return null;
+  }
+}
+
+function packageScriptName(args: string[]): string | null {
+  return args.find((arg) => !arg.startsWith("-") && !arg.includes("=")) ?? null;
+}
+
+function packageLifecyclePhase(value: string): boolean {
+  return [
+    "preinstall",
+    "install",
+    "postinstall",
+    "prepare",
+    "build",
+    "build.rs",
+    "setup.py",
+    "test",
+  ].some((phase) => value.includes(phase));
+}
+
+function packageNameFromPackageCommand(
+  manager: string,
+  commandName: string,
+  args: string[],
+): string | undefined {
+  switch (manager) {
+    case "uv":
+      if (["pip", "tool"].includes(commandName)) return packageNameFromArgs(args.slice(1));
+      return packageNameFromArgs(args);
+    case "dotnet":
+      if (commandName === "add" && args[0]?.toLowerCase() === "package") {
+        return packageNameFromArgs(args.slice(1));
+      }
+      return packageNameFromArgs(args);
+    case "swift":
+      return commandName === "package"
+        ? packageNameFromArgs(args.slice(1))
+        : packageNameFromArgs(args);
+    case "mix":
+      return commandName === "deps"
+        ? packageNameFromArgs(args.slice(1))
+        : packageNameFromArgs(args);
+    default:
+      return packageNameFromArgs(args);
+  }
+}
+
+function packageNameFromArgs(args: string[]): string | undefined {
+  return args.find((arg) => {
+    const lower = arg.toLowerCase();
+    return (
+      !arg.startsWith("-") &&
+      !arg.includes("=") &&
+      arg !== "." &&
+      arg !== "--" &&
+      !packageLifecyclePhase(lower)
+    );
+  });
+}
+
+function cloudCliArgsAreSensitive(provider: string, args: string[]): boolean {
+  const joined = args.join(" ").toLowerCase();
+  const operation = args[0]?.toLowerCase() ?? "";
+  return (
+    terraformCliArgsAreSensitive(provider, args, joined) ||
+    (provider === "az" && operation === "login") ||
+    [
+      "secretsmanager get-secret-value",
+      "ssm get-parameter",
+      "ssm get-parameters",
+      "iam create-access-key",
+      "iam put-user-policy",
+      "iam attach-user-policy",
+      "ecr get-login-password",
+      "eks update-kubeconfig",
+      "codeartifact login",
+      "sso login",
+      "sts get-session-token",
+      "sts assume-role",
+      "auth login",
+      "auth print-access-token",
+      "auth application-default login",
+      "auth configure-docker",
+      "container clusters get-credentials",
+      "secrets versions access",
+      "iam service-accounts keys create",
+      "keyvault secret show",
+      "keyvault secret download",
+      "account get-access-token",
+      "acr login",
+      "aks get-credentials",
+      "ad app credential reset",
+      "secret set",
+      "secret put",
+      "secret bulk",
+      "secret list",
+      "secret delete",
+      "versions secret put",
+      "versions secret bulk",
+      "registry docker-config",
+      "registry login",
+      "kubernetes cluster kubeconfig save",
+      "secrets set",
+      "secrets import",
+      "secrets unset",
+      "secrets list",
+      "tokens create",
+      "tokens revoke",
+      "auth token",
+      "variable set",
+      "variable update",
+      "variable delete",
+      "variable get",
+      "variable list",
+      "variable export",
+      "variables",
+      "secret get",
+      "secret create",
+      "secret update",
+      "env pull",
+      "env add",
+      "env rm",
+      "env remove",
+      "env ls",
+      "env:get",
+      "env:list",
+      "env:set",
+      "env:import",
+      "env:unset",
+      "item get",
+      "get item",
+      "document get",
+      "op://",
+      "kv get",
+      "read secret/",
+      "token create",
+      "secrets download",
+      "configs tokens create",
+      "config:get",
+      "config:set",
+      "secrets pull",
+      "get secret",
+      "describe secret",
+      "config view --raw",
+      "--show-secrets",
+      "context store-secret",
+      "context remove-secret",
+      "runner token create",
+      "runner token list",
+    ].some((needle) => joined.includes(needle)) ||
+    args.some((arg) => {
+      const lower = arg.toLowerCase();
+      return (
+        lower.includes("secret") ||
+        lower.includes("token") ||
+        lower.includes("credential") ||
+        lower.includes("access-key") ||
+        lower === "iam" ||
+        lower === "sts" ||
+        lower === "keyvault"
+      );
+    })
+  );
+}
+
+function terraformCliArgsAreSensitive(provider: string, args: string[], joined: string): boolean {
+  if (!["terraform", "terragrunt", "opentofu"].includes(provider)) return false;
+  return (
+    [
+      "login",
+      "output -json",
+      "output -raw",
+      "state pull",
+      "state show",
+      "show -json",
+      "run-all output",
+      "run-all state",
+    ].some((needle) => joined.includes(needle)) ||
+    args.some((arg) => {
+      const lower = arg.toLowerCase();
+      return (
+        lower.includes("tf_token") ||
+        lower.includes("terraform_cloud_token") ||
+        lower.includes("terraform_token") ||
+        lower.includes("tfe_token")
+      );
+    })
+  );
+}
+
+function firstNonOptionArgIndex(args: string[]): number | null {
+  let index = 0;
+  while (index < args.length) {
+    const arg = args[index];
+    if (!arg) return null;
+    if (arg === "--") return index + 1 < args.length ? index + 1 : null;
+    if (shellAssignment(arg)) {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--")) {
+      index += optionTakesValue(arg) && !arg.includes("=") ? 2 : 1;
+      continue;
+    }
+    if (arg.startsWith("-") && arg.length > 1) {
+      index += shortOptionTakesValue(arg) ? 2 : 1;
+      continue;
+    }
+    return index;
+  }
+  return null;
+}
+
+function optionTakesValue(arg: string): boolean {
+  return [
+    "--prefix",
+    "--cwd",
+    "--directory",
+    "--project",
+    "--profile",
+    "--region",
+    "--subscription",
+    "--account",
+    "--configuration",
+    "--workspace",
+  ].includes(arg);
+}
+
+function shortOptionTakesValue(arg: string): boolean {
+  return ["-C", "-p", "-r", "-c", "-m"].includes(arg);
+}
+
+function shellAssignment(arg: string): boolean {
+  const [name, value] = arg.split("=", 2);
+  return Boolean(name && value && /^[A-Za-z_][A-Za-z0-9_]*$/.test(name));
+}
+
+function executableName(value: string): string {
+  const basename = value.split(/[\\/]/).pop() ?? value;
+  return basename.replace(/\.(exe|cmd|bat)$/i, "").toLowerCase();
+}

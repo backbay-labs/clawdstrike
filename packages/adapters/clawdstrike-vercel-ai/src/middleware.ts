@@ -3,12 +3,14 @@ import type {
   AuditEvent,
   Decision,
   PolicyEngineLike,
+  PolicyEvent,
   SecurityContext,
 } from "@clawdstrike/adapter-core";
 import {
   BaseToolInterceptor,
   createSecurityContext,
   PolicyEventFactory,
+  publishPolicyEventToLocalEdr,
 } from "@clawdstrike/adapter-core";
 
 import {
@@ -278,14 +280,14 @@ function createWrappedModel(
         contexts.add(context);
 
         if (promptSecurity) {
-          emitWasmDegradedEvents(promptSecurity, context);
-          const next = await applyPromptSecurityToParams(promptSecurity, params, context);
+          emitWasmDegradedEvents(promptSecurity, config, context);
+          const next = await applyPromptSecurityToParams(promptSecurity, config, params, context);
           Object.assign(params, next);
         }
 
         const result = await doGenerate();
         if (promptSecurity) {
-          maybeSanitizeGeneratedText(promptSecurity, result, context);
+          maybeSanitizeGeneratedText(promptSecurity, config, result, context);
         }
 
         if (!result || !Array.isArray(result.toolCalls)) {
@@ -323,8 +325,8 @@ function createWrappedModel(
         contexts.add(context);
 
         if (promptSecurity) {
-          emitWasmDegradedEvents(promptSecurity, context);
-          const next = await applyPromptSecurityToParams(promptSecurity, params, context);
+          emitWasmDegradedEvents(promptSecurity, config, context);
+          const next = await applyPromptSecurityToParams(promptSecurity, config, params, context);
           Object.assign(params, next);
         }
 
@@ -360,6 +362,7 @@ function createWrappedModel(
 
           const out = sanitizeStreamChunkIfNeeded(
             promptSecurity,
+            config,
             sanitizerStreamRef,
             current,
             context,
@@ -472,7 +475,9 @@ function createPromptSecurityRuntime(
     } catch (err) {
       if (err instanceof Error && /wasm/i.test(err.message)) {
         // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
-        console.warn("[clawdstrike/vercel-ai] InstructionHierarchyEnforcer skipped — WASM unavailable");
+        console.warn(
+          "[clawdstrike/vercel-ai] InstructionHierarchyEnforcer skipped — WASM unavailable",
+        );
         degraded.push("InstructionHierarchyEnforcer");
       } else {
         throw err;
@@ -542,10 +547,11 @@ function createPromptSecurityRuntime(
 
 function emitWasmDegradedEvents(
   runtime: PromptSecurityRuntime,
+  config: VercelAiClawdstrikeConfig,
   context: SecurityContext,
 ): void {
   for (const detector of runtime.degraded) {
-    context.addAuditEvent({
+    recordPromptSecurityAuditEvent(config, context, {
       id: createEventId("wdeg"),
       type: "wasm_degraded",
       timestamp: new Date(),
@@ -558,6 +564,7 @@ function emitWasmDegradedEvents(
 
 async function applyPromptSecurityToParams(
   runtime: PromptSecurityRuntime,
+  config: VercelAiClawdstrikeConfig,
   params: any,
   context: SecurityContext,
 ): Promise<any> {
@@ -573,7 +580,7 @@ async function applyPromptSecurityToParams(
       const shouldBlock = r.riskScore >= runtime.jailbreakBlockThreshold;
 
       if (shouldWarn) {
-        context.addAuditEvent({
+        recordPromptSecurityAuditEvent(config, context, {
           id: createEventId("psjb"),
           type: "prompt_security_jailbreak",
           timestamp: new Date(),
@@ -609,7 +616,13 @@ async function applyPromptSecurityToParams(
   ) {
     out = {
       ...out,
-      prompt: applyInstructionHierarchyToPrompt(runtime.hierarchy, prompt, context, runtime.mode),
+      prompt: applyInstructionHierarchyToPrompt(
+        runtime.hierarchy,
+        prompt,
+        context,
+        runtime.mode,
+        config,
+      ),
     };
   }
 
@@ -620,7 +633,7 @@ async function applyPromptSecurityToParams(
   ) {
     out = {
       ...out,
-      prompt: await applyPromptWatermark(runtime, (out as any).prompt, context),
+      prompt: await applyPromptWatermark(runtime, config, (out as any).prompt, context),
     };
   }
 
@@ -631,11 +644,209 @@ function createEventId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function recordPromptSecurityAuditEvent(
+  config: VercelAiClawdstrikeConfig,
+  context: SecurityContext,
+  event: AuditEvent,
+): void {
+  context.addAuditEvent(event);
+  void publishPolicyEventToLocalEdr(
+    buildPromptSecurityPolicyEventForEdr(config, context, event),
+    config.edr,
+  );
+}
+
+export function buildPromptSecurityPolicyEventForEdr(
+  config: VercelAiClawdstrikeConfig,
+  context: SecurityContext,
+  event: AuditEvent,
+): PolicyEvent {
+  return {
+    eventId: `vercel-ai-prompt-security-${event.id}`,
+    eventType: "custom",
+    timestamp: event.timestamp.toISOString(),
+    sessionId: event.sessionId,
+    data: {
+      type: "custom",
+      customType: event.type,
+      auditEventId: event.id,
+      contextId: event.contextId,
+      toolName: event.toolName,
+      promptContentOmitted: true,
+      modelOutputOmitted: true,
+      ...safePromptSecurityDetails(event.type, event.details),
+    },
+    metadata: {
+      ...sanitizePromptSecurityMetadata(context.metadata),
+      collectorKind: "vercel_ai_prompt_security",
+      source: "vercel-ai.prompt-security",
+      promptSecurity: true,
+      applicationId: config.promptSecurity?.applicationId,
+      mode: config.promptSecurity?.mode,
+      policyAllowed: promptSecurityPolicyAllowed(event),
+      auditEventType: event.type,
+      contextId: context.id,
+      payloadScrubbed: true,
+    },
+  };
+}
+
+function safePromptSecurityDetails(
+  type: AuditEvent["type"],
+  details: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const record = details ?? {};
+
+  switch (type) {
+    case "wasm_degraded":
+      return {
+        detector: stringField(record.detector),
+        reason: stringField(record.reason),
+      };
+    case "prompt_security_jailbreak":
+      return {
+        blocked: record.blocked === true,
+        riskScore: numberField(record.riskScore),
+        severity: stringField(record.severity),
+        fingerprint: stringField(record.fingerprint),
+        signals: stringArrayField(record.signals),
+        canonicalization: summarizeObject(record.canonicalization),
+        session: summarizeObject(record.session),
+      };
+    case "prompt_security_instruction_hierarchy":
+      return {
+        valid: record.valid === true,
+        conflictCount: Array.isArray(record.conflicts) ? record.conflicts.length : 0,
+        conflicts: Array.isArray(record.conflicts)
+          ? record.conflicts.map((conflict) => {
+              const c = asRecord(conflict);
+              return {
+                ruleId: stringField(c?.ruleId),
+                severity: stringField(c?.severity),
+                action: stringField(c?.action),
+                triggerCount: Array.isArray(c?.triggers) ? c.triggers.length : 0,
+              };
+            })
+          : [],
+        stats: summarizeObject(record.stats),
+      };
+    case "prompt_security_watermark":
+      return {
+        fingerprint: stringField(record.fingerprint),
+        publicKey: stringField(record.publicKey),
+        applicationId: stringField(record.applicationId),
+        sessionId: stringField(record.sessionId),
+        createdAt: stringField(record.createdAt),
+        sequenceNumber: numberField(record.sequenceNumber),
+      };
+    case "prompt_security_output_sanitized":
+      return {
+        redactionsCount: numberField(record.redactionsCount),
+        findings: Array.isArray(record.findings)
+          ? record.findings.map((finding) => {
+              const f = asRecord(finding);
+              return {
+                id: stringField(f?.id),
+                category: stringField(f?.category),
+                detector: stringField(f?.detector),
+              };
+            })
+          : [],
+      };
+    default:
+      return {
+        detailKeys: Object.keys(record).slice(0, 50),
+      };
+  }
+}
+
+function promptSecurityPolicyAllowed(event: AuditEvent): boolean | undefined {
+  if (event.type !== "prompt_security_jailbreak") return undefined;
+  return asRecord(event.details)?.blocked !== true;
+}
+
+const EDR_METADATA_SENSITIVE_KEY =
+  /(?:secret|token|password|passwd|credential|api[_-]?key|authorization|cookie|session|private[_-]?key|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)/i;
+const EDR_METADATA_CONTENT_KEY =
+  /(?:content|body|payload|patch|diff|result|output|prompt|input|message|raw)/i;
+const EDR_SECRET_LIKE_VALUE =
+  /(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
+
+function sanitizePromptSecurityMetadata(
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    out[key] = sanitizePromptSecurityMetadataValue(key, value);
+  }
+  return out;
+}
+
+function sanitizePromptSecurityMetadataValue(key: string, value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "boolean" || typeof value === "number") return value;
+
+  if (typeof value === "string") {
+    if (
+      EDR_METADATA_SENSITIVE_KEY.test(key) ||
+      EDR_METADATA_CONTENT_KEY.test(key) ||
+      EDR_SECRET_LIKE_VALUE.test(value)
+    ) {
+      return { omitted: true, length: value.length };
+    }
+    if (value.length > 256) {
+      return { omitted: true, reason: "large_string", length: value.length };
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return { valueType: "array", itemCount: value.length };
+  }
+
+  if (typeof value === "object") {
+    const keys = Object.keys(value as Record<string, unknown>);
+    return { valueType: "object", keyCount: keys.length, keys: keys.slice(0, 25) };
+  }
+
+  return String(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringArrayField(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string").slice(0, 50)
+    : [];
+}
+
+function summarizeObject(value: unknown): Record<string, unknown> | undefined {
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const keys = Object.keys(record).slice(0, 50);
+  return {
+    keyCount: Object.keys(record).length,
+    keys,
+  };
+}
+
 function applyInstructionHierarchyToPrompt(
   enforcer: InstructionHierarchyEnforcer,
   prompt: any[],
   context: SecurityContext,
   mode: PromptSecurityMode,
+  config: VercelAiClawdstrikeConfig,
 ): any[] {
   const inputs = prompt
     .map((msg, idx) => {
@@ -658,7 +869,7 @@ function applyInstructionHierarchyToPrompt(
 
   const result = enforcer.enforce(inputs as any);
 
-  context.addAuditEvent({
+  recordPromptSecurityAuditEvent(config, context, {
     id: createEventId("psih"),
     type: "prompt_security_instruction_hierarchy",
     timestamp: new Date(),
@@ -724,6 +935,7 @@ function applyInstructionHierarchyToPrompt(
 
 async function applyPromptWatermark(
   runtime: PromptSecurityRuntime,
+  config: VercelAiClawdstrikeConfig,
   prompt: any[],
   context: SecurityContext,
 ): Promise<any[]> {
@@ -737,7 +949,7 @@ async function applyPromptWatermark(
   const { WatermarkExtractor } = await import("@clawdstrike/sdk");
   const fingerprint = new WatermarkExtractor().fingerprint(watermarked.watermark);
 
-  context.addAuditEvent({
+  recordPromptSecurityAuditEvent(config, context, {
     id: createEventId("pswm"),
     type: "prompt_security_watermark",
     timestamp: new Date(),
@@ -760,6 +972,7 @@ type SanitizerStreamRef = { stream: SanitizationStream | null };
 
 function sanitizeStreamChunkIfNeeded(
   runtime: PromptSecurityRuntime | null,
+  config: VercelAiClawdstrikeConfig,
   streamRef: SanitizerStreamRef | null,
   chunk: any,
   context: SecurityContext,
@@ -793,7 +1006,7 @@ function sanitizeStreamChunkIfNeeded(
     streamRef.stream = null;
 
     if (final.wasRedacted) {
-      context.addAuditEvent({
+      recordPromptSecurityAuditEvent(config, context, {
         id: createEventId("psos"),
         type: "prompt_security_output_sanitized",
         timestamp: new Date(),
@@ -824,7 +1037,7 @@ function sanitizeStreamChunkIfNeeded(
     if (typeof toolResult === "string") {
       const r = runtime.outputSanitizer.sanitize(toolResult);
       if (r.wasRedacted) {
-        context.addAuditEvent({
+        recordPromptSecurityAuditEvent(config, context, {
           id: createEventId("psos"),
           type: "prompt_security_output_sanitized",
           timestamp: new Date(),
@@ -933,6 +1146,7 @@ function extractMessageText(msg: any): string {
 
 function maybeSanitizeGeneratedText(
   runtime: PromptSecurityRuntime | null,
+  config: VercelAiClawdstrikeConfig,
   result: any,
   context: SecurityContext,
 ): void {
@@ -945,7 +1159,7 @@ function maybeSanitizeGeneratedText(
 
   result.text = r.sanitized;
   result.__clawdstrike_redacted = true;
-  context.addAuditEvent({
+  recordPromptSecurityAuditEvent(config, context, {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     type: "prompt_security_output_sanitized",
     timestamp: new Date(),

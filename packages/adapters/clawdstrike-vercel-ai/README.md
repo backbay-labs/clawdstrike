@@ -94,6 +94,10 @@ const model = security.wrapLanguageModel(openai('gpt-4o-mini'));
 Notes:
 - Prompt-security blocks throw `ClawdstrikePromptSecurityError` (no raw prompt contents included).
 - Prompt-security findings are recorded in `security.getAuditLog()` as `prompt_security_*` audit events.
+- When adapter-core local EDR publishing is enabled through `config.edr` or
+  `CLAWDSTRIKE_ADAPTER_CORE_EDR=1`, prompt-security audit events are also posted as scrubbed custom
+  `PolicyEvent` records to `/api/v1/agent/edr/policy-events`. These events carry fingerprints,
+  counters, safe detector metadata, and omission markers; raw prompts and model outputs are not sent.
 
 ## Errors
 

@@ -3,6 +3,7 @@ import type { BrokerConfig } from "./broker-types.js";
 import type { SecurityContext } from "./context.js";
 import type { PolicyEngineLike } from "./engine.js";
 import type { InterceptResult, ProcessedOutput } from "./interceptor.js";
+import type { LocalEdrConfig } from "./local-edr-publisher.js";
 import type { ClawdstrikeConfig, Decision, PolicyEvent } from "./types.js";
 
 export interface FrameworkAdapter<TContext = unknown> {
@@ -38,6 +39,7 @@ export interface AdapterConfig extends ClawdstrikeConfig {
   translateToolCall?: ToolCallTranslator;
   broker?: BrokerConfig;
   inbound?: InboundConfig;
+  edr?: LocalEdrConfig;
   excludedTools?: string[];
   audit?: AuditConfig;
   handlers?: EventHandlers;
@@ -109,7 +111,9 @@ export interface InboundMessageTranslationInput {
   contextMetadata?: Record<string, unknown>;
 }
 
-export type InboundMessageTranslator = (input: InboundMessageTranslationInput) => PolicyEvent | null;
+export type InboundMessageTranslator = (
+  input: InboundMessageTranslationInput,
+) => PolicyEvent | null;
 
 export interface InboundConfig {
   enabled?: boolean;

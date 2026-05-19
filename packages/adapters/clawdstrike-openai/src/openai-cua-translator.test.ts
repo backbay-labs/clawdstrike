@@ -86,6 +86,37 @@ describe("openAICuaTranslator", () => {
     }
   });
 
+  it("preserves browser download metadata for local EDR enrichment", () => {
+    const translated = openAICuaTranslator({
+      framework: "openai",
+      toolName: "computer_use",
+      parameters: {
+        action: "file_download",
+        browser: "chromium",
+        downloadPath: "/Users/alice/Downloads/payload.zip",
+        sourceUrl: "https://downloads.example.invalid/payload.zip?token=MY_RAW_SECRET",
+        transferSize: "4096",
+      },
+      rawInput: {},
+      sessionId: "sess-download-1",
+      contextMetadata: {},
+    });
+
+    expect(translated).not.toBeNull();
+    expect(translated?.eventType).toBe("remote.file_transfer");
+    expect(translated?.data.type).toBe("cua");
+    if (translated?.data.type === "cua") {
+      expect(translated.data.cuaAction).toBe("file_transfer");
+      expect(translated.data.direction).toBe("download");
+      expect(translated.data.transfer_size).toBe(4096);
+      expect(translated.data.browser).toBe("chromium");
+      expect(translated.data.downloadPath).toBe("/Users/alice/Downloads/payload.zip");
+      expect(translated.data.sourceUrl).toBe(
+        "https://downloads.example.invalid/payload.zip?token=MY_RAW_SECRET",
+      );
+    }
+  });
+
   it("throws on unknown OpenAI CUA action", () => {
     expect(() =>
       openAICuaTranslator({

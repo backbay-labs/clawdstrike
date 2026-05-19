@@ -1,6 +1,7 @@
 import type { SecurityContext, ToolInterceptor } from "@clawdstrike/adapter-core";
 import {
   createSecurityContext,
+  type LocalEdrConfig,
   resolveInterceptor,
   type SecuritySource,
   wrapExecuteWithInterceptor,
@@ -15,6 +16,7 @@ export type VercelAiToolSet = Record<string, VercelAiToolLike>;
 export interface SecureToolsOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
+  edr?: LocalEdrConfig;
 }
 
 /**
@@ -34,7 +36,10 @@ export function secureTools<TTools extends Record<string, VercelAiToolLike>>(
   source: SecuritySource,
   options?: SecureToolsOptions,
 ): TTools {
-  const interceptor: ToolInterceptor = resolveInterceptor(source);
+  const interceptor: ToolInterceptor = resolveInterceptor(
+    source,
+    options?.edr ? { edr: options.edr } : undefined,
+  );
 
   const defaultContext =
     options?.context ??

@@ -113,6 +113,49 @@ function maybeTransferSize(parameters: Record<string, unknown>): number | undefi
   return undefined;
 }
 
+function deriveTransferMetadata(
+  parameters: Record<string, unknown>,
+  direction: "upload" | "download",
+): Partial<CuaEventData> {
+  const transferSize = maybeTransferSize(parameters);
+  const path = firstNonEmptyString([
+    parameters.path,
+    parameters.file_path,
+    parameters.filePath,
+    parameters.local_path,
+    parameters.localPath,
+    parameters.destination_path,
+    parameters.destinationPath,
+    parameters.download_path,
+    parameters.downloadPath,
+  ]);
+  const sourceUrl = firstNonEmptyString([
+    parameters.source_url,
+    parameters.sourceUrl,
+    parameters.url,
+    parameters.href,
+  ]);
+  const browser = firstNonEmptyString([
+    parameters.browser,
+    parameters.browser_name,
+    parameters.browserName,
+  ]);
+
+  const metadata: Partial<CuaEventData> = {
+    direction,
+    ...(transferSize !== undefined ? { transfer_size: transferSize } : {}),
+  };
+  if (browser) (metadata as Record<string, unknown>).browser = browser;
+  if (path) {
+    (metadata as Record<string, unknown>).path = path;
+    if (direction === "download") {
+      (metadata as Record<string, unknown>).downloadPath = path;
+    }
+  }
+  if (sourceUrl) (metadata as Record<string, unknown>).sourceUrl = sourceUrl;
+  return metadata;
+}
+
 function maybePort(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
     const port = Math.trunc(value);
@@ -297,38 +340,26 @@ export function createCuaTranslator(config: CuaTranslatorConfig): ToolCallTransl
         });
       case "clipboard_write":
       case "write_clipboard":
-        return withAction(
-          factory.createCuaClipboardEvent(sessionId, "write"),
-          "clipboard_write",
-          { direction: "write" },
-        );
+        return withAction(factory.createCuaClipboardEvent(sessionId, "write"), "clipboard_write", {
+          direction: "write",
+        });
       case "file_transfer":
       case "file_upload":
       case "upload": {
-        const transferSize = maybeTransferSize(params);
+        const transferMeta = deriveTransferMetadata(params, "upload");
         return withAction(
-          factory.createCuaFileTransferEvent(sessionId, "upload", {
-            ...(transferSize !== undefined ? { transfer_size: transferSize } : {}),
-          }),
+          factory.createCuaFileTransferEvent(sessionId, "upload", transferMeta),
           "file_transfer",
-          {
-            direction: "upload",
-            ...(transferSize !== undefined ? { transfer_size: transferSize } : {}),
-          },
+          transferMeta,
         );
       }
       case "file_download":
       case "download": {
-        const transferSize = maybeTransferSize(params);
+        const transferMeta = deriveTransferMetadata(params, "download");
         return withAction(
-          factory.createCuaFileTransferEvent(sessionId, "download", {
-            ...(transferSize !== undefined ? { transfer_size: transferSize } : {}),
-          }),
+          factory.createCuaFileTransferEvent(sessionId, "download", transferMeta),
           "file_transfer",
-          {
-            direction: "download",
-            ...(transferSize !== undefined ? { transfer_size: transferSize } : {}),
-          },
+          transferMeta,
         );
       }
       case "session_share":
