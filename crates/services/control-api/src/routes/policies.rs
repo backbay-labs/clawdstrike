@@ -1327,14 +1327,21 @@ async fn approve_policy_proposal(
         }));
     }
 
-    let active_policy = policy_distribution::upsert_active_policy_with_executor(
+    let active_policy = policy_distribution::upsert_active_policy_after_version_with_executor(
         &mut *tx,
         auth.tenant_id,
         &proposal.policy_yaml,
         proposal.description.as_deref(),
+        proposal.base_active_policy_version,
     )
     .await
-    .map_err(ApiError::Database)?;
+    .map_err(ApiError::Database)?
+    .ok_or_else(|| {
+        ApiError::Conflict(format!(
+            "policy proposal {} was based on active policy version {}, but the active policy changed before deployment could be recorded; resubmit the proposal",
+            proposal.id, proposal.base_active_policy_version
+        ))
+    })?;
     let deployment_id = Uuid::new_v4();
 
     let row = sqlx::query::query(

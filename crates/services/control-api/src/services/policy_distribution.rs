@@ -156,6 +156,76 @@ where
     row_to_active_policy(row)
 }
 
+pub async fn upsert_active_policy_after_version_with_executor<'e, E>(
+    executor: E,
+    tenant_id: Uuid,
+    policy_yaml: &str,
+    description: Option<&str>,
+    expected_base_version: i64,
+) -> Result<Option<ActiveTenantPolicy>, sqlx::error::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let checksum = checksum_sha256_hex(policy_yaml);
+    let row = sqlx::query::query(
+        r#"WITH updated AS (
+               UPDATE tenant_active_policies
+               SET policy_yaml = $2,
+                   checksum_sha256 = $3,
+                   description = $4,
+                   version = tenant_active_policies.version + 1,
+                   updated_at = now()
+               WHERE tenant_id = $1
+                 AND version = $5
+               RETURNING tenant_id, policy_yaml, checksum_sha256, description, version, updated_at
+           ),
+           inserted AS (
+               INSERT INTO tenant_active_policies (
+                   tenant_id,
+                   policy_yaml,
+                   checksum_sha256,
+                   description,
+                   version
+               )
+               SELECT $1, $2, $3, $4, 1
+               WHERE $5 = 0
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM tenant_active_policies
+                     WHERE tenant_id = $1
+                 )
+               ON CONFLICT (tenant_id) DO NOTHING
+               RETURNING tenant_id, policy_yaml, checksum_sha256, description, version, updated_at
+           ),
+           upsert AS (
+               SELECT *
+               FROM updated
+               UNION ALL
+               SELECT *
+               FROM inserted
+           )
+           SELECT u.tenant_id,
+                  t.slug AS tenant_slug,
+                  u.policy_yaml,
+                  u.checksum_sha256,
+                  u.description,
+                  u.version,
+                  u.updated_at
+           FROM upsert AS u
+           JOIN tenants AS t
+             ON t.id = u.tenant_id"#,
+    )
+    .bind(tenant_id)
+    .bind(policy_yaml)
+    .bind(checksum)
+    .bind(description)
+    .bind(expected_base_version)
+    .fetch_optional(executor)
+    .await?;
+
+    row.map(row_to_active_policy).transpose()
+}
+
 pub async fn fetch_active_policy_by_tenant_id(
     db: &PgPool,
     tenant_id: Uuid,
