@@ -1,6 +1,9 @@
 use super::super::super::{
     actor::EndpointPolicySnapshot,
-    deception::{DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan, DeceptionRotationReport},
+    deception::{
+        DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan,
+        DeceptionRotationReport,
+    },
     sensor_state::EndpointSensorState,
 };
 pub struct EndpointDeceptionMaterializationReceiptInput<'a> {
@@ -36,4 +39,3 @@ pub struct EndpointDeceptionRotationReceiptInput<'a> {
     pub new_plan: &'a DeceptionPlan,
     pub report: &'a DeceptionRotationReport,
 }
-

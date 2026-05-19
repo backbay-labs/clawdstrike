@@ -13,6 +13,7 @@ public final class EndpointSecurityMonitor {
     public static let authorizationContract = "macos_endpoint_security_auth_contract"
     public static let authorizationModel = "auth_open_point_in_time"
 
+    private let stateLock = NSLock()
     private var installState: SystemExtensionInstallState
     private var approval: SystemExtensionApproval
     private var providerActive: Bool
@@ -39,22 +40,24 @@ public final class EndpointSecurityMonitor {
     }
 
     public func recordAuthorization(_ event: AuthorizationEvent) {
-        switch event.decision {
-        case .allow:
-            counters.authOpenAllowCount += 1
-        case .deny:
-            counters.authOpenDenyCount += 1
-        }
+        withLockedState {
+            switch event.decision {
+            case .allow:
+                counters.authOpenAllowCount += 1
+            case .deny:
+                counters.authOpenDenyCount += 1
+            }
 
-        if event.notifyObserved {
-            counters.notifyOpenCount += 1
-        }
+            if event.notifyObserved {
+                counters.notifyOpenCount += 1
+            }
 
-        if event.exceededDeadline {
-            counters.deadlineMissCount += 1
-        } else {
-            healthyObservationSeen = true
-            recordHealthyObservation(at: event.observedAt ?? Date())
+            if event.exceededDeadline {
+                counters.deadlineMissCount += 1
+            } else {
+                healthyObservationSeen = true
+                recordHealthyObservationLocked(at: event.observedAt ?? Date())
+            }
         }
     }
 
@@ -63,8 +66,10 @@ public final class EndpointSecurityMonitor {
         evidencePath: String,
         detail: String = "EndpointSecurity reported dropped enforcement events."
     ) {
-        counters.droppedEventCount += count
-        addEvidence(kind: "dropped_events", path: evidencePath, detail: detail)
+        withLockedState {
+            counters.droppedEventCount += count
+            addEvidenceLocked(kind: "dropped_events", path: evidencePath, detail: detail)
+        }
     }
 
     public func setFullDiskAccessGranted(
@@ -72,10 +77,12 @@ public final class EndpointSecurityMonitor {
         evidencePath: String? = nil,
         detail: String = "Full Disk Access is missing for the EndpointSecurity host."
     ) {
-        fullDiskAccessGranted = granted
-        if !granted {
-            if let evidencePath {
-                addEvidence(kind: "missing_full_disk_access", path: evidencePath, detail: detail)
+        withLockedState {
+            fullDiskAccessGranted = granted
+            if !granted {
+                if let evidencePath {
+                    addEvidenceLocked(kind: "missing_full_disk_access", path: evidencePath, detail: detail)
+                }
             }
         }
     }
@@ -85,16 +92,20 @@ public final class EndpointSecurityMonitor {
         evidencePath: String? = nil,
         detail: String = "EndpointSecurity provider is installed but inactive."
     ) {
-        providerActive = active
-        if !active {
-            if let evidencePath {
-                addEvidence(kind: "inactive_provider", path: evidencePath, detail: detail)
+        withLockedState {
+            providerActive = active
+            if !active {
+                if let evidencePath {
+                    addEvidenceLocked(kind: "inactive_provider", path: evidencePath, detail: detail)
+                }
             }
         }
     }
 
     public func setInstallState(_ state: SystemExtensionInstallState) {
-        installState = state
+        withLockedState {
+            installState = state
+        }
     }
 
     public func setApproval(
@@ -102,34 +113,38 @@ public final class EndpointSecurityMonitor {
         evidencePath: String? = nil,
         detail: String = "System extension approval is blocked or missing."
     ) {
-        approval = value
-        if value == .approvalBlocked {
-            if let evidencePath {
-                addEvidence(kind: "approval_blocked", path: evidencePath, detail: detail)
+        withLockedState {
+            approval = value
+            if value == .approvalBlocked {
+                if let evidencePath {
+                    addEvidenceLocked(kind: "approval_blocked", path: evidencePath, detail: detail)
+                }
             }
         }
     }
 
     public func snapshot() -> EndpointSecurityStatusReport {
-        let degradedReasons = currentDegradedReasons()
-        let providerState = currentProviderState()
-        let hostStatus = HostEndpointSecurityStatusPatch(
-            installState: installState,
-            approval: approval,
-            endpointSecurity: HostProviderStatus(runtime: currentHostRuntimeState())
-        )
+        withLockedState {
+            let degradedReasons = currentDegradedReasons()
+            let providerState = currentProviderState()
+            let hostStatus = HostEndpointSecurityStatusPatch(
+                installState: installState,
+                approval: approval,
+                endpointSecurity: HostProviderStatus(runtime: currentHostRuntimeState())
+            )
 
-        return EndpointSecurityStatusReport(
-            contract: Self.authorizationContract,
-            authorizationModel: Self.authorizationModel,
-            fdInjectionEquivalent: false,
-            failOpenPossible: true,
-            hostStatus: hostStatus,
-            providerState: providerState,
-            counters: counters,
-            degradedReasons: degradedReasons,
-            evidencePaths: evidencePaths
-        )
+            return EndpointSecurityStatusReport(
+                contract: Self.authorizationContract,
+                authorizationModel: Self.authorizationModel,
+                fdInjectionEquivalent: false,
+                failOpenPossible: true,
+                hostStatus: hostStatus,
+                providerState: providerState,
+                counters: counters,
+                degradedReasons: degradedReasons,
+                evidencePaths: evidencePaths
+            )
+        }
     }
 
     public static func liveReport() -> EndpointSecurityStatusReport {
@@ -330,11 +345,23 @@ public final class EndpointSecurityMonitor {
         return reasons
     }
 
-    private func recordHealthyObservation(at date: Date) {
+    private func withLockedState<T>(_ body: () -> T) -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return body()
+    }
+
+    private func recordHealthyObservationLocked(at date: Date) {
         lastHealthyTimestamp = ISO8601DateFormatter().string(from: date)
     }
 
     private func addEvidence(kind: String, path: String, detail: String) {
+        withLockedState {
+            addEvidenceLocked(kind: kind, path: path, detail: detail)
+        }
+    }
+
+    private func addEvidenceLocked(kind: String, path: String, detail: String) {
         let artifact = EvidenceArtifact(kind: kind, path: path, detail: detail)
         if !evidencePaths.contains(artifact) {
             evidencePaths.append(artifact)
@@ -451,6 +478,8 @@ public struct EndpointSecurityAgentEvent: Codable, Equatable {
     public var reason: String?
     public var deadlineMissed: Bool?
     public var deadlineMs: UInt64?
+    public var droppedEventCount: UInt64?
+    public var deadlineMissCount: UInt64?
     public var metadata: [String: String]
 
     public init(
@@ -467,6 +496,8 @@ public struct EndpointSecurityAgentEvent: Codable, Equatable {
         reason: String? = nil,
         deadlineMissed: Bool? = nil,
         deadlineMs: UInt64? = nil,
+        droppedEventCount: UInt64? = nil,
+        deadlineMissCount: UInt64? = nil,
         metadata: [String: String] = [:]
     ) {
         self.eventId = eventId
@@ -482,6 +513,8 @@ public struct EndpointSecurityAgentEvent: Codable, Equatable {
         self.reason = reason
         self.deadlineMissed = deadlineMissed
         self.deadlineMs = deadlineMs
+        self.droppedEventCount = droppedEventCount
+        self.deadlineMissCount = deadlineMissCount
         self.metadata = metadata
     }
 }
@@ -570,6 +603,34 @@ public struct EndpointSecurityAgentEventEncoder {
         return EndpointSecurityAgentEventsRequest(events: [delivered])
     }
 
+    public func eventLossRequest(
+        reason: String,
+        droppedEventCount: UInt64,
+        deadlineMissCount: UInt64 = 0,
+        observedAt: Date = Date()
+    ) -> EndpointSecurityAgentEventsRequest {
+        let metadata = [
+            "collectorKind": "endpoint_security",
+            "providerId": "macos.endpoint_security",
+            "deliveryPath": "endpoint_security_agent_publisher",
+            "endpointSecurityEventType": "EVENT_LOSS"
+        ]
+        let delivered = EndpointSecurityAgentEvent(
+            kind: "event_loss",
+            observedAt: iso8601Formatter.string(from: observedAt),
+            process: EndpointSecurityAgentProcess(
+                image: "macos.endpoint_security",
+                commandLine: "endpoint_security event_loss"
+            ),
+            reason: reason,
+            deadlineMissed: deadlineMissCount > 0,
+            droppedEventCount: droppedEventCount,
+            deadlineMissCount: deadlineMissCount,
+            metadata: metadata
+        )
+        return EndpointSecurityAgentEventsRequest(events: [delivered])
+    }
+
     public func encode(_ request: EndpointSecurityAgentEventsRequest) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -618,6 +679,32 @@ public struct EndpointSecurityAgentEventPublisher<Transport: EndpointSecurityAge
         context: EndpointSecurityAgentEventContext
     ) async throws -> EndpointSecurityAgentPublishResponse {
         let request = try encoder.authorizationOpenRequest(event: event, context: context)
+        let body = try encoder.encode(request)
+        let response = try await transport.postEndpointSecurityEvents(
+            body,
+            to: endpointSecurityEventsURL(),
+            bearerToken: bearerToken
+        )
+        guard (200 ..< 300).contains(response.statusCode) else {
+            let bodyText = String(data: response.body, encoding: .utf8) ?? ""
+            throw EndpointSecurityAgentEventPublisherError.rejected(
+                statusCode: response.statusCode,
+                body: bodyText
+            )
+        }
+        return response
+    }
+
+    public func publishEventLoss(
+        reason: String,
+        droppedEventCount: UInt64,
+        deadlineMissCount: UInt64 = 0
+    ) async throws -> EndpointSecurityAgentPublishResponse {
+        let request = encoder.eventLossRequest(
+            reason: reason,
+            droppedEventCount: droppedEventCount,
+            deadlineMissCount: deadlineMissCount
+        )
         let body = try encoder.encode(request)
         let response = try await transport.postEndpointSecurityEvents(
             body,
@@ -873,8 +960,18 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         }
 
         var createdClient: OpaquePointer?
-        let createResult = es_new_client(&createdClient) { [weak self] client, message in
-            self?.handleAuthorizationMessage(client: client, message: message)
+        let monitor = monitor
+        let createResult = es_new_client(&createdClient) { [weak self, monitor] client, message in
+            guard let self else {
+                _ = Self.issueFailOpenAuthOpenResponse(
+                    client: client,
+                    message: message,
+                    monitor: monitor,
+                    detail: "EndpointSecurity runtime was deallocated before AUTH_OPEN handling; fail-open response issued to meet the kernel deadline."
+                )
+                return
+            }
+            self.handleAuthorizationMessage(client: client, message: message)
         }
         guard createResult == ES_NEW_CLIENT_RESULT_SUCCESS else {
             recordClientCreationFailure(createResult)
@@ -908,6 +1005,13 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         monitor.setProviderActive(true)
     }
 
+    deinit {
+        if let activeClient = client {
+            _ = es_delete_client(activeClient)
+        }
+        client = nil
+    }
+
     public func stop() throws {
         guard let activeClient = client else {
             return
@@ -927,8 +1031,8 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         do {
             let request = try adapter.authorizationRequest(from: message)
             let decision = decisionHandler(request)
-            responseAttempted = true
             try adapter.respondAuthorizationOpen(client: client, message: message, decision: decision)
+            responseAttempted = true
             let event = request.authorizationEvent(decision: decision)
             monitor.recordAuthorization(event)
 
@@ -941,15 +1045,51 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
             }
         } catch {
             if message.pointee.event_type == ES_EVENT_TYPE_AUTH_OPEN && !responseAttempted {
-                _ = es_respond_flags_result(client, message, UInt32.max, false)
-                monitor.recordDroppedEvents(
-                    count: 1,
-                    evidencePath: "endpoint-security-runtime",
-                    detail: "EndpointSecurity AUTH_OPEN message could not be mapped; fail-open response issued to meet the kernel deadline."
-                )
+                if let responseDetail = Self.issueFailOpenAuthOpenResponse(
+                    client: client,
+                    message: message,
+                    monitor: monitor,
+                    detail: "EndpointSecurity AUTH_OPEN message could not be mapped or answered; fail-open response issued to meet the kernel deadline."
+                ) {
+                    Task {
+                        do {
+                            _ = try await publisher.publishEventLoss(
+                                reason: "\(error.localizedDescription) \(responseDetail)",
+                                droppedEventCount: 1
+                            )
+                        } catch {
+                            publishErrorHandler?(error)
+                        }
+                    }
+                }
             }
             publishErrorHandler?(error)
         }
+    }
+
+    private static func issueFailOpenAuthOpenResponse(
+        client: OpaquePointer,
+        message: UnsafePointer<es_message_t>,
+        monitor: EndpointSecurityMonitor,
+        detail: String
+    ) -> String? {
+        guard message.pointee.event_type == ES_EVENT_TYPE_AUTH_OPEN else {
+            return nil
+        }
+
+        let result = es_respond_flags_result(client, message, UInt32.max, false)
+        let responseDetail: String
+        if result == ES_RESPOND_RESULT_SUCCESS {
+            responseDetail = detail
+        } else {
+            responseDetail = "\(detail) Fail-open response result: \(endpointSecurityRespondResultName(result))."
+        }
+        monitor.recordDroppedEvents(
+            count: 1,
+            evidencePath: "endpoint-security-runtime",
+            detail: responseDetail
+        )
+        return responseDetail
     }
 
     private func recordClientCreationFailure(_ result: es_new_client_result_t) {

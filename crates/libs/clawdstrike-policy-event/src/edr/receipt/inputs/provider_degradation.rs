@@ -10,4 +10,3 @@ pub struct EndpointProviderDegradationReceiptInput<'a> {
     pub sensor_state: EndpointSensorState,
     pub provider: &'a EndpointProviderState,
 }
-

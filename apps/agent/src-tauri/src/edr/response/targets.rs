@@ -1,14 +1,18 @@
 //! Pure helpers for endpoint response target resolution and path construction.
 
 use anyhow::Result;
-use clawdstrike_policy_event::edr::{CausalGraph, CausalNodeKind, EndpointResponsePlan};
+use clawdstrike_policy_event::edr::{
+    CausalEdgeKind, CausalGraph, CausalNodeKind, EndpointResponsePlan,
+};
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path as FsPath, PathBuf};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProcessSignalTarget {
     pub(crate) pid: u32,
     pub(crate) label: String,
+    depth: usize,
 }
 
 pub(crate) fn quarantine_file_target_path(
@@ -58,27 +62,62 @@ pub(crate) fn suspend_process_tree_targets(
     let mut targets = vec![ProcessSignalTarget {
         pid: root_pid,
         label: root.label.clone(),
+        depth: 0,
     }];
-    for node in graph.nodes.values() {
-        if node.node_id == root.node_id || node.kind != CausalNodeKind::Process {
-            continue;
-        }
-        if let Some(pid) = process_node_pid(node) {
+
+    let mut seen_nodes = BTreeSet::from([root.node_id.clone()]);
+    let mut queue = VecDeque::from([(root.node_id.clone(), 0_usize)]);
+    while let Some((parent_node_id, depth)) = queue.pop_front() {
+        for edge in graph
+            .edges
+            .iter()
+            .filter(|edge| edge.kind == CausalEdgeKind::Spawned && edge.from == parent_node_id)
+        {
+            let child = graph.nodes.get(&edge.to).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "process tree edge {} points at missing child node {}",
+                    edge.edge_id,
+                    edge.to
+                )
+            })?;
+            if child.kind != CausalNodeKind::Process {
+                return Err(anyhow::anyhow!(
+                    "process tree edge {} points at non-process node {} ({:?})",
+                    edge.edge_id,
+                    child.node_id,
+                    child.kind
+                ));
+            }
+            if !seen_nodes.insert(child.node_id.clone()) {
+                continue;
+            }
+            let pid = process_node_pid(child).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "process tree child node {} is missing pid attribute",
+                    child.node_id
+                )
+            })?;
             targets.push(ProcessSignalTarget {
                 pid,
-                label: node.label.clone(),
+                label: child.label.clone(),
+                depth: depth + 1,
             });
+            queue.push_back((child.node_id.clone(), depth + 1));
         }
     }
-    targets.sort_by_key(|target| target.pid);
-    targets.dedup_by_key(|target| target.pid);
-    targets.sort_by_key(|target| {
-        if target.pid == root_pid {
-            (0_u8, target.pid)
-        } else {
-            (1_u8, target.pid)
+
+    let mut pid_sources: BTreeMap<u32, &str> = BTreeMap::new();
+    for target in &targets {
+        if let Some(previous_label) = pid_sources.insert(target.pid, target.label.as_str()) {
+            return Err(anyhow::anyhow!(
+                "process tree contains duplicate pid {} for labels {} and {}; refusing ambiguous live signal target",
+                target.pid,
+                previous_label,
+                target.label
+            ));
         }
-    });
+    }
+    targets.sort_by_key(|target| (target.depth, target.pid));
     Ok(targets)
 }
 
@@ -128,5 +167,134 @@ pub(crate) fn safe_filename_fragment(value: &str) -> String {
         "artifact".to_string()
     } else {
         fragment
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use clawdstrike_policy_event::edr::{CausalEdge, CausalNode};
+    use serde_json::json;
+
+    fn process_node(node_id: &str, label: &str, pid: Option<u32>) -> CausalNode {
+        let mut attributes = BTreeMap::new();
+        if let Some(pid) = pid {
+            attributes.insert("pid".to_string(), json!(pid));
+        }
+        CausalNode {
+            node_id: node_id.to_string(),
+            kind: CausalNodeKind::Process,
+            label: label.to_string(),
+            first_seen: Utc::now(),
+            last_seen: Utc::now(),
+            attributes,
+        }
+    }
+
+    fn file_node(node_id: &str, label: &str) -> CausalNode {
+        CausalNode {
+            node_id: node_id.to_string(),
+            kind: CausalNodeKind::File,
+            label: label.to_string(),
+            first_seen: Utc::now(),
+            last_seen: Utc::now(),
+            attributes: BTreeMap::new(),
+        }
+    }
+
+    fn edge(edge_id: &str, from: &str, to: &str, kind: CausalEdgeKind) -> CausalEdge {
+        CausalEdge {
+            edge_id: edge_id.to_string(),
+            from: from.to_string(),
+            to: to.to_string(),
+            kind,
+            timestamp: Utc::now(),
+            observation_id: "obs-1".to_string(),
+            attributes: BTreeMap::new(),
+        }
+    }
+
+    fn suspend_plan(root_node_id: &str, graph: &CausalGraph) -> EndpointResponsePlan {
+        EndpointResponsePlan::suspend_process_tree_execution(
+            root_node_id,
+            graph,
+            600,
+            "contain process tree",
+        )
+    }
+
+    #[test]
+    fn suspend_process_tree_targets_follow_only_spawned_descendants() {
+        let mut graph = CausalGraph::default();
+        graph
+            .nodes
+            .insert("root".to_string(), process_node("root", "/bin/root", Some(10)));
+        graph.nodes.insert(
+            "child".to_string(),
+            process_node("child", "/bin/child", Some(11)),
+        );
+        graph.nodes.insert(
+            "grandchild".to_string(),
+            process_node("grandchild", "/bin/grandchild", Some(12)),
+        );
+        graph.nodes.insert(
+            "unrelated".to_string(),
+            process_node("unrelated", "/bin/unrelated", Some(99)),
+        );
+        graph
+            .edges
+            .push(edge("e1", "root", "child", CausalEdgeKind::Spawned));
+        graph
+            .edges
+            .push(edge("e2", "child", "grandchild", CausalEdgeKind::Spawned));
+        graph
+            .edges
+            .push(edge("e3", "root", "unrelated", CausalEdgeKind::Related));
+        let plan = suspend_plan("root", &graph);
+
+        let targets = suspend_process_tree_targets(&plan, &graph).expect("targets");
+
+        let pids = targets.iter().map(|target| target.pid).collect::<Vec<_>>();
+        assert_eq!(pids, vec![10, 11, 12]);
+    }
+
+    #[test]
+    fn suspend_process_tree_targets_reject_missing_child_pid() {
+        let mut graph = CausalGraph::default();
+        graph
+            .nodes
+            .insert("root".to_string(), process_node("root", "/bin/root", Some(10)));
+        graph
+            .nodes
+            .insert("child".to_string(), process_node("child", "/bin/child", None));
+        graph
+            .edges
+            .push(edge("e1", "root", "child", CausalEdgeKind::Spawned));
+        let plan = suspend_plan("root", &graph);
+
+        let err = suspend_process_tree_targets(&plan, &graph).expect_err("missing pid must fail");
+
+        assert!(err.to_string().contains("missing pid attribute"));
+    }
+
+    #[test]
+    fn suspend_process_tree_targets_reject_spawned_non_process_child() {
+        let mut graph = CausalGraph::default();
+        graph
+            .nodes
+            .insert("root".to_string(), process_node("root", "/bin/root", Some(10)));
+        graph
+            .nodes
+            .insert("file".to_string(), file_node("file", "/tmp/not-a-process"));
+        graph
+            .edges
+            .push(edge("e1", "root", "file", CausalEdgeKind::Spawned));
+        let plan = suspend_plan("root", &graph);
+
+        let err =
+            suspend_process_tree_targets(&plan, &graph).expect_err("non-process child must fail");
+
+        assert!(err.to_string().contains("non-process node"));
     }
 }

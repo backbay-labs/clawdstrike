@@ -1,6 +1,5 @@
 use super::receipt::inputs::{
-    EndpointPolicyDeltaIdInput, EndpointPolicyEventImpactIdInput,
-    EndpointPolicyEventReplayIdInput,
+    EndpointPolicyDeltaIdInput, EndpointPolicyEventImpactIdInput, EndpointPolicyEventReplayIdInput,
 };
 use super::{evidence_hash_for_value, stable_id};
 

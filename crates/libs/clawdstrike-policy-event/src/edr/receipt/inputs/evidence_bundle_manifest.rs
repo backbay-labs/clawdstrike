@@ -1,8 +1,6 @@
 use super::super::super::{
-    actor::EndpointPolicySnapshot,
-    causal::CausalGraph,
-    receipt::evidence::EndpointEvidenceBundleReference,
-    sensor_state::EndpointSensorState,
+    actor::EndpointPolicySnapshot, causal::CausalGraph,
+    receipt::evidence::EndpointEvidenceBundleReference, sensor_state::EndpointSensorState,
 };
 pub struct EndpointEvidenceBundleManifestReceiptInput<'a> {
     pub local_sequence: u64,
@@ -14,4 +12,3 @@ pub struct EndpointEvidenceBundleManifestReceiptInput<'a> {
     pub bundle: &'a EndpointEvidenceBundleReference,
     pub graph: &'a CausalGraph,
 }
-

@@ -1,7 +1,5 @@
 use super::super::super::{
-    actor::EndpointPolicySnapshot,
-    causal::CausalGraph,
-    sensor_state::EndpointSensorState,
+    actor::EndpointPolicySnapshot, causal::CausalGraph, sensor_state::EndpointSensorState,
     simulation::EndpointPolicySimulationReport,
 };
 pub struct EndpointSimulationReceiptInput<'a> {
@@ -13,4 +11,3 @@ pub struct EndpointSimulationReceiptInput<'a> {
     pub simulation: &'a EndpointPolicySimulationReport,
     pub graph: &'a CausalGraph,
 }
-

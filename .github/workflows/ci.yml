@@ -533,11 +533,13 @@ jobs:
           )
 
           cargo audit --deny warnings "${audit_ignores[@]}"
-          # App lockfiles still carry yanked-only core2 transitives through current
-          # libp2p and Stronghold stacks. Continue denying vulnerabilities,
-          # unmaintained advisories, and unsound advisories while upstreams replace it.
+          # cargo-audit fails vulnerability advisories by default. App lockfiles still
+          # carry yanked-only core2 transitives through current libp2p and Stronghold
+          # stacks, so additionally deny unmaintained and unsound advisories while
+          # upstreams replace it.
           cargo audit --deny unmaintained --deny unsound --file apps/desktop/src-tauri/Cargo.lock "${audit_ignores[@]}"
           cargo audit --deny unmaintained --deny unsound --file apps/workbench/src-tauri/Cargo.lock "${audit_ignores[@]}"
+          cargo audit --deny unmaintained --deny unsound --file apps/agent/src-tauri/Cargo.lock "${audit_ignores[@]}"
 
   license-check:
     name: License Check

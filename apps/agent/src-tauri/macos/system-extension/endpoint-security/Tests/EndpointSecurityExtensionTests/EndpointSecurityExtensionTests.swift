@@ -244,6 +244,35 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(events.first?["eventId"] as? String, "es-auth-open-2")
     }
 
+    func testPublisherPostsEndpointSecurityEventLossForFailOpenRecovery() async throws {
+        let transport = CapturingEndpointSecurityTransport()
+        let publisher = try EndpointSecurityAgentEventPublisher(
+            agentURL: "http://127.0.0.1:9878/",
+            bearerToken: "test-token",
+            transport: transport
+        )
+
+        let response = try await publisher.publishEventLoss(
+            reason: "AUTH_OPEN response failed; fail-open recovery issued.",
+            droppedEventCount: 1
+        )
+
+        XCTAssertEqual(response.statusCode, 200)
+        let body = try XCTUnwrap(transport.body)
+        let payload = try jsonObject(body)
+        let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
+        let delivered = try XCTUnwrap(events.first)
+        XCTAssertEqual(delivered["kind"] as? String, "event_loss")
+        XCTAssertEqual(delivered["reason"] as? String, "AUTH_OPEN response failed; fail-open recovery issued.")
+        XCTAssertEqual(delivered["droppedEventCount"] as? Int, 1)
+        XCTAssertEqual(delivered["deadlineMissCount"] as? Int, 0)
+        XCTAssertEqual(delivered["deadlineMissed"] as? Bool, false)
+        let process = try XCTUnwrap(delivered["process"] as? [String: Any])
+        XCTAssertEqual(process["image"] as? String, "macos.endpoint_security")
+        let metadata = try XCTUnwrap(delivered["metadata"] as? [String: Any])
+        XCTAssertEqual(metadata["endpointSecurityEventType"] as? String, "EVENT_LOSS")
+    }
+
     func testPublisherRejectsRelativeAgentURL() {
         XCTAssertThrowsError(
             try EndpointSecurityAgentEventPublisher(

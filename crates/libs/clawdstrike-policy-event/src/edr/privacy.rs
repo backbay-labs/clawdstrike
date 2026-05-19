@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use super::event::EndpointObservation;
 use super::receipt::evidence::EndpointEvidenceRedactionClass;
-use super::{count_projection_class, project_observation_privacy, telemetry_privacy_report_id_from_values};
+use super::{
+    count_projection_class, project_observation_privacy, telemetry_privacy_report_id_from_values,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -179,4 +181,3 @@ impl EndpointTelemetryPrivacyReport {
         }
     }
 }
-

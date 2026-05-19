@@ -416,10 +416,10 @@ fn policy_rule_diff_validation_command(
     if !command.require_acknowledgement {
         anyhow::bail!("policy_rule_diff_validation commands must require acknowledgement");
     }
-    if command
+    let expires_at = command
         .expires_at
-        .is_some_and(|expires_at| expires_at <= now)
-    {
+        .ok_or_else(|| anyhow::anyhow!("response-action command must include expiresAt"))?;
+    if expires_at <= now {
         anyhow::bail!("response-action command is expired");
     }
     require_equal("target.kind", command.target.kind.trim(), "endpoint")?;
@@ -1009,6 +1009,22 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("expired"));
+    }
+
+    #[test]
+    fn policy_rule_diff_validation_requires_expiry_to_prevent_unbounded_replay() {
+        let mut command = transport_command();
+        command.expires_at = None;
+
+        let err = policy_rule_diff_validation_command(
+            &command,
+            "33333333-3333-4333-8333-333333333333",
+            "agent-1",
+            chrono::Utc::now(),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("expiresAt"));
     }
 
     #[test]

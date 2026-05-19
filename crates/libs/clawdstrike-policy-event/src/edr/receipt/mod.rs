@@ -10,19 +10,24 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use hush_core::{canonicalize_json, sha256, Hash, Provenance, Receipt, SignedReceipt, Signer, Verdict};
+use hush_core::{
+    canonicalize_json, sha256, Hash, Provenance, Receipt, SignedReceipt, Signer, Verdict,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    actor::{EndpointClockState, EndpointDecisionActor, EndpointPolicySnapshot, EndpointReceiptSigner},
     action::EndpointDecisionAction,
+    actor::{
+        EndpointClockState, EndpointDecisionActor, EndpointPolicySnapshot, EndpointReceiptSigner,
+    },
     causal::{CausalGraph, CausalNode},
     deception::{
-        DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan, DeceptionRotationReport,
+        DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan,
+        DeceptionRotationReport,
     },
     detection::{DetectionFinding, DetectionSeverity},
     event::EndpointObservation,
-    privacy::{EndpointTelemetryPrivacyReport},
+    privacy::EndpointTelemetryPrivacyReport,
     response::{
         EndpointResponseAcknowledgementReport, EndpointResponseControlCorrelation,
         EndpointResponseExecutionEffect, EndpointResponseExecutionReport,
@@ -30,8 +35,8 @@ use super::{
     },
     sensor_state::{EndpointProviderState, EndpointSensorState},
     simulation::{
-        EndpointPolicySimulationReport,
         impact_level_for_score, simulation_action_would_block, simulation_context_evidence_value,
+        EndpointPolicySimulationReport,
     },
 };
 use super::{
@@ -2146,8 +2151,6 @@ impl EndpointDecisionReceipt {
         }
     }
 }
-
-
 
 fn require_field_eq(actual: &str, expected: &str, field_name: &str) -> Result<()> {
     if actual == expected {
@@ -6366,4 +6369,3 @@ fn reconstruct_path(from: &str, to: &str, previous: &BTreeMap<String, String>) -
     path.reverse();
     path
 }
-

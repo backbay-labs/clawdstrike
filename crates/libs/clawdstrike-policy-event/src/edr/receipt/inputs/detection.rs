@@ -1,9 +1,6 @@
 use super::super::super::{
-    actor::EndpointPolicySnapshot,
-    causal::CausalGraph,
-    detection::DetectionFinding,
-    event::EndpointObservation,
-    sensor_state::EndpointSensorState,
+    actor::EndpointPolicySnapshot, causal::CausalGraph, detection::DetectionFinding,
+    event::EndpointObservation, sensor_state::EndpointSensorState,
 };
 pub struct EndpointDetectionReceiptInput<'a> {
     pub local_sequence: u64,
@@ -15,4 +12,3 @@ pub struct EndpointDetectionReceiptInput<'a> {
     pub finding: &'a DetectionFinding,
     pub graph: &'a CausalGraph,
 }
-

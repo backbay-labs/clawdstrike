@@ -21,5 +21,3 @@ pub struct EndpointFlightRecorderCompactionReport {
     pub protected_count: usize,
     pub records: Vec<EndpointFlightRecorderCompactionRecord>,
 }
-
-

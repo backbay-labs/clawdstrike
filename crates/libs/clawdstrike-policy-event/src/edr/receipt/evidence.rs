@@ -51,7 +51,6 @@ impl EndpointReceiptEvidence {
     }
 }
 
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct EndpointGraphReference {
@@ -172,4 +171,3 @@ impl Default for EndpointEvidenceBundleReference {
         }
     }
 }
-

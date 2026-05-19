@@ -706,7 +706,7 @@ pub async fn cmd_run(
 
     let SandboxRunResult {
         child_status,
-        sandbox_attestation,
+        mut sandbox_attestation,
         mut sandbox_failure,
     } = sandbox_run;
 
@@ -716,6 +716,7 @@ pub async fn cmd_run(
         .as_ref()
         .map(|count| count.load(Ordering::Relaxed))
         .unwrap_or(0);
+    apply_dropped_events_to_sandbox_attestation(&mut sandbox_attestation, dropped_events);
     let (effective_sandbox_note, effective_sandbox_failure) = finalize_sandbox_contract_status(
         &sandbox_note,
         sandbox_failure.clone(),
@@ -1052,6 +1053,28 @@ struct SandboxRunResult {
     child_status: std::process::ExitStatus,
     sandbox_attestation: Option<clawdstrike::sandbox::SandboxAttestation>,
     sandbox_failure: Option<String>,
+}
+
+fn apply_dropped_events_to_sandbox_attestation(
+    sandbox_attestation: &mut Option<clawdstrike::sandbox::SandboxAttestation>,
+    dropped_events: usize,
+) {
+    let Some(attestation) = sandbox_attestation.as_mut() else {
+        return;
+    };
+    let dropped_event_count = u64::try_from(dropped_events).unwrap_or(u64::MAX);
+    if dropped_event_count == 0 {
+        return;
+    }
+
+    let total_dropped_events = attestation
+        .runtime
+        .dropped_event_count
+        .saturating_add(dropped_event_count);
+    attestation
+        .runtime
+        .set_dropped_event_count(total_dropped_events);
+    attestation.recompute_status();
 }
 
 fn finalize_sandbox_contract_status(
@@ -2068,6 +2091,37 @@ mod tests {
             failure.as_deref(),
             Some(expected_supervised_degraded_reason())
         );
+    }
+
+    #[test]
+    fn dropped_events_degrade_attestation_before_contract_status_is_finalized() {
+        let caps = nono::CapabilitySet::new().block_network();
+        let mut attestation = Some(clawdstrike::sandbox::build_attestation(
+            &caps,
+            clawdstrike::sandbox::SandboxRuntimeState::supervised_mode(true, true, None),
+        ));
+
+        apply_dropped_events_to_sandbox_attestation(&mut attestation, 2);
+
+        let Some(attestation) = attestation else {
+            panic!("expected attestation to remain present");
+        };
+        assert_eq!(attestation.runtime.dropped_event_count, 2);
+        assert!(attestation
+            .runtime
+            .degraded_reasons
+            .iter()
+            .any(|reason| reason == "dropped_enforcement_events"));
+        assert_eq!(
+            attestation.enforcement_level,
+            clawdstrike::sandbox::EnforcementLevel::Degraded
+        );
+        assert!(!attestation.enforced);
+
+        let (note, failure) =
+            finalize_sandbox_contract_status("nono+supervised", None, Some(&attestation));
+        assert_eq!(note, "nono+supervised-degraded");
+        assert_eq!(failure.as_deref(), Some("dropped_enforcement_events"));
     }
 
     #[test]

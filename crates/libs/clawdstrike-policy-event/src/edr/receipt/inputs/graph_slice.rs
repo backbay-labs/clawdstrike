@@ -1,7 +1,5 @@
 use super::super::super::{
-    actor::EndpointPolicySnapshot,
-    causal::CausalGraph,
-    sensor_state::EndpointSensorState,
+    actor::EndpointPolicySnapshot, causal::CausalGraph, sensor_state::EndpointSensorState,
 };
 pub struct EndpointGraphSliceReceiptInput<'a> {
     pub local_sequence: u64,
@@ -13,4 +11,3 @@ pub struct EndpointGraphSliceReceiptInput<'a> {
     pub slice_kind: &'a str,
     pub graph: &'a CausalGraph,
 }
-

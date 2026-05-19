@@ -34,4 +34,3 @@ pub struct DetectionFinding {
     pub tags: Vec<String>,
     pub remediation: String,
 }
-

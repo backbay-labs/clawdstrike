@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::action::EndpointDecisionAction;
 use super::causal::{CausalGraph, CausalNode, CausalNodeKind};
 use super::receipt::evidence::EndpointGraphReference;
-use super::{stable_id};
+use super::stable_id;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
@@ -557,4 +557,3 @@ fn label_looks_like_developer_network(label: &str) -> bool {
     .iter()
     .any(|needle| lower.contains(needle))
 }
-

@@ -3,22 +3,22 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::super::deception::{DeceptionPlan, HoneyArtifact, HoneyArtifactKind};
+use super::super::event::{
+    CredentialKind, EndpointEvent, EndpointObservation, FileOperation, PackageManager,
+};
+use super::super::process::EndpointProcess;
 use super::super::{
     cloud_cli_name, cloud_credential_env_keys, command_looks_like_package_manager,
-    credential_kind_is_developer_secret, ev, finding, FindingRule, honey_artifact,
+    credential_kind_is_developer_secret, ev, finding, honey_artifact,
     honey_artifact_match_evidence, is_install_phase, normalize_hostname, normalize_path_string,
     opt_ev, package_registry_cli_name, package_registry_credential_env_keys,
     path_is_launch_persistence, path_is_user_writable_or_download,
     path_looks_like_browser_extension, path_looks_like_developer_secret, stable_id,
     string_field_nested, suspicious_cloud_cli_reason, suspicious_package_registry_cli_reason,
-    suspicious_script_reason,
+    suspicious_script_reason, FindingRule,
 };
 use super::finding::{DetectionEvidence, DetectionFinding, DetectionSeverity};
-use super::super::event::{
-    CredentialKind, EndpointEvent, EndpointObservation, FileOperation, PackageManager,
-};
-use super::super::deception::{DeceptionPlan, HoneyArtifact, HoneyArtifactKind};
-use super::super::process::EndpointProcess;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]

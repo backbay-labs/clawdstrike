@@ -1,7 +1,4 @@
-use super::super::super::{
-    actor::EndpointPolicySnapshot,
-    sensor_state::EndpointSensorState,
-};
+use super::super::super::{actor::EndpointPolicySnapshot, sensor_state::EndpointSensorState};
 pub struct EndpointPolicyEventReplayReceiptInput<'a> {
     pub local_sequence: u64,
     pub endpoint_id: &'a str,
@@ -30,4 +27,3 @@ pub struct EndpointPolicyEventReplayIdInput<'a> {
     pub blocked_count: u64,
     pub track_posture: bool,
 }
-

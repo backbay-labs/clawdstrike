@@ -1,7 +1,4 @@
-use super::super::super::{
-    actor::EndpointPolicySnapshot,
-    sensor_state::EndpointSensorState,
-};
+use super::super::super::{actor::EndpointPolicySnapshot, sensor_state::EndpointSensorState};
 pub struct EndpointPolicyEventImpactReceiptInput<'a> {
     pub local_sequence: u64,
     pub endpoint_id: &'a str,
@@ -36,4 +33,3 @@ pub struct EndpointPolicyEventImpactIdInput<'a> {
     pub allow_to_block_count: u64,
     pub track_posture: bool,
 }
-

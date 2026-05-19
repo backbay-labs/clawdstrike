@@ -51,4 +51,3 @@ pub struct EndpointResponseAcknowledgementReceiptInput<'a> {
     pub acknowledgement: &'a EndpointResponseAcknowledgementReport,
     pub graph: &'a CausalGraph,
 }
-

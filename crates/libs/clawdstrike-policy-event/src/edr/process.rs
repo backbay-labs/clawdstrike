@@ -94,4 +94,3 @@ impl EndpointProcess {
         stable_id("node", [key.as_str()])
     }
 }
-

@@ -26,9 +26,14 @@ pub use causal::*;
 pub use deception::*;
 pub use detection::*;
 pub use event::*;
+pub use flight_recorder::compaction::{
+    EndpointFlightRecorderCompactionRecord, EndpointFlightRecorderCompactionReport,
+};
+pub use flight_recorder::index::{
+    EndpointFlightRecorderGraphEdgeIndexEntry, EndpointFlightRecorderGraphNodeIndexEntry,
+    EndpointFlightRecorderHistoryIndexEntry,
+};
 pub use flight_recorder::*;
-pub use flight_recorder::compaction::{EndpointFlightRecorderCompactionRecord, EndpointFlightRecorderCompactionReport};
-pub use flight_recorder::index::{EndpointFlightRecorderHistoryIndexEntry, EndpointFlightRecorderGraphNodeIndexEntry, EndpointFlightRecorderGraphEdgeIndexEntry};
 pub use ids::*;
 pub use privacy::*;
 pub use process::*;
@@ -53,7 +58,6 @@ use crate::event::{
     CommandEventData, CustomEventData, FileEventData, NetworkEventData, PolicyEvent,
     PolicyEventData, PolicyEventType, SecretEventData, ToolEventData,
 };
-
 
 pub(crate) const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 pub(crate) const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -86,8 +90,10 @@ pub(crate) fn endpoint_decision_actor_content_hash(actor: &EndpointDecisionActor
     sha256(canonical.as_bytes()).to_hex_prefixed()
 }
 
-
-pub(crate) fn observation_age_seconds(observation: &EndpointObservation, now: DateTime<Utc>) -> u64 {
+pub(crate) fn observation_age_seconds(
+    observation: &EndpointObservation,
+    now: DateTime<Utc>,
+) -> u64 {
     now.signed_duration_since(observation.timestamp)
         .num_seconds()
         .max(0) as u64
@@ -1586,7 +1592,10 @@ fn command_looks_like_package_manager(image: &str, args: &[String]) -> bool {
         || args.contains(" cargo ")
 }
 
-pub(crate) fn package_registry_cli_name<'a>(image: &'a str, args: &'a [String]) -> Option<&'static str> {
+pub(crate) fn package_registry_cli_name<'a>(
+    image: &'a str,
+    args: &'a [String],
+) -> Option<&'static str> {
     let image = image.to_ascii_lowercase();
     let first_arg = args
         .first()
@@ -2235,7 +2244,11 @@ fn evidence_hash_for_value(value: impl AsRef<str>) -> String {
     sha256(value.as_ref().as_bytes()).to_hex_prefixed()
 }
 
-pub(crate) fn insert_json<T: Serialize>(map: &mut BTreeMap<String, serde_json::Value>, key: &str, value: T) {
+pub(crate) fn insert_json<T: Serialize>(
+    map: &mut BTreeMap<String, serde_json::Value>,
+    key: &str,
+    value: T,
+) {
     if let Ok(value) = serde_json::to_value(value) {
         if !value.is_null() {
             map.insert(key.to_string(), value);
@@ -2350,7 +2363,6 @@ fn response_execution_transition_id_from_reason_hash(
         ],
     )
 }
-
 
 fn reconstruct_path(from: &str, to: &str, previous: &BTreeMap<String, String>) -> Vec<String> {
     let mut path = vec![to.to_string()];

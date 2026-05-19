@@ -7,11 +7,11 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    create_new_honey_file, ensure_safe_relative_path, honey_artifact,
-    hostname_from_url_like, normalize_hostname, normalize_path_string, stable_id,
-};
 use super::event::{EndpointEvent, EndpointObservation};
+use super::{
+    create_new_honey_file, ensure_safe_relative_path, honey_artifact, hostname_from_url_like,
+    normalize_hostname, normalize_path_string, stable_id,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -252,4 +252,3 @@ pub struct DeceptionRotationReport {
     pub registered_artifact_count: usize,
     pub remaining_registered_artifact_count: usize,
 }
-

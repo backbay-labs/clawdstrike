@@ -1,6 +1,5 @@
 use super::super::super::{
-    action::EndpointDecisionAction,
-    actor::EndpointPolicySnapshot,
+    action::EndpointDecisionAction, actor::EndpointPolicySnapshot,
     sensor_state::EndpointSensorState,
 };
 pub struct EndpointPolicyDeltaReceiptInput<'a> {
@@ -43,4 +42,3 @@ pub struct EndpointPolicyDeltaIdInput<'a> {
     pub source_affected_identity_context: &'a str,
     pub source_affected_tool_context: &'a str,
 }
-

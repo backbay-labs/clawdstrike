@@ -89,4 +89,3 @@ pub struct EndpointReceiptSigner {
     pub signer_identity: String,
     pub signer_public_key: Option<String>,
 }
-

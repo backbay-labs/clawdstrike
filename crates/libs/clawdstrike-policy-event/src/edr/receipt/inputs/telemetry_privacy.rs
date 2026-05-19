@@ -1,6 +1,5 @@
 use super::super::super::{
-    actor::EndpointPolicySnapshot,
-    privacy::EndpointTelemetryPrivacyReport,
+    actor::EndpointPolicySnapshot, privacy::EndpointTelemetryPrivacyReport,
     sensor_state::EndpointSensorState,
 };
 pub struct EndpointTelemetryPrivacyReceiptInput<'a> {
@@ -11,4 +10,3 @@ pub struct EndpointTelemetryPrivacyReceiptInput<'a> {
     pub sensor_state: EndpointSensorState,
     pub report: &'a EndpointTelemetryPrivacyReport,
 }
-

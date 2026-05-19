@@ -13,7 +13,16 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::causal::{CausalEdge, CausalEdgeKind, CausalGraph, CausalGraphRecorder, CausalNode, CausalNodeKind};
+use self::compaction::{
+    EndpointFlightRecorderCompactionRecord, EndpointFlightRecorderCompactionReport,
+};
+use self::index::{
+    EndpointFlightRecorderGraphEdgeIndexEntry, EndpointFlightRecorderGraphNodeIndexEntry,
+    EndpointFlightRecorderHistoryIndexEntry,
+};
+use super::causal::{
+    CausalEdge, CausalEdgeKind, CausalGraph, CausalGraphRecorder, CausalNode, CausalNodeKind,
+};
 use super::event::EndpointObservation;
 use super::{
     agent_id_field, approval_id_field, credential_kind_field, event_target_field,
@@ -23,11 +32,6 @@ use super::{
     ENDPOINT_FLIGHT_RECORDER_GRAPH_EDGE_INDEX_SCHEMA_VERSION,
     ENDPOINT_FLIGHT_RECORDER_GRAPH_INDEX_SCHEMA_VERSION,
     ENDPOINT_FLIGHT_RECORDER_HISTORY_INDEX_SCHEMA_VERSION,
-};
-use self::compaction::{EndpointFlightRecorderCompactionRecord, EndpointFlightRecorderCompactionReport};
-use self::index::{
-    EndpointFlightRecorderGraphEdgeIndexEntry, EndpointFlightRecorderGraphNodeIndexEntry,
-    EndpointFlightRecorderHistoryIndexEntry,
 };
 
 /// Durable local flight recorder for endpoint observations.

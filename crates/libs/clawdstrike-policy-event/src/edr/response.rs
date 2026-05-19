@@ -13,8 +13,7 @@ use super::receipt::evidence::{EndpointEvidenceBundleReference, EndpointGraphRef
 use super::receipt::{
     response_acknowledgement_id_from_report_fields,
     response_acknowledgement_id_from_report_fields_with_control,
-    response_execution_effect_binding_digest_from_effects,
-    response_rollback_id_from_effects,
+    response_execution_effect_binding_digest_from_effects, response_rollback_id_from_effects,
 };
 use super::{
     response_execution_id_from_effects, response_execution_transition_id_from_reason_hash,
@@ -1711,4 +1710,3 @@ impl EndpointResponseAcknowledgementReport {
         self
     }
 }
-

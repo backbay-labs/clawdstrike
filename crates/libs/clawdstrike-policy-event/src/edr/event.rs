@@ -3,14 +3,14 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::event::{
-    CommandEventData, CustomEventData, FileEventData, NetworkEventData, PolicyEvent,
-    PolicyEventData, PolicyEventType, SecretEventData, ToolEventData,
-};
 use super::process::EndpointProcess;
 use super::{
     endpoint_event_from_policy_event, metadata_as_btree, process_from_metadata, stable_id,
     string_field,
+};
+use crate::event::{
+    CommandEventData, CustomEventData, FileEventData, NetworkEventData, PolicyEvent,
+    PolicyEventData, PolicyEventType, SecretEventData, ToolEventData,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -161,7 +161,10 @@ pub enum FileOperation {
 }
 
 impl FileOperation {
-    pub(crate) fn from_policy_operation(operation: Option<&str>, event_type: &PolicyEventType) -> Self {
+    pub(crate) fn from_policy_operation(
+        operation: Option<&str>,
+        event_type: &PolicyEventType,
+    ) -> Self {
         match operation
             .map(str::trim)
             .map(str::to_ascii_lowercase)
@@ -551,4 +554,3 @@ fn custom_policy_event_from_observation(
         context: None,
     }
 }
-

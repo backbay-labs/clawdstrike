@@ -18,4 +18,3 @@ pub struct EndpointPolicyDecisionReceiptInput<'a> {
     pub message: Option<&'a str>,
     pub details: Option<&'a serde_json::Value>,
 }
-
