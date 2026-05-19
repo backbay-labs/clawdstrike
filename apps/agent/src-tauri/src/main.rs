@@ -15,6 +15,7 @@ mod approval_sync;
 mod brokerd;
 mod daemon;
 mod decision;
+mod edr;
 mod enrollment;
 mod events;
 mod integrations;

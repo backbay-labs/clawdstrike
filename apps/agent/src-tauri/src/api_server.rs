@@ -95,7 +95,7 @@ const AGENT_API_MAX_BODY_BYTES: usize = 256 * 1024;
 const BROKER_MUTATION_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const EDR_MAX_OBSERVATIONS_PER_REQUEST: usize = 10_000;
 const EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST: usize = 1_000;
-const EDR_MAX_STORED_FINDINGS: usize = 10_000;
+pub(crate) const EDR_MAX_STORED_FINDINGS: usize = 10_000;
 const EDR_MAX_CONTROL_ACK_POSTBACK_RETRIES: usize = 1_000;
 const EDR_MAX_CONTROL_ARCHIVE_UPLOAD_RETRIES: usize = 1_000;
 const EDR_MAX_CONTROL_RECEIPT_UPLOAD_RETRIES: usize = 1_000;
@@ -4114,8 +4114,8 @@ struct EdrDetectionCandidateInput {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrDetectionCandidate {
-    rule_id: String,
+pub(crate) struct EdrDetectionCandidate {
+    pub(crate) rule_id: String,
     action: EndpointDecisionAction,
     description: String,
     root_node_id: String,
@@ -4193,18 +4193,18 @@ struct EdrStagedDetectionsQuery {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrStagedDetectionRecord {
-    staged_detection_id: String,
+pub(crate) struct EdrStagedDetectionRecord {
+    pub(crate) staged_detection_id: String,
     staged_at: chrono::DateTime<chrono::Utc>,
     staged_by: String,
-    stage: String,
+    pub(crate) stage: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cross_window_impact_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cross_window_recommendation_hash: Option<String>,
     note: Option<String>,
     policy: EndpointPolicySnapshot,
-    candidate: EdrDetectionCandidate,
+    pub(crate) candidate: EdrDetectionCandidate,
     recommended_stage: String,
     stage_plan: Vec<EdrDetectionCandidateStage>,
     simulation: EndpointPolicySimulationReport,
@@ -27733,127 +27733,7 @@ fn evidence_bundle_filename(bundle_id: &str) -> Result<String> {
     Ok(format!("{}.json", bundle_id.replace(':', "_")))
 }
 
-struct EndpointStagedDetectionLedger {
-    path: Option<PathBuf>,
-    records: VecDeque<EdrStagedDetectionRecord>,
-}
-
-impl EndpointStagedDetectionLedger {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let records = read_staged_detection_ledger(&path)?;
-        Ok(Self {
-            path: Some(path),
-            records: records.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            records: VecDeque::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn append(&mut self, record: &EdrStagedDetectionRecord) -> Result<()> {
-        self.records.push_back(record.clone());
-        while self.records.len() > EDR_MAX_STORED_FINDINGS {
-            let _ = self.records.pop_front();
-        }
-
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint staged detection ledger directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| format!("open endpoint staged detection ledger {}", path.display()))?;
-        serde_json::to_writer(&mut file, record).with_context(|| {
-            format!(
-                "serialize endpoint staged detection {}",
-                record.staged_detection_id
-            )
-        })?;
-        file.write_all(b"\n").with_context(|| {
-            format!("write endpoint staged detection ledger {}", path.display())
-        })?;
-        file.flush().with_context(|| {
-            format!("flush endpoint staged detection ledger {}", path.display())
-        })?;
-        Ok(())
-    }
-
-    fn read_recent(
-        &self,
-        limit: usize,
-        stage: Option<&str>,
-        rule_id: Option<&str>,
-    ) -> Result<Vec<EdrStagedDetectionRecord>> {
-        let records = self.all()?;
-        Ok(records
-            .into_iter()
-            .rev()
-            .filter(|record| {
-                stage.map_or(true, |stage| record.stage == stage)
-                    && rule_id.map_or(true, |rule_id| record.candidate.rule_id == rule_id)
-            })
-            .take(limit)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect())
-    }
-
-    fn all(&self) -> Result<Vec<EdrStagedDetectionRecord>> {
-        if let Some(path) = &self.path {
-            return read_staged_detection_ledger(path);
-        }
-        Ok(self.records.iter().cloned().collect())
-    }
-}
-
-fn read_staged_detection_ledger(path: &FsPath) -> Result<Vec<EdrStagedDetectionRecord>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err).with_context(|| {
-                format!("read endpoint staged detection ledger {}", path.display())
-            });
-        }
-    };
-
-    let mut records = Vec::new();
-    for (index, line) in contents.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let record: EdrStagedDetectionRecord = serde_json::from_str(line).with_context(|| {
-            format!(
-                "parse endpoint staged detection ledger line {} from {}",
-                index + 1,
-                path.display()
-            )
-        })?;
-        records.push(record);
-    }
-    Ok(records)
-}
+pub(crate) use crate::edr::ledger::EndpointStagedDetectionLedger;
 
 struct EndpointPolicyDeltaStore {
     root: Option<PathBuf>,
