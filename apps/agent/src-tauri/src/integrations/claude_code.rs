@@ -158,6 +158,234 @@ if ! ALLOWED=$(echo "$RESPONSE" | jq -er '.allowed' 2>/dev/null); then
   fail "policy-check returned malformed response"
 fi
 
+publish_developer_activity() {
+  local guard severity secret_target secret_lower secret_kind credential_kind secret_name secret_classifier activity_kind shell_image shell_base target_lower package_manager package_phase cloud_provider cloud_operation
+  guard=$(echo "$RESPONSE" | jq -er '.guard // empty' 2>/dev/null || true)
+  severity=$(echo "$RESPONSE" | jq -er '.severity // empty' 2>/dev/null || true)
+  activity_kind="mcp_tool"
+  shell_image=""
+  package_manager=""
+  package_phase=""
+  cloud_provider=""
+  cloud_operation=""
+
+  if [ "$ACTION_TYPE" = "shell" ]; then
+    activity_kind="shell_command"
+    shell_image=$(printf '%s' "$TARGET" | awk '{print $1}')
+    if [ -z "${shell_image:-}" ]; then
+      shell_image="shell"
+    fi
+    shell_base=$(basename "$shell_image" 2>/dev/null || printf '%s' "$shell_image")
+    shell_base=$(printf '%s' "$shell_base" | sed -E 's/\.(exe|cmd|bat)$//' | tr '[:upper:]' '[:lower:]')
+    target_lower=$(printf '%s' "$TARGET" | tr '[:upper:]' '[:lower:]')
+    case "$shell_base" in
+      npm|pnpm|yarn|pip|pip3|cargo|brew|go|gem)
+        package_manager="$shell_base"
+        if [ "$package_manager" = "pip3" ]; then
+          package_manager="pip"
+        fi
+        case "$target_lower" in
+          *" postinstall"*|*" run postinstall"*|*" run-script postinstall"*) package_phase="postinstall" ;;
+          *" preinstall"*|*" run preinstall"*|*" run-script preinstall"*) package_phase="preinstall" ;;
+          *" prepare"*|*" run prepare"*|*" run-script prepare"*) package_phase="prepare" ;;
+          *" build"*|*" run build"*|*" run-script build"*) package_phase="build" ;;
+          *" install"*|*" ci"*|*" add"*|*" rebuild"*|*" get"*) package_phase="install" ;;
+          *" run"*|*" exec"*|*" dlx"*) package_phase="run" ;;
+          *" test"*) package_phase="test" ;;
+        esac
+        if [ -n "${package_phase:-}" ]; then
+          activity_kind="package_script"
+        fi
+        ;;
+      aws|gcloud|az|gh|vercel|netlify|wrangler|doctl|fly|flyctl|op|vault|doppler|heroku|supabase|kubectl|pulumi|circleci|glab|buildkite-agent|bk)
+        case "$target_lower" in
+          *"secretsmanager get-secret-value"*|*"ssm get-parameter"*|*"ssm get-parameters"*|*"iam create-access-key"*|*"iam put-user-policy"*|*"iam attach-user-policy"*|*"ecr get-login-password"*|*"sts get-session-token"*|*"sts assume-role"*|*"auth print-access-token"*|*"secrets versions access"*|*"iam service-accounts keys create"*|*"keyvault secret show"*|*"keyvault secret download"*|*"account get-access-token"*|*"ad app credential reset"*|*"secret set"*|*"secret put"*|*"secret bulk"*|*"versions secret put"*|*"versions secret bulk"*|*"registry docker-config"*|*"registry login"*|*"kubernetes cluster kubeconfig save"*|*"secrets set"*|*"secrets import"*|*"secrets unset"*|*"secrets list"*|*"tokens create"*|*"tokens revoke"*|*"auth token"*|*"variable set"*|*"variable update"*|*"variable delete"*|*"variable get"*|*"variable list"*|*"variable export"*|*"secret get"*|*"secret create"*|*"secret update"*|*"env pull"*|*"env add"*|*"env rm"*|*"env remove"*|*"env ls"*|*"env:get"*|*"env:list"*|*"env:set"*|*"env:import"*|*"env:unset"*|*"item get"*|*"document get"*|*"op://"*|*"kv get"*|*"read secret/"*|*"token create"*|*"secrets download"*|*"configs tokens create"*|*"config:get"*|*"config:set"*|*"secrets pull"*|*"get secret"*|*"describe secret"*|*"config view --raw"*|*"--show-secrets"*|*"context store-secret"*|*"context remove-secret"*|*"runner token create"*|*"runner token list"*|*" secret"*|*" token"*|*" credential"*|*" access-key"*|*" keyvault"*)
+            activity_kind="cloud_cli"
+            cloud_provider="$shell_base"
+            if [ "$cloud_provider" = "flyctl" ]; then
+              cloud_provider="fly"
+            fi
+            if [ "$cloud_provider" = "buildkite-agent" ] || [ "$cloud_provider" = "bk" ]; then
+              cloud_provider="buildkite"
+            fi
+            cloud_operation=$(printf '%s' "$TARGET" | awk '{for (i=2; i<=NF; i++) { if ($i == "--") { if (i<NF) { print $(i+1); exit } } else if ($i ~ /^--/ && $i !~ /=/) { i++ } else if ($i ~ /^-/) { next } else { print $i; exit } }}')
+            if [ -z "${cloud_operation:-}" ]; then
+              cloud_operation="$shell_base"
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+
+  secret_target=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // .target // .resource // empty' 2>/dev/null || true)
+  if [ -z "${secret_target:-}" ]; then
+    if [ "$ACTION_TYPE" = "shell" ]; then
+      secret_target=$(printf '%s' "$TARGET" | tr ' ' '\n' | grep -E '(^/|^\./|^\.\./|^~|^\.|/\.|\\)' | head -n 1 || true)
+    else
+      secret_target="$TARGET"
+    fi
+  fi
+  secret_lower=$(printf '%s' "$secret_target" | tr '[:upper:]' '[:lower:]')
+  secret_kind=""
+  credential_kind=""
+  secret_classifier=""
+  case "$secret_lower" in
+    *cookie*)
+      secret_kind="browser_cookie"
+      credential_kind="browser_cookie"
+      ;;
+    *ci_token*|*github_token*|*gh_token*|*actions*|*gitlab_token*)
+      secret_kind="ci_token"
+      credential_kind="api_token"
+      ;;
+    *agent-local-token*|*clawdstrike_agent_auth*)
+      secret_kind="local_api_key"
+      credential_kind="api_token"
+      ;;
+    *.aws/credentials*|*gcloud*|*azure*)
+      secret_kind="repo_secret"
+      credential_kind="cloud_credential"
+      ;;
+    *.npmrc*|*.pypirc*|*cargo/credentials*)
+      secret_kind="repo_secret"
+      credential_kind="package_registry_token"
+      ;;
+    *.ssh/*|*id_rsa*|*id_ed25519*)
+      secret_kind="repo_secret"
+      credential_kind="ssh_key"
+      ;;
+    *signing*|*codesign*)
+      secret_kind="repo_secret"
+      credential_kind="signing_key"
+      ;;
+    *.env*|*api_key*|*apikey*|*secret*|*token*)
+      secret_kind="repo_secret"
+      credential_kind="api_token"
+      ;;
+  esac
+
+  if [ "$ACTION_TYPE" = "shell" ]; then
+    case "$shell_base" in
+      npm|pnpm|yarn)
+        case "$target_lower" in
+          *"token list"*|*"token create"*|*"token revoke"*|*"token delete"*)
+            secret_kind="repo_secret"
+            credential_kind="package_registry_token"
+            secret_target="${shell_base}:token"
+            secret_name="${shell_base}-token"
+            secret_classifier="package_registry_token_command"
+            ;;
+          *"config get"*|*"config set"*|*"config delete"*)
+            case "$target_lower" in
+              *"_authtoken"*|*"node_auth_token"*|*"npm_token"*|*"npm_config_"*)
+                secret_kind="repo_secret"
+                credential_kind="package_registry_token"
+                secret_target="${shell_base}:token"
+                secret_name="${shell_base}-token"
+                secret_classifier="package_registry_token_command"
+                ;;
+            esac
+            ;;
+        esac
+        ;;
+    esac
+  fi
+  if [ -z "${secret_name:-}" ]; then
+    secret_name=$(basename "$secret_target" 2>/dev/null || printf '%s' "$secret_target")
+  fi
+
+  if ! DEV_PAYLOAD=$(jq -cn \
+    --arg kind "$activity_kind" \
+    --arg tool_name "$TOOL_NAME" \
+    --arg action_type "$ACTION_TYPE" \
+    --arg target "$TARGET" \
+    --arg session_id "$RUNTIME_AGENT_EXTERNAL_ID" \
+    --arg agent_id "$RUNTIME_AGENT_ID" \
+    --arg workload_id "$RUNTIME_AGENT_KIND" \
+    --arg shell_image "$shell_image" \
+    --arg package_manager "$package_manager" \
+    --arg package_phase "$package_phase" \
+    --arg cloud_provider "$cloud_provider" \
+    --arg cloud_operation "$cloud_operation" \
+    --arg secret_kind "$secret_kind" \
+    --arg secret_target "$secret_target" \
+    --arg secret_name "$secret_name" \
+    --arg secret_classifier "$secret_classifier" \
+    --arg credential_kind "$credential_kind" \
+    --arg guard "$guard" \
+    --arg severity "$severity" \
+    --argjson allowed "$ALLOWED" \
+    --argjson parameters "$TOOL_INPUT" \
+    '
+    def metadata: {
+      collectorKind: "claude_code_hook",
+      policyAllowed: $allowed,
+      policyGuard: $guard,
+      policySeverity: $severity,
+      policyActionType: $action_type
+    };
+    def shell_args: ($target | split(" ") | map(select(length > 0)));
+    def tool_activity:
+      if $kind == "package_script" then {
+        kind: $kind,
+        sessionId: $session_id,
+        agentId: $agent_id,
+        workloadId: $workload_id,
+        manager: $package_manager,
+        phase: $package_phase,
+        script: $target,
+        workingDirectory: ($parameters.cwd? // $parameters.workingDirectory? // $parameters.working_directory? // ""),
+        image: $shell_image,
+        commandLine: $target,
+        metadata: metadata + {shellClassifier: "package_script"}
+      } elif $kind == "cloud_cli" then {
+        kind: $kind,
+        sessionId: $session_id,
+        agentId: $agent_id,
+        workloadId: $workload_id,
+        provider: $cloud_provider,
+        operation: $cloud_operation,
+        args: shell_args,
+        image: $shell_image,
+        commandLine: $target,
+        metadata: metadata + {shellClassifier: "cloud_cli"}
+      } else {
+        kind: $kind,
+        sessionId: $session_id,
+        agentId: $agent_id,
+        workloadId: $workload_id,
+        toolName: $tool_name,
+        action: $tool_name,
+        target: $target,
+        parameters: ($parameters + {target: $target}),
+        image: $shell_image,
+        args: (if $kind == "shell_command" then [$target] else [] end),
+        metadata: metadata
+      } end;
+    def secret_activity: {
+      kind: $secret_kind,
+      sessionId: $session_id,
+      agentId: $agent_id,
+      workloadId: $workload_id,
+      path: $secret_target,
+      name: $secret_name,
+      credentialKind: $credential_kind,
+      metadata: metadata + (if $secret_classifier == "" then {} else {shellClassifier: $secret_classifier} end)
+    };
+    {activities: ([tool_activity] + (if $secret_kind == "" then [] else [secret_activity] end))}
+    ' 2>/dev/null); then
+    return 0
+  fi
+
+  curl -sS --max-time 2 -X POST "${CLAWDSTRIKE_ENDPOINT}/api/v1/agent/edr/developer-activity" \
+    -H "Authorization: Bearer ${CLAWDSTRIKE_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data "$DEV_PAYLOAD" >/dev/null 2>&1 || true
+}
+
+publish_developer_activity || true
+
 if [ "$ALLOWED" = "false" ]; then
   GUARD=$(echo "$RESPONSE" | jq -er '.guard // "unknown"' 2>/dev/null || echo "unknown")
 
@@ -305,6 +533,7 @@ mod tests {
     fn test_hook_script_contains_essentials() {
         assert!(HOOK_SCRIPT.contains("jq -cn"));
         assert!(HOOK_SCRIPT.contains("/api/v1/agent/policy-check"));
+        assert!(HOOK_SCRIPT.contains("/api/v1/agent/edr/developer-activity"));
         assert!(!HOOK_SCRIPT.contains("CLAWDSTRIKE_HOOK_FAIL_OPEN"));
         assert!(HOOK_SCRIPT.contains("ACTION_TYPE=\"mcp_tool\""));
     }
@@ -319,6 +548,54 @@ mod tests {
     fn test_hook_script_handles_unknown_tools_via_mcp_tool_args() {
         assert!(HOOK_SCRIPT.contains("--argjson args \"$TOOL_INPUT\""));
         assert!(HOOK_SCRIPT.contains("Unknown tool: treat as an MCP tool"));
+    }
+
+    #[test]
+    fn test_hook_script_best_effort_publishes_developer_activity() {
+        assert!(HOOK_SCRIPT.contains("publish_developer_activity || true"));
+        assert!(HOOK_SCRIPT.contains("collectorKind: \"claude_code_hook\""));
+        assert!(HOOK_SCRIPT.contains("secret_activity"));
+        assert!(HOOK_SCRIPT.contains("*.npmrc*|*.pypirc*|*cargo/credentials*"));
+        assert!(HOOK_SCRIPT.contains("activity_kind=\"package_script\""));
+        assert!(HOOK_SCRIPT.contains("activity_kind=\"cloud_cli\""));
+        assert!(HOOK_SCRIPT.contains(
+            "aws|gcloud|az|gh|vercel|netlify|wrangler|doctl|fly|flyctl|op|vault|doppler|heroku|supabase|kubectl|pulumi|circleci"
+        ));
+        assert!(HOOK_SCRIPT.contains("*\"secret set\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"secret put\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"registry docker-config\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"secrets set\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"env pull\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"env:get\"*"));
+        assert!(HOOK_SCRIPT.contains("shellClassifier: \"package_script\""));
+        assert!(HOOK_SCRIPT.contains("shellClassifier: \"cloud_cli\""));
+    }
+
+    #[test]
+    fn test_hook_script_classifies_secret_platform_cloud_cli_activity() {
+        assert!(HOOK_SCRIPT.contains(
+            "op|vault|doppler|heroku|supabase|kubectl|pulumi|circleci|glab|buildkite-agent|bk"
+        ));
+        assert!(HOOK_SCRIPT.contains("*\"item get\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"document get\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"secret get\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"kv get\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"secrets download\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"config:get\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"get secret\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"--show-secrets\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"context store-secret\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"variable set\"*"));
+    }
+
+    #[test]
+    fn test_hook_script_classifies_package_registry_token_activity() {
+        assert!(HOOK_SCRIPT.contains("secret_classifier=\"package_registry_token_command\""));
+        assert!(HOOK_SCRIPT.contains("secret_target=\"${shell_base}:token\""));
+        assert!(HOOK_SCRIPT.contains("secret_name=\"${shell_base}-token\""));
+        assert!(HOOK_SCRIPT.contains("*\"token list\"*|*\"token create\"*|*\"token revoke\"*"));
+        assert!(HOOK_SCRIPT.contains("*\"_authtoken\"*|*\"node_auth_token\"*|*\"npm_token\"*"));
+        assert!(HOOK_SCRIPT.contains("shellClassifier: $secret_classifier"));
     }
 
     #[test]

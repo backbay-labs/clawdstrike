@@ -26,6 +26,7 @@ mod openclaw;
 mod policy;
 mod policy_sync;
 mod posture_commands;
+mod response_action_commands;
 mod runtime_registry;
 mod security;
 mod session;
@@ -514,6 +515,8 @@ async fn run_agent<R: Runtime>(
     // If NATS is enabled (either via static config or enrollment), connect and start
     // policy sync, telemetry publishing, and posture command handling.
     let mut approval_request_outbox: Option<Arc<approval_outbox::ApprovalRequestOutbox>> = None;
+    let mut fleet_hunt_publisher: Option<Arc<dyn api_server::FleetHuntEventPublisher>> = None;
+    let mut response_action_nats: Option<Arc<nats_client::NatsClient>> = None;
     let nats_enabled = {
         let guard = settings.read().await;
         guard.nats.enabled
@@ -569,6 +572,9 @@ async fn run_agent<R: Runtime>(
                     let telemetry =
                         Arc::new(telemetry_publisher::TelemetryPublisher::new(nats.clone()));
                     tracing::info!("NATS telemetry publisher initialized");
+                    let fleet_publisher: Arc<dyn api_server::FleetHuntEventPublisher> =
+                        telemetry.clone();
+                    fleet_hunt_publisher = Some(fleet_publisher);
 
                     // Posture command handler.
                     let posture_handler = posture_commands::PostureCommandHandler::new(
@@ -581,6 +587,8 @@ async fn run_agent<R: Runtime>(
                     tokio::spawn(async move {
                         posture_handler.start(posture_shutdown).await;
                     });
+
+                    response_action_nats = Some(nats.clone());
 
                     // Approval sync: ingest cloud decisions and apply them to local queue.
                     let approval_sync = approval_sync::ApprovalSync::new(
@@ -986,6 +994,7 @@ async fn run_agent<R: Runtime>(
         }
     });
 
+    let response_action_local_api_token = agent_api_token.clone();
     let api_server = AgentApiServer::new(
         api_port,
         AgentApiServerDeps {
@@ -997,15 +1006,29 @@ async fn run_agent<R: Runtime>(
             macos_host: macos_host.clone(),
             openclaw: openclaw_manager.clone(),
             updater: updater.clone(),
+            fleet_hunt_publisher,
             auth_token: agent_api_token,
         },
     );
+    let control_ack_retry_sink = api_server.control_ack_postback_retry_sink();
     let api_shutdown = shutdown_tx.subscribe();
     tokio::spawn(async move {
         if let Err(err) = api_server.start(api_shutdown).await {
             tracing::error!("Agent API server error: {}", err);
         }
     });
+    if let Some(nats) = response_action_nats {
+        let handler = response_action_commands::ResponseActionCommandHandler::new(
+            nats,
+            settings.clone(),
+            response_action_local_api_token,
+            Some(control_ack_retry_sink),
+        );
+        let response_action_shutdown = shutdown_tx.subscribe();
+        tokio::spawn(async move {
+            handler.start(response_action_shutdown).await;
+        });
+    }
 
     let app_for_events = app.clone();
     let settings_for_events = settings.clone();

@@ -58,7 +58,7 @@ which = "6"
 
 # Shared crypto/data primitives
 hush-core = { path = "../../../crates/libs/hush-core" }
-clawdstrike-policy-event = { path = "../../../crates/libs/clawdstrike-policy-event", default-features = false }
+clawdstrike-policy-event = { path = "../../../crates/libs/clawdstrike-policy-event", default-features = false, features = ["simulate"] }
 base64 = "0.22"
 
 # NATS / Spine (adaptive SDR)

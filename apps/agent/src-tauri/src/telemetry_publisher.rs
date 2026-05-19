@@ -39,11 +39,17 @@ impl TelemetryPublisher {
         nats_subjects::heartbeat_subject(subject_prefix, agent_id)
     }
 
+    /// Build the subject for endpoint-originated hunt events.
+    pub fn hunt_event_subject(subject_prefix: &str, agent_id: &str) -> String {
+        nats_subjects::hunt_event_subject(subject_prefix, agent_id)
+    }
+
     /// Build stream subjects scoped to this agent to avoid cross-agent overlap.
     fn stream_subjects(subject_prefix: &str, agent_id: &str) -> Vec<String> {
         vec![
             format!("{subject_prefix}.telemetry.{agent_id}.>"),
             Self::heartbeat_subject(subject_prefix, agent_id),
+            Self::hunt_event_subject(subject_prefix, agent_id),
         ]
     }
 
@@ -80,9 +86,22 @@ impl TelemetryPublisher {
 
         let subject = Self::heartbeat_subject(self.nats.subject_prefix(), self.nats.agent_id());
 
+        self.publish_payload(subject, heartbeat_json).await
+    }
+
+    /// Publish an endpoint-originated hunt event to the telemetry stream.
+    pub async fn publish_hunt_event(&self, event_json: &[u8]) -> Result<()> {
+        self.ensure_stream().await?;
+
+        let subject = Self::hunt_event_subject(self.nats.subject_prefix(), self.nats.agent_id());
+
+        self.publish_payload(subject, event_json).await
+    }
+
+    async fn publish_payload(&self, subject: String, payload: &[u8]) -> Result<()> {
         self.nats
             .jetstream()
-            .publish(subject, heartbeat_json.to_vec().into())
+            .publish(subject, payload.to_vec().into())
             .await
             .map_err(|e| anyhow::anyhow!("JetStream publish error: {}", e))?
             .await
@@ -114,13 +133,22 @@ mod tests {
     }
 
     #[test]
+    fn hunt_event_subject_format() {
+        assert_eq!(
+            TelemetryPublisher::hunt_event_subject("tenant-abc.clawdstrike", "agent-xyz"),
+            "tenant-abc.clawdstrike.hunt.events.agent-xyz"
+        );
+    }
+
+    #[test]
     fn stream_subjects_are_agent_scoped() {
         let subjects = TelemetryPublisher::stream_subjects("tenant-abc.clawdstrike", "agent-xyz");
         assert_eq!(
             subjects,
             vec![
                 "tenant-abc.clawdstrike.telemetry.agent-xyz.>".to_string(),
-                "tenant-abc.clawdstrike.agent.heartbeat.agent-xyz".to_string()
+                "tenant-abc.clawdstrike.agent.heartbeat.agent-xyz".to_string(),
+                "tenant-abc.clawdstrike.hunt.events.agent-xyz".to_string()
             ]
         );
     }

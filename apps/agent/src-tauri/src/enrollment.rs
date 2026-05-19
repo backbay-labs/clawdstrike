@@ -185,6 +185,10 @@ impl EnrollmentManager {
             settings.nats.subject_prefix = Some(resp.nats_subject_prefix);
             settings.nats.require_signed_approval_responses = true;
             settings.nats.approval_response_trusted_issuer = Some(trusted_issuer);
+            if let Some(url) = normalize_control_api_url(control_api_url) {
+                settings.control_api.enabled = true;
+                settings.control_api.url = Some(url);
+            }
             settings
                 .save()
                 .with_context(|| "Failed to persist enrollment settings")?;
@@ -330,6 +334,15 @@ async fn restore_previous_settings_snapshot(
     Ok(())
 }
 
+fn normalize_control_api_url(control_api_url: &str) -> Option<String> {
+    let trimmed = control_api_url.trim().trim_end_matches('/').to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
 /// Load the enrollment private key hex from secure storage.
 ///
 /// If a legacy on-disk `agent.key` exists, migrate it into keyring-backed storage.
@@ -431,6 +444,15 @@ mod tests {
 
         let blank = extract_trusted_issuer(Some("   "));
         assert!(blank.is_err());
+    }
+
+    #[test]
+    fn normalize_control_api_url_trims_trailing_slashes() {
+        assert_eq!(
+            normalize_control_api_url("  https://control.example.com///  ").as_deref(),
+            Some("https://control.example.com")
+        );
+        assert!(normalize_control_api_url("   /  ").is_none());
     }
 
     #[cfg(unix)]

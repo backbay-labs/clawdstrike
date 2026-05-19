@@ -6,8 +6,9 @@
 
 use anyhow::{Context, Result};
 use async_nats::jetstream::kv;
+use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -18,6 +19,18 @@ use crate::nats_subjects;
 pub struct PolicySync {
     nats: Arc<NatsClient>,
     policy_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PolicySyncManifest {
+    schema_version: u32,
+    source: String,
+    stored_at: String,
+    content_hash: String,
+    byte_len: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policy_epoch: Option<u64>,
 }
 
 impl PolicySync {
@@ -134,14 +147,7 @@ impl PolicySync {
 
     /// Write policy YAML to disk.
     fn write_policy(&self, data: &[u8]) -> Result<()> {
-        if let Some(parent) = self.policy_path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create policy directory {:?}", parent))?;
-        }
-
-        atomic_write_policy(&self.policy_path, data)?;
-
-        Ok(())
+        write_policy_with_manifest(&self.policy_path, data)
     }
 
     /// Ensure the KV bucket exists (or access the existing one).
@@ -158,7 +164,143 @@ async fn watcher_next(watcher: &mut kv::Watch) -> Option<Result<kv::Entry, kv::W
     watcher.next().await
 }
 
-fn atomic_write_policy(path: &PathBuf, data: &[u8]) -> Result<()> {
+fn policy_sync_manifest_path(policy_path: &Path) -> PathBuf {
+    let file_name = policy_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("policy.yaml");
+    policy_path.with_file_name(format!("{file_name}.manifest.json"))
+}
+
+fn write_policy_with_manifest(policy_path: &Path, data: &[u8]) -> Result<()> {
+    let manifest_path = policy_sync_manifest_path(policy_path);
+    let candidate_epoch = parse_policy_epoch_from_yaml(data)
+        .with_context(|| "Failed to parse candidate policy from NATS KV")?;
+    let candidate_hash = hush_core::sha256(data).to_hex_prefixed();
+    let current_policy = std::fs::read(policy_path).ok();
+    let current_manifest = read_policy_sync_manifest(&manifest_path);
+
+    enforce_policy_sync_distribution_rules(
+        current_policy.as_deref(),
+        current_manifest.as_ref(),
+        candidate_epoch,
+        &candidate_hash,
+    )?;
+
+    if let Some(parent) = policy_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create policy directory {:?}", parent))?;
+    }
+
+    let manifest = PolicySyncManifest {
+        schema_version: 1,
+        source: "nats-kv-policy-sync".to_string(),
+        stored_at: chrono::Utc::now().to_rfc3339(),
+        content_hash: candidate_hash,
+        byte_len: data.len() as u64,
+        policy_epoch: candidate_epoch,
+    };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+        .with_context(|| "Failed to serialize policy sync manifest")?;
+
+    atomic_write_policy(policy_path, data)?;
+    atomic_write_policy(&manifest_path, &manifest_bytes)?;
+
+    Ok(())
+}
+
+fn read_policy_sync_manifest(path: &Path) -> Option<PolicySyncManifest> {
+    let raw = std::fs::read(path).ok()?;
+    serde_json::from_slice(&raw).ok()
+}
+
+const POLICY_SYNC_EPOCH_YAML_PATHS: &[&[&str]] = &[
+    &["policy_epoch"],
+    &["policyEpoch"],
+    &["epoch"],
+    &["policy", "epoch"],
+    &["policy", "policy_epoch"],
+    &["policy", "policyEpoch"],
+    &["metadata", "policy_epoch"],
+    &["metadata", "policyEpoch"],
+    &["bundle", "epoch"],
+    &["bundle", "policy_epoch"],
+    &["bundle", "policyEpoch"],
+];
+
+fn parse_policy_epoch_from_yaml(policy_yaml: &[u8]) -> Result<Option<u64>> {
+    let root: serde_yaml::Value =
+        serde_yaml::from_slice(policy_yaml).with_context(|| "invalid policy YAML")?;
+    Ok(POLICY_SYNC_EPOCH_YAML_PATHS
+        .iter()
+        .filter_map(|path| yaml_u64_at_path(&root, path))
+        .find(|epoch| *epoch > 0))
+}
+
+fn policy_epoch_from_yaml(policy_yaml: &[u8]) -> Option<u64> {
+    let root: serde_yaml::Value = serde_yaml::from_slice(policy_yaml).ok()?;
+    POLICY_SYNC_EPOCH_YAML_PATHS
+        .iter()
+        .filter_map(|path| yaml_u64_at_path(&root, path))
+        .find(|epoch| *epoch > 0)
+}
+
+fn yaml_u64_at_path(value: &serde_yaml::Value, path: &[&str]) -> Option<u64> {
+    let mut current = value;
+    for segment in path {
+        current = current.get(*segment)?;
+    }
+    yaml_u64_value(current)
+}
+
+fn yaml_u64_value(value: &serde_yaml::Value) -> Option<u64> {
+    match value {
+        serde_yaml::Value::Number(value) => value.as_u64(),
+        serde_yaml::Value::String(value) => value.trim().parse::<u64>().ok(),
+        _ => None,
+    }
+}
+
+fn enforce_policy_sync_distribution_rules(
+    current_policy: Option<&[u8]>,
+    current_manifest: Option<&PolicySyncManifest>,
+    candidate_epoch: Option<u64>,
+    candidate_hash: &str,
+) -> Result<()> {
+    let current_epoch = current_policy
+        .and_then(policy_epoch_from_yaml)
+        .or_else(|| current_manifest.and_then(|manifest| manifest.policy_epoch));
+    let computed_current_hash =
+        current_policy.map(|policy| hush_core::sha256(policy).to_hex_prefixed());
+    let current_hash = computed_current_hash
+        .as_deref()
+        .or_else(|| current_manifest.map(|manifest| manifest.content_hash.as_str()));
+
+    if candidate_epoch.is_none() {
+        anyhow::bail!("policy sync rejected update without explicit policy epoch");
+    }
+
+    match (current_epoch, candidate_epoch) {
+        (Some(existing), Some(candidate)) if candidate < existing => {
+            anyhow::bail!(
+                "policy sync rejected epoch downgrade: current epoch {existing}, candidate epoch {candidate}"
+            );
+        }
+        (Some(existing), Some(candidate))
+            if candidate == existing && current_hash != Some(candidate_hash) =>
+        {
+            anyhow::bail!(
+                "policy sync rejected content hash change without policy epoch advance: epoch {candidate}"
+            );
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+fn atomic_write_policy(path: &Path, data: &[u8]) -> Result<()> {
     let tmp_path = path.with_extension("tmp");
     let mut tmp_file = std::fs::File::create(&tmp_path)
         .with_context(|| format!("Failed to create temporary policy file {:?}", tmp_path))?;
@@ -221,6 +363,88 @@ mod tests {
         assert!(!tmp_path.exists());
 
         let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn policy_sync_manifest_path_is_policy_scoped() {
+        let path = PathBuf::from("/tmp/clawdstrike/policy.yaml");
+        assert_eq!(
+            policy_sync_manifest_path(&path),
+            PathBuf::from("/tmp/clawdstrike/policy.yaml.manifest.json")
+        );
+    }
+
+    #[test]
+    fn write_policy_with_manifest_rejects_downgrades_and_same_epoch_mutation() {
+        let base = std::env::temp_dir().join(format!(
+            "policy-sync-integrity-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("policy.yaml");
+        let manifest_path = policy_sync_manifest_path(&path);
+
+        let v20 = b"version: fleet-v20\npolicy_epoch: 20\nrules: []\n";
+        write_policy_with_manifest(&path, v20).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), v20);
+        let manifest = read_policy_sync_manifest(&manifest_path).unwrap();
+        assert_eq!(manifest.policy_epoch, Some(20));
+        assert_eq!(
+            manifest.content_hash,
+            hush_core::sha256(v20).to_hex_prefixed()
+        );
+
+        let downgrade = b"version: fleet-v19\npolicy_epoch: 19\nrules: []\n";
+        let downgrade_err = write_policy_with_manifest(&path, downgrade)
+            .expect_err("epoch downgrade should be rejected");
+        assert!(downgrade_err.to_string().contains("epoch downgrade"));
+        assert_eq!(std::fs::read(&path).unwrap(), v20);
+
+        let same_epoch_changed =
+            b"version: fleet-v20-mutated\npolicy_epoch: 20\nrules:\n  - id: changed\n";
+        let mutation_err = write_policy_with_manifest(&path, same_epoch_changed)
+            .expect_err("same-epoch mutation should be rejected");
+        assert!(mutation_err
+            .to_string()
+            .contains("content hash change without policy epoch advance"));
+        assert_eq!(std::fs::read(&path).unwrap(), v20);
+
+        let missing_epoch = b"version: missing-epoch\nrules: []\n";
+        let missing_epoch_err = write_policy_with_manifest(&path, missing_epoch)
+            .expect_err("missing explicit epoch should be rejected");
+        assert!(missing_epoch_err
+            .to_string()
+            .contains("without explicit policy epoch"));
+        assert_eq!(std::fs::read(&path).unwrap(), v20);
+
+        let v21 = b"version: fleet-v21\npolicy_epoch: 21\nrules: []\n";
+        write_policy_with_manifest(&path, v21).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), v21);
+        assert_eq!(
+            read_policy_sync_manifest(&manifest_path)
+                .unwrap()
+                .policy_epoch,
+            Some(21)
+        );
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn write_policy_with_manifest_rejects_initial_missing_epoch() {
+        let base = std::env::temp_dir().join(format!(
+            "policy-sync-missing-epoch-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("policy.yaml");
+
+        let err = write_policy_with_manifest(&path, b"version: legacy\nrules: []\n")
+            .expect_err("fleet policy sync must require explicit policy epoch");
+        assert!(err.to_string().contains("without explicit policy epoch"));
+        assert!(!path.exists());
+
         let _ = std::fs::remove_dir_all(base);
     }
 }
