@@ -39,6 +39,9 @@ bash scripts/architecture-guardrails.sh
 bold "Slop audit"
 bash scripts/slop-audit.sh
 
+bold "macOS provider dogfood contract"
+bash scripts/test-macos-provider-dogfood-contract.sh
+
 bold "Rust workspace"
 cargo test --workspace
 

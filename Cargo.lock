@@ -1814,6 +1814,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -1875,6 +1876,7 @@ dependencies = [
  "clawdstrike",
  "clawdstrike-ocsf",
  "hunt-query",
+ "hush-core",
  "hush-proxy",
  "serde",
  "serde_json",
