@@ -124,7 +124,7 @@ fn contains_release_placeholder(contents: &str) -> bool {
         }
 
         let mut cursor = start + 2;
-        if !matches!(bytes.get(cursor), Some(b'A'..=b'Z' | b'0'..=b'9')) {
+        if !matches!(bytes.get(cursor), Some(b'A'..=b'Z' | b'0'..=b'9' | b'_')) {
             start += 1;
             continue;
         }
@@ -159,6 +159,8 @@ mod tests {
             "<string>__EXTENSION_BUNDLE_ID__</string>"
         ));
         assert!(contains_release_placeholder("__PROFILE_123__"));
+        assert!(contains_release_placeholder("___FOO__"));
+        assert!(contains_release_placeholder("_____"));
     }
 
     #[test]
