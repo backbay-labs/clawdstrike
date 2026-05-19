@@ -5,5 +5,9 @@
 //! decision engine API. See `docs/plans/clawdstrike/endpoint-decision-engine/`
 //! for the product framing.
 
+pub(crate) mod conversion;
 pub(crate) mod dto;
 pub(crate) mod ledger;
+pub(crate) mod policy_events;
+pub(crate) mod queries;
+pub(crate) mod response;
