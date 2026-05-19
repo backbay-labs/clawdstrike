@@ -37,6 +37,8 @@ use axum::response::Html;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
+// Receipt*Input types are used only in `mod tests { use super::* }` below.
+#[allow(unused_imports)]
 use clawdstrike_policy_event::edr::{
     endpoint_policy_delta_id, endpoint_policy_event_impact_id, endpoint_policy_event_replay_id,
     CausalEdgeKind, CausalGraph, CausalGraphRecorder, CausalNode, CausalNodeKind, CredentialKind,
@@ -73,9 +75,9 @@ use hush_core::{canonicalize_json, sha256, Keypair, SignedReceipt};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::future::Future;
-use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
+use std::io::{Read as _, Seek as _, SeekFrom};
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::pin::Pin;
@@ -96,10 +98,10 @@ const BROKER_MUTATION_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const EDR_MAX_OBSERVATIONS_PER_REQUEST: usize = 10_000;
 const EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST: usize = 1_000;
 pub(crate) const EDR_MAX_STORED_FINDINGS: usize = 10_000;
-const EDR_MAX_CONTROL_ACK_POSTBACK_RETRIES: usize = 1_000;
-const EDR_MAX_CONTROL_ARCHIVE_UPLOAD_RETRIES: usize = 1_000;
-const EDR_MAX_CONTROL_RECEIPT_UPLOAD_RETRIES: usize = 1_000;
-const EDR_MAX_FLEET_HUNT_EVENT_OUTBOX: usize = 1_000;
+pub(crate) const EDR_MAX_CONTROL_ACK_POSTBACK_RETRIES: usize = 1_000;
+pub(crate) const EDR_MAX_CONTROL_ARCHIVE_UPLOAD_RETRIES: usize = 1_000;
+pub(crate) const EDR_MAX_CONTROL_RECEIPT_UPLOAD_RETRIES: usize = 1_000;
+pub(crate) const EDR_MAX_FLEET_HUNT_EVENT_OUTBOX: usize = 1_000;
 const EDR_CONTROL_ACK_RETRY_INITIAL_BACKOFF_SECONDS: i64 = 30;
 const EDR_CONTROL_ACK_RETRY_MAX_BACKOFF_SECONDS: i64 = 300;
 const EDR_CONTROL_ACK_RETRY_DRAIN_INTERVAL: Duration = Duration::from_secs(30);
@@ -121,7 +123,7 @@ const EDR_MAX_RAW_ARTIFACT_APPROVAL_ID_BYTES: usize = 128;
 const EDR_MAX_RAW_ARTIFACT_APPROVAL_REASON_BYTES: usize = 1024;
 const EDR_DEFAULT_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 100;
 const EDR_MAX_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 1_000;
-const EDR_NETWORK_EXTENSION_EGRESS_POLICY_SCHEMA_VERSION: u32 = 1;
+pub(crate) const EDR_NETWORK_EXTENSION_EGRESS_POLICY_SCHEMA_VERSION: u32 = 1;
 const EDR_POLICY_DELTA_SCHEMA_VERSION: &str = "clawdstrike.endpoint_policy_delta.v1";
 const EDR_DEFAULT_POLICY_EVENT_IMPACT_CAUSAL_DEPTH: usize = 3;
 const EDR_MAX_POLICY_EVENT_IMPACT_CONTEXTS: usize = 16;
@@ -2698,19 +2700,19 @@ struct EdrPolicyEventReplayInput {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventReplayReport {
-    replay_id: String,
-    replayed_at: chrono::DateTime<chrono::Utc>,
-    mode: String,
-    policy: EndpointPolicySnapshot,
-    event_count: u64,
-    allowed_count: u64,
-    warn_count: u64,
-    blocked_count: u64,
-    track_posture: bool,
-    event_stream_hash: String,
-    result_hash: String,
-    summary: String,
+pub(crate) struct EdrPolicyEventReplayReport {
+    pub(crate) replay_id: String,
+    pub(crate) replayed_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) mode: String,
+    pub(crate) policy: EndpointPolicySnapshot,
+    pub(crate) event_count: u64,
+    pub(crate) allowed_count: u64,
+    pub(crate) warn_count: u64,
+    pub(crate) blocked_count: u64,
+    pub(crate) track_posture: bool,
+    pub(crate) event_stream_hash: String,
+    pub(crate) result_hash: String,
+    pub(crate) summary: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -2781,21 +2783,21 @@ struct EdrPolicyEventImpactDriverKey {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventImpactReport {
-    impact_id: String,
-    analyzed_at: chrono::DateTime<chrono::Utc>,
-    mode: String,
-    current_policy: EndpointPolicySnapshot,
-    proposed_policy: EndpointPolicySnapshot,
-    event_count: u64,
-    changed_count: u64,
-    allow_to_block_count: u64,
-    track_posture: bool,
-    event_stream_hash: String,
-    current_result_hash: String,
-    proposed_result_hash: String,
-    impact_hash: String,
-    summary: String,
+pub(crate) struct EdrPolicyEventImpactReport {
+    pub(crate) impact_id: String,
+    pub(crate) analyzed_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) mode: String,
+    pub(crate) current_policy: EndpointPolicySnapshot,
+    pub(crate) proposed_policy: EndpointPolicySnapshot,
+    pub(crate) event_count: u64,
+    pub(crate) changed_count: u64,
+    pub(crate) allow_to_block_count: u64,
+    pub(crate) track_posture: bool,
+    pub(crate) event_stream_hash: String,
+    pub(crate) current_result_hash: String,
+    pub(crate) proposed_result_hash: String,
+    pub(crate) impact_hash: String,
+    pub(crate) summary: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -4116,12 +4118,12 @@ struct EdrDetectionCandidateInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct EdrDetectionCandidate {
     pub(crate) rule_id: String,
-    action: EndpointDecisionAction,
-    description: String,
-    root_node_id: String,
-    root_label: String,
-    root_kind: CausalNodeKind,
-    graph_slice_id: String,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) description: String,
+    pub(crate) root_node_id: String,
+    pub(crate) root_label: String,
+    pub(crate) root_kind: CausalNodeKind,
+    pub(crate) graph_slice_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -4275,63 +4277,63 @@ struct EdrPolicyDeltaApplyInput {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPolicyDeltaTargetPolicy {
-    base_policy_version: String,
-    base_policy_hash: String,
-    base_policy_epoch: u64,
-    target_policy_epoch: u64,
+pub(crate) struct EdrPolicyDeltaTargetPolicy {
+    pub(crate) base_policy_version: String,
+    pub(crate) base_policy_hash: String,
+    pub(crate) base_policy_epoch: u64,
+    pub(crate) target_policy_epoch: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPolicyDeltaRollout {
-    stage: String,
-    action: EndpointDecisionAction,
-    recommended_stage: String,
-    promotion_gate: String,
+pub(crate) struct EdrPolicyDeltaRollout {
+    pub(crate) stage: String,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) recommended_stage: String,
+    pub(crate) promotion_gate: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cross_window_impact_hash: Option<String>,
+    pub(crate) cross_window_impact_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cross_window_recommendation_hash: Option<String>,
-    developer_breakage_score: u8,
-    impact_level: String,
-    would_block: bool,
+    pub(crate) cross_window_recommendation_hash: Option<String>,
+    pub(crate) developer_breakage_score: u8,
+    pub(crate) impact_level: String,
+    pub(crate) would_block: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPolicyDeltaArtifact {
-    schema_version: String,
-    policy_delta_id: String,
-    generated_at: chrono::DateTime<chrono::Utc>,
-    generated_by: String,
-    note: Option<String>,
-    staged_detection_id: String,
-    source_simulation_id: String,
-    source_simulation_receipt_id: Option<String>,
+pub(crate) struct EdrPolicyDeltaArtifact {
+    pub(crate) schema_version: String,
+    pub(crate) policy_delta_id: String,
+    pub(crate) generated_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) generated_by: String,
+    pub(crate) note: Option<String>,
+    pub(crate) staged_detection_id: String,
+    pub(crate) source_simulation_id: String,
+    pub(crate) source_simulation_receipt_id: Option<String>,
     #[serde(default)]
-    source_affected_identities: Vec<EndpointPolicySimulationIdentityContext>,
+    pub(crate) source_affected_identities: Vec<EndpointPolicySimulationIdentityContext>,
     #[serde(default)]
-    source_affected_tools: Vec<EndpointPolicySimulationToolContext>,
-    candidate: EdrDetectionCandidate,
-    target_policy: EdrPolicyDeltaTargetPolicy,
-    rollout: EdrPolicyDeltaRollout,
-    policy_patch: Value,
+    pub(crate) source_affected_tools: Vec<EndpointPolicySimulationToolContext>,
+    pub(crate) candidate: EdrDetectionCandidate,
+    pub(crate) target_policy: EdrPolicyDeltaTargetPolicy,
+    pub(crate) rollout: EdrPolicyDeltaRollout,
+    pub(crate) policy_patch: Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPolicyDeltaRecord {
-    policy_delta_id: String,
-    generated_at: chrono::DateTime<chrono::Utc>,
-    generated_by: String,
-    rule_id: String,
-    stage: String,
-    action: EndpointDecisionAction,
-    artifact_hash: String,
-    artifact_path: Option<String>,
-    artifact: EdrPolicyDeltaArtifact,
-    receipt: SignedReceipt,
+pub(crate) struct EdrPolicyDeltaRecord {
+    pub(crate) policy_delta_id: String,
+    pub(crate) generated_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) generated_by: String,
+    pub(crate) rule_id: String,
+    pub(crate) stage: String,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) artifact_hash: String,
+    pub(crate) artifact_path: Option<String>,
+    pub(crate) artifact: EdrPolicyDeltaArtifact,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Serialize)]
@@ -4895,11 +4897,11 @@ struct EdrResponseAcknowledgementsResponse {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
-struct StoredEndpointEvidenceBundle {
-    bundle: EndpointEvidenceBundleReference,
-    path: Option<String>,
-    byte_count: usize,
-    graph: CausalGraph,
+pub(crate) struct StoredEndpointEvidenceBundle {
+    pub(crate) bundle: EndpointEvidenceBundleReference,
+    pub(crate) path: Option<String>,
+    pub(crate) byte_count: usize,
+    pub(crate) graph: CausalGraph,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -5263,20 +5265,20 @@ struct EdrReceiptUploadRecord {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct ControlStoreReceiptRequest {
-    timestamp: String,
-    verdict: String,
-    guard: String,
-    policy_name: String,
-    signature: String,
-    public_key: String,
+pub(crate) struct ControlStoreReceiptRequest {
+    pub(crate) timestamp: String,
+    pub(crate) verdict: String,
+    pub(crate) guard: String,
+    pub(crate) policy_name: String,
+    pub(crate) signature: String,
+    pub(crate) public_key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    chain_hash: Option<String>,
+    pub(crate) chain_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    evidence: Option<serde_json::Value>,
+    pub(crate) evidence: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    metadata: Option<serde_json::Value>,
-    signed_receipt: serde_json::Value,
+    pub(crate) metadata: Option<serde_json::Value>,
+    pub(crate) signed_receipt: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -5297,7 +5299,7 @@ struct EdrReceiptCompactionInput {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrReceiptCompactionRecord {
+pub(crate) struct EdrReceiptCompactionRecord {
     receipt_id: Option<String>,
     timestamp: String,
     age_seconds: u64,
@@ -5314,26 +5316,26 @@ struct EdrReceiptCompactionRecord {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
-struct EndpointReceiptIndexRecord {
-    receipt_id: Option<String>,
-    timestamp: String,
-    family: Option<String>,
-    action: Option<String>,
-    finding_id: Option<String>,
-    rule_id: Option<String>,
-    graph_slice_id: Option<String>,
-    root_node_id: Option<String>,
-    execution_id: Option<String>,
-    execution_status: Option<String>,
-    actor_endpoint_id: Option<String>,
-    actor_user_id: Option<String>,
-    actor_session_id: Option<String>,
-    actor_agent_id: Option<String>,
-    actor_workload_id: Option<String>,
-    actor_approval_id: Option<String>,
-    local_sequence: Option<u64>,
-    byte_offset: u64,
-    byte_len: u64,
+pub(crate) struct EndpointReceiptIndexRecord {
+    pub(crate) receipt_id: Option<String>,
+    pub(crate) timestamp: String,
+    pub(crate) family: Option<String>,
+    pub(crate) action: Option<String>,
+    pub(crate) finding_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
+    pub(crate) graph_slice_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
+    pub(crate) execution_id: Option<String>,
+    pub(crate) execution_status: Option<String>,
+    pub(crate) actor_endpoint_id: Option<String>,
+    pub(crate) actor_user_id: Option<String>,
+    pub(crate) actor_session_id: Option<String>,
+    pub(crate) actor_agent_id: Option<String>,
+    pub(crate) actor_workload_id: Option<String>,
+    pub(crate) actor_approval_id: Option<String>,
+    pub(crate) local_sequence: Option<u64>,
+    pub(crate) byte_offset: u64,
+    pub(crate) byte_len: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -5351,23 +5353,23 @@ struct EdrReceiptCompactionResponse {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-struct EdrReceiptFilter<'a> {
-    receipt_id: Option<&'a str>,
-    family: Option<&'a str>,
-    action: Option<&'a str>,
-    finding_id: Option<&'a str>,
-    rule_id: Option<&'a str>,
-    graph_slice_id: Option<&'a str>,
-    root_node_id: Option<&'a str>,
-    execution_id: Option<&'a str>,
-    status: Option<&'a str>,
-    actor_endpoint_id: Option<&'a str>,
-    actor_user_id: Option<&'a str>,
-    actor_session_id: Option<&'a str>,
-    actor_agent_id: Option<&'a str>,
-    actor_workload_id: Option<&'a str>,
-    actor_approval_id: Option<&'a str>,
-    local_sequence: Option<u64>,
+pub(crate) struct EdrReceiptFilter<'a> {
+    pub(crate) receipt_id: Option<&'a str>,
+    pub(crate) family: Option<&'a str>,
+    pub(crate) action: Option<&'a str>,
+    pub(crate) finding_id: Option<&'a str>,
+    pub(crate) rule_id: Option<&'a str>,
+    pub(crate) graph_slice_id: Option<&'a str>,
+    pub(crate) root_node_id: Option<&'a str>,
+    pub(crate) execution_id: Option<&'a str>,
+    pub(crate) status: Option<&'a str>,
+    pub(crate) actor_endpoint_id: Option<&'a str>,
+    pub(crate) actor_user_id: Option<&'a str>,
+    pub(crate) actor_session_id: Option<&'a str>,
+    pub(crate) actor_agent_id: Option<&'a str>,
+    pub(crate) actor_workload_id: Option<&'a str>,
+    pub(crate) actor_approval_id: Option<&'a str>,
+    pub(crate) local_sequence: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -7113,7 +7115,7 @@ fn newest_finding_timestamp(group: &PendingFindingGroup) -> chrono::DateTime<chr
         .unwrap_or_else(chrono::Utc::now)
 }
 
-fn local_stable_id<'a>(prefix: &str, parts: impl IntoIterator<Item = &'a str>) -> String {
+pub(crate) fn local_stable_id<'a>(prefix: &str, parts: impl IntoIterator<Item = &'a str>) -> String {
     let mut material = String::from(prefix);
     for part in parts {
         material.push('\0');
@@ -11296,7 +11298,7 @@ fn policy_delta_artifact_hash(artifact: &EdrPolicyDeltaArtifact) -> Result<Strin
     Ok(sha256(canonical.as_bytes()).to_hex_prefixed())
 }
 
-fn policy_delta_source_context_evidence_value<T: Serialize>(value: &T) -> String {
+pub(crate) fn policy_delta_source_context_evidence_value<T: Serialize>(value: &T) -> String {
     serde_json::to_value(value)
         .ok()
         .and_then(|value| canonicalize_json(&value).ok())
@@ -21826,7 +21828,7 @@ async fn send_control_archive_upload_retry(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum ControlResponseAckPostbackRoute {
+pub(crate) enum ControlResponseAckPostbackRoute {
     AuthenticatedAcks,
     AgentAcks,
 }
@@ -21898,7 +21900,7 @@ async fn resolve_control_response_ack_postback_config(
     }))
 }
 
-fn control_ack_retry_backoff_seconds(attempt_count: u32) -> i64 {
+pub(crate) fn control_ack_retry_backoff_seconds(attempt_count: u32) -> i64 {
     let exponent = attempt_count.saturating_sub(1).min(4);
     let multiplier = 1_i64.checked_shl(exponent).unwrap_or(16);
     EDR_CONTROL_ACK_RETRY_INITIAL_BACKOFF_SECONDS
@@ -22803,893 +22805,11 @@ async fn drain_control_ack_postback_retries(
     })
 }
 
-struct EndpointReceiptLedger {
-    path: Option<PathBuf>,
-    next_sequence: u64,
-    keypair: Keypair,
-    signer_identity: String,
-    signer_public_key: String,
-}
-
-struct ReceiptCompactionReport {
-    receipt_count: usize,
-    retained_count: usize,
-    records: Vec<EdrReceiptCompactionRecord>,
-}
-
-struct ResponseExecutionReceiptSigningInput<'a> {
-    settings: &'a Settings,
-    actor: EndpointDecisionActor,
-    policy: EndpointPolicySnapshot,
-    sensor_state: EndpointSensorState,
-    execution: &'a EndpointResponseExecutionReport,
-    graph: &'a CausalGraph,
-    additional_evidence: &'a [EndpointReceiptEvidence],
-}
-
-struct EdrPolicyDeltaReceiptSigningInput<'a> {
-    artifact: &'a EdrPolicyDeltaArtifact,
-    artifact_hash: &'a str,
-    operation: &'a str,
-    previous_policy_hash: Option<&'a str>,
-    new_policy_hash: Option<&'a str>,
-    backup_path: Option<&'a str>,
-}
-
-struct DeceptionCleanupReceiptSigningInput<'a> {
-    settings: &'a Settings,
-    policy: EndpointPolicySnapshot,
-    sensor_state: EndpointSensorState,
-    plan: &'a DeceptionPlan,
-    report: &'a DeceptionCleanupReport,
-    deregistered_artifact_count: usize,
-    remaining_registered_artifact_count: usize,
-}
-
-struct DeceptionRotationReceiptSigningInput<'a> {
-    settings: &'a Settings,
-    policy: EndpointPolicySnapshot,
-    sensor_state: EndpointSensorState,
-    old_plan: &'a DeceptionPlan,
-    new_plan: &'a DeceptionPlan,
-    report: &'a DeceptionRotationReport,
-}
-
-impl EndpointReceiptLedger {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let next_sequence = next_receipt_sequence(&path)?;
-        let (keypair, signer_identity) = load_or_create_edr_receipt_signer()?;
-        let signer_public_key = keypair.public_key().to_hex();
-        Ok(Self {
-            path: Some(path),
-            next_sequence,
-            keypair,
-            signer_identity,
-            signer_public_key,
-        })
-    }
-
-    fn transient(keypair: Keypair, signer_identity: impl Into<String>) -> Self {
-        let signer_public_key = keypair.public_key().to_hex();
-        Self {
-            path: None,
-            next_sequence: 1,
-            keypair,
-            signer_identity: signer_identity.into(),
-            signer_public_key,
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn sign_observation_receipts(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        observations: &[EndpointObservation],
-        graph: &CausalGraph,
-    ) -> Result<Vec<SignedReceipt>> {
-        if observations.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut signed_receipts = Vec::with_capacity(observations.len());
-        let mut next_sequence = self.next_sequence;
-        for observation in observations {
-            let endpoint_id = endpoint_id_for_observation(settings, observation);
-            let sensor_state = EndpointSensorState {
-                providers: vec![provider_policy_decision_provider_state(observation)],
-            };
-            let mut receipt =
-                EndpointDecisionReceipt::for_observation(EndpointObservationReceiptInput {
-                    local_sequence: next_sequence,
-                    endpoint_id: endpoint_id.as_str(),
-                    signer_identity: self.signer_identity.as_str(),
-                    policy: policy.clone(),
-                    sensor_state,
-                    observation,
-                    graph,
-                });
-            receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-            signed_receipts.push(receipt.sign_with(&self.keypair)?);
-            next_sequence = next_sequence.saturating_add(1);
-        }
-
-        self.append(&signed_receipts)?;
-        self.next_sequence = next_sequence;
-        Ok(signed_receipts)
-    }
-
-    fn sign_detection_receipts(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        observations: &[EndpointObservation],
-        findings: &[DetectionFinding],
-        graph: &CausalGraph,
-    ) -> Result<Vec<SignedReceipt>> {
-        if findings.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut signed_receipts = Vec::with_capacity(findings.len());
-        let mut next_sequence = self.next_sequence;
-        for finding in findings {
-            let observation = observations
-                .iter()
-                .find(|observation| observation.observation_id == finding.observation_id)
-                .with_context(|| {
-                    format!(
-                        "finding {} references missing observation {}",
-                        finding.finding_id, finding.observation_id
-                    )
-                })?;
-            let endpoint_id = endpoint_id_for_observation(settings, observation);
-            let mut receipt =
-                EndpointDecisionReceipt::for_detection(EndpointDetectionReceiptInput {
-                    local_sequence: next_sequence,
-                    endpoint_id: endpoint_id.as_str(),
-                    signer_identity: self.signer_identity.as_str(),
-                    policy: policy.clone(),
-                    sensor_state: sensor_state.clone(),
-                    observation,
-                    finding,
-                    graph,
-                });
-            receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-            signed_receipts.push(receipt.sign_with(&self.keypair)?);
-            next_sequence = next_sequence.saturating_add(1);
-        }
-
-        self.append(&signed_receipts)?;
-        self.next_sequence = next_sequence;
-        Ok(signed_receipts)
-    }
-
-    fn sign_sensor_state_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        reason: &str,
-    ) -> Result<SignedReceipt> {
-        self.sign_sensor_state_receipt_with_evidence(settings, policy, sensor_state, reason, &[])
-    }
-
-    fn sign_sensor_state_receipt_with_evidence(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        reason: &str,
-        additional_evidence: &[EndpointReceiptEvidence],
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt =
-            EndpointDecisionReceipt::for_sensor_state(EndpointSensorStateReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy,
-                sensor_state,
-                reason,
-            });
-        receipt.evidence.extend(additional_evidence.iter().cloned());
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_telemetry_privacy_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        report: &EndpointTelemetryPrivacyReport,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt =
-            EndpointDecisionReceipt::for_telemetry_privacy(EndpointTelemetryPrivacyReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy,
-                sensor_state,
-                report,
-            });
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_provider_degradation_receipts(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-    ) -> Result<Vec<SignedReceipt>> {
-        let degraded_providers: Vec<_> = sensor_state
-            .providers
-            .iter()
-            .filter(|provider| provider.degraded)
-            .cloned()
-            .collect();
-        if degraded_providers.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut signed_receipts = Vec::with_capacity(degraded_providers.len());
-        let mut next_sequence = self.next_sequence;
-        for provider in &degraded_providers {
-            let mut receipt = EndpointDecisionReceipt::for_provider_degradation(
-                EndpointProviderDegradationReceiptInput {
-                    local_sequence: next_sequence,
-                    endpoint_id: endpoint_id.as_str(),
-                    signer_identity: self.signer_identity.as_str(),
-                    policy: policy.clone(),
-                    sensor_state: sensor_state.clone(),
-                    provider,
-                },
-            );
-            receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-            signed_receipts.push(receipt.sign_with(&self.keypair)?);
-            next_sequence = next_sequence.saturating_add(1);
-        }
-
-        self.append(&signed_receipts)?;
-        self.next_sequence = next_sequence;
-        Ok(signed_receipts)
-    }
-
-    fn sign_policy_decision_receipt(
-        &mut self,
-        actor: EndpointDecisionActor,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        action_type: &str,
-        target: &str,
-        decision: &PolicyCheckOutput,
-    ) -> Result<SignedReceipt> {
-        let mut receipt =
-            EndpointDecisionReceipt::for_policy_decision(EndpointPolicyDecisionReceiptInput {
-                local_sequence: self.next_sequence,
-                signer_identity: self.signer_identity.as_str(),
-                actor,
-                policy,
-                sensor_state,
-                action_type,
-                target,
-                allowed: decision.allowed,
-                guard: decision.guard.as_deref(),
-                severity: detection_severity_from_policy_label(decision.severity.as_deref()),
-                severity_label: decision.severity.as_deref(),
-                message: decision.message.as_deref(),
-                details: decision.details.as_ref(),
-            });
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_graph_slice_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        root_node_id: &str,
-        slice_kind: &str,
-        graph: &CausalGraph,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt =
-            EndpointDecisionReceipt::for_graph_slice(EndpointGraphSliceReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy,
-                sensor_state,
-                root_node_id,
-                slice_kind,
-                graph,
-            });
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_simulation_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        simulation: &EndpointPolicySimulationReport,
-        graph: &CausalGraph,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt = EndpointDecisionReceipt::for_simulation(EndpointSimulationReceiptInput {
-            local_sequence: self.next_sequence,
-            endpoint_id: endpoint_id.as_str(),
-            signer_identity: self.signer_identity.as_str(),
-            policy,
-            sensor_state,
-            simulation,
-            graph,
-        });
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_policy_event_replay_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        replay: &EdrPolicyEventReplayReport,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt = EndpointDecisionReceipt::for_policy_event_replay(
-            EndpointPolicyEventReplayReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy,
-                sensor_state,
-                replay_id: replay.replay_id.as_str(),
-                event_stream_hash: replay.event_stream_hash.as_str(),
-                result_hash: replay.result_hash.as_str(),
-                event_count: replay.event_count,
-                allowed_count: replay.allowed_count,
-                warn_count: replay.warn_count,
-                blocked_count: replay.blocked_count,
-                track_posture: replay.track_posture,
-            },
-        );
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_policy_event_impact_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        impact: &EdrPolicyEventImpactReport,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt = EndpointDecisionReceipt::for_policy_event_impact(
-            EndpointPolicyEventImpactReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy,
-                sensor_state,
-                impact_id: impact.impact_id.as_str(),
-                event_stream_hash: impact.event_stream_hash.as_str(),
-                current_result_hash: impact.current_result_hash.as_str(),
-                proposed_result_hash: impact.proposed_result_hash.as_str(),
-                impact_hash: impact.impact_hash.as_str(),
-                proposed_policy_hash: impact.proposed_policy.policy_hash.as_str(),
-                proposed_policy_epoch: impact.proposed_policy.policy_epoch,
-                event_count: impact.event_count,
-                changed_count: impact.changed_count,
-                allow_to_block_count: impact.allow_to_block_count,
-                track_posture: impact.track_posture,
-            },
-        );
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_policy_delta_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        input: EdrPolicyDeltaReceiptSigningInput<'_>,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let generated_at = input.artifact.generated_at.to_rfc3339();
-        let source_affected_identity_context =
-            policy_delta_source_context_evidence_value(&input.artifact.source_affected_identities);
-        let source_affected_tool_context =
-            policy_delta_source_context_evidence_value(&input.artifact.source_affected_tools);
-        let mut receipt =
-            EndpointDecisionReceipt::for_policy_delta(EndpointPolicyDeltaReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy,
-                sensor_state,
-                operation: input.operation,
-                policy_delta_id: input.artifact.policy_delta_id.as_str(),
-                staged_detection_id: input.artifact.staged_detection_id.as_str(),
-                rule_id: input.artifact.candidate.rule_id.as_str(),
-                stage: input.artifact.rollout.stage.as_str(),
-                generated_at: generated_at.as_str(),
-                action: input.artifact.rollout.action.clone(),
-                artifact_hash: input.artifact_hash,
-                simulation_id: input.artifact.source_simulation_id.as_str(),
-                graph_slice_id: input.artifact.candidate.graph_slice_id.as_str(),
-                root_node_id: input.artifact.candidate.root_node_id.as_str(),
-                source_affected_identity_context: source_affected_identity_context.as_str(),
-                source_affected_tool_context: source_affected_tool_context.as_str(),
-                cross_window_impact_hash: input
-                    .artifact
-                    .rollout
-                    .cross_window_impact_hash
-                    .as_deref(),
-                cross_window_recommendation_hash: input
-                    .artifact
-                    .rollout
-                    .cross_window_recommendation_hash
-                    .as_deref(),
-                previous_policy_hash: input.previous_policy_hash,
-                new_policy_hash: input.new_policy_hash,
-                backup_path: input.backup_path,
-            });
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_response_receipt(
-        &mut self,
-        settings: &Settings,
-        actor: EndpointDecisionActor,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        plan: &EndpointResponsePlan,
-        graph: &CausalGraph,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt =
-            EndpointDecisionReceipt::for_response_request(EndpointResponseReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                actor,
-                policy,
-                sensor_state,
-                plan,
-                graph,
-            });
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_response_execution_receipt(
-        &mut self,
-        input: ResponseExecutionReceiptSigningInput<'_>,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(input.settings);
-        let mut receipt = EndpointDecisionReceipt::for_response_execution(
-            EndpointResponseExecutionReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                actor: input.actor,
-                policy: input.policy,
-                sensor_state: input.sensor_state,
-                execution: input.execution,
-                graph: input.graph,
-            },
-        );
-        receipt
-            .evidence
-            .extend(input.additional_evidence.iter().cloned());
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_response_rollback_receipt(
-        &mut self,
-        settings: &Settings,
-        actor: EndpointDecisionActor,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        rollback: &EndpointResponseRollbackReport,
-        graph: &CausalGraph,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt =
-            EndpointDecisionReceipt::for_response_rollback(EndpointResponseRollbackReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                actor,
-                policy,
-                sensor_state,
-                rollback,
-                graph,
-            });
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_response_acknowledgement_receipt(
-        &mut self,
-        settings: &Settings,
-        actor: EndpointDecisionActor,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        acknowledgement: &EndpointResponseAcknowledgementReport,
-        graph: &CausalGraph,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt = EndpointDecisionReceipt::for_response_acknowledgement(
-            EndpointResponseAcknowledgementReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                actor,
-                policy,
-                sensor_state,
-                acknowledgement,
-                graph,
-            },
-        );
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_evidence_bundle_manifest_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        execution: &EndpointResponseExecutionReport,
-        graph: &CausalGraph,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt = EndpointDecisionReceipt::for_evidence_bundle_manifest(
-            EndpointEvidenceBundleManifestReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy,
-                sensor_state,
-                root_node_id: execution.root_node_id.as_str(),
-                bundle: &execution.evidence_bundle,
-                graph,
-            },
-        );
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_deception_materialization_receipt(
-        &mut self,
-        settings: &Settings,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        plan: &DeceptionPlan,
-        report: &DeceptionMaterializationReport,
-        registered_artifact_count: usize,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(settings);
-        let mut receipt = EndpointDecisionReceipt::for_deception_materialization(
-            EndpointDeceptionMaterializationReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy,
-                sensor_state,
-                plan,
-                report,
-                registered_artifact_count,
-            },
-        );
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_deception_cleanup_receipt(
-        &mut self,
-        input: DeceptionCleanupReceiptSigningInput<'_>,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(input.settings);
-        let mut receipt =
-            EndpointDecisionReceipt::for_deception_cleanup(EndpointDeceptionCleanupReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy: input.policy,
-                sensor_state: input.sensor_state,
-                plan: input.plan,
-                report: input.report,
-                deregistered_artifact_count: input.deregistered_artifact_count,
-                remaining_registered_artifact_count: input.remaining_registered_artifact_count,
-            });
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn sign_deception_rotation_receipt(
-        &mut self,
-        input: DeceptionRotationReceiptSigningInput<'_>,
-    ) -> Result<SignedReceipt> {
-        let endpoint_id = endpoint_id_for_settings(input.settings);
-        let mut receipt = EndpointDecisionReceipt::for_deception_rotation(
-            EndpointDeceptionRotationReceiptInput {
-                local_sequence: self.next_sequence,
-                endpoint_id: endpoint_id.as_str(),
-                signer_identity: self.signer_identity.as_str(),
-                policy: input.policy,
-                sensor_state: input.sensor_state,
-                old_plan: input.old_plan,
-                new_plan: input.new_plan,
-                report: input.report,
-            },
-        );
-        receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
-        let signed = receipt.sign_with(&self.keypair)?;
-        self.append(std::slice::from_ref(&signed))?;
-        self.next_sequence = self.next_sequence.saturating_add(1);
-        Ok(signed)
-    }
-
-    fn read_recent(
-        &self,
-        limit: usize,
-        filter: EdrReceiptFilter<'_>,
-    ) -> Result<Vec<SignedReceipt>> {
-        if let Some(path) = &self.path {
-            if let Some(receipts) = read_recent_indexed_endpoint_receipts(path, limit, filter)? {
-                return Ok(receipts);
-            }
-        }
-
-        let mut receipts = VecDeque::new();
-        for receipt in self.all()? {
-            if !receipt_matches_filter(&receipt, filter) {
-                continue;
-            }
-            receipts.push_back(receipt);
-            while receipts.len() > limit {
-                let _ = receipts.pop_front();
-            }
-        }
-
-        Ok(receipts.into_iter().collect())
-    }
-
-    fn compact(
-        &mut self,
-        max_receipts: Option<usize>,
-        min_age_seconds: u64,
-        dry_run: bool,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<ReceiptCompactionReport> {
-        let receipts = self.all()?;
-        let receipt_count = receipts.len();
-        let mut retained = Vec::with_capacity(receipts.len());
-        let mut records = Vec::new();
-        for (index, receipt) in receipts.iter().enumerate() {
-            let age_seconds = receipt_age_seconds(receipt, now);
-            let beyond_limit =
-                max_receipts.is_some_and(|max| receipts.len().saturating_sub(index) > max);
-            let old_enough = age_seconds >= min_age_seconds;
-            if !old_enough || max_receipts.is_some() && !beyond_limit {
-                retained.push(receipt.clone());
-                continue;
-            }
-            let reason = if beyond_limit {
-                format!(
-                    "receipt exceeds max_receipts {} and is at least {min_age_seconds}s old",
-                    max_receipts.unwrap_or_default()
-                )
-            } else {
-                format!("receipt is at least {min_age_seconds}s old")
-            };
-            records.push(receipt_compaction_record(
-                receipt,
-                age_seconds,
-                !dry_run,
-                reason,
-            ));
-            if dry_run {
-                retained.push(receipt.clone());
-            }
-        }
-
-        if !dry_run {
-            self.rewrite(&retained)?;
-        }
-        self.next_sequence = receipts
-            .iter()
-            .filter_map(receipt_local_sequence)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1)
-            .max(self.next_sequence);
-
-        Ok(ReceiptCompactionReport {
-            receipt_count,
-            retained_count: retained.len(),
-            records,
-        })
-    }
-
-    fn all(&self) -> Result<Vec<SignedReceipt>> {
-        let Some(path) = &self.path else {
-            return Ok(Vec::new());
-        };
-        read_endpoint_receipt_ledger(path)
-    }
-
-    fn rewrite(&self, receipts: &[SignedReceipt]) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint receipt ledger directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-        let mut contents = String::new();
-        for receipt in receipts {
-            let line = serde_json::to_string(receipt).context("serialize endpoint receipt")?;
-            contents.push_str(&line);
-            contents.push('\n');
-        }
-        crate::security::fs::write_private_atomic(
-            path,
-            contents.as_bytes(),
-            "endpoint receipt ledger",
-        )?;
-        self.rebuild_index()
-    }
-
-    fn append(&self, receipts: &[SignedReceipt]) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint receipt ledger directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| format!("open endpoint receipt ledger {}", path.display()))?;
-        let mut index_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(endpoint_receipt_index_path(path))
-            .with_context(|| {
-                format!(
-                    "open endpoint receipt index {}",
-                    endpoint_receipt_index_path(path).display()
-                )
-            })?;
-        for receipt in receipts {
-            let line = serde_json::to_vec(receipt).with_context(|| {
-                format!(
-                    "serialize endpoint receipt {}",
-                    receipt
-                        .receipt
-                        .receipt_id
-                        .as_deref()
-                        .unwrap_or("<missing-receipt-id>")
-                )
-            })?;
-            let byte_offset = file
-                .seek(SeekFrom::End(0))
-                .with_context(|| format!("seek endpoint receipt ledger {}", path.display()))?;
-            file.write_all(&line)
-                .with_context(|| format!("write endpoint receipt to {}", path.display()))?;
-            file.write_all(b"\n")
-                .with_context(|| format!("write endpoint receipt to {}", path.display()))?;
-            let record = endpoint_receipt_index_record(receipt, byte_offset, line.len() as u64);
-            serde_json::to_writer(&mut index_file, &record).with_context(|| {
-                format!(
-                    "serialize endpoint receipt index {}",
-                    receipt
-                        .receipt
-                        .receipt_id
-                        .as_deref()
-                        .unwrap_or("<missing-receipt-id>")
-                )
-            })?;
-            index_file.write_all(b"\n").with_context(|| {
-                format!(
-                    "write endpoint receipt index {}",
-                    endpoint_receipt_index_path(path).display()
-                )
-            })?;
-        }
-        file.flush()
-            .with_context(|| format!("flush endpoint receipt ledger {}", path.display()))?;
-        index_file.flush().with_context(|| {
-            format!(
-                "flush endpoint receipt index {}",
-                endpoint_receipt_index_path(path).display()
-            )
-        })?;
-        Ok(())
-    }
-
-    fn rebuild_index(&self) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        rebuild_endpoint_receipt_index(path)
-    }
-}
+pub(crate) use crate::edr::ledger::{
+    EndpointReceiptLedger,
+    ResponseExecutionReceiptSigningInput, EdrPolicyDeltaReceiptSigningInput,
+    DeceptionCleanupReceiptSigningInput, DeceptionRotationReceiptSigningInput,
+};
 
 async fn emit_edr_detection_receipts(
     state: &AgentApiState,
@@ -23969,7 +23089,7 @@ fn provider_policy_decision_allowed(decision: &str) -> Option<bool> {
     }
 }
 
-fn provider_policy_decision_provider_state(
+pub(crate) fn provider_policy_decision_provider_state(
     observation: &EndpointObservation,
 ) -> EndpointProviderState {
     let collector_kind = observation_metadata_string(observation, "collectorKind");
@@ -24363,7 +23483,7 @@ async fn emit_edr_evidence_bundle_manifest_receipt(
     Ok(receipt)
 }
 
-fn receipt_matches_filter(receipt: &SignedReceipt, filter: EdrReceiptFilter<'_>) -> bool {
+pub(crate) fn receipt_matches_filter(receipt: &SignedReceipt, filter: EdrReceiptFilter<'_>) -> bool {
     if let Some(expected) = filter.receipt_id {
         if !receipt
             .receipt
@@ -25448,7 +24568,7 @@ fn control_store_receipt_verdict(receipt: &SignedReceipt) -> &'static str {
     }
 }
 
-fn receipt_compaction_record(
+pub(crate) fn receipt_compaction_record(
     receipt: &SignedReceipt,
     age_seconds: u64,
     removed: bool,
@@ -25475,7 +24595,7 @@ fn receipt_compaction_record(
     }
 }
 
-fn receipt_age_seconds(receipt: &SignedReceipt, now: chrono::DateTime<chrono::Utc>) -> u64 {
+pub(crate) fn receipt_age_seconds(receipt: &SignedReceipt, now: chrono::DateTime<chrono::Utc>) -> u64 {
     chrono::DateTime::parse_from_rfc3339(&receipt.receipt.timestamp)
         .map(|timestamp| {
             now.signed_duration_since(timestamp.with_timezone(&chrono::Utc))
@@ -25485,7 +24605,7 @@ fn receipt_age_seconds(receipt: &SignedReceipt, now: chrono::DateTime<chrono::Ut
         .unwrap_or(0)
 }
 
-fn receipt_local_sequence(receipt: &SignedReceipt) -> Option<u64> {
+pub(crate) fn receipt_local_sequence(receipt: &SignedReceipt) -> Option<u64> {
     receipt
         .receipt
         .metadata
@@ -25617,7 +24737,7 @@ fn protected_observation_ids_for_receipts(
     observation_ids
 }
 
-fn detection_severity_from_policy_label(value: Option<&str>) -> Option<DetectionSeverity> {
+pub(crate) fn detection_severity_from_policy_label(value: Option<&str>) -> Option<DetectionSeverity> {
     match value?.trim().to_ascii_lowercase().as_str() {
         "info" => Some(DetectionSeverity::Info),
         "low" => Some(DetectionSeverity::Low),
@@ -25893,7 +25013,7 @@ fn policy_epoch_from_file(path: &FsPath) -> Option<u64> {
     Some(since_epoch.as_secs())
 }
 
-fn endpoint_id_for_observation(settings: &Settings, observation: &EndpointObservation) -> String {
+pub(crate) fn endpoint_id_for_observation(settings: &Settings, observation: &EndpointObservation) -> String {
     settings
         .enrollment
         .agent_uuid
@@ -25903,7 +25023,7 @@ fn endpoint_id_for_observation(settings: &Settings, observation: &EndpointObserv
         .unwrap_or_else(crate::settings::hostname_best_effort)
 }
 
-fn endpoint_id_for_settings(settings: &Settings) -> String {
+pub(crate) fn endpoint_id_for_settings(settings: &Settings) -> String {
     settings
         .enrollment
         .agent_uuid
@@ -26788,7 +25908,7 @@ fn provider_last_seen(provider: &ProviderStatus) -> Option<chrono::DateTime<chro
         .map(|value| value.with_timezone(&chrono::Utc))
 }
 
-fn next_receipt_sequence(path: &FsPath) -> Result<u64> {
+pub(crate) fn next_receipt_sequence(path: &FsPath) -> Result<u64> {
     Ok(read_endpoint_receipt_ledger(path)?
         .iter()
         .filter_map(receipt_local_sequence)
@@ -26798,7 +25918,7 @@ fn next_receipt_sequence(path: &FsPath) -> Result<u64> {
         .max(1))
 }
 
-fn read_endpoint_receipt_ledger(path: &FsPath) -> Result<Vec<SignedReceipt>> {
+pub(crate) fn read_endpoint_receipt_ledger(path: &FsPath) -> Result<Vec<SignedReceipt>> {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -26825,7 +25945,7 @@ fn read_endpoint_receipt_ledger(path: &FsPath) -> Result<Vec<SignedReceipt>> {
     Ok(receipts)
 }
 
-fn endpoint_receipt_index_path(path: &FsPath) -> PathBuf {
+pub(crate) fn endpoint_receipt_index_path(path: &FsPath) -> PathBuf {
     let mut filename = path
         .file_name()
         .map(|value| value.to_os_string())
@@ -26861,7 +25981,7 @@ fn read_endpoint_receipt_index(path: &FsPath) -> Result<Vec<EndpointReceiptIndex
     Ok(records)
 }
 
-fn read_recent_indexed_endpoint_receipts(
+pub(crate) fn read_recent_indexed_endpoint_receipts(
     path: &FsPath,
     limit: usize,
     filter: EdrReceiptFilter<'_>,
@@ -27027,7 +26147,7 @@ fn validate_endpoint_receipt_index_record(
     Ok(())
 }
 
-fn rebuild_endpoint_receipt_index(path: &FsPath) -> Result<()> {
+pub(crate) fn rebuild_endpoint_receipt_index(path: &FsPath) -> Result<()> {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -27075,7 +26195,7 @@ fn rebuild_endpoint_receipt_index(path: &FsPath) -> Result<()> {
     )
 }
 
-fn endpoint_receipt_index_record(
+pub(crate) fn endpoint_receipt_index_record(
     receipt: &SignedReceipt,
     byte_offset: u64,
     byte_len: u64,
@@ -27169,7 +26289,7 @@ fn string_filter_matches(actual: Option<&str>, expected: Option<&str>) -> bool {
     expected.map_or(true, |expected| actual == Some(expected))
 }
 
-fn load_or_create_edr_receipt_signer() -> Result<(Keypair, String)> {
+pub(crate) fn load_or_create_edr_receipt_signer() -> Result<(Keypair, String)> {
     if let Some(key_hex) = crate::enrollment::load_enrollment_key_hex()
         .with_context(|| "load enrollment key for endpoint receipt signer")?
     {
@@ -27484,2084 +26604,50 @@ async fn append_recent_edr_findings(state: &AgentApiState, findings: &[Detection
     }
 }
 
-struct EndpointEvidenceBundleStore {
-    root: Option<PathBuf>,
-    bundles: HashMap<String, StoredEndpointEvidenceBundle>,
-}
-
-impl EndpointEvidenceBundleStore {
-    fn open(root: impl Into<PathBuf>) -> Result<Self> {
-        let root = root.into();
-        fs::create_dir_all(&root).with_context(|| {
-            format!(
-                "create endpoint evidence bundle directory {}",
-                root.display()
-            )
-        })?;
-        Ok(Self {
-            root: Some(root),
-            bundles: HashMap::new(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            root: None,
-            bundles: HashMap::new(),
-        }
-    }
-
-    fn root_path(&self) -> Option<&FsPath> {
-        self.root.as_deref()
-    }
-
-    fn store(
-        &mut self,
-        bundle: &EndpointEvidenceBundleReference,
-        graph: &CausalGraph,
-    ) -> Result<StoredEndpointEvidenceBundle> {
-        let graph_value = serde_json::to_value(graph).context("serialize evidence bundle graph")?;
-        let canonical_graph =
-            canonicalize_json(&graph_value).context("canonicalize evidence bundle graph")?;
-        let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
-        if content_hash != bundle.content_hash {
-            return Err(anyhow::anyhow!(
-                "evidence bundle content hash mismatch: expected {}, computed {}",
-                bundle.content_hash,
-                content_hash
-            ));
-        }
-
-        let path = self
-            .root
-            .as_ref()
-            .map(|root| evidence_bundle_path(root, &bundle.bundle_id))
-            .transpose()?;
-        let stored = StoredEndpointEvidenceBundle {
-            bundle: bundle.clone(),
-            path: path.as_ref().map(|path| path.display().to_string()),
-            byte_count: canonical_graph.len(),
-            graph: graph.clone(),
-        };
-
-        if let Some(path) = &path {
-            let value =
-                serde_json::to_value(&stored).context("serialize evidence bundle artifact")?;
-            let artifact =
-                canonicalize_json(&value).context("canonicalize evidence bundle artifact")?;
-            crate::security::fs::write_private_atomic(
-                path,
-                artifact.as_bytes(),
-                "endpoint evidence bundle artifact",
-            )?;
-        }
-
-        self.bundles
-            .insert(bundle.bundle_id.clone(), stored.clone());
-        Ok(stored)
-    }
-
-    fn load(&mut self, bundle_id: &str) -> Result<Option<StoredEndpointEvidenceBundle>> {
-        if let Some(root) = &self.root {
-            let path = evidence_bundle_path(root, bundle_id)?;
-            let contents = match fs::read_to_string(&path) {
-                Ok(contents) => contents,
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    self.bundles.remove(bundle_id);
-                    return Ok(None);
-                }
-                Err(err) => {
-                    return Err(err).with_context(|| {
-                        format!("read endpoint evidence bundle {}", path.display())
-                    });
-                }
-            };
-            let mut stored: StoredEndpointEvidenceBundle = serde_json::from_str(&contents)
-                .with_context(|| format!("parse endpoint evidence bundle {}", path.display()))?;
-            if stored.bundle.bundle_id != bundle_id {
-                return Err(anyhow::anyhow!(
-                    "endpoint evidence bundle artifact id mismatch: requested {}, found {}",
-                    bundle_id,
-                    stored.bundle.bundle_id
-                ));
-            }
-            stored.path = Some(path.display().to_string());
-            validate_stored_evidence_bundle_artifact(&stored)?;
-            self.bundles.insert(bundle_id.to_string(), stored.clone());
-            return Ok(Some(stored));
-        }
-
-        if let Some(stored) = self.bundles.get(bundle_id) {
-            return Ok(Some(stored.clone()));
-        }
-        Ok(None)
-    }
-
-    fn list(&mut self) -> Result<Vec<StoredEndpointEvidenceBundle>> {
-        if let Some(root) = &self.root {
-            for entry in fs::read_dir(root).with_context(|| {
-                format!("read endpoint evidence bundle directory {}", root.display())
-            })? {
-                let entry = entry.with_context(|| {
-                    format!(
-                        "read endpoint evidence bundle directory entry {}",
-                        root.display()
-                    )
-                })?;
-                let path = entry.path();
-                if !path.is_file()
-                    || path.extension().and_then(std::ffi::OsStr::to_str) != Some("json")
-                {
-                    continue;
-                }
-                let contents = fs::read_to_string(&path)
-                    .with_context(|| format!("read endpoint evidence bundle {}", path.display()))?;
-                let mut stored: StoredEndpointEvidenceBundle = serde_json::from_str(&contents)
-                    .with_context(|| {
-                        format!("parse endpoint evidence bundle {}", path.display())
-                    })?;
-                validate_stored_evidence_bundle_artifact_path(&stored, &path)?;
-                stored.path = Some(path.display().to_string());
-                validate_stored_evidence_bundle_artifact(&stored)?;
-                self.bundles.insert(stored.bundle.bundle_id.clone(), stored);
-            }
-        }
-        let mut bundles = self.bundles.values().cloned().collect::<Vec<_>>();
-        bundles.sort_by(|left, right| {
-            right
-                .bundle
-                .created_at
-                .cmp(&left.bundle.created_at)
-                .then_with(|| left.bundle.bundle_id.cmp(&right.bundle.bundle_id))
-        });
-        Ok(bundles)
-    }
-
-    fn remove(&mut self, bundle_id: &str) -> Result<Option<StoredEndpointEvidenceBundle>> {
-        let stored = self.load(bundle_id)?;
-        if let Some(root) = &self.root {
-            let path = evidence_bundle_path(root, bundle_id)?;
-            match fs::remove_file(&path) {
-                Ok(()) => {}
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => {
-                    return Err(err).with_context(|| {
-                        format!("remove endpoint evidence bundle {}", path.display())
-                    });
-                }
-            }
-        }
-        self.bundles.remove(bundle_id);
-        Ok(stored)
-    }
-}
-
-fn validate_stored_evidence_bundle_artifact(stored: &StoredEndpointEvidenceBundle) -> Result<()> {
-    if stored.bundle.node_count != stored.graph.nodes.len() {
-        return Err(anyhow::anyhow!(
-            "endpoint evidence bundle artifact node count mismatch: expected {}, computed {}",
-            stored.bundle.node_count,
-            stored.graph.nodes.len()
-        ));
-    }
-    if stored.bundle.edge_count != stored.graph.edges.len() {
-        return Err(anyhow::anyhow!(
-            "endpoint evidence bundle artifact edge count mismatch: expected {}, computed {}",
-            stored.bundle.edge_count,
-            stored.graph.edges.len()
-        ));
-    }
-    let graph_value =
-        serde_json::to_value(&stored.graph).context("serialize endpoint evidence bundle graph")?;
-    let canonical_graph =
-        canonicalize_json(&graph_value).context("canonicalize endpoint evidence bundle graph")?;
-    let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
-    if content_hash != stored.bundle.content_hash {
-        return Err(anyhow::anyhow!(
-            "endpoint evidence bundle artifact content hash mismatch: expected {}, computed {}",
-            stored.bundle.content_hash,
-            content_hash
-        ));
-    }
-    if stored.byte_count != canonical_graph.len() {
-        return Err(anyhow::anyhow!(
-            "endpoint evidence bundle artifact byte count mismatch: expected {}, computed {}",
-            stored.byte_count,
-            canonical_graph.len()
-        ));
-    }
-    Ok(())
-}
-
-fn validate_stored_evidence_bundle_artifact_path(
-    stored: &StoredEndpointEvidenceBundle,
-    path: &FsPath,
-) -> Result<()> {
-    let expected_filename = evidence_bundle_filename(&stored.bundle.bundle_id)?;
-    let actual_filename = path
-        .file_name()
-        .and_then(std::ffi::OsStr::to_str)
-        .unwrap_or_default();
-    if actual_filename != expected_filename {
-        return Err(anyhow::anyhow!(
-            "endpoint evidence bundle artifact filename mismatch: expected {}, found {}",
-            expected_filename,
-            actual_filename
-        ));
-    }
-    Ok(())
-}
-
-fn evidence_bundle_path(root: &FsPath, bundle_id: &str) -> Result<PathBuf> {
-    let filename = evidence_bundle_filename(bundle_id)?;
-    Ok(root.join(filename))
-}
-
-fn evidence_bundle_filename(bundle_id: &str) -> Result<String> {
-    let bundle_id = bundle_id.trim();
-    if bundle_id.is_empty() {
-        return Err(anyhow::anyhow!("evidence bundle id must not be empty"));
-    }
-    if !bundle_id
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-' | b'_'))
-    {
-        return Err(anyhow::anyhow!(
-            "evidence bundle id contains invalid characters"
-        ));
-    }
-    Ok(format!("{}.json", bundle_id.replace(':', "_")))
-}
+pub(crate) use crate::edr::ledger::EndpointEvidenceBundleStore;
 
 pub(crate) use crate::edr::ledger::EndpointStagedDetectionLedger;
 
-struct EndpointPolicyDeltaStore {
-    root: Option<PathBuf>,
-    records: VecDeque<EdrPolicyDeltaRecord>,
-}
-
-impl EndpointPolicyDeltaStore {
-    fn open(root: impl Into<PathBuf>) -> Result<Self> {
-        let root = root.into();
-        let records = read_policy_delta_index(&policy_delta_index_path(&root))?;
-        Ok(Self {
-            root: Some(root),
-            records: records.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            root: None,
-            records: VecDeque::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.root.as_deref()
-    }
-
-    fn append(&mut self, record: &mut EdrPolicyDeltaRecord) -> Result<()> {
-        if let Some(root) = &self.root {
-            fs::create_dir_all(root).with_context(|| {
-                format!("create endpoint policy delta directory {}", root.display())
-            })?;
-            let artifact_path = root.join(policy_delta_filename(&record.policy_delta_id)?);
-            serde_json::to_writer_pretty(
-                OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(&artifact_path)
-                    .with_context(|| {
-                        format!("open endpoint policy delta {}", artifact_path.display())
-                    })?,
-                &record.artifact,
-            )
-            .with_context(|| {
-                format!(
-                    "serialize endpoint policy delta artifact {}",
-                    record.policy_delta_id
-                )
-            })?;
-            record.artifact_path = Some(artifact_path.display().to_string());
-        }
-
-        self.records.push_back(record.clone());
-        while self.records.len() > EDR_MAX_STORED_FINDINGS {
-            let _ = self.records.pop_front();
-        }
-
-        let Some(root) = &self.root else {
-            return Ok(());
-        };
-        let index_path = policy_delta_index_path(root);
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&index_path)
-            .with_context(|| {
-                format!("open endpoint policy delta index {}", index_path.display())
-            })?;
-        serde_json::to_writer(&mut file, record).with_context(|| {
-            format!(
-                "serialize endpoint policy delta record {}",
-                record.policy_delta_id
-            )
-        })?;
-        file.write_all(b"\n").with_context(|| {
-            format!("write endpoint policy delta index {}", index_path.display())
-        })?;
-        file.flush().with_context(|| {
-            format!("flush endpoint policy delta index {}", index_path.display())
-        })?;
-        Ok(())
-    }
-
-    fn read_recent(
-        &self,
-        limit: usize,
-        stage: Option<&str>,
-        rule_id: Option<&str>,
-    ) -> Result<Vec<EdrPolicyDeltaRecord>> {
-        let records = self.all()?;
-        Ok(records
-            .into_iter()
-            .rev()
-            .filter(|record| {
-                stage.map_or(true, |stage| record.stage == stage)
-                    && rule_id.map_or(true, |rule_id| record.rule_id == rule_id)
-            })
-            .take(limit)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect())
-    }
-
-    fn read_by_id(&self, policy_delta_id: &str) -> Result<Option<EdrPolicyDeltaRecord>> {
-        Ok(self
-            .all()?
-            .into_iter()
-            .rev()
-            .find(|record| record.policy_delta_id == policy_delta_id))
-    }
-
-    fn all(&self) -> Result<Vec<EdrPolicyDeltaRecord>> {
-        if let Some(root) = &self.root {
-            return read_policy_delta_index(&policy_delta_index_path(root));
-        }
-        Ok(self.records.iter().cloned().collect())
-    }
-}
-
-fn policy_delta_index_path(root: &FsPath) -> PathBuf {
-    root.join("policy-deltas.jsonl")
-}
-
-fn policy_delta_filename(policy_delta_id: &str) -> Result<String> {
-    let policy_delta_id = policy_delta_id.trim();
-    if policy_delta_id.is_empty() {
-        return Err(anyhow::anyhow!("policy delta id must not be empty"));
-    }
-    if !policy_delta_id
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-' | b'_'))
-    {
-        return Err(anyhow::anyhow!(
-            "policy delta id contains invalid characters"
-        ));
-    }
-    Ok(format!("{}.json", policy_delta_id.replace(':', "_")))
-}
-
-fn read_policy_delta_index(path: &FsPath) -> Result<Vec<EdrPolicyDeltaRecord>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err)
-                .with_context(|| format!("read endpoint policy delta index {}", path.display()));
-        }
-    };
-
-    let mut records = Vec::new();
-    for (index, line) in contents.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let record: EdrPolicyDeltaRecord = serde_json::from_str(line).with_context(|| {
-            format!(
-                "parse endpoint policy delta index line {} from {}",
-                index + 1,
-                path.display()
-            )
-        })?;
-        records.push(record);
-    }
-    Ok(records)
-}
-
-struct EndpointResponseExecutionLedger {
-    path: Option<PathBuf>,
-    executions: VecDeque<EndpointResponseExecutionReport>,
-}
-
-impl EndpointResponseExecutionLedger {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let executions = read_response_execution_ledger(&path)?;
-        Ok(Self {
-            path: Some(path),
-            executions: executions.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            executions: VecDeque::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn append(&mut self, execution: &EndpointResponseExecutionReport) -> Result<()> {
-        self.executions.push_back(execution.clone());
-        while self.executions.len() > EDR_MAX_STORED_FINDINGS {
-            let _ = self.executions.pop_front();
-        }
-
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint response execution ledger directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| {
-                format!("open endpoint response execution ledger {}", path.display())
-            })?;
-        serde_json::to_writer(&mut file, execution).with_context(|| {
-            format!(
-                "serialize endpoint response execution {}",
-                execution.execution_id
-            )
-        })?;
-        file.write_all(b"\n").with_context(|| {
-            format!(
-                "write endpoint response execution ledger {}",
-                path.display()
-            )
-        })?;
-        file.flush().with_context(|| {
-            format!(
-                "flush endpoint response execution ledger {}",
-                path.display()
-            )
-        })?;
-        Ok(())
-    }
-
-    fn read_recent(&self, limit: usize) -> Result<Vec<EndpointResponseExecutionReport>> {
-        if let Some(path) = &self.path {
-            let executions = read_response_execution_ledger(path)?;
-            return Ok(executions
-                .into_iter()
-                .rev()
-                .take(limit)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect());
-        }
-        Ok(self
-            .executions
-            .iter()
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect())
-    }
-
-    fn active_evidence_bundle_ids(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<BTreeSet<String>> {
-        let current = self.all()?;
-        Ok(current
-            .iter()
-            .filter(|execution| {
-                matches!(
-                    execution.status,
-                    EndpointResponseExecutionStatus::Succeeded
-                        | EndpointResponseExecutionStatus::Partial
-                ) && now <= execution.expires_at()
-                    && !Self::has_terminal_transition(&current, execution)
-            })
-            .map(|execution| execution.evidence_bundle.bundle_id.clone())
-            .collect())
-    }
-
-    fn get(&self, execution_id: &str) -> Result<Option<EndpointResponseExecutionReport>> {
-        if let Some(path) = &self.path {
-            return Ok(read_response_execution_ledger(path)?
-                .into_iter()
-                .rev()
-                .find(|execution| execution.execution_id == execution_id));
-        }
-        Ok(self
-            .executions
-            .iter()
-            .rev()
-            .find(|execution| execution.execution_id == execution_id)
-            .cloned())
-    }
-
-    fn expire_due(
-        &mut self,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<EndpointResponseExecutionReport>> {
-        let expired = self.pending_expirations(now)?;
-
-        for execution in &expired {
-            self.append(execution)?;
-        }
-
-        Ok(expired)
-    }
-
-    fn cancel(
-        &mut self,
-        execution: &EndpointResponseExecutionReport,
-        reason: &str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Option<EndpointResponseExecutionReport>> {
-        let current = self.all()?;
-        let Some(latest) = current
-            .iter()
-            .rev()
-            .find(|candidate| candidate.execution_id == execution.execution_id)
-            .cloned()
-        else {
-            return Ok(None);
-        };
-        if !matches!(
-            latest.status,
-            EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
-        ) {
-            return Ok(None);
-        }
-        if now > latest.expires_at() {
-            return Ok(None);
-        }
-        if Self::has_terminal_transition(&current, &latest) {
-            return Ok(None);
-        }
-
-        let cancelled = EndpointResponseExecutionReport::cancelled_from(&latest, reason, now);
-        self.append(&cancelled)?;
-        Ok(Some(cancelled))
-    }
-
-    fn roll_back(
-        &mut self,
-        execution: &EndpointResponseExecutionReport,
-        reason: &str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Option<EndpointResponseExecutionReport>> {
-        let current = self.all()?;
-        let Some(latest) = current
-            .iter()
-            .rev()
-            .find(|candidate| candidate.execution_id == execution.execution_id)
-            .cloned()
-        else {
-            return Ok(None);
-        };
-        if latest.status != EndpointResponseExecutionStatus::Succeeded {
-            return Ok(None);
-        }
-        if Self::has_terminal_transition(&current, &latest) {
-            return Ok(None);
-        }
-
-        let rolled_back = EndpointResponseExecutionReport::rolled_back_from(&latest, reason, now);
-        self.append(&rolled_back)?;
-        Ok(Some(rolled_back))
-    }
-
-    fn has_terminal_transition_for(
-        &self,
-        execution: &EndpointResponseExecutionReport,
-    ) -> Result<bool> {
-        Ok(Self::has_terminal_transition(&self.all()?, execution))
-    }
-
-    fn pending_expirations(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<EndpointResponseExecutionReport>> {
-        Ok(self
-            .pending_expiring_executions(now)?
-            .into_iter()
-            .map(|execution| EndpointResponseExecutionReport::expired_from(&execution, now))
-            .collect())
-    }
-
-    fn pending_expiring_executions(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<EndpointResponseExecutionReport>> {
-        let current = self.all()?;
-        let mut expired = Vec::new();
-        for execution in &current {
-            if !matches!(
-                execution.status,
-                EndpointResponseExecutionStatus::Succeeded
-                    | EndpointResponseExecutionStatus::Partial
-            ) {
-                continue;
-            }
-            if now <= execution.expires_at() {
-                continue;
-            }
-            if Self::has_terminal_transition(&current, execution) {
-                continue;
-            }
-            expired.push(execution.clone());
-        }
-
-        Ok(expired)
-    }
-
-    fn all(&self) -> Result<Vec<EndpointResponseExecutionReport>> {
-        if let Some(path) = &self.path {
-            return read_response_execution_ledger(path);
-        }
-        Ok(self.executions.iter().cloned().collect())
-    }
-
-    fn has_terminal_transition(
-        current: &[EndpointResponseExecutionReport],
-        execution: &EndpointResponseExecutionReport,
-    ) -> bool {
-        let search_start = current
-            .iter()
-            .rposition(|candidate| candidate == execution)
-            .map_or(0, |index| index + 1);
-        current[search_start..].iter().any(|candidate| {
-            matches!(
-                candidate.status,
-                EndpointResponseExecutionStatus::Expired
-                    | EndpointResponseExecutionStatus::Cancelled
-                    | EndpointResponseExecutionStatus::RolledBack
-            ) && candidate.action_id == execution.action_id
-                && candidate.rollback_ref == execution.rollback_ref
-        })
-    }
-}
-
-fn read_response_execution_ledger(path: &FsPath) -> Result<Vec<EndpointResponseExecutionReport>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err).with_context(|| {
-                format!("read endpoint response execution ledger {}", path.display())
-            });
-        }
-    };
-
-    let mut executions = Vec::new();
-    for (index, line) in contents.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let execution: EndpointResponseExecutionReport =
-            serde_json::from_str(line).with_context(|| {
-                format!(
-                    "parse endpoint response execution ledger line {} from {}",
-                    index + 1,
-                    path.display()
-                )
-            })?;
-        executions.push(execution);
-    }
-    Ok(executions)
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EndpointEgressRestriction {
-    restriction_id: String,
-    execution_id: String,
-    action_id: String,
-    graph_slice_id: String,
-    rollback_ref: String,
-    target: String,
-    target_hash: String,
-    active: bool,
-    created_at: chrono::DateTime<chrono::Utc>,
-    expires_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-impl EndpointEgressRestriction {
-    fn active(
-        execution: &EndpointResponseExecutionReport,
-        target: &str,
-        created_at: chrono::DateTime<chrono::Utc>,
-        expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> Self {
-        let target_hash = sha256(target.as_bytes()).to_hex_prefixed();
-        let restriction_id = local_stable_id(
-            "egress_restriction",
-            [
-                execution.execution_id.as_str(),
-                execution.action_id.as_str(),
-                target,
-            ],
-        );
-        Self {
-            restriction_id,
-            execution_id: execution.execution_id.clone(),
-            action_id: execution.action_id.clone(),
-            graph_slice_id: execution.graph_slice_id.clone(),
-            rollback_ref: execution.rollback_ref.clone(),
-            target: target.to_string(),
-            target_hash,
-            active: true,
-            created_at,
-            expires_at,
-            updated_at: created_at,
-        }
-    }
-
-    fn inactive_from(&self, updated_at: chrono::DateTime<chrono::Utc>) -> Self {
-        let mut next = self.clone();
-        next.active = false;
-        next.updated_at = updated_at;
-        next
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct NetworkExtensionEgressPolicySnapshot {
-    schema_version: u32,
-    generated_at: chrono::DateTime<chrono::Utc>,
-    restrictions: Vec<EndpointEgressRestriction>,
-}
-
-fn write_network_extension_egress_policy_snapshot(
-    path: &FsPath,
-    restrictions: &[EndpointEgressRestriction],
-    generated_at: chrono::DateTime<chrono::Utc>,
-) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "create network extension egress policy directory {}",
-                parent.display()
-            )
-        })?;
-    }
-
-    let snapshot = NetworkExtensionEgressPolicySnapshot {
-        schema_version: EDR_NETWORK_EXTENSION_EGRESS_POLICY_SCHEMA_VERSION,
-        generated_at,
-        restrictions: restrictions.to_vec(),
-    };
-    let mut bytes = serde_json::to_vec_pretty(&snapshot)
-        .context("serialize network extension egress policy")?;
-    bytes.push(b'\n');
-
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, bytes).with_context(|| {
-        format!(
-            "write temporary network extension egress policy {}",
-            tmp_path.display()
-        )
-    })?;
-    fs::rename(&tmp_path, path).with_context(|| {
-        format!(
-            "replace network extension egress policy {} with {}",
-            path.display(),
-            tmp_path.display()
-        )
-    })?;
-    Ok(())
-}
-
-struct EndpointEgressRestrictionLedger {
-    path: Option<PathBuf>,
-    restrictions: VecDeque<EndpointEgressRestriction>,
-}
-
-impl EndpointEgressRestrictionLedger {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let restrictions = read_egress_restriction_ledger(&path)?;
-        Ok(Self {
-            path: Some(path),
-            restrictions: restrictions.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            restrictions: VecDeque::new(),
-        }
-    }
-
-    fn append(&mut self, restrictions: &[EndpointEgressRestriction]) -> Result<()> {
-        for restriction in restrictions {
-            self.restrictions.push_back(restriction.clone());
-        }
-        while self.restrictions.len() > EDR_MAX_STORED_FINDINGS {
-            let _ = self.restrictions.pop_front();
-        }
-
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint egress restriction ledger directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| {
-                format!("open endpoint egress restriction ledger {}", path.display())
-            })?;
-        for restriction in restrictions {
-            serde_json::to_writer(&mut file, restriction).with_context(|| {
-                format!(
-                    "serialize endpoint egress restriction {}",
-                    restriction.restriction_id
-                )
-            })?;
-            file.write_all(b"\n").with_context(|| {
-                format!(
-                    "write endpoint egress restriction ledger {}",
-                    path.display()
-                )
-            })?;
-        }
-        file.flush().with_context(|| {
-            format!(
-                "flush endpoint egress restriction ledger {}",
-                path.display()
-            )
-        })?;
-        Ok(())
-    }
-
-    fn deactivate_execution(
-        &mut self,
-        execution_id: &str,
-        updated_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<EndpointEgressRestriction>> {
-        let deactivated = self
-            .active_for_execution(execution_id)
-            .into_iter()
-            .map(|restriction| restriction.inactive_from(updated_at))
-            .collect::<Vec<_>>();
-        if deactivated.is_empty() {
-            return Err(anyhow::anyhow!(
-                "execution {execution_id} has no active egress restrictions"
-            ));
-        }
-        self.append(&deactivated)?;
-        Ok(deactivated)
-    }
-
-    fn deactivate_action_if_active(
-        &mut self,
-        action_id: &str,
-        updated_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<EndpointEgressRestriction>> {
-        let deactivated = self
-            .active_for_action(action_id)
-            .into_iter()
-            .map(|restriction| restriction.inactive_from(updated_at))
-            .collect::<Vec<_>>();
-        self.append(&deactivated)?;
-        Ok(deactivated)
-    }
-
-    fn active_match(
-        &self,
-        target: &str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Option<EndpointEgressRestriction> {
-        self.active_entries(now)
-            .into_iter()
-            .find(|restriction| restriction.target == target)
-    }
-
-    fn active_for_execution(&self, execution_id: &str) -> Vec<EndpointEgressRestriction> {
-        self.latest_entries()
-            .into_iter()
-            .filter(|restriction| restriction.active && restriction.execution_id == execution_id)
-            .collect()
-    }
-
-    fn active_for_action(&self, action_id: &str) -> Vec<EndpointEgressRestriction> {
-        self.latest_entries()
-            .into_iter()
-            .filter(|restriction| restriction.active && restriction.action_id == action_id)
-            .collect()
-    }
-
-    fn active_entries(&self, now: chrono::DateTime<chrono::Utc>) -> Vec<EndpointEgressRestriction> {
-        self.latest_entries()
-            .into_iter()
-            .filter(|restriction| restriction.active && now <= restriction.expires_at)
-            .collect()
-    }
-
-    fn latest_entries(&self) -> Vec<EndpointEgressRestriction> {
-        let mut latest = BTreeMap::new();
-        for restriction in &self.restrictions {
-            latest.insert(restriction.restriction_id.clone(), restriction.clone());
-        }
-        latest.into_values().collect()
-    }
-}
-
-fn read_egress_restriction_ledger(path: &FsPath) -> Result<Vec<EndpointEgressRestriction>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err).with_context(|| {
-                format!("read endpoint egress restriction ledger {}", path.display())
-            });
-        }
-    };
-
-    let mut latest = BTreeMap::new();
-    for (index, line) in contents.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let restriction: EndpointEgressRestriction =
-            serde_json::from_str(line).with_context(|| {
-                format!(
-                    "parse endpoint egress restriction ledger line {} from {}",
-                    index + 1,
-                    path.display()
-                )
-            })?;
-        latest.insert(restriction.restriction_id.clone(), restriction);
-    }
-    Ok(latest.into_values().collect())
-}
-
-struct EndpointResponseAcknowledgementLedger {
-    path: Option<PathBuf>,
-    acknowledgements: VecDeque<EndpointResponseAcknowledgementReport>,
-}
-
-impl EndpointResponseAcknowledgementLedger {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let acknowledgements = read_response_acknowledgement_ledger(&path)?;
-        Ok(Self {
-            path: Some(path),
-            acknowledgements: acknowledgements.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            acknowledgements: VecDeque::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn append(&mut self, acknowledgement: &EndpointResponseAcknowledgementReport) -> Result<()> {
-        self.acknowledgements.push_back(acknowledgement.clone());
-        while self.acknowledgements.len() > EDR_MAX_STORED_FINDINGS {
-            let _ = self.acknowledgements.pop_front();
-        }
-
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint response acknowledgement ledger directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| {
-                format!(
-                    "open endpoint response acknowledgement ledger {}",
-                    path.display()
-                )
-            })?;
-        serde_json::to_writer(&mut file, acknowledgement).with_context(|| {
-            format!(
-                "serialize endpoint response acknowledgement {}",
-                acknowledgement.acknowledgement_id
-            )
-        })?;
-        file.write_all(b"\n").with_context(|| {
-            format!(
-                "write endpoint response acknowledgement ledger {}",
-                path.display()
-            )
-        })?;
-        file.flush().with_context(|| {
-            format!(
-                "flush endpoint response acknowledgement ledger {}",
-                path.display()
-            )
-        })?;
-        Ok(())
-    }
-
-    fn read_recent(&self, limit: usize) -> Result<Vec<EndpointResponseAcknowledgementReport>> {
-        if let Some(path) = &self.path {
-            let acknowledgements = read_response_acknowledgement_ledger(path)?;
-            return Ok(acknowledgements
-                .into_iter()
-                .rev()
-                .take(limit)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect());
-        }
-        Ok(self
-            .acknowledgements
-            .iter()
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect())
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EndpointFleetHuntEventOutboxEntry {
-    outbox_id: String,
-    event_id: String,
-    raw_ref: String,
-    event: serde_json::Value,
-    attempt_count: u32,
-    next_attempt_at: chrono::DateTime<chrono::Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_error_hash: Option<String>,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-struct EndpointFleetHuntEventOutbox {
-    path: Option<PathBuf>,
-    events: VecDeque<EndpointFleetHuntEventOutboxEntry>,
-}
-
-impl EndpointFleetHuntEventOutbox {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let events = read_fleet_hunt_event_outbox(&path)?;
-        if path.exists() {
-            crate::settings::enforce_private_mode(&path, "endpoint fleet hunt-event outbox")?;
-        }
-        Ok(Self {
-            path: Some(path),
-            events: events.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            events: VecDeque::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn pending_count(&self) -> usize {
-        self.events.len()
-    }
-
-    fn append(&mut self, event: EndpointFleetHuntEventOutboxEntry) -> Result<()> {
-        self.events
-            .retain(|existing| existing.outbox_id != event.outbox_id);
-        self.events.push_back(event);
-        while self.events.len() > EDR_MAX_FLEET_HUNT_EVENT_OUTBOX {
-            let _ = self.events.pop_front();
-        }
-        self.persist()
-    }
-
-    fn due(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-        limit: usize,
-        force: bool,
-    ) -> Vec<EndpointFleetHuntEventOutboxEntry> {
-        self.events
-            .iter()
-            .filter(|event| force || event.next_attempt_at <= now)
-            .take(limit)
-            .cloned()
-            .collect()
-    }
-
-    fn mark_delivered(
-        &mut self,
-        outbox_id: &str,
-    ) -> Result<Option<EndpointFleetHuntEventOutboxEntry>> {
-        let Some(index) = self
-            .events
-            .iter()
-            .position(|event| event.outbox_id == outbox_id)
-        else {
-            return Ok(None);
-        };
-        let removed = self.events.remove(index);
-        self.persist()?;
-        Ok(removed)
-    }
-
-    fn mark_failed(
-        &mut self,
-        outbox_id: &str,
-        now: chrono::DateTime<chrono::Utc>,
-        error_hash: Option<String>,
-    ) -> Result<Option<EndpointFleetHuntEventOutboxEntry>> {
-        let Some(event) = self
-            .events
-            .iter_mut()
-            .find(|event| event.outbox_id == outbox_id)
-        else {
-            return Ok(None);
-        };
-        event.attempt_count = event.attempt_count.saturating_add(1);
-        event.last_attempt_at = Some(now);
-        event.last_error_hash = error_hash;
-        event.updated_at = now;
-        event.next_attempt_at =
-            now + chrono::Duration::seconds(control_ack_retry_backoff_seconds(event.attempt_count));
-        let updated = event.clone();
-        self.persist()?;
-        Ok(Some(updated))
-    }
-
-    fn persist(&self) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint fleet hunt-event outbox directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut options = OpenOptions::new();
-        options.create(true).write(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options
-            .open(path)
-            .with_context(|| format!("open endpoint fleet hunt-event outbox {}", path.display()))?;
-        let events = self.events.iter().cloned().collect::<Vec<_>>();
-        serde_json::to_writer_pretty(&mut file, &events).with_context(|| {
-            format!(
-                "serialize endpoint fleet hunt-event outbox {}",
-                path.display()
-            )
-        })?;
-        file.write_all(b"\n").with_context(|| {
-            format!("write endpoint fleet hunt-event outbox {}", path.display())
-        })?;
-        file.flush().with_context(|| {
-            format!("flush endpoint fleet hunt-event outbox {}", path.display())
-        })?;
-        crate::settings::enforce_private_mode(path, "endpoint fleet hunt-event outbox")?;
-        Ok(())
-    }
-}
-
-fn read_fleet_hunt_event_outbox(path: &FsPath) -> Result<Vec<EndpointFleetHuntEventOutboxEntry>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err).with_context(|| {
-                format!("read endpoint fleet hunt-event outbox {}", path.display())
-            });
-        }
-    };
-    let trimmed = contents.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    serde_json::from_str(trimmed)
-        .with_context(|| format!("parse endpoint fleet hunt-event outbox {}", path.display()))
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EndpointControlAckPostbackRetry {
-    retry_id: String,
-    response_action_id: String,
-    control_api_url: String,
-    preferred_route: ControlResponseAckPostbackRoute,
-    target_kind: String,
-    target_id: String,
-    ack_token: String,
-    ack_token_hash: String,
-    status: String,
-    observed_at: chrono::DateTime<chrono::Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    message: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    resulting_state: Option<String>,
-    raw_payload: serde_json::Value,
-    attempt_count: u32,
-    next_attempt_at: chrono::DateTime<chrono::Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_http_status: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_response_hash: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_error_hash: Option<String>,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-struct EndpointControlAckPostbackRetryLedger {
-    path: Option<PathBuf>,
-    retries: VecDeque<EndpointControlAckPostbackRetry>,
-}
-
-impl EndpointControlAckPostbackRetryLedger {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let retries = read_control_ack_postback_retry_ledger(&path)?;
-        if path.exists() {
-            crate::settings::enforce_private_mode(
-                &path,
-                "endpoint Control API acknowledgement retry queue",
-            )?;
-        }
-        Ok(Self {
-            path: Some(path),
-            retries: retries.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            retries: VecDeque::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn pending_count(&self) -> usize {
-        self.retries.len()
-    }
-
-    fn append(&mut self, retry: EndpointControlAckPostbackRetry) -> Result<()> {
-        self.retries
-            .retain(|existing| existing.retry_id != retry.retry_id);
-        self.retries.push_back(retry);
-        while self.retries.len() > EDR_MAX_CONTROL_ACK_POSTBACK_RETRIES {
-            let _ = self.retries.pop_front();
-        }
-        self.persist()
-    }
-
-    fn due(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-        limit: usize,
-        force: bool,
-    ) -> Vec<EndpointControlAckPostbackRetry> {
-        self.retries
-            .iter()
-            .filter(|retry| force || retry.next_attempt_at <= now)
-            .take(limit)
-            .cloned()
-            .collect()
-    }
-
-    fn mark_delivered(
-        &mut self,
-        retry_id: &str,
-    ) -> Result<Option<EndpointControlAckPostbackRetry>> {
-        let Some(index) = self
-            .retries
-            .iter()
-            .position(|retry| retry.retry_id == retry_id)
-        else {
-            return Ok(None);
-        };
-        let removed = self.retries.remove(index);
-        self.persist()?;
-        Ok(removed)
-    }
-
-    fn mark_failed(
-        &mut self,
-        retry_id: &str,
-        now: chrono::DateTime<chrono::Utc>,
-        http_status: Option<u16>,
-        response_hash: Option<String>,
-        error_hash: Option<String>,
-    ) -> Result<Option<EndpointControlAckPostbackRetry>> {
-        let Some(retry) = self
-            .retries
-            .iter_mut()
-            .find(|retry| retry.retry_id == retry_id)
-        else {
-            return Ok(None);
-        };
-        retry.attempt_count = retry.attempt_count.saturating_add(1);
-        retry.last_attempt_at = Some(now);
-        retry.last_http_status = http_status;
-        retry.last_response_hash = response_hash;
-        retry.last_error_hash = error_hash;
-        retry.updated_at = now;
-        retry.next_attempt_at =
-            now + chrono::Duration::seconds(control_ack_retry_backoff_seconds(retry.attempt_count));
-        let updated = retry.clone();
-        self.persist()?;
-        Ok(Some(updated))
-    }
-
-    fn persist(&self) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint Control API acknowledgement retry queue directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut options = OpenOptions::new();
-        options.create(true).write(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(path).with_context(|| {
-            format!(
-                "open endpoint Control API acknowledgement retry queue {}",
-                path.display()
-            )
-        })?;
-        let retries = self.retries.iter().cloned().collect::<Vec<_>>();
-        serde_json::to_writer_pretty(&mut file, &retries).with_context(|| {
-            format!(
-                "serialize endpoint Control API acknowledgement retry queue {}",
-                path.display()
-            )
-        })?;
-        file.write_all(b"\n").with_context(|| {
-            format!(
-                "write endpoint Control API acknowledgement retry queue {}",
-                path.display()
-            )
-        })?;
-        file.flush().with_context(|| {
-            format!(
-                "flush endpoint Control API acknowledgement retry queue {}",
-                path.display()
-            )
-        })?;
-        crate::settings::enforce_private_mode(
-            path,
-            "endpoint Control API acknowledgement retry queue",
-        )?;
-        Ok(())
-    }
-}
-
-fn read_control_ack_postback_retry_ledger(
-    path: &FsPath,
-) -> Result<Vec<EndpointControlAckPostbackRetry>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err).with_context(|| {
-                format!(
-                    "read endpoint Control API acknowledgement retry queue {}",
-                    path.display()
-                )
-            });
-        }
-    };
-    let trimmed = contents.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    serde_json::from_str(trimmed).with_context(|| {
-        format!(
-            "parse endpoint Control API acknowledgement retry queue {}",
-            path.display()
-        )
-    })
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EndpointControlReceiptUploadRetry {
-    retry_id: String,
-    control_api_url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    receipt_id: Option<String>,
-    receipt_hash: String,
-    payload: ControlStoreReceiptRequest,
-    attempt_count: u32,
-    next_attempt_at: chrono::DateTime<chrono::Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_http_status: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_response_hash: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_error_hash: Option<String>,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-struct EndpointControlReceiptUploadRetryLedger {
-    path: Option<PathBuf>,
-    retries: VecDeque<EndpointControlReceiptUploadRetry>,
-}
-
-impl EndpointControlReceiptUploadRetryLedger {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let retries = read_control_receipt_upload_retry_ledger(&path)?;
-        if path.exists() {
-            crate::settings::enforce_private_mode(
-                &path,
-                "endpoint Control API receipt upload retry queue",
-            )?;
-        }
-        Ok(Self {
-            path: Some(path),
-            retries: retries.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            retries: VecDeque::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn pending_count(&self) -> usize {
-        self.retries.len()
-    }
-
-    fn append(&mut self, retry: EndpointControlReceiptUploadRetry) -> Result<()> {
-        self.retries
-            .retain(|existing| existing.retry_id != retry.retry_id);
-        self.retries.push_back(retry);
-        while self.retries.len() > EDR_MAX_CONTROL_RECEIPT_UPLOAD_RETRIES {
-            let _ = self.retries.pop_front();
-        }
-        self.persist()
-    }
-
-    fn due(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-        limit: usize,
-        force: bool,
-    ) -> Vec<EndpointControlReceiptUploadRetry> {
-        self.retries
-            .iter()
-            .filter(|retry| force || retry.next_attempt_at <= now)
-            .take(limit)
-            .cloned()
-            .collect()
-    }
-
-    fn mark_delivered(
-        &mut self,
-        retry_id: &str,
-    ) -> Result<Option<EndpointControlReceiptUploadRetry>> {
-        let Some(index) = self
-            .retries
-            .iter()
-            .position(|retry| retry.retry_id == retry_id)
-        else {
-            return Ok(None);
-        };
-        let removed = self.retries.remove(index);
-        self.persist()?;
-        Ok(removed)
-    }
-
-    fn mark_failed(
-        &mut self,
-        retry_id: &str,
-        now: chrono::DateTime<chrono::Utc>,
-        http_status: Option<u16>,
-        response_hash: Option<String>,
-        error_hash: Option<String>,
-    ) -> Result<Option<EndpointControlReceiptUploadRetry>> {
-        let Some(retry) = self
-            .retries
-            .iter_mut()
-            .find(|retry| retry.retry_id == retry_id)
-        else {
-            return Ok(None);
-        };
-        retry.attempt_count = retry.attempt_count.saturating_add(1);
-        retry.last_attempt_at = Some(now);
-        retry.last_http_status = http_status;
-        retry.last_response_hash = response_hash;
-        retry.last_error_hash = error_hash;
-        retry.updated_at = now;
-        retry.next_attempt_at =
-            now + chrono::Duration::seconds(control_ack_retry_backoff_seconds(retry.attempt_count));
-        let updated = retry.clone();
-        self.persist()?;
-        Ok(Some(updated))
-    }
-
-    fn persist(&self) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint Control API receipt upload retry queue directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut options = OpenOptions::new();
-        options.create(true).write(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(path).with_context(|| {
-            format!(
-                "open endpoint Control API receipt upload retry queue {}",
-                path.display()
-            )
-        })?;
-        let retries = self.retries.iter().cloned().collect::<Vec<_>>();
-        serde_json::to_writer_pretty(&mut file, &retries).with_context(|| {
-            format!(
-                "serialize endpoint Control API receipt upload retry queue {}",
-                path.display()
-            )
-        })?;
-        file.write_all(b"\n").with_context(|| {
-            format!(
-                "write endpoint Control API receipt upload retry queue {}",
-                path.display()
-            )
-        })?;
-        file.flush().with_context(|| {
-            format!(
-                "flush endpoint Control API receipt upload retry queue {}",
-                path.display()
-            )
-        })?;
-        crate::settings::enforce_private_mode(
-            path,
-            "endpoint Control API receipt upload retry queue",
-        )?;
-        Ok(())
-    }
-}
-
-fn read_control_receipt_upload_retry_ledger(
-    path: &FsPath,
-) -> Result<Vec<EndpointControlReceiptUploadRetry>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err).with_context(|| {
-                format!(
-                    "read endpoint Control API receipt upload retry queue {}",
-                    path.display()
-                )
-            });
-        }
-    };
-    let trimmed = contents.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    serde_json::from_str(trimmed).with_context(|| {
-        format!(
-            "parse endpoint Control API receipt upload retry queue {}",
-            path.display()
-        )
-    })
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EndpointControlArchiveUploadRetry {
-    retry_id: String,
-    control_api_url: String,
-    archive_id: String,
-    archive_hash: String,
-    raw_ref: String,
-    bundle_id: String,
-    payload: serde_json::Value,
-    attempt_count: u32,
-    next_attempt_at: chrono::DateTime<chrono::Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_http_status: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_response_hash: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_error_hash: Option<String>,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-struct EndpointControlArchiveUploadRetryLedger {
-    path: Option<PathBuf>,
-    retries: VecDeque<EndpointControlArchiveUploadRetry>,
-}
-
-impl EndpointControlArchiveUploadRetryLedger {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let retries = read_control_archive_upload_retry_ledger(&path)?;
-        if path.exists() {
-            crate::settings::enforce_private_mode(
-                &path,
-                "endpoint Control API archive upload retry queue",
-            )?;
-        }
-        Ok(Self {
-            path: Some(path),
-            retries: retries.into(),
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            retries: VecDeque::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn pending_count(&self) -> usize {
-        self.retries.len()
-    }
-
-    fn append(&mut self, retry: EndpointControlArchiveUploadRetry) -> Result<()> {
-        self.retries
-            .retain(|existing| existing.retry_id != retry.retry_id);
-        self.retries.push_back(retry);
-        while self.retries.len() > EDR_MAX_CONTROL_ARCHIVE_UPLOAD_RETRIES {
-            let _ = self.retries.pop_front();
-        }
-        self.persist()
-    }
-
-    fn due(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-        limit: usize,
-        force: bool,
-    ) -> Vec<EndpointControlArchiveUploadRetry> {
-        self.retries
-            .iter()
-            .filter(|retry| force || retry.next_attempt_at <= now)
-            .take(limit)
-            .cloned()
-            .collect()
-    }
-
-    fn mark_delivered(
-        &mut self,
-        retry_id: &str,
-    ) -> Result<Option<EndpointControlArchiveUploadRetry>> {
-        let Some(index) = self
-            .retries
-            .iter()
-            .position(|retry| retry.retry_id == retry_id)
-        else {
-            return Ok(None);
-        };
-        let removed = self.retries.remove(index);
-        self.persist()?;
-        Ok(removed)
-    }
-
-    fn mark_failed(
-        &mut self,
-        retry_id: &str,
-        now: chrono::DateTime<chrono::Utc>,
-        http_status: Option<u16>,
-        response_hash: Option<String>,
-        error_hash: Option<String>,
-    ) -> Result<Option<EndpointControlArchiveUploadRetry>> {
-        let Some(retry) = self
-            .retries
-            .iter_mut()
-            .find(|retry| retry.retry_id == retry_id)
-        else {
-            return Ok(None);
-        };
-        retry.attempt_count = retry.attempt_count.saturating_add(1);
-        retry.last_attempt_at = Some(now);
-        retry.last_http_status = http_status;
-        retry.last_response_hash = response_hash;
-        retry.last_error_hash = error_hash;
-        retry.updated_at = now;
-        retry.next_attempt_at =
-            now + chrono::Duration::seconds(control_ack_retry_backoff_seconds(retry.attempt_count));
-        let updated = retry.clone();
-        self.persist()?;
-        Ok(Some(updated))
-    }
-
-    fn persist(&self) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint Control API archive upload retry queue directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut options = OpenOptions::new();
-        options.create(true).write(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(path).with_context(|| {
-            format!(
-                "open endpoint Control API archive upload retry queue {}",
-                path.display()
-            )
-        })?;
-        let retries = self.retries.iter().cloned().collect::<Vec<_>>();
-        serde_json::to_writer_pretty(&mut file, &retries).with_context(|| {
-            format!(
-                "serialize endpoint Control API archive upload retry queue {}",
-                path.display()
-            )
-        })?;
-        file.write_all(b"\n").with_context(|| {
-            format!(
-                "write endpoint Control API archive upload retry queue {}",
-                path.display()
-            )
-        })?;
-        file.flush().with_context(|| {
-            format!(
-                "flush endpoint Control API archive upload retry queue {}",
-                path.display()
-            )
-        })?;
-        crate::settings::enforce_private_mode(
-            path,
-            "endpoint Control API archive upload retry queue",
-        )?;
-        Ok(())
-    }
-}
-
-fn read_control_archive_upload_retry_ledger(
-    path: &FsPath,
-) -> Result<Vec<EndpointControlArchiveUploadRetry>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err).with_context(|| {
-                format!(
-                    "read endpoint Control API archive upload retry queue {}",
-                    path.display()
-                )
-            });
-        }
-    };
-    let trimmed = contents.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    serde_json::from_str(trimmed).with_context(|| {
-        format!(
-            "parse endpoint Control API archive upload retry queue {}",
-            path.display()
-        )
-    })
-}
-
-fn read_response_acknowledgement_ledger(
-    path: &FsPath,
-) -> Result<Vec<EndpointResponseAcknowledgementReport>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err).with_context(|| {
-                format!(
-                    "read endpoint response acknowledgement ledger {}",
-                    path.display()
-                )
-            });
-        }
-    };
-
-    let mut acknowledgements = Vec::new();
-    for (index, line) in contents.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let acknowledgement: EndpointResponseAcknowledgementReport = serde_json::from_str(line)
-            .with_context(|| {
-                format!(
-                    "parse endpoint response acknowledgement ledger line {} from {}",
-                    index + 1,
-                    path.display()
-                )
-            })?;
-        acknowledgements.push(acknowledgement);
-    }
-    Ok(acknowledgements)
-}
-
-struct EndpointHoneyRegistry {
-    path: Option<PathBuf>,
-    artifacts: Vec<HoneyArtifact>,
-}
-
-impl EndpointHoneyRegistry {
-    fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let artifacts = read_honey_registry(&path)?;
-        Ok(Self {
-            path: Some(path),
-            artifacts,
-        })
-    }
-
-    fn transient() -> Self {
-        Self {
-            path: None,
-            artifacts: Vec::new(),
-        }
-    }
-
-    fn path(&self) -> Option<&FsPath> {
-        self.path.as_deref()
-    }
-
-    fn register(&mut self, artifacts: &[HoneyArtifact]) -> Result<usize> {
-        if artifacts.is_empty() {
-            return Ok(0);
-        }
-
-        let mut added = 0usize;
-        for artifact in artifacts {
-            if self
-                .artifacts
-                .iter()
-                .any(|existing| existing.artifact_id == artifact.artifact_id)
-            {
-                continue;
-            }
-            self.artifacts.push(artifact.clone());
-            added = added.saturating_add(1);
-        }
-        if added > 0 {
-            self.persist()?;
-        }
-        Ok(added)
-    }
-
-    fn unregister(&mut self, artifact_ids: &BTreeSet<String>) -> Result<usize> {
-        if artifact_ids.is_empty() {
-            return Ok(0);
-        }
-
-        self.artifacts = self.load()?;
-        let before = self.artifacts.len();
-        self.artifacts
-            .retain(|artifact| !artifact_ids.contains(&artifact.artifact_id));
-        let removed = before.saturating_sub(self.artifacts.len());
-        if removed > 0 {
-            self.persist()?;
-        }
-        Ok(removed)
-    }
-
-    fn load(&self) -> Result<Vec<HoneyArtifact>> {
-        if let Some(path) = &self.path {
-            return read_honey_registry(path);
-        }
-        Ok(self.artifacts.clone())
-    }
-
-    fn persist(&self) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "create endpoint honey registry directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(path)
-            .with_context(|| format!("open endpoint honey registry {}", path.display()))?;
-        for artifact in &self.artifacts {
-            serde_json::to_writer(&mut file, artifact).with_context(|| {
-                format!("serialize endpoint honey artifact {}", artifact.artifact_id)
-            })?;
-            file.write_all(b"\n")
-                .with_context(|| format!("write endpoint honey registry {}", path.display()))?;
-        }
-        file.flush()
-            .with_context(|| format!("flush endpoint honey registry {}", path.display()))?;
-        Ok(())
-    }
-}
-
-fn read_honey_registry(path: &FsPath) -> Result<Vec<HoneyArtifact>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => {
-            return Err(err)
-                .with_context(|| format!("read endpoint honey registry {}", path.display()));
-        }
-    };
-
-    let mut artifacts = Vec::new();
-    for (index, line) in contents.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let artifact: HoneyArtifact = serde_json::from_str(line).with_context(|| {
-            format!(
-                "parse endpoint honey registry line {} from {}",
-                index + 1,
-                path.display()
-            )
-        })?;
-        if artifacts
-            .iter()
-            .any(|existing: &HoneyArtifact| existing.artifact_id == artifact.artifact_id)
-        {
-            continue;
-        }
-        artifacts.push(artifact);
-    }
-
-    Ok(artifacts)
-}
+pub(crate) use crate::edr::ledger::EndpointPolicyDeltaStore;
+
+pub(crate) use crate::edr::ledger::EndpointResponseExecutionLedger;
+
+pub(crate) use crate::edr::ledger::{
+    EndpointEgressRestriction, EndpointEgressRestrictionLedger,
+    NetworkExtensionEgressPolicySnapshot, write_network_extension_egress_policy_snapshot,
+};
+// read_*_ledger free functions are used only in mod tests { use super::* }
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_egress_restriction_ledger;
+
+pub(crate) use crate::edr::ledger::EndpointResponseAcknowledgementLedger;
+
+pub(crate) use crate::edr::ledger::{
+    EndpointFleetHuntEventOutbox, EndpointFleetHuntEventOutboxEntry,
+};
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_fleet_hunt_event_outbox;
+
+pub(crate) use crate::edr::ledger::{
+    EndpointControlAckPostbackRetry, EndpointControlAckPostbackRetryLedger,
+};
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_control_ack_postback_retry_ledger;
+
+pub(crate) use crate::edr::ledger::{
+    EndpointControlReceiptUploadRetry, EndpointControlReceiptUploadRetryLedger,
+};
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_control_receipt_upload_retry_ledger;
+
+pub(crate) use crate::edr::ledger::{
+    EndpointControlArchiveUploadRetry, EndpointControlArchiveUploadRetryLedger,
+};
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_control_archive_upload_retry_ledger;
+
+
+pub(crate) use crate::edr::ledger::EndpointHoneyRegistry;
 
 async fn agent_edr_deception_plan(
     State(state): State<Arc<AgentApiState>>,
