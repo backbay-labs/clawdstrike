@@ -1912,11 +1912,11 @@ struct AgentHealthResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct EdrHealthSummary {
-    observation_count: usize,
-    graph_node_count: usize,
-    graph_edge_count: usize,
-    recent_finding_count: usize,
+pub(crate) struct EdrHealthSummary {
+    pub(crate) observation_count: usize,
+    pub(crate) graph_node_count: usize,
+    pub(crate) graph_edge_count: usize,
+    pub(crate) recent_finding_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2226,149 +2226,149 @@ struct DiagnosticsBundleResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrFindingsInput {
+pub(crate) struct EdrFindingsInput {
     #[serde(default)]
-    observations: Vec<EndpointObservation>,
+    pub(crate) observations: Vec<EndpointObservation>,
     #[serde(default, alias = "honeyArtifacts")]
-    honey_artifacts: Vec<HoneyArtifact>,
+    pub(crate) honey_artifacts: Vec<HoneyArtifact>,
 }
 
 #[derive(Debug)]
-struct EdrEvaluatedFindings {
-    findings: Vec<DetectionFinding>,
-    receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrEvaluatedFindings {
+    pub(crate) findings: Vec<DetectionFinding>,
+    pub(crate) receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrFindingsResponse {
-    observation_count: usize,
-    finding_count: usize,
-    receipt_count: usize,
-    findings: Vec<DetectionFinding>,
-    receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrFindingsResponse {
+    pub(crate) observation_count: usize,
+    pub(crate) finding_count: usize,
+    pub(crate) receipt_count: usize,
+    pub(crate) findings: Vec<DetectionFinding>,
+    pub(crate) receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrPolicyEventsInput {
+pub(crate) struct EdrPolicyEventsInput {
     #[serde(default)]
-    events: Vec<PolicyEvent>,
+    pub(crate) events: Vec<PolicyEvent>,
     #[serde(default, alias = "honeyArtifacts")]
-    honey_artifacts: Vec<HoneyArtifact>,
+    pub(crate) honey_artifacts: Vec<HoneyArtifact>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrPolicyEventsResponse {
-    policy_event_count: usize,
-    observation_count: usize,
-    finding_count: usize,
-    receipt_count: usize,
-    observations: Vec<EndpointObservation>,
-    findings: Vec<DetectionFinding>,
-    receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrPolicyEventsResponse {
+    pub(crate) policy_event_count: usize,
+    pub(crate) observation_count: usize,
+    pub(crate) finding_count: usize,
+    pub(crate) receipt_count: usize,
+    pub(crate) observations: Vec<EndpointObservation>,
+    pub(crate) findings: Vec<DetectionFinding>,
+    pub(crate) receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrDeveloperActivityInput {
+pub(crate) struct EdrDeveloperActivityInput {
     #[serde(default)]
-    activities: Vec<EdrDeveloperActivity>,
+    pub(crate) activities: Vec<EdrDeveloperActivity>,
     #[serde(default, alias = "honey_artifacts")]
-    honey_artifacts: Vec<HoneyArtifact>,
+    pub(crate) honey_artifacts: Vec<HoneyArtifact>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrDeveloperActivity {
+pub(crate) struct EdrDeveloperActivity {
     #[serde(default, alias = "id", alias = "activityId")]
-    activity_id: Option<String>,
-    kind: EdrDeveloperActivityKind,
+    pub(crate) activity_id: Option<String>,
+    pub(crate) kind: EdrDeveloperActivityKind,
     #[serde(default, alias = "observedAt", alias = "timestamp")]
-    observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) observed_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default, alias = "hostId")]
-    host_id: Option<String>,
+    pub(crate) host_id: Option<String>,
     #[serde(default, alias = "userId")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     #[serde(default, alias = "sessionId")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default, alias = "agentId")]
-    agent_id: Option<String>,
+    pub(crate) agent_id: Option<String>,
     #[serde(default, alias = "workloadId")]
-    workload_id: Option<String>,
+    pub(crate) workload_id: Option<String>,
     #[serde(default, alias = "approvalId")]
-    approval_id: Option<String>,
+    pub(crate) approval_id: Option<String>,
     #[serde(default, alias = "toolCallId", alias = "tool_call_id")]
-    tool_call_id: Option<String>,
+    pub(crate) tool_call_id: Option<String>,
     #[serde(default)]
-    process: Option<EndpointProcess>,
+    pub(crate) process: Option<EndpointProcess>,
     #[serde(default, alias = "processGuid", alias = "process_guid")]
-    process_guid: Option<String>,
+    pub(crate) process_guid: Option<String>,
     #[serde(default, alias = "parentProcessGuid", alias = "parent_process_guid")]
-    parent_process_guid: Option<String>,
+    pub(crate) parent_process_guid: Option<String>,
     #[serde(default)]
-    pid: Option<u32>,
+    pub(crate) pid: Option<u32>,
     #[serde(default)]
-    ppid: Option<u32>,
+    pub(crate) ppid: Option<u32>,
     #[serde(default, alias = "processImage", alias = "process_image")]
-    process_image: Option<String>,
+    pub(crate) process_image: Option<String>,
     #[serde(default, alias = "processCommandLine", alias = "process_command_line")]
-    process_command_line: Option<String>,
+    pub(crate) process_command_line: Option<String>,
     #[serde(default, alias = "processCwd", alias = "process_cwd")]
-    process_cwd: Option<String>,
+    pub(crate) process_cwd: Option<String>,
     #[serde(default)]
-    metadata: BTreeMap<String, serde_json::Value>,
+    pub(crate) metadata: BTreeMap<String, serde_json::Value>,
     #[serde(default, alias = "toolName")]
-    tool_name: Option<String>,
+    pub(crate) tool_name: Option<String>,
     #[serde(default)]
-    parameters: Option<serde_json::Value>,
+    pub(crate) parameters: Option<serde_json::Value>,
     #[serde(default)]
-    action: Option<String>,
+    pub(crate) action: Option<String>,
     #[serde(default)]
-    target: Option<String>,
+    pub(crate) target: Option<String>,
     #[serde(default)]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
     #[serde(default, alias = "recordType")]
-    record_type: Option<String>,
+    pub(crate) record_type: Option<String>,
     #[serde(default)]
-    answers: Vec<String>,
+    pub(crate) answers: Vec<String>,
     #[serde(default)]
-    resolver: Option<String>,
+    pub(crate) resolver: Option<String>,
     #[serde(default)]
-    status: Option<String>,
+    pub(crate) status: Option<String>,
     #[serde(default)]
-    manager: Option<PackageManager>,
+    pub(crate) manager: Option<PackageManager>,
     #[serde(default)]
-    package: Option<String>,
+    pub(crate) package: Option<String>,
     #[serde(default)]
-    phase: Option<String>,
+    pub(crate) phase: Option<String>,
     #[serde(default)]
-    script: Option<String>,
+    pub(crate) script: Option<String>,
     #[serde(default, alias = "workingDirectory")]
-    working_directory: Option<String>,
+    pub(crate) working_directory: Option<String>,
     #[serde(default)]
-    provider: Option<String>,
+    pub(crate) provider: Option<String>,
     #[serde(default)]
-    operation: Option<String>,
+    pub(crate) operation: Option<String>,
     #[serde(default)]
-    args: Vec<String>,
+    pub(crate) args: Vec<String>,
     #[serde(default)]
-    image: Option<String>,
+    pub(crate) image: Option<String>,
     #[serde(default, alias = "commandLine")]
-    command_line: Option<String>,
+    pub(crate) command_line: Option<String>,
     #[serde(default)]
-    host: Option<String>,
+    pub(crate) host: Option<String>,
     #[serde(default)]
-    port: Option<u16>,
+    pub(crate) port: Option<u16>,
     #[serde(default)]
-    protocol: Option<String>,
+    pub(crate) protocol: Option<String>,
     #[serde(default)]
-    method: Option<String>,
+    pub(crate) method: Option<String>,
     #[serde(default)]
-    url: Option<String>,
+    pub(crate) url: Option<String>,
     #[serde(default)]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     #[serde(default, alias = "contentHash")]
-    content_hash: Option<String>,
+    pub(crate) content_hash: Option<String>,
     #[serde(
         default,
         alias = "byteCount",
@@ -2379,30 +2379,30 @@ struct EdrDeveloperActivity {
         alias = "transferSize",
         alias = "transfer_size"
     )]
-    byte_count: Option<u64>,
+    pub(crate) byte_count: Option<u64>,
     #[serde(default, alias = "patchBytes")]
-    patch_bytes: Option<u64>,
+    pub(crate) patch_bytes: Option<u64>,
     #[serde(default, alias = "patchHash")]
-    patch_hash: Option<String>,
+    pub(crate) patch_hash: Option<String>,
     #[serde(default)]
-    mechanism: Option<String>,
+    pub(crate) mechanism: Option<String>,
     #[serde(default)]
-    name: Option<String>,
+    pub(crate) name: Option<String>,
     #[serde(default, alias = "credentialKind")]
-    credential_kind: Option<CredentialKind>,
+    pub(crate) credential_kind: Option<CredentialKind>,
     #[serde(default)]
-    browser: Option<String>,
+    pub(crate) browser: Option<String>,
     #[serde(default, alias = "sourceUrl")]
-    source_url: Option<String>,
+    pub(crate) source_url: Option<String>,
     #[serde(default, alias = "extensionId")]
-    extension_id: Option<String>,
+    pub(crate) extension_id: Option<String>,
     #[serde(default)]
-    source: Option<String>,
+    pub(crate) source: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum EdrDeveloperActivityKind {
+pub(crate) enum EdrDeveloperActivityKind {
     McpTool,
     BrowserAutomation,
     BrowserDownload,
@@ -2448,129 +2448,129 @@ impl EdrDeveloperActivityKind {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrDeveloperActivityResponse {
-    activity_count: usize,
-    observation_count: usize,
-    finding_count: usize,
-    receipt_count: usize,
-    observations: Vec<EndpointObservation>,
-    findings: Vec<DetectionFinding>,
-    receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrDeveloperActivityResponse {
+    pub(crate) activity_count: usize,
+    pub(crate) observation_count: usize,
+    pub(crate) finding_count: usize,
+    pub(crate) receipt_count: usize,
+    pub(crate) observations: Vec<EndpointObservation>,
+    pub(crate) findings: Vec<DetectionFinding>,
+    pub(crate) receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPackageManagerEventsInput {
+pub(crate) struct EdrPackageManagerEventsInput {
     #[serde(default)]
-    events: Vec<EdrPackageManagerEvent>,
+    pub(crate) events: Vec<EdrPackageManagerEvent>,
     #[serde(default, alias = "honey_artifacts")]
-    honey_artifacts: Vec<HoneyArtifact>,
+    pub(crate) honey_artifacts: Vec<HoneyArtifact>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPackageManagerEvent {
+pub(crate) struct EdrPackageManagerEvent {
     #[serde(default, alias = "id", alias = "eventId")]
-    event_id: Option<String>,
+    pub(crate) event_id: Option<String>,
     #[serde(default, alias = "observedAt", alias = "timestamp")]
-    observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) observed_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default, alias = "hostId")]
-    host_id: Option<String>,
+    pub(crate) host_id: Option<String>,
     #[serde(default, alias = "userId")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     #[serde(default, alias = "sessionId")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default)]
-    process: Option<EndpointProcess>,
+    pub(crate) process: Option<EndpointProcess>,
     #[serde(default)]
-    metadata: BTreeMap<String, serde_json::Value>,
-    manager: PackageManager,
+    pub(crate) metadata: BTreeMap<String, serde_json::Value>,
+    pub(crate) manager: PackageManager,
     #[serde(default)]
-    package: Option<String>,
-    phase: String,
-    script: String,
+    pub(crate) package: Option<String>,
+    pub(crate) phase: String,
+    pub(crate) script: String,
     #[serde(default, alias = "workingDirectory")]
-    working_directory: Option<String>,
+    pub(crate) working_directory: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPackageManagerEventsResponse {
-    event_count: usize,
-    observation_count: usize,
-    finding_count: usize,
-    receipt_count: usize,
-    observations: Vec<EndpointObservation>,
-    findings: Vec<DetectionFinding>,
-    receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrPackageManagerEventsResponse {
+    pub(crate) event_count: usize,
+    pub(crate) observation_count: usize,
+    pub(crate) finding_count: usize,
+    pub(crate) receipt_count: usize,
+    pub(crate) observations: Vec<EndpointObservation>,
+    pub(crate) findings: Vec<DetectionFinding>,
+    pub(crate) receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrEndpointSecurityEventsInput {
+pub(crate) struct EdrEndpointSecurityEventsInput {
     #[serde(default)]
-    events: Vec<EdrEndpointSecurityEvent>,
+    pub(crate) events: Vec<EdrEndpointSecurityEvent>,
     #[serde(default, alias = "honey_artifacts")]
-    honey_artifacts: Vec<HoneyArtifact>,
+    pub(crate) honey_artifacts: Vec<HoneyArtifact>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrEndpointSecurityEvent {
+pub(crate) struct EdrEndpointSecurityEvent {
     #[serde(default, alias = "id", alias = "eventId")]
-    event_id: Option<String>,
-    kind: EdrEndpointSecurityEventKind,
+    pub(crate) event_id: Option<String>,
+    pub(crate) kind: EdrEndpointSecurityEventKind,
     #[serde(default, alias = "observedAt", alias = "timestamp")]
-    observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) observed_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default, alias = "hostId")]
-    host_id: Option<String>,
+    pub(crate) host_id: Option<String>,
     #[serde(default, alias = "userId")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     #[serde(default, alias = "sessionId")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default)]
-    process: Option<EndpointProcess>,
+    pub(crate) process: Option<EndpointProcess>,
     #[serde(default)]
-    metadata: BTreeMap<String, serde_json::Value>,
+    pub(crate) metadata: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
-    pid: Option<u32>,
+    pub(crate) pid: Option<u32>,
     #[serde(default)]
-    ppid: Option<u32>,
+    pub(crate) ppid: Option<u32>,
     #[serde(default, alias = "processGuid")]
-    process_guid: Option<String>,
+    pub(crate) process_guid: Option<String>,
     #[serde(default, alias = "parentProcessGuid")]
-    parent_process_guid: Option<String>,
+    pub(crate) parent_process_guid: Option<String>,
     #[serde(default)]
-    image: Option<String>,
+    pub(crate) image: Option<String>,
     #[serde(default)]
-    args: Vec<String>,
+    pub(crate) args: Vec<String>,
     #[serde(default, alias = "commandLine")]
-    command_line: Option<String>,
+    pub(crate) command_line: Option<String>,
     #[serde(default)]
-    cwd: Option<String>,
+    pub(crate) cwd: Option<String>,
     #[serde(default, alias = "targetPath")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     #[serde(default)]
-    operation: Option<String>,
+    pub(crate) operation: Option<String>,
     #[serde(default)]
-    decision: Option<String>,
+    pub(crate) decision: Option<String>,
     #[serde(default)]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
     #[serde(default, alias = "deadlineMissed")]
-    deadline_missed: Option<bool>,
+    pub(crate) deadline_missed: Option<bool>,
     #[serde(default, alias = "deadlineMs")]
-    deadline_ms: Option<u64>,
+    pub(crate) deadline_ms: Option<u64>,
     #[serde(default, alias = "droppedEvents")]
-    dropped_event_count: Option<u64>,
+    pub(crate) dropped_event_count: Option<u64>,
     #[serde(default, alias = "deadlineMisses")]
-    deadline_miss_count: Option<u64>,
+    pub(crate) deadline_miss_count: Option<u64>,
     #[serde(default)]
-    full_disk_access: Option<bool>,
+    pub(crate) full_disk_access: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum EdrEndpointSecurityEventKind {
+pub(crate) enum EdrEndpointSecurityEventKind {
     ProcessExec,
     FileAccess,
     AuthOpen,
@@ -2590,112 +2590,112 @@ impl EdrEndpointSecurityEventKind {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEndpointSecurityEventsResponse {
-    event_count: usize,
-    observation_count: usize,
-    finding_count: usize,
-    receipt_count: usize,
-    observations: Vec<EndpointObservation>,
-    findings: Vec<DetectionFinding>,
-    receipts: Vec<SignedReceipt>,
-    observation_receipts: Vec<SignedReceipt>,
-    policy_decision_receipts: Vec<SignedReceipt>,
-    degraded_provider_receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrEndpointSecurityEventsResponse {
+    pub(crate) event_count: usize,
+    pub(crate) observation_count: usize,
+    pub(crate) finding_count: usize,
+    pub(crate) receipt_count: usize,
+    pub(crate) observations: Vec<EndpointObservation>,
+    pub(crate) findings: Vec<DetectionFinding>,
+    pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
+    pub(crate) policy_decision_receipts: Vec<SignedReceipt>,
+    pub(crate) degraded_provider_receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrNetworkExtensionEventsInput {
+pub(crate) struct EdrNetworkExtensionEventsInput {
     #[serde(default)]
-    events: Vec<EdrNetworkExtensionFlowEvent>,
+    pub(crate) events: Vec<EdrNetworkExtensionFlowEvent>,
     #[serde(default, alias = "honey_artifacts")]
-    honey_artifacts: Vec<HoneyArtifact>,
+    pub(crate) honey_artifacts: Vec<HoneyArtifact>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrNetworkExtensionFlowEvent {
+pub(crate) struct EdrNetworkExtensionFlowEvent {
     #[serde(default, alias = "id", alias = "eventId")]
-    event_id: Option<String>,
+    pub(crate) event_id: Option<String>,
     #[serde(default, alias = "observedAt", alias = "timestamp")]
-    observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) observed_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default, alias = "hostId")]
-    host_id: Option<String>,
+    pub(crate) host_id: Option<String>,
     #[serde(default, alias = "userId")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     #[serde(default, alias = "sessionId")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default)]
-    process: Option<EndpointProcess>,
+    pub(crate) process: Option<EndpointProcess>,
     #[serde(default)]
-    metadata: BTreeMap<String, serde_json::Value>,
+    pub(crate) metadata: BTreeMap<String, serde_json::Value>,
     #[serde(default, alias = "flowId")]
-    flow_id: Option<String>,
+    pub(crate) flow_id: Option<String>,
     #[serde(default, alias = "sourceApp")]
-    source_app: Option<String>,
+    pub(crate) source_app: Option<String>,
     #[serde(default, alias = "sourceAppPath")]
-    source_app_path: Option<String>,
+    pub(crate) source_app_path: Option<String>,
     #[serde(default)]
-    pid: Option<u32>,
+    pub(crate) pid: Option<u32>,
     #[serde(default, alias = "processGuid")]
-    process_guid: Option<String>,
+    pub(crate) process_guid: Option<String>,
     #[serde(default, alias = "parentProcessGuid")]
-    parent_process_guid: Option<String>,
+    pub(crate) parent_process_guid: Option<String>,
     #[serde(default, alias = "remoteHost", alias = "targetHost")]
-    host: Option<String>,
-    port: u16,
+    pub(crate) host: Option<String>,
+    pub(crate) port: u16,
     #[serde(default)]
-    protocol: Option<String>,
+    pub(crate) protocol: Option<String>,
     #[serde(default)]
-    url: Option<String>,
+    pub(crate) url: Option<String>,
     #[serde(default, alias = "dnsQuery")]
-    dns_query: Option<String>,
+    pub(crate) dns_query: Option<String>,
     #[serde(default, alias = "dnsRecordType")]
-    dns_record_type: Option<String>,
+    pub(crate) dns_record_type: Option<String>,
     #[serde(default, alias = "dnsAnswers")]
-    dns_answers: Vec<String>,
+    pub(crate) dns_answers: Vec<String>,
     #[serde(default, alias = "dnsResolver")]
-    dns_resolver: Option<String>,
+    pub(crate) dns_resolver: Option<String>,
     #[serde(default, alias = "dnsStatus")]
-    dns_status: Option<String>,
-    verdict: String,
+    pub(crate) dns_status: Option<String>,
+    pub(crate) verdict: String,
     #[serde(default)]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
     #[serde(default, alias = "policySnapshotPath")]
-    policy_snapshot_path: Option<String>,
+    pub(crate) policy_snapshot_path: Option<String>,
     #[serde(default, alias = "policySnapshotHash")]
-    policy_snapshot_hash: Option<String>,
+    pub(crate) policy_snapshot_hash: Option<String>,
     #[serde(default)]
-    generation: Option<u64>,
+    pub(crate) generation: Option<u64>,
     #[serde(default, alias = "remediationRequests")]
-    remediation_requests: Option<u64>,
+    pub(crate) remediation_requests: Option<u64>,
     #[serde(default, alias = "blockedFlows")]
-    blocked_flows: Option<u64>,
+    pub(crate) blocked_flows: Option<u64>,
     #[serde(default, alias = "allowedFlows")]
-    allowed_flows: Option<u64>,
+    pub(crate) allowed_flows: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrNetworkExtensionEventsResponse {
-    event_count: usize,
-    observation_count: usize,
-    finding_count: usize,
-    receipt_count: usize,
-    observations: Vec<EndpointObservation>,
-    findings: Vec<DetectionFinding>,
-    receipts: Vec<SignedReceipt>,
-    observation_receipts: Vec<SignedReceipt>,
-    policy_decision_receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrNetworkExtensionEventsResponse {
+    pub(crate) event_count: usize,
+    pub(crate) observation_count: usize,
+    pub(crate) finding_count: usize,
+    pub(crate) receipt_count: usize,
+    pub(crate) observations: Vec<EndpointObservation>,
+    pub(crate) findings: Vec<DetectionFinding>,
+    pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
+    pub(crate) policy_decision_receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPolicyEventReplayInput {
+pub(crate) struct EdrPolicyEventReplayInput {
     #[serde(default)]
-    events: Vec<PolicyEvent>,
+    pub(crate) events: Vec<PolicyEvent>,
     #[serde(default)]
-    track_posture: Option<bool>,
+    pub(crate) track_posture: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2717,68 +2717,68 @@ pub(crate) struct EdrPolicyEventReplayReport {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventReplayResponse {
-    replay: EdrPolicyEventReplayReport,
-    result: SimulationResult,
-    receipt: SignedReceipt,
+pub(crate) struct EdrPolicyEventReplayResponse {
+    pub(crate) replay: EdrPolicyEventReplayReport,
+    pub(crate) result: SimulationResult,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPolicyEventImpactInput {
+pub(crate) struct EdrPolicyEventImpactInput {
     #[serde(default)]
-    events: Vec<PolicyEvent>,
+    pub(crate) events: Vec<PolicyEvent>,
     #[serde(alias = "proposedPolicyYaml")]
-    proposed_policy_yaml: String,
+    pub(crate) proposed_policy_yaml: String,
     #[serde(default)]
-    track_posture: Option<bool>,
+    pub(crate) track_posture: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventImpactSummary {
-    total: u64,
-    changed: u64,
-    allow_to_warn: u64,
-    allow_to_block: u64,
-    warn_to_allow: u64,
-    warn_to_block: u64,
-    block_to_allow: u64,
-    block_to_warn: u64,
+pub(crate) struct EdrPolicyEventImpactSummary {
+    pub(crate) total: u64,
+    pub(crate) changed: u64,
+    pub(crate) allow_to_warn: u64,
+    pub(crate) allow_to_block: u64,
+    pub(crate) warn_to_allow: u64,
+    pub(crate) warn_to_block: u64,
+    pub(crate) block_to_allow: u64,
+    pub(crate) block_to_warn: u64,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventImpactEntry {
-    event_id: String,
-    current_outcome: String,
-    proposed_outcome: String,
-    changed: bool,
-    current_decision: DecisionInfo,
-    proposed_decision: DecisionInfo,
+pub(crate) struct EdrPolicyEventImpactEntry {
+    pub(crate) event_id: String,
+    pub(crate) current_outcome: String,
+    pub(crate) proposed_outcome: String,
+    pub(crate) changed: bool,
+    pub(crate) current_decision: DecisionInfo,
+    pub(crate) proposed_decision: DecisionInfo,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventImpactDriver {
-    current_outcome: String,
-    proposed_outcome: String,
-    current_guard: Option<String>,
-    proposed_guard: Option<String>,
-    current_reason_code: String,
-    proposed_reason_code: String,
-    count: u64,
-    sample_event_ids: Vec<String>,
+pub(crate) struct EdrPolicyEventImpactDriver {
+    pub(crate) current_outcome: String,
+    pub(crate) proposed_outcome: String,
+    pub(crate) current_guard: Option<String>,
+    pub(crate) proposed_guard: Option<String>,
+    pub(crate) current_reason_code: String,
+    pub(crate) proposed_reason_code: String,
+    pub(crate) count: u64,
+    pub(crate) sample_event_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct EdrPolicyEventImpactDriverKey {
-    current_outcome: String,
-    proposed_outcome: String,
-    current_guard: Option<String>,
-    proposed_guard: Option<String>,
-    current_reason_code: String,
-    proposed_reason_code: String,
+pub(crate) struct EdrPolicyEventImpactDriverKey {
+    pub(crate) current_outcome: String,
+    pub(crate) proposed_outcome: String,
+    pub(crate) current_guard: Option<String>,
+    pub(crate) proposed_guard: Option<String>,
+    pub(crate) current_reason_code: String,
+    pub(crate) proposed_reason_code: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -2802,57 +2802,57 @@ pub(crate) struct EdrPolicyEventImpactReport {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventImpactResponse {
-    impact: EdrPolicyEventImpactReport,
-    summary: EdrPolicyEventImpactSummary,
-    drivers: Vec<EdrPolicyEventImpactDriver>,
-    changes: Vec<EdrPolicyEventImpactEntry>,
-    current_result: SimulationResult,
-    proposed_result: SimulationResult,
-    receipt: SignedReceipt,
+pub(crate) struct EdrPolicyEventImpactResponse {
+    pub(crate) impact: EdrPolicyEventImpactReport,
+    pub(crate) summary: EdrPolicyEventImpactSummary,
+    pub(crate) drivers: Vec<EdrPolicyEventImpactDriver>,
+    pub(crate) changes: Vec<EdrPolicyEventImpactEntry>,
+    pub(crate) current_result: SimulationResult,
+    pub(crate) proposed_result: SimulationResult,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPolicyEventHistoryReplayInput {
+pub(crate) struct EdrPolicyEventHistoryReplayInput {
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default)]
-    since: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) since: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
-    until: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) until: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
-    max_age_seconds: Option<u64>,
+    pub(crate) max_age_seconds: Option<u64>,
     #[serde(default)]
-    track_posture: Option<bool>,
+    pub(crate) track_posture: Option<bool>,
     #[serde(default)]
-    event_kinds: Vec<String>,
+    pub(crate) event_kinds: Vec<String>,
     #[serde(default, alias = "host_id")]
-    host_id: Option<String>,
+    pub(crate) host_id: Option<String>,
     #[serde(default, alias = "user_id")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     #[serde(default, alias = "session_id")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default, alias = "process_guid")]
-    process_guid: Option<String>,
+    pub(crate) process_guid: Option<String>,
     #[serde(default, alias = "parent_process_guid")]
-    parent_process_guid: Option<String>,
+    pub(crate) parent_process_guid: Option<String>,
     #[serde(default, alias = "agent_id")]
-    agent_id: Option<String>,
+    pub(crate) agent_id: Option<String>,
     #[serde(default, alias = "workload_id")]
-    workload_id: Option<String>,
+    pub(crate) workload_id: Option<String>,
     #[serde(default, alias = "approval_id")]
-    approval_id: Option<String>,
+    pub(crate) approval_id: Option<String>,
     #[serde(default, alias = "tool_name")]
-    tool_name: Option<String>,
+    pub(crate) tool_name: Option<String>,
     #[serde(default, alias = "tool_call_id")]
-    tool_call_id: Option<String>,
+    pub(crate) tool_call_id: Option<String>,
     #[serde(default, alias = "credential_kind")]
-    credential_kind: Option<String>,
+    pub(crate) credential_kind: Option<String>,
     #[serde(default, alias = "process_image_hash")]
-    process_image_hash: Option<String>,
+    pub(crate) process_image_hash: Option<String>,
     #[serde(default, alias = "process_command_line_hash")]
-    process_command_line_hash: Option<String>,
+    pub(crate) process_command_line_hash: Option<String>,
     #[serde(
         default,
         alias = "event_target",
@@ -2860,7 +2860,7 @@ struct EdrPolicyEventHistoryReplayInput {
         alias = "resourceTarget",
         alias = "resource_target"
     )]
-    event_target: Option<String>,
+    pub(crate) event_target: Option<String>,
     #[serde(
         default,
         alias = "event_target_hash",
@@ -2869,50 +2869,50 @@ struct EdrPolicyEventHistoryReplayInput {
         alias = "resourceTargetHash",
         alias = "resource_target_hash"
     )]
-    event_target_hash: Option<String>,
+    pub(crate) event_target_hash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrPolicyEventHistoryImpactInput {
+pub(crate) struct EdrPolicyEventHistoryImpactInput {
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default)]
-    since: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) since: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
-    until: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) until: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
-    max_age_seconds: Option<u64>,
+    pub(crate) max_age_seconds: Option<u64>,
     #[serde(default)]
-    track_posture: Option<bool>,
+    pub(crate) track_posture: Option<bool>,
     #[serde(default)]
-    event_kinds: Vec<String>,
+    pub(crate) event_kinds: Vec<String>,
     #[serde(default, alias = "host_id")]
-    host_id: Option<String>,
+    pub(crate) host_id: Option<String>,
     #[serde(default, alias = "user_id")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     #[serde(default, alias = "session_id")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default, alias = "process_guid")]
-    process_guid: Option<String>,
+    pub(crate) process_guid: Option<String>,
     #[serde(default, alias = "parent_process_guid")]
-    parent_process_guid: Option<String>,
+    pub(crate) parent_process_guid: Option<String>,
     #[serde(default, alias = "agent_id")]
-    agent_id: Option<String>,
+    pub(crate) agent_id: Option<String>,
     #[serde(default, alias = "workload_id")]
-    workload_id: Option<String>,
+    pub(crate) workload_id: Option<String>,
     #[serde(default, alias = "approval_id")]
-    approval_id: Option<String>,
+    pub(crate) approval_id: Option<String>,
     #[serde(default, alias = "tool_name")]
-    tool_name: Option<String>,
+    pub(crate) tool_name: Option<String>,
     #[serde(default, alias = "tool_call_id")]
-    tool_call_id: Option<String>,
+    pub(crate) tool_call_id: Option<String>,
     #[serde(default, alias = "credential_kind")]
-    credential_kind: Option<String>,
+    pub(crate) credential_kind: Option<String>,
     #[serde(default, alias = "process_image_hash")]
-    process_image_hash: Option<String>,
+    pub(crate) process_image_hash: Option<String>,
     #[serde(default, alias = "process_command_line_hash")]
-    process_command_line_hash: Option<String>,
+    pub(crate) process_command_line_hash: Option<String>,
     #[serde(
         default,
         alias = "event_target",
@@ -2920,7 +2920,7 @@ struct EdrPolicyEventHistoryImpactInput {
         alias = "resourceTarget",
         alias = "resource_target"
     )]
-    event_target: Option<String>,
+    pub(crate) event_target: Option<String>,
     #[serde(
         default,
         alias = "event_target_hash",
@@ -2929,13 +2929,13 @@ struct EdrPolicyEventHistoryImpactInput {
         alias = "resourceTargetHash",
         alias = "resource_target_hash"
     )]
-    event_target_hash: Option<String>,
+    pub(crate) event_target_hash: Option<String>,
     #[serde(default)]
-    causal_context_depth: Option<usize>,
+    pub(crate) causal_context_depth: Option<usize>,
     #[serde(default)]
-    validation_window_seconds: Option<u64>,
+    pub(crate) validation_window_seconds: Option<u64>,
     #[serde(alias = "proposedPolicyYaml")]
-    proposed_policy_yaml: String,
+    pub(crate) proposed_policy_yaml: String,
 }
 
 impl EdrPolicyEventHistoryReplayInput {
@@ -3000,41 +3000,41 @@ impl EdrPolicyEventHistoryImpactInput {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryIdentityFilters {
+pub(crate) struct EdrPolicyEventHistoryIdentityFilters {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    host_id: Option<String>,
+    pub(crate) host_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    process_guid: Option<String>,
+    pub(crate) process_guid: Option<String>,
     #[serde(
         default,
         alias = "parent_process_guid",
         skip_serializing_if = "Option::is_none"
     )]
-    parent_process_guid: Option<String>,
+    pub(crate) parent_process_guid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    agent_id: Option<String>,
+    pub(crate) agent_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    workload_id: Option<String>,
+    pub(crate) workload_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    approval_id: Option<String>,
+    pub(crate) approval_id: Option<String>,
     #[serde(default, alias = "tool_name", skip_serializing_if = "Option::is_none")]
-    tool_name: Option<String>,
+    pub(crate) tool_name: Option<String>,
     #[serde(
         default,
         alias = "tool_call_id",
         skip_serializing_if = "Option::is_none"
     )]
-    tool_call_id: Option<String>,
+    pub(crate) tool_call_id: Option<String>,
     #[serde(
         default,
         alias = "credential_kind",
         skip_serializing_if = "Option::is_none"
     )]
-    credential_kind: Option<String>,
+    pub(crate) credential_kind: Option<String>,
 }
 
 impl EdrPolicyEventHistoryIdentityFilters {
@@ -3058,19 +3058,19 @@ impl EdrPolicyEventHistoryIdentityFilters {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryProcessFilters {
+pub(crate) struct EdrPolicyEventHistoryProcessFilters {
     #[serde(
         default,
         alias = "process_image_hash",
         skip_serializing_if = "Option::is_none"
     )]
-    process_image_hash: Option<String>,
+    pub(crate) process_image_hash: Option<String>,
     #[serde(
         default,
         alias = "process_command_line_hash",
         skip_serializing_if = "Option::is_none"
     )]
-    process_command_line_hash: Option<String>,
+    pub(crate) process_command_line_hash: Option<String>,
 }
 
 impl EdrPolicyEventHistoryProcessFilters {
@@ -3091,7 +3091,7 @@ impl EdrPolicyEventHistoryProcessFilters {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryTargetFilters {
+pub(crate) struct EdrPolicyEventHistoryTargetFilters {
     #[serde(
         default,
         alias = "event_target",
@@ -3100,7 +3100,7 @@ struct EdrPolicyEventHistoryTargetFilters {
         alias = "resource_target",
         skip_serializing_if = "Option::is_none"
     )]
-    event_target: Option<String>,
+    pub(crate) event_target: Option<String>,
     #[serde(
         default,
         alias = "event_target_hash",
@@ -3110,7 +3110,7 @@ struct EdrPolicyEventHistoryTargetFilters {
         alias = "resource_target_hash",
         skip_serializing_if = "Option::is_none"
     )]
-    event_target_hash: Option<String>,
+    pub(crate) event_target_hash: Option<String>,
 }
 
 impl EdrPolicyEventHistoryTargetFilters {
@@ -3133,144 +3133,144 @@ fn identity_filter_matches(expected: &Option<String>, actual: Option<&str>) -> b
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryReport {
-    source: String,
-    projection_mode: String,
-    selection_mode: String,
-    path: Option<String>,
-    index_path: Option<String>,
-    total_observation_count: usize,
-    matched_observation_count: usize,
-    selected_observation_count: usize,
-    policy_event_count: usize,
-    limit: usize,
-    since: Option<chrono::DateTime<chrono::Utc>>,
-    until: Option<chrono::DateTime<chrono::Utc>>,
-    max_age_seconds: Option<u64>,
-    event_kinds: Vec<String>,
-    identity_filters: EdrPolicyEventHistoryIdentityFilters,
+pub(crate) struct EdrPolicyEventHistoryReport {
+    pub(crate) source: String,
+    pub(crate) projection_mode: String,
+    pub(crate) selection_mode: String,
+    pub(crate) path: Option<String>,
+    pub(crate) index_path: Option<String>,
+    pub(crate) total_observation_count: usize,
+    pub(crate) matched_observation_count: usize,
+    pub(crate) selected_observation_count: usize,
+    pub(crate) policy_event_count: usize,
+    pub(crate) limit: usize,
+    pub(crate) since: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) until: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) max_age_seconds: Option<u64>,
+    pub(crate) event_kinds: Vec<String>,
+    pub(crate) identity_filters: EdrPolicyEventHistoryIdentityFilters,
     #[serde(skip_serializing_if = "EdrPolicyEventHistoryProcessFilters::is_empty")]
-    process_filters: EdrPolicyEventHistoryProcessFilters,
+    pub(crate) process_filters: EdrPolicyEventHistoryProcessFilters,
     #[serde(skip_serializing_if = "EdrPolicyEventHistoryTargetFilters::is_empty")]
-    target_filters: EdrPolicyEventHistoryTargetFilters,
-    oldest_timestamp: Option<chrono::DateTime<chrono::Utc>>,
-    newest_timestamp: Option<chrono::DateTime<chrono::Utc>>,
-    event_stream_hash: String,
-    summary: String,
+    pub(crate) target_filters: EdrPolicyEventHistoryTargetFilters,
+    pub(crate) oldest_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) newest_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) event_stream_hash: String,
+    pub(crate) summary: String,
 }
 
 #[derive(Debug)]
-struct EdrPolicyEventHistorySelection {
-    report: EdrPolicyEventHistoryReport,
-    events: Vec<PolicyEvent>,
-    observations: Vec<EndpointObservation>,
+pub(crate) struct EdrPolicyEventHistorySelection {
+    pub(crate) report: EdrPolicyEventHistoryReport,
+    pub(crate) events: Vec<PolicyEvent>,
+    pub(crate) observations: Vec<EndpointObservation>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryReplayResponse {
-    history: EdrPolicyEventHistoryReport,
-    replay: EdrPolicyEventReplayReport,
-    result: SimulationResult,
-    receipt: SignedReceipt,
+pub(crate) struct EdrPolicyEventHistoryReplayResponse {
+    pub(crate) history: EdrPolicyEventHistoryReport,
+    pub(crate) replay: EdrPolicyEventReplayReport,
+    pub(crate) result: SimulationResult,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryImpactResponse {
-    history: EdrPolicyEventHistoryReport,
-    causal_impact: EdrPolicyEventHistoryCausalImpact,
+pub(crate) struct EdrPolicyEventHistoryImpactResponse {
+    pub(crate) history: EdrPolicyEventHistoryReport,
+    pub(crate) causal_impact: EdrPolicyEventHistoryCausalImpact,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cross_window_impact: Option<EdrPolicyEventHistoryCrossWindowImpact>,
-    impact: EdrPolicyEventImpactReport,
-    summary: EdrPolicyEventImpactSummary,
-    drivers: Vec<EdrPolicyEventImpactDriver>,
-    changes: Vec<EdrPolicyEventImpactEntry>,
-    current_result: SimulationResult,
-    proposed_result: SimulationResult,
-    receipt: SignedReceipt,
+    pub(crate) cross_window_impact: Option<EdrPolicyEventHistoryCrossWindowImpact>,
+    pub(crate) impact: EdrPolicyEventImpactReport,
+    pub(crate) summary: EdrPolicyEventImpactSummary,
+    pub(crate) drivers: Vec<EdrPolicyEventImpactDriver>,
+    pub(crate) changes: Vec<EdrPolicyEventImpactEntry>,
+    pub(crate) current_result: SimulationResult,
+    pub(crate) proposed_result: SimulationResult,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryCrossWindowImpact {
-    window_seconds: u64,
-    window_count: usize,
-    changed_window_count: usize,
-    blocking_window_count: usize,
-    total_event_count: u64,
-    total_changed_count: u64,
-    total_blocking_change_count: u64,
-    impact_hash: String,
-    repeatability: String,
-    recommended_stage: String,
-    promotion_ready: bool,
-    recommendation_hash: String,
-    recommendation_reason: String,
-    windows: Vec<EdrPolicyEventHistoryImpactWindow>,
+pub(crate) struct EdrPolicyEventHistoryCrossWindowImpact {
+    pub(crate) window_seconds: u64,
+    pub(crate) window_count: usize,
+    pub(crate) changed_window_count: usize,
+    pub(crate) blocking_window_count: usize,
+    pub(crate) total_event_count: u64,
+    pub(crate) total_changed_count: u64,
+    pub(crate) total_blocking_change_count: u64,
+    pub(crate) impact_hash: String,
+    pub(crate) repeatability: String,
+    pub(crate) recommended_stage: String,
+    pub(crate) promotion_ready: bool,
+    pub(crate) recommendation_hash: String,
+    pub(crate) recommendation_reason: String,
+    pub(crate) windows: Vec<EdrPolicyEventHistoryImpactWindow>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryImpactWindow {
-    window_index: i64,
-    window_start: chrono::DateTime<chrono::Utc>,
-    window_end: chrono::DateTime<chrono::Utc>,
-    event_count: u64,
-    changed_count: u64,
-    blocking_change_count: u64,
-    sample_event_ids: Vec<String>,
+pub(crate) struct EdrPolicyEventHistoryImpactWindow {
+    pub(crate) window_index: i64,
+    pub(crate) window_start: chrono::DateTime<chrono::Utc>,
+    pub(crate) window_end: chrono::DateTime<chrono::Utc>,
+    pub(crate) event_count: u64,
+    pub(crate) changed_count: u64,
+    pub(crate) blocking_change_count: u64,
+    pub(crate) sample_event_ids: Vec<String>,
 }
 
 #[derive(Debug, Default)]
-struct EdrPolicyEventHistoryImpactWindowAccumulator {
-    window_start: Option<chrono::DateTime<chrono::Utc>>,
-    window_end: Option<chrono::DateTime<chrono::Utc>>,
-    event_count: u64,
-    changed_count: u64,
-    blocking_change_count: u64,
-    sample_event_ids: Vec<String>,
+pub(crate) struct EdrPolicyEventHistoryImpactWindowAccumulator {
+    pub(crate) window_start: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) window_end: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) event_count: u64,
+    pub(crate) changed_count: u64,
+    pub(crate) blocking_change_count: u64,
+    pub(crate) sample_event_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryCausalImpact {
-    changed_event_count: u64,
-    context_count: usize,
-    chain_count: usize,
-    chain_driver_count: usize,
-    promotion_suggestion_count: usize,
-    affected_identity_count: usize,
-    affected_tool_count: usize,
-    blocking_change_count: u64,
-    developer_breakage_score: u8,
-    impact_level: EndpointSimulationImpactLevel,
-    breakage_driver_count: usize,
-    omitted_context_count: usize,
-    missing_graph_context_count: usize,
-    context_depth: usize,
-    node_count: usize,
-    edge_count: usize,
-    node_kinds: BTreeMap<String, u64>,
-    affected_identities: EdrPolicyEventHistoryAffectedIdentities,
-    affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
-    top_breakage_drivers: Vec<EdrPolicyEventHistoryBreakageDriver>,
-    contexts: Vec<EdrPolicyEventHistoryCausalContext>,
-    chain_drivers: Vec<EdrPolicyEventHistoryCausalChainDriver>,
-    promotion_suggestions: Vec<EdrPolicyEventHistoryPromotionSuggestion>,
+pub(crate) struct EdrPolicyEventHistoryCausalImpact {
+    pub(crate) changed_event_count: u64,
+    pub(crate) context_count: usize,
+    pub(crate) chain_count: usize,
+    pub(crate) chain_driver_count: usize,
+    pub(crate) promotion_suggestion_count: usize,
+    pub(crate) affected_identity_count: usize,
+    pub(crate) affected_tool_count: usize,
+    pub(crate) blocking_change_count: u64,
+    pub(crate) developer_breakage_score: u8,
+    pub(crate) impact_level: EndpointSimulationImpactLevel,
+    pub(crate) breakage_driver_count: usize,
+    pub(crate) omitted_context_count: usize,
+    pub(crate) missing_graph_context_count: usize,
+    pub(crate) context_depth: usize,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) node_kinds: BTreeMap<String, u64>,
+    pub(crate) affected_identities: EdrPolicyEventHistoryAffectedIdentities,
+    pub(crate) affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
+    pub(crate) top_breakage_drivers: Vec<EdrPolicyEventHistoryBreakageDriver>,
+    pub(crate) contexts: Vec<EdrPolicyEventHistoryCausalContext>,
+    pub(crate) chain_drivers: Vec<EdrPolicyEventHistoryCausalChainDriver>,
+    pub(crate) promotion_suggestions: Vec<EdrPolicyEventHistoryPromotionSuggestion>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    receipt: Option<SignedReceipt>,
+    pub(crate) receipt: Option<SignedReceipt>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryAffectedIdentities {
-    hosts: Vec<EdrPolicyEventHistoryAffectedIdentity>,
-    users: Vec<EdrPolicyEventHistoryAffectedIdentity>,
-    sessions: Vec<EdrPolicyEventHistoryAffectedIdentity>,
-    agents: Vec<EdrPolicyEventHistoryAffectedIdentity>,
-    workloads: Vec<EdrPolicyEventHistoryAffectedIdentity>,
-    approvals: Vec<EdrPolicyEventHistoryAffectedIdentity>,
+pub(crate) struct EdrPolicyEventHistoryAffectedIdentities {
+    pub(crate) hosts: Vec<EdrPolicyEventHistoryAffectedIdentity>,
+    pub(crate) users: Vec<EdrPolicyEventHistoryAffectedIdentity>,
+    pub(crate) sessions: Vec<EdrPolicyEventHistoryAffectedIdentity>,
+    pub(crate) agents: Vec<EdrPolicyEventHistoryAffectedIdentity>,
+    pub(crate) workloads: Vec<EdrPolicyEventHistoryAffectedIdentity>,
+    pub(crate) approvals: Vec<EdrPolicyEventHistoryAffectedIdentity>,
 }
 
 impl EdrPolicyEventHistoryAffectedIdentities {
@@ -3286,211 +3286,211 @@ impl EdrPolicyEventHistoryAffectedIdentities {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryAffectedIdentity {
-    node_id: String,
-    label: String,
-    id: String,
+pub(crate) struct EdrPolicyEventHistoryAffectedIdentity {
+    pub(crate) node_id: String,
+    pub(crate) label: String,
+    pub(crate) id: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryAffectedTool {
-    node_id: String,
-    label: String,
-    tool_name: String,
+pub(crate) struct EdrPolicyEventHistoryAffectedTool {
+    pub(crate) node_id: String,
+    pub(crate) label: String,
+    pub(crate) tool_name: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryBreakageDriver {
-    node_id: String,
-    kind: CausalNodeKind,
-    label: String,
-    workflow_category: String,
-    breakage_score: u8,
-    reason: String,
+pub(crate) struct EdrPolicyEventHistoryBreakageDriver {
+    pub(crate) node_id: String,
+    pub(crate) kind: CausalNodeKind,
+    pub(crate) label: String,
+    pub(crate) workflow_category: String,
+    pub(crate) breakage_score: u8,
+    pub(crate) reason: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryCausalContext {
-    event_id: String,
-    current_outcome: String,
-    proposed_outcome: String,
-    current_guard: Option<String>,
-    proposed_guard: Option<String>,
-    current_reason_code: String,
-    proposed_reason_code: String,
-    root_node_id: String,
-    root_label: String,
-    node_count: usize,
-    edge_count: usize,
-    chain_count: usize,
-    chains: Vec<EdrPolicyEventHistoryCausalChain>,
-    node_kinds: BTreeMap<String, u64>,
-    graph: CausalGraph,
+pub(crate) struct EdrPolicyEventHistoryCausalContext {
+    pub(crate) event_id: String,
+    pub(crate) current_outcome: String,
+    pub(crate) proposed_outcome: String,
+    pub(crate) current_guard: Option<String>,
+    pub(crate) proposed_guard: Option<String>,
+    pub(crate) current_reason_code: String,
+    pub(crate) proposed_reason_code: String,
+    pub(crate) root_node_id: String,
+    pub(crate) root_label: String,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) chain_count: usize,
+    pub(crate) chains: Vec<EdrPolicyEventHistoryCausalChain>,
+    pub(crate) node_kinds: BTreeMap<String, u64>,
+    pub(crate) graph: CausalGraph,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryCausalChain {
-    target_node_id: String,
-    target_label: String,
-    target_kind: String,
-    path_node_count: usize,
-    path_edge_count: usize,
-    nodes: Vec<EdrPolicyEventHistoryCausalChainNode>,
-    edge_kinds: Vec<String>,
+pub(crate) struct EdrPolicyEventHistoryCausalChain {
+    pub(crate) target_node_id: String,
+    pub(crate) target_label: String,
+    pub(crate) target_kind: String,
+    pub(crate) path_node_count: usize,
+    pub(crate) path_edge_count: usize,
+    pub(crate) nodes: Vec<EdrPolicyEventHistoryCausalChainNode>,
+    pub(crate) edge_kinds: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryCausalChainNode {
-    node_id: String,
-    kind: String,
-    label: String,
+pub(crate) struct EdrPolicyEventHistoryCausalChainNode {
+    pub(crate) node_id: String,
+    pub(crate) kind: String,
+    pub(crate) label: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryCausalChainDriver {
-    driver_id: String,
-    current_outcome: String,
-    proposed_outcome: String,
-    current_guard: Option<String>,
-    proposed_guard: Option<String>,
-    current_reason_code: String,
-    proposed_reason_code: String,
-    target_kind: String,
-    action: EndpointDecisionAction,
-    edge_kinds: Vec<String>,
-    count: u64,
-    sample_event_ids: Vec<String>,
-    sample_target_node_ids: Vec<String>,
-    sample_target_labels: Vec<String>,
+pub(crate) struct EdrPolicyEventHistoryCausalChainDriver {
+    pub(crate) driver_id: String,
+    pub(crate) current_outcome: String,
+    pub(crate) proposed_outcome: String,
+    pub(crate) current_guard: Option<String>,
+    pub(crate) proposed_guard: Option<String>,
+    pub(crate) current_reason_code: String,
+    pub(crate) proposed_reason_code: String,
+    pub(crate) target_kind: String,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) edge_kinds: Vec<String>,
+    pub(crate) count: u64,
+    pub(crate) sample_event_ids: Vec<String>,
+    pub(crate) sample_target_node_ids: Vec<String>,
+    pub(crate) sample_target_labels: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct EdrPolicyEventHistoryCausalChainDriverKey {
-    current_outcome: String,
-    proposed_outcome: String,
-    current_guard: Option<String>,
-    proposed_guard: Option<String>,
-    current_reason_code: String,
-    proposed_reason_code: String,
-    target_kind: String,
-    action: String,
-    edge_kinds: Vec<String>,
+pub(crate) struct EdrPolicyEventHistoryCausalChainDriverKey {
+    pub(crate) current_outcome: String,
+    pub(crate) proposed_outcome: String,
+    pub(crate) current_guard: Option<String>,
+    pub(crate) proposed_guard: Option<String>,
+    pub(crate) current_reason_code: String,
+    pub(crate) proposed_reason_code: String,
+    pub(crate) target_kind: String,
+    pub(crate) action: String,
+    pub(crate) edge_kinds: Vec<String>,
 }
 
 #[derive(Debug, Default)]
-struct EdrPolicyEventHistoryCausalChainDriverBucket {
-    count: u64,
-    sample_event_ids: Vec<String>,
-    sample_target_node_ids: Vec<String>,
-    sample_target_labels: Vec<String>,
+pub(crate) struct EdrPolicyEventHistoryCausalChainDriverBucket {
+    pub(crate) count: u64,
+    pub(crate) sample_event_ids: Vec<String>,
+    pub(crate) sample_target_node_ids: Vec<String>,
+    pub(crate) sample_target_labels: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryPromotionSuggestion {
-    suggestion_id: String,
-    event_id: String,
-    target_node_id: String,
-    target_label: String,
-    target_kind: String,
-    action: EndpointDecisionAction,
-    selected_stage: String,
+pub(crate) struct EdrPolicyEventHistoryPromotionSuggestion {
+    pub(crate) suggestion_id: String,
+    pub(crate) event_id: String,
+    pub(crate) target_node_id: String,
+    pub(crate) target_label: String,
+    pub(crate) target_kind: String,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) selected_stage: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cross_window_impact_hash: Option<String>,
+    pub(crate) cross_window_impact_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cross_window_recommendation_hash: Option<String>,
-    reason: String,
-    candidate_endpoint: String,
-    candidate_request: EdrPolicyEventHistoryPromotionCandidateRequest,
-    stage_endpoint: String,
-    stage_request: EdrPolicyEventHistoryPromotionStageRequest,
+    pub(crate) cross_window_recommendation_hash: Option<String>,
+    pub(crate) reason: String,
+    pub(crate) candidate_endpoint: String,
+    pub(crate) candidate_request: EdrPolicyEventHistoryPromotionCandidateRequest,
+    pub(crate) stage_endpoint: String,
+    pub(crate) stage_request: EdrPolicyEventHistoryPromotionStageRequest,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryPromotionCandidateRequest {
-    root_node_id: String,
-    action: EndpointDecisionAction,
-    max_depth: usize,
-    description: String,
+pub(crate) struct EdrPolicyEventHistoryPromotionCandidateRequest {
+    pub(crate) root_node_id: String,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) max_depth: usize,
+    pub(crate) description: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyEventHistoryPromotionStageRequest {
-    root_node_id: String,
-    action: EndpointDecisionAction,
-    max_depth: usize,
-    selected_stage: String,
+pub(crate) struct EdrPolicyEventHistoryPromotionStageRequest {
+    pub(crate) root_node_id: String,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) max_depth: usize,
+    pub(crate) selected_stage: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cross_window_impact_hash: Option<String>,
+    pub(crate) cross_window_impact_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cross_window_recommendation_hash: Option<String>,
-    staged_by: String,
-    note: String,
+    pub(crate) cross_window_recommendation_hash: Option<String>,
+    pub(crate) staged_by: String,
+    pub(crate) note: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrPrivacyReportInput {
+pub(crate) struct EdrPrivacyReportInput {
     #[serde(default)]
-    observations: Vec<EndpointObservation>,
+    pub(crate) observations: Vec<EndpointObservation>,
     #[serde(default, alias = "privacyMode")]
-    privacy_mode: Option<EndpointTelemetryPrivacyMode>,
+    pub(crate) privacy_mode: Option<EndpointTelemetryPrivacyMode>,
     #[serde(default, alias = "rawArtifactApprovalId")]
-    raw_artifact_approval_id: Option<String>,
+    pub(crate) raw_artifact_approval_id: Option<String>,
     #[serde(default, alias = "rawArtifactApprovalReason")]
-    raw_artifact_approval_reason: Option<String>,
+    pub(crate) raw_artifact_approval_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrPrivacyReportResponse {
-    report: EndpointTelemetryPrivacyReport,
-    privacy_policy: EdrPrivacyPolicyDecision,
-    receipt: SignedReceipt,
+pub(crate) struct EdrPrivacyReportResponse {
+    pub(crate) report: EndpointTelemetryPrivacyReport,
+    pub(crate) privacy_policy: EdrPrivacyPolicyDecision,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPrivacyPolicyDecision {
-    requested_privacy_mode: EndpointTelemetryPrivacyMode,
-    effective_privacy_mode: EndpointTelemetryPrivacyMode,
-    raw_artifact_upload_requested: bool,
-    raw_artifact_upload_allowed: bool,
-    raw_artifact_approval_required: bool,
-    raw_artifact_approval_provided: bool,
+pub(crate) struct EdrPrivacyPolicyDecision {
+    pub(crate) requested_privacy_mode: EndpointTelemetryPrivacyMode,
+    pub(crate) effective_privacy_mode: EndpointTelemetryPrivacyMode,
+    pub(crate) raw_artifact_upload_requested: bool,
+    pub(crate) raw_artifact_upload_allowed: bool,
+    pub(crate) raw_artifact_approval_required: bool,
+    pub(crate) raw_artifact_approval_provided: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    raw_artifact_approval_id: Option<String>,
+    pub(crate) raw_artifact_approval_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    raw_artifact_approval_reason_hash: Option<String>,
-    policy_source: String,
-    denied_reason: Option<String>,
+    pub(crate) raw_artifact_approval_reason_hash: Option<String>,
+    pub(crate) policy_source: String,
+    pub(crate) denied_reason: Option<String>,
 }
 
 #[derive(Clone, Debug)]
-struct EdrRawArtifactApproval {
-    approval_id: String,
-    reason_hash: String,
+pub(crate) struct EdrRawArtifactApproval {
+    pub(crate) approval_id: String,
+    pub(crate) reason_hash: String,
 }
 
 #[derive(Clone, Debug)]
-struct EdrRawArtifactUploadPolicy {
-    allowed: bool,
-    source: String,
+pub(crate) struct EdrRawArtifactUploadPolicy {
+    pub(crate) allowed: bool,
+    pub(crate) source: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct EdrFindingGroupsQuery {
+pub(crate) struct EdrFindingGroupsQuery {
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default, alias = "maxDepth")]
-    max_depth: Option<usize>,
+    pub(crate) max_depth: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -3503,30 +3503,30 @@ struct PendingFindingGroup {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrFindingGroup {
-    group_id: String,
-    root_node_id: String,
-    root_label: String,
-    finding_count: usize,
-    node_count: usize,
-    edge_count: usize,
-    rule_ids: Vec<String>,
-    finding_ids: Vec<String>,
-    findings: Vec<DetectionFinding>,
-    affected_identity_count: usize,
-    affected_tool_count: usize,
-    affected_identities: EdrPolicyEventHistoryAffectedIdentities,
-    affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
-    graph: CausalGraph,
-    receipt: SignedReceipt,
+pub(crate) struct EdrFindingGroup {
+    pub(crate) group_id: String,
+    pub(crate) root_node_id: String,
+    pub(crate) root_label: String,
+    pub(crate) finding_count: usize,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) rule_ids: Vec<String>,
+    pub(crate) finding_ids: Vec<String>,
+    pub(crate) findings: Vec<DetectionFinding>,
+    pub(crate) affected_identity_count: usize,
+    pub(crate) affected_tool_count: usize,
+    pub(crate) affected_identities: EdrPolicyEventHistoryAffectedIdentities,
+    pub(crate) affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrFindingGroupsResponse {
-    group_count: usize,
-    finding_count: usize,
-    groups: Vec<EdrFindingGroup>,
+pub(crate) struct EdrFindingGroupsResponse {
+    pub(crate) group_count: usize,
+    pub(crate) finding_count: usize,
+    pub(crate) groups: Vec<EdrFindingGroup>,
 }
 
 #[derive(Debug, Serialize)]
@@ -3537,94 +3537,94 @@ struct AgentPolicyCheckResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct EdrCausalGraphInput {
+pub(crate) struct EdrCausalGraphInput {
     #[serde(default)]
-    observations: Vec<EndpointObservation>,
+    pub(crate) observations: Vec<EndpointObservation>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrCausalGraphResponse {
-    observation_count: usize,
-    node_count: usize,
-    edge_count: usize,
-    graph: CausalGraph,
+pub(crate) struct EdrCausalGraphResponse {
+    pub(crate) observation_count: usize,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) graph: CausalGraph,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrCausalSubgraphInput {
+pub(crate) struct EdrCausalSubgraphInput {
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default)]
-    process: Option<EdrGraphRootProcessSelectorInput>,
+    pub(crate) process: Option<EdrGraphRootProcessSelectorInput>,
     #[serde(default, alias = "maxDepth")]
-    max_depth: Option<usize>,
+    pub(crate) max_depth: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrCausalSubgraphResponse {
-    root_node_id: String,
-    max_depth: usize,
-    node_count: usize,
-    edge_count: usize,
-    affected_identity_count: usize,
-    affected_tool_count: usize,
-    affected_identities: EdrPolicyEventHistoryAffectedIdentities,
-    affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
-    graph: CausalGraph,
-    receipt: SignedReceipt,
+pub(crate) struct EdrCausalSubgraphResponse {
+    pub(crate) root_node_id: String,
+    pub(crate) max_depth: usize,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) affected_identity_count: usize,
+    pub(crate) affected_tool_count: usize,
+    pub(crate) affected_identities: EdrPolicyEventHistoryAffectedIdentities,
+    pub(crate) affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrCausalContextInput {
+pub(crate) struct EdrCausalContextInput {
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default)]
-    process: Option<EdrGraphRootProcessSelectorInput>,
+    pub(crate) process: Option<EdrGraphRootProcessSelectorInput>,
     #[serde(default, alias = "upstreamDepth")]
-    upstream_depth: Option<usize>,
+    pub(crate) upstream_depth: Option<usize>,
     #[serde(default, alias = "downstreamDepth")]
-    downstream_depth: Option<usize>,
+    pub(crate) downstream_depth: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrCausalContextResponse {
-    root_node_id: String,
-    upstream_depth: usize,
-    downstream_depth: usize,
+pub(crate) struct EdrCausalContextResponse {
+    pub(crate) root_node_id: String,
+    pub(crate) upstream_depth: usize,
+    pub(crate) downstream_depth: usize,
     #[serde(rename = "contextExpansionStrategy")]
-    context_expansion_strategy: String,
+    pub(crate) context_expansion_strategy: String,
     #[serde(rename = "edgeIndexSource")]
-    edge_index_source: String,
+    pub(crate) edge_index_source: String,
     #[serde(rename = "edgeIndexPath", skip_serializing_if = "Option::is_none")]
-    edge_index_path: Option<PathBuf>,
+    pub(crate) edge_index_path: Option<PathBuf>,
     #[serde(rename = "edgeIndexCount")]
-    edge_index_count: usize,
-    node_count: usize,
-    edge_count: usize,
-    affected_identity_count: usize,
-    affected_tool_count: usize,
-    affected_identities: EdrPolicyEventHistoryAffectedIdentities,
-    affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
-    graph: CausalGraph,
-    receipt: SignedReceipt,
+    pub(crate) edge_index_count: usize,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) affected_identity_count: usize,
+    pub(crate) affected_tool_count: usize,
+    pub(crate) affected_identities: EdrPolicyEventHistoryAffectedIdentities,
+    pub(crate) affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrGraphSearchInput {
+pub(crate) struct EdrGraphSearchInput {
     #[serde(default, alias = "nodeKind", alias = "kind")]
-    node_kind: Option<CausalNodeKind>,
+    pub(crate) node_kind: Option<CausalNodeKind>,
     #[serde(default, alias = "labelContains")]
-    label_contains: Option<String>,
+    pub(crate) label_contains: Option<String>,
     #[serde(
         default,
         alias = "filePath",
         alias = "credentialPath",
         alias = "targetPath"
     )]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     #[serde(
         default,
         alias = "pathPrefix",
@@ -3632,7 +3632,7 @@ struct EdrGraphSearchInput {
         alias = "credentialPathPrefix",
         alias = "targetPathPrefix"
     )]
-    path_prefix: Option<String>,
+    pub(crate) path_prefix: Option<String>,
     #[serde(
         default,
         alias = "pathPattern",
@@ -3640,31 +3640,31 @@ struct EdrGraphSearchInput {
         alias = "credentialPathPattern",
         alias = "targetPathPattern"
     )]
-    path_pattern: Option<String>,
+    pub(crate) path_pattern: Option<String>,
     #[serde(default, alias = "attributeKey")]
-    attribute_key: Option<String>,
+    pub(crate) attribute_key: Option<String>,
     #[serde(default, alias = "attributeValue")]
-    attribute_value: Option<String>,
+    pub(crate) attribute_value: Option<String>,
     #[serde(default, alias = "toolName")]
-    tool_name: Option<String>,
+    pub(crate) tool_name: Option<String>,
     #[serde(default, alias = "hostId")]
-    host_id: Option<String>,
+    pub(crate) host_id: Option<String>,
     #[serde(default, alias = "sessionId")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default, alias = "userId")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     #[serde(default, alias = "agentId")]
-    agent_id: Option<String>,
+    pub(crate) agent_id: Option<String>,
     #[serde(default, alias = "workloadId")]
-    workload_id: Option<String>,
+    pub(crate) workload_id: Option<String>,
     #[serde(default, alias = "approvalId")]
-    approval_id: Option<String>,
+    pub(crate) approval_id: Option<String>,
     #[serde(default, alias = "upstreamDepth")]
-    upstream_depth: Option<usize>,
+    pub(crate) upstream_depth: Option<usize>,
     #[serde(default, alias = "downstreamDepth")]
-    downstream_depth: Option<usize>,
+    pub(crate) downstream_depth: Option<usize>,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -3677,441 +3677,441 @@ struct PendingGraphSearchMatch {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrGraphSearchMatch {
-    root_node_id: String,
-    root_label: String,
-    root_kind: CausalNodeKind,
-    node_count: usize,
-    edge_count: usize,
-    affected_identity_count: usize,
-    affected_tool_count: usize,
-    affected_identities: EdrPolicyEventHistoryAffectedIdentities,
-    affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
-    graph: CausalGraph,
-    receipt: SignedReceipt,
+pub(crate) struct EdrGraphSearchMatch {
+    pub(crate) root_node_id: String,
+    pub(crate) root_label: String,
+    pub(crate) root_kind: CausalNodeKind,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) affected_identity_count: usize,
+    pub(crate) affected_tool_count: usize,
+    pub(crate) affected_identities: EdrPolicyEventHistoryAffectedIdentities,
+    pub(crate) affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrGraphSearchQueryPlan {
-    strategy: String,
-    indexed: bool,
-    index_source: String,
+pub(crate) struct EdrGraphSearchQueryPlan {
+    pub(crate) strategy: String,
+    pub(crate) indexed: bool,
+    pub(crate) index_source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    index_path: Option<PathBuf>,
-    edge_index_source: String,
+    pub(crate) index_path: Option<PathBuf>,
+    pub(crate) edge_index_source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    edge_index_path: Option<PathBuf>,
-    edge_index_count: usize,
-    context_expansion_strategy: String,
-    indexed_keys: Vec<String>,
-    candidate_count: usize,
-    scanned_node_count: usize,
+    pub(crate) edge_index_path: Option<PathBuf>,
+    pub(crate) edge_index_count: usize,
+    pub(crate) context_expansion_strategy: String,
+    pub(crate) indexed_keys: Vec<String>,
+    pub(crate) candidate_count: usize,
+    pub(crate) scanned_node_count: usize,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrGraphSearchResponse {
-    match_count: usize,
-    total_match_count: usize,
-    upstream_depth: usize,
-    downstream_depth: usize,
-    query_plan: EdrGraphSearchQueryPlan,
-    matches: Vec<EdrGraphSearchMatch>,
+pub(crate) struct EdrGraphSearchResponse {
+    pub(crate) match_count: usize,
+    pub(crate) total_match_count: usize,
+    pub(crate) upstream_depth: usize,
+    pub(crate) downstream_depth: usize,
+    pub(crate) query_plan: EdrGraphSearchQueryPlan,
+    pub(crate) matches: Vec<EdrGraphSearchMatch>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrGraphSliceExportInput {
+pub(crate) struct EdrGraphSliceExportInput {
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default)]
-    process: Option<EdrGraphRootProcessSelectorInput>,
+    pub(crate) process: Option<EdrGraphRootProcessSelectorInput>,
     #[serde(default, alias = "sliceKind")]
-    slice_kind: Option<String>,
+    pub(crate) slice_kind: Option<String>,
     #[serde(default, alias = "maxDepth")]
-    max_depth: Option<usize>,
+    pub(crate) max_depth: Option<usize>,
     #[serde(default, alias = "upstreamDepth")]
-    upstream_depth: Option<usize>,
+    pub(crate) upstream_depth: Option<usize>,
     #[serde(default, alias = "downstreamDepth")]
-    downstream_depth: Option<usize>,
+    pub(crate) downstream_depth: Option<usize>,
     #[serde(default)]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrGraphSliceExportResponse {
-    root_node_id: String,
-    slice_kind: String,
-    node_count: usize,
-    edge_count: usize,
-    affected_identity_count: usize,
-    affected_tool_count: usize,
-    affected_identities: EdrPolicyEventHistoryAffectedIdentities,
-    affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
-    graph: CausalGraph,
-    bundle: EndpointEvidenceBundleReference,
-    artifact: EdrEvidenceBundleArtifact,
-    receipt: SignedReceipt,
+pub(crate) struct EdrGraphSliceExportResponse {
+    pub(crate) root_node_id: String,
+    pub(crate) slice_kind: String,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) affected_identity_count: usize,
+    pub(crate) affected_tool_count: usize,
+    pub(crate) affected_identities: EdrPolicyEventHistoryAffectedIdentities,
+    pub(crate) affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
+    pub(crate) graph: CausalGraph,
+    pub(crate) bundle: EndpointEvidenceBundleReference,
+    pub(crate) artifact: EdrEvidenceBundleArtifact,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrAgentSecretTouchesInput {
+pub(crate) struct EdrAgentSecretTouchesInput {
     #[serde(default, alias = "sessionId")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default, alias = "credentialKind")]
-    credential_kind: Option<String>,
+    pub(crate) credential_kind: Option<String>,
     #[serde(default, alias = "requireAgentContext")]
-    require_agent_context: Option<bool>,
+    pub(crate) require_agent_context: Option<bool>,
     #[serde(default, alias = "upstreamDepth")]
-    upstream_depth: Option<usize>,
+    pub(crate) upstream_depth: Option<usize>,
     #[serde(default, alias = "downstreamDepth")]
-    downstream_depth: Option<usize>,
+    pub(crate) downstream_depth: Option<usize>,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrAgentSecretTouch {
-    credential_node_id: String,
-    credential_label: String,
+pub(crate) struct EdrAgentSecretTouch {
+    pub(crate) credential_node_id: String,
+    pub(crate) credential_label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    credential_kind: Option<String>,
+    pub(crate) credential_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
-    agent_node_ids: Vec<String>,
-    agent_labels: Vec<String>,
-    process_node_ids: Vec<String>,
-    graph: CausalGraph,
-    receipt: SignedReceipt,
+    pub(crate) name: Option<String>,
+    pub(crate) agent_node_ids: Vec<String>,
+    pub(crate) agent_labels: Vec<String>,
+    pub(crate) process_node_ids: Vec<String>,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrAgentSecretTouchesResponse {
-    touch_count: usize,
-    touches: Vec<EdrAgentSecretTouch>,
+pub(crate) struct EdrAgentSecretTouchesResponse {
+    pub(crate) touch_count: usize,
+    pub(crate) touches: Vec<EdrAgentSecretTouch>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPublishedHuntEvent {
-    event_id: String,
-    raw_ref: String,
-    credential_node_id: String,
+pub(crate) struct EdrPublishedHuntEvent {
+    pub(crate) event_id: String,
+    pub(crate) raw_ref: String,
+    pub(crate) credential_node_id: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEvidenceBundleFleetPublishResponse {
-    bundle_id: String,
-    archive_id: String,
-    archive_hash: String,
-    published: bool,
-    queued: bool,
+pub(crate) struct EdrEvidenceBundleFleetPublishResponse {
+    pub(crate) bundle_id: String,
+    pub(crate) archive_id: String,
+    pub(crate) archive_hash: String,
+    pub(crate) published: bool,
+    pub(crate) queued: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    control_upload: Option<EdrEvidenceBundleControlUploadReport>,
+    pub(crate) control_upload: Option<EdrEvidenceBundleControlUploadReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    outbox_id: Option<String>,
+    pub(crate) outbox_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
-    event_id: String,
-    raw_ref: String,
+    pub(crate) next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) event_id: String,
+    pub(crate) raw_ref: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEvidenceBundleControlUploadReport {
+pub(crate) struct EdrEvidenceBundleControlUploadReport {
     #[serde(skip_serializing_if = "Option::is_none")]
-    control_api_url: Option<String>,
-    attempted: bool,
-    accepted: bool,
-    raw_artifact_upload_allowed: bool,
-    raw_artifact_approval_required: bool,
-    raw_artifact_approval_provided: bool,
+    pub(crate) control_api_url: Option<String>,
+    pub(crate) attempted: bool,
+    pub(crate) accepted: bool,
+    pub(crate) raw_artifact_upload_allowed: bool,
+    pub(crate) raw_artifact_approval_required: bool,
+    pub(crate) raw_artifact_approval_provided: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    raw_artifact_approval_id: Option<String>,
+    pub(crate) raw_artifact_approval_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    raw_artifact_approval_reason_hash: Option<String>,
-    policy_source: String,
+    pub(crate) raw_artifact_approval_reason_hash: Option<String>,
+    pub(crate) policy_source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    skipped_reason: Option<String>,
+    pub(crate) skipped_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    http_status: Option<u16>,
+    pub(crate) http_status: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_hash: Option<String>,
+    pub(crate) response_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error_hash: Option<String>,
+    pub(crate) error_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-    retry_queued: bool,
+    pub(crate) error: Option<String>,
+    pub(crate) retry_queued: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    retry_id: Option<String>,
+    pub(crate) retry_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrRawArtifactApprovalInput {
+pub(crate) struct EdrRawArtifactApprovalInput {
     #[serde(default)]
-    raw_artifact_approval_id: Option<String>,
+    pub(crate) raw_artifact_approval_id: Option<String>,
     #[serde(default)]
-    raw_artifact_approval_reason: Option<String>,
+    pub(crate) raw_artifact_approval_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrControlArchiveUploadRetryInput {
+pub(crate) struct EdrControlArchiveUploadRetryInput {
     #[serde(default)]
-    force: bool,
+    pub(crate) force: bool,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrControlArchiveUploadRetryAttemptRecord {
-    retry_id: String,
-    archive_id: String,
-    archive_hash: String,
-    raw_ref: String,
-    bundle_id: String,
-    control_api_url: String,
-    delivered: bool,
-    attempt_count: u32,
+pub(crate) struct EdrControlArchiveUploadRetryAttemptRecord {
+    pub(crate) retry_id: String,
+    pub(crate) archive_id: String,
+    pub(crate) archive_hash: String,
+    pub(crate) raw_ref: String,
+    pub(crate) bundle_id: String,
+    pub(crate) control_api_url: String,
+    pub(crate) delivered: bool,
+    pub(crate) attempt_count: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    http_status: Option<u16>,
+    pub(crate) http_status: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_hash: Option<String>,
+    pub(crate) response_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error_hash: Option<String>,
+    pub(crate) error_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrControlArchiveUploadRetryResponse {
+pub(crate) struct EdrControlArchiveUploadRetryResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    attempted: usize,
-    delivered: usize,
-    failed: usize,
-    skipped: usize,
-    pending: usize,
-    attempts: Vec<EdrControlArchiveUploadRetryAttemptRecord>,
+    pub(crate) path: Option<String>,
+    pub(crate) attempted: usize,
+    pub(crate) delivered: usize,
+    pub(crate) failed: usize,
+    pub(crate) skipped: usize,
+    pub(crate) pending: usize,
+    pub(crate) attempts: Vec<EdrControlArchiveUploadRetryAttemptRecord>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrControlReceiptUploadRetryInput {
+pub(crate) struct EdrControlReceiptUploadRetryInput {
     #[serde(default)]
-    force: bool,
+    pub(crate) force: bool,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrControlReceiptUploadRetryAttemptRecord {
-    retry_id: String,
-    receipt_id: Option<String>,
-    receipt_hash: String,
-    control_api_url: String,
-    delivered: bool,
-    attempt_count: u32,
+pub(crate) struct EdrControlReceiptUploadRetryAttemptRecord {
+    pub(crate) retry_id: String,
+    pub(crate) receipt_id: Option<String>,
+    pub(crate) receipt_hash: String,
+    pub(crate) control_api_url: String,
+    pub(crate) delivered: bool,
+    pub(crate) attempt_count: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    http_status: Option<u16>,
+    pub(crate) http_status: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_hash: Option<String>,
+    pub(crate) response_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error_hash: Option<String>,
+    pub(crate) error_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrControlReceiptUploadRetryResponse {
+pub(crate) struct EdrControlReceiptUploadRetryResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    attempted: usize,
-    delivered: usize,
-    failed: usize,
-    skipped: usize,
-    pending: usize,
-    attempts: Vec<EdrControlReceiptUploadRetryAttemptRecord>,
+    pub(crate) path: Option<String>,
+    pub(crate) attempted: usize,
+    pub(crate) delivered: usize,
+    pub(crate) failed: usize,
+    pub(crate) skipped: usize,
+    pub(crate) pending: usize,
+    pub(crate) attempts: Vec<EdrControlReceiptUploadRetryAttemptRecord>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrControlArchiveUploadBackfillInput {
+pub(crate) struct EdrControlArchiveUploadBackfillInput {
     #[serde(default)]
-    bundle_id: Option<String>,
+    pub(crate) bundle_id: Option<String>,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default)]
-    raw_artifact_approval_id: Option<String>,
+    pub(crate) raw_artifact_approval_id: Option<String>,
     #[serde(default)]
-    raw_artifact_approval_reason: Option<String>,
+    pub(crate) raw_artifact_approval_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrControlArchiveUploadBackfillRecord {
-    bundle_id: String,
-    archive_id: String,
-    archive_hash: String,
-    raw_ref: String,
+pub(crate) struct EdrControlArchiveUploadBackfillRecord {
+    pub(crate) bundle_id: String,
+    pub(crate) archive_id: String,
+    pub(crate) archive_hash: String,
+    pub(crate) raw_ref: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    control_upload: Option<EdrEvidenceBundleControlUploadReport>,
+    pub(crate) control_upload: Option<EdrEvidenceBundleControlUploadReport>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrControlArchiveUploadBackfillResponse {
-    attempted: usize,
-    delivered: usize,
-    failed: usize,
-    skipped: usize,
-    records: Vec<EdrControlArchiveUploadBackfillRecord>,
+pub(crate) struct EdrControlArchiveUploadBackfillResponse {
+    pub(crate) attempted: usize,
+    pub(crate) delivered: usize,
+    pub(crate) failed: usize,
+    pub(crate) skipped: usize,
+    pub(crate) records: Vec<EdrControlArchiveUploadBackfillRecord>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrFleetHuntEventRetryInput {
+pub(crate) struct EdrFleetHuntEventRetryInput {
     #[serde(default)]
-    force: bool,
+    pub(crate) force: bool,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrFleetHuntEventRetryAttemptRecord {
-    outbox_id: String,
-    event_id: String,
-    raw_ref: String,
-    delivered: bool,
-    attempt_count: u32,
+pub(crate) struct EdrFleetHuntEventRetryAttemptRecord {
+    pub(crate) outbox_id: String,
+    pub(crate) event_id: String,
+    pub(crate) raw_ref: String,
+    pub(crate) delivered: bool,
+    pub(crate) attempt_count: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error_hash: Option<String>,
+    pub(crate) error_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrFleetHuntEventRetryResponse {
+pub(crate) struct EdrFleetHuntEventRetryResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    attempted: usize,
-    delivered: usize,
-    failed: usize,
-    skipped: usize,
-    pending: usize,
-    attempts: Vec<EdrFleetHuntEventRetryAttemptRecord>,
+    pub(crate) path: Option<String>,
+    pub(crate) attempted: usize,
+    pub(crate) delivered: usize,
+    pub(crate) failed: usize,
+    pub(crate) skipped: usize,
+    pub(crate) pending: usize,
+    pub(crate) attempts: Vec<EdrFleetHuntEventRetryAttemptRecord>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrAgentSecretTouchesFleetPublishResponse {
-    touch_count: usize,
-    published_count: usize,
-    events: Vec<EdrPublishedHuntEvent>,
+pub(crate) struct EdrAgentSecretTouchesFleetPublishResponse {
+    pub(crate) touch_count: usize,
+    pub(crate) published_count: usize,
+    pub(crate) events: Vec<EdrPublishedHuntEvent>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrPolicySimulationInput {
+pub(crate) struct EdrPolicySimulationInput {
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default)]
-    process: Option<EdrGraphRootProcessSelectorInput>,
+    pub(crate) process: Option<EdrGraphRootProcessSelectorInput>,
     #[serde(default, alias = "ruleId")]
-    rule_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
     #[serde(default)]
-    description: Option<String>,
+    pub(crate) description: Option<String>,
     #[serde(default)]
-    action: Option<EndpointDecisionAction>,
+    pub(crate) action: Option<EndpointDecisionAction>,
     #[serde(default, alias = "maxDepth")]
-    max_depth: Option<usize>,
+    pub(crate) max_depth: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrPolicySimulationResponse {
-    simulation: EndpointPolicySimulationReport,
-    graph: CausalGraph,
-    receipt: SignedReceipt,
+pub(crate) struct EdrPolicySimulationResponse {
+    pub(crate) simulation: EndpointPolicySimulationReport,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrPolicyReplayInput {
+pub(crate) struct EdrPolicyReplayInput {
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default)]
-    process: Option<EdrGraphRootProcessSelectorInput>,
+    pub(crate) process: Option<EdrGraphRootProcessSelectorInput>,
     #[serde(default)]
-    action: Option<EndpointDecisionAction>,
+    pub(crate) action: Option<EndpointDecisionAction>,
     #[serde(default, alias = "ruleId")]
-    rule_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
     #[serde(default)]
-    description: Option<String>,
+    pub(crate) description: Option<String>,
     #[serde(default, alias = "maxDepth")]
-    max_depth: Option<usize>,
+    pub(crate) max_depth: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyReplayReport {
-    replay_id: String,
-    replayed_at: chrono::DateTime<chrono::Utc>,
-    mode: String,
-    policy: EndpointPolicySnapshot,
-    root_node_id: String,
-    root_label: String,
-    root_kind: CausalNodeKind,
-    action: EndpointDecisionAction,
-    graph_slice_id: String,
-    observation_count: usize,
-    node_count: usize,
-    edge_count: usize,
-    flight_recorder_observation_count: usize,
-    would_enforce: bool,
-    developer_breakage_score: u8,
-    impact_level: EndpointSimulationImpactLevel,
-    summary: String,
+pub(crate) struct EdrPolicyReplayReport {
+    pub(crate) replay_id: String,
+    pub(crate) replayed_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) mode: String,
+    pub(crate) policy: EndpointPolicySnapshot,
+    pub(crate) root_node_id: String,
+    pub(crate) root_label: String,
+    pub(crate) root_kind: CausalNodeKind,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) graph_slice_id: String,
+    pub(crate) observation_count: usize,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) flight_recorder_observation_count: usize,
+    pub(crate) would_enforce: bool,
+    pub(crate) developer_breakage_score: u8,
+    pub(crate) impact_level: EndpointSimulationImpactLevel,
+    pub(crate) summary: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyReplayResponse {
-    replay: EdrPolicyReplayReport,
-    simulation: EndpointPolicySimulationReport,
-    graph: CausalGraph,
-    receipt: SignedReceipt,
+pub(crate) struct EdrPolicyReplayResponse {
+    pub(crate) replay: EdrPolicyReplayReport,
+    pub(crate) simulation: EndpointPolicySimulationReport,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrDetectionCandidateInput {
+pub(crate) struct EdrDetectionCandidateInput {
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default)]
-    process: Option<EdrGraphRootProcessSelectorInput>,
+    pub(crate) process: Option<EdrGraphRootProcessSelectorInput>,
     #[serde(default)]
-    action: Option<EndpointDecisionAction>,
+    pub(crate) action: Option<EndpointDecisionAction>,
     #[serde(default)]
-    description: Option<String>,
+    pub(crate) description: Option<String>,
     #[serde(default, alias = "maxDepth")]
-    max_depth: Option<usize>,
+    pub(crate) max_depth: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -4128,47 +4128,47 @@ pub(crate) struct EdrDetectionCandidate {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrDetectionCandidateStage {
-    stage: String,
-    action: EndpointDecisionAction,
-    promotion_gate: String,
-    recommended: bool,
+pub(crate) struct EdrDetectionCandidateStage {
+    pub(crate) stage: String,
+    pub(crate) action: EndpointDecisionAction,
+    pub(crate) promotion_gate: String,
+    pub(crate) recommended: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrDetectionCandidateResponse {
-    candidate: EdrDetectionCandidate,
-    recommended_stage: String,
-    stage_plan: Vec<EdrDetectionCandidateStage>,
-    simulation: EndpointPolicySimulationReport,
-    graph: CausalGraph,
-    receipt: SignedReceipt,
+pub(crate) struct EdrDetectionCandidateResponse {
+    pub(crate) candidate: EdrDetectionCandidate,
+    pub(crate) recommended_stage: String,
+    pub(crate) stage_plan: Vec<EdrDetectionCandidateStage>,
+    pub(crate) simulation: EndpointPolicySimulationReport,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrStageDetectionInput {
+pub(crate) struct EdrStageDetectionInput {
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default)]
-    process: Option<EdrGraphRootProcessSelectorInput>,
+    pub(crate) process: Option<EdrGraphRootProcessSelectorInput>,
     #[serde(default)]
-    action: Option<EndpointDecisionAction>,
+    pub(crate) action: Option<EndpointDecisionAction>,
     #[serde(default)]
-    description: Option<String>,
+    pub(crate) description: Option<String>,
     #[serde(default, alias = "maxDepth")]
-    max_depth: Option<usize>,
+    pub(crate) max_depth: Option<usize>,
     #[serde(default, alias = "selectedStage")]
-    stage: Option<String>,
+    pub(crate) stage: Option<String>,
     #[serde(default, alias = "crossWindowImpactHash")]
-    cross_window_impact_hash: Option<String>,
+    pub(crate) cross_window_impact_hash: Option<String>,
     #[serde(default, alias = "crossWindowRecommendationHash")]
-    cross_window_recommendation_hash: Option<String>,
+    pub(crate) cross_window_recommendation_hash: Option<String>,
     #[serde(default, alias = "stagedBy")]
-    staged_by: Option<String>,
+    pub(crate) staged_by: Option<String>,
     #[serde(default)]
-    note: Option<String>,
+    pub(crate) note: Option<String>,
 }
 
 impl EdrStageDetectionInput {
@@ -4184,95 +4184,95 @@ impl EdrStageDetectionInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct EdrStagedDetectionsQuery {
+pub(crate) struct EdrStagedDetectionsQuery {
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default)]
-    stage: Option<String>,
+    pub(crate) stage: Option<String>,
     #[serde(default, alias = "ruleId")]
-    rule_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct EdrStagedDetectionRecord {
     pub(crate) staged_detection_id: String,
-    staged_at: chrono::DateTime<chrono::Utc>,
-    staged_by: String,
+    pub(crate) staged_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) staged_by: String,
     pub(crate) stage: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cross_window_impact_hash: Option<String>,
+    pub(crate) cross_window_impact_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cross_window_recommendation_hash: Option<String>,
-    note: Option<String>,
-    policy: EndpointPolicySnapshot,
+    pub(crate) cross_window_recommendation_hash: Option<String>,
+    pub(crate) note: Option<String>,
+    pub(crate) policy: EndpointPolicySnapshot,
     pub(crate) candidate: EdrDetectionCandidate,
-    recommended_stage: String,
-    stage_plan: Vec<EdrDetectionCandidateStage>,
-    simulation: EndpointPolicySimulationReport,
-    simulation_receipt: SignedReceipt,
+    pub(crate) recommended_stage: String,
+    pub(crate) stage_plan: Vec<EdrDetectionCandidateStage>,
+    pub(crate) simulation: EndpointPolicySimulationReport,
+    pub(crate) simulation_receipt: SignedReceipt,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrStageDetectionResponse {
-    path: Option<String>,
-    record: EdrStagedDetectionRecord,
-    graph: CausalGraph,
+pub(crate) struct EdrStageDetectionResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) record: EdrStagedDetectionRecord,
+    pub(crate) graph: CausalGraph,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrStagedDetectionsResponse {
-    path: Option<String>,
-    count: usize,
-    staged_detections: Vec<EdrStagedDetectionRecord>,
+pub(crate) struct EdrStagedDetectionsResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) count: usize,
+    pub(crate) staged_detections: Vec<EdrStagedDetectionRecord>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrPolicyDeltaInput {
+pub(crate) struct EdrPolicyDeltaInput {
     #[serde(default, alias = "stagedDetectionId")]
-    staged_detection_id: Option<String>,
+    pub(crate) staged_detection_id: Option<String>,
     #[serde(default, alias = "ruleId")]
-    rule_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
     #[serde(default)]
-    stage: Option<String>,
+    pub(crate) stage: Option<String>,
     #[serde(default, alias = "generatedBy", alias = "promotedBy")]
-    generated_by: Option<String>,
+    pub(crate) generated_by: Option<String>,
     #[serde(default)]
-    note: Option<String>,
+    pub(crate) note: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct EdrPolicyDeltasQuery {
+pub(crate) struct EdrPolicyDeltasQuery {
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default)]
-    stage: Option<String>,
+    pub(crate) stage: Option<String>,
     #[serde(default, alias = "ruleId")]
-    rule_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrPolicyDeltaApplyInput {
+pub(crate) struct EdrPolicyDeltaApplyInput {
     #[serde(default, alias = "dryRun")]
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
     #[serde(default, alias = "allowBasePolicyDrift")]
-    allow_base_policy_drift: Option<bool>,
+    pub(crate) allow_base_policy_drift: Option<bool>,
     #[serde(default, alias = "reloadDaemonPolicy")]
-    reload_daemon_policy: Option<bool>,
+    pub(crate) reload_daemon_policy: Option<bool>,
     #[serde(default, alias = "restartDaemon")]
-    restart_daemon: Option<bool>,
+    pub(crate) restart_daemon: Option<bool>,
     #[serde(default, alias = "verifyProtectionState")]
-    verify_protection_state: Option<bool>,
+    pub(crate) verify_protection_state: Option<bool>,
     #[serde(default, alias = "providerAckTimeoutMs")]
-    provider_ack_timeout_ms: Option<u64>,
+    pub(crate) provider_ack_timeout_ms: Option<u64>,
     #[serde(default, alias = "appliedBy", alias = "promotedBy")]
-    applied_by: Option<String>,
+    pub(crate) applied_by: Option<String>,
     #[serde(default)]
-    note: Option<String>,
+    pub(crate) note: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -4338,273 +4338,273 @@ pub(crate) struct EdrPolicyDeltaRecord {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyDeltaResponse {
-    path: Option<String>,
-    record: EdrPolicyDeltaRecord,
+pub(crate) struct EdrPolicyDeltaResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) record: EdrPolicyDeltaRecord,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyDeltasResponse {
-    path: Option<String>,
-    count: usize,
-    policy_deltas: Vec<EdrPolicyDeltaRecord>,
+pub(crate) struct EdrPolicyDeltasResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) count: usize,
+    pub(crate) policy_deltas: Vec<EdrPolicyDeltaRecord>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyDeltaApplyRecord {
-    policy_delta_id: String,
-    applied_at: chrono::DateTime<chrono::Utc>,
-    applied_by: String,
-    note: Option<String>,
-    dry_run: bool,
-    applied: bool,
-    allow_base_policy_drift: bool,
+pub(crate) struct EdrPolicyDeltaApplyRecord {
+    pub(crate) policy_delta_id: String,
+    pub(crate) applied_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) applied_by: String,
+    pub(crate) note: Option<String>,
+    pub(crate) dry_run: bool,
+    pub(crate) applied: bool,
+    pub(crate) allow_base_policy_drift: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cross_window_impact_hash: Option<String>,
+    pub(crate) cross_window_impact_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cross_window_recommendation_hash: Option<String>,
-    policy_path: String,
-    backup_path: Option<String>,
-    expected_base_policy_hash: String,
-    previous_policy_hash: String,
-    new_policy_hash: String,
-    previous_policy_epoch: u64,
-    new_policy_epoch: u64,
+    pub(crate) cross_window_recommendation_hash: Option<String>,
+    pub(crate) policy_path: String,
+    pub(crate) backup_path: Option<String>,
+    pub(crate) expected_base_policy_hash: String,
+    pub(crate) previous_policy_hash: String,
+    pub(crate) new_policy_hash: String,
+    pub(crate) previous_policy_epoch: u64,
+    pub(crate) new_policy_epoch: u64,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyDeltaApplyResponse {
-    record: EdrPolicyDeltaApplyRecord,
-    policy_delta: EdrPolicyDeltaRecord,
-    receipt: Option<SignedReceipt>,
+pub(crate) struct EdrPolicyDeltaApplyResponse {
+    pub(crate) record: EdrPolicyDeltaApplyRecord,
+    pub(crate) policy_delta: EdrPolicyDeltaRecord,
+    pub(crate) receipt: Option<SignedReceipt>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    post_apply_enforcement: Option<EdrPolicyDeltaApplyEnforcementProof>,
+    pub(crate) post_apply_enforcement: Option<EdrPolicyDeltaApplyEnforcementProof>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrPolicyDeltaApplyEnforcementProof {
-    policy_synced_to_disk: bool,
+pub(crate) struct EdrPolicyDeltaApplyEnforcementProof {
+    pub(crate) policy_synced_to_disk: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cross_window_impact_hash: Option<String>,
+    pub(crate) cross_window_impact_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cross_window_recommendation_hash: Option<String>,
-    local_policy: EndpointPolicySnapshot,
-    daemon_policy_reload: EdrDaemonPolicyReloadResult,
-    network_extension_policy_reload: NetworkExtensionReloadRequestProof,
-    provider_status_refresh: EdrProviderStatusRefreshResult,
-    provider_acknowledgement_poll: EdrProviderAcknowledgementPoll,
-    provider_policy_acknowledgements: Vec<EdrProviderPolicyAcknowledgement>,
-    daemon_restart_requested: bool,
-    daemon_restarted: bool,
-    daemon_restart_error: Option<String>,
-    daemon: DaemonStatus,
-    daemon_policy_version: Option<String>,
-    sensor_state: EndpointSensorState,
-    receipt: SignedReceipt,
-    degraded_provider_receipts: Vec<SignedReceipt>,
+    pub(crate) cross_window_recommendation_hash: Option<String>,
+    pub(crate) local_policy: EndpointPolicySnapshot,
+    pub(crate) daemon_policy_reload: EdrDaemonPolicyReloadResult,
+    pub(crate) network_extension_policy_reload: NetworkExtensionReloadRequestProof,
+    pub(crate) provider_status_refresh: EdrProviderStatusRefreshResult,
+    pub(crate) provider_acknowledgement_poll: EdrProviderAcknowledgementPoll,
+    pub(crate) provider_policy_acknowledgements: Vec<EdrProviderPolicyAcknowledgement>,
+    pub(crate) daemon_restart_requested: bool,
+    pub(crate) daemon_restarted: bool,
+    pub(crate) daemon_restart_error: Option<String>,
+    pub(crate) daemon: DaemonStatus,
+    pub(crate) daemon_policy_version: Option<String>,
+    pub(crate) sensor_state: EndpointSensorState,
+    pub(crate) receipt: SignedReceipt,
+    pub(crate) degraded_provider_receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrDaemonPolicyReloadResult {
-    requested: bool,
-    reloaded: bool,
-    status_code: Option<u16>,
-    policy_hash: Option<String>,
-    message: Option<String>,
-    error: Option<String>,
+pub(crate) struct EdrDaemonPolicyReloadResult {
+    pub(crate) requested: bool,
+    pub(crate) reloaded: bool,
+    pub(crate) status_code: Option<u16>,
+    pub(crate) policy_hash: Option<String>,
+    pub(crate) message: Option<String>,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrProviderPolicyAcknowledgement {
-    provider_id: String,
-    provider_kind: EndpointProviderKind,
-    active: bool,
-    observed_policy_epoch: Option<u64>,
-    expected_policy_epoch: u64,
-    policy_epoch_matches: Option<bool>,
-    policy_synced: Option<bool>,
-    enforcement_ready: Option<bool>,
-    acknowledged: bool,
-    reasons: Vec<String>,
+pub(crate) struct EdrProviderPolicyAcknowledgement {
+    pub(crate) provider_id: String,
+    pub(crate) provider_kind: EndpointProviderKind,
+    pub(crate) active: bool,
+    pub(crate) observed_policy_epoch: Option<u64>,
+    pub(crate) expected_policy_epoch: u64,
+    pub(crate) policy_epoch_matches: Option<bool>,
+    pub(crate) policy_synced: Option<bool>,
+    pub(crate) enforcement_ready: Option<bool>,
+    pub(crate) acknowledged: bool,
+    pub(crate) reasons: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrProviderAcknowledgementPoll {
-    requested: bool,
-    timeout_ms: u64,
-    elapsed_ms: u64,
-    attempts: u64,
-    satisfied: bool,
+pub(crate) struct EdrProviderAcknowledgementPoll {
+    pub(crate) requested: bool,
+    pub(crate) timeout_ms: u64,
+    pub(crate) elapsed_ms: u64,
+    pub(crate) attempts: u64,
+    pub(crate) satisfied: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrProviderStatusRefreshResult {
-    requested: bool,
-    refreshed: bool,
-    timeout_ms: u64,
-    elapsed_ms: u64,
-    error: Option<String>,
+pub(crate) struct EdrProviderStatusRefreshResult {
+    pub(crate) requested: bool,
+    pub(crate) refreshed: bool,
+    pub(crate) timeout_ms: u64,
+    pub(crate) elapsed_ms: u64,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrNetworkExtensionEgressPolicyProofInput {
+pub(crate) struct EdrNetworkExtensionEgressPolicyProofInput {
     #[serde(default, alias = "refreshProviders")]
-    refresh_providers: Option<bool>,
+    pub(crate) refresh_providers: Option<bool>,
     #[serde(default, alias = "providerRefreshTimeoutMs")]
-    provider_refresh_timeout_ms: Option<u64>,
+    pub(crate) provider_refresh_timeout_ms: Option<u64>,
     #[serde(default, alias = "executionId")]
-    execution_id: Option<String>,
+    pub(crate) execution_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrNetworkExtensionReloadDeliveryProof {
-    execution_id: String,
-    observed: bool,
-    matched: bool,
-    request_id_matches: bool,
-    generation_matches: bool,
-    policy_snapshot_path_matches: bool,
-    provider_reloaded: Option<bool>,
+pub(crate) struct EdrNetworkExtensionReloadDeliveryProof {
+    pub(crate) execution_id: String,
+    pub(crate) observed: bool,
+    pub(crate) matched: bool,
+    pub(crate) request_id_matches: bool,
+    pub(crate) generation_matches: bool,
+    pub(crate) policy_snapshot_path_matches: bool,
+    pub(crate) provider_reloaded: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrNetworkExtensionEgressPolicyProofResponse {
-    provider_policy_path: String,
-    snapshot_present: bool,
-    snapshot_decodable: bool,
-    snapshot_hash: Option<String>,
-    generated_at: Option<chrono::DateTime<chrono::Utc>>,
-    restriction_count: usize,
-    active_restriction_count: usize,
-    expired_restriction_count: usize,
-    enforcement_ready: bool,
-    live_enforcement_proven: bool,
-    live_enforcement_proof_reasons: Vec<String>,
-    flow_counter_observed: bool,
-    observed_flow_count: u64,
-    blocked_flow_count: u64,
-    remediation_request_count: u64,
-    dropped_verdict_count: u64,
-    provider_reload_observed: bool,
-    provider_reload_request_id: Option<String>,
-    provider_reload_generation: Option<u64>,
-    provider_reload_policy_snapshot_path: Option<String>,
-    provider_reload_accepted: Option<bool>,
-    provider_reload_reloaded: Option<bool>,
-    provider_reload_error: Option<String>,
-    provider_reload_delivery: Option<EdrNetworkExtensionReloadDeliveryProof>,
-    read_error: Option<String>,
-    provider_status_refresh: EdrProviderStatusRefreshResult,
-    network_extension_provider: ProviderStatus,
-    sensor_state: EndpointSensorState,
-    receipt: SignedReceipt,
-    degraded_provider_receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrNetworkExtensionEgressPolicyProofResponse {
+    pub(crate) provider_policy_path: String,
+    pub(crate) snapshot_present: bool,
+    pub(crate) snapshot_decodable: bool,
+    pub(crate) snapshot_hash: Option<String>,
+    pub(crate) generated_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) restriction_count: usize,
+    pub(crate) active_restriction_count: usize,
+    pub(crate) expired_restriction_count: usize,
+    pub(crate) enforcement_ready: bool,
+    pub(crate) live_enforcement_proven: bool,
+    pub(crate) live_enforcement_proof_reasons: Vec<String>,
+    pub(crate) flow_counter_observed: bool,
+    pub(crate) observed_flow_count: u64,
+    pub(crate) blocked_flow_count: u64,
+    pub(crate) remediation_request_count: u64,
+    pub(crate) dropped_verdict_count: u64,
+    pub(crate) provider_reload_observed: bool,
+    pub(crate) provider_reload_request_id: Option<String>,
+    pub(crate) provider_reload_generation: Option<u64>,
+    pub(crate) provider_reload_policy_snapshot_path: Option<String>,
+    pub(crate) provider_reload_accepted: Option<bool>,
+    pub(crate) provider_reload_reloaded: Option<bool>,
+    pub(crate) provider_reload_error: Option<String>,
+    pub(crate) provider_reload_delivery: Option<EdrNetworkExtensionReloadDeliveryProof>,
+    pub(crate) read_error: Option<String>,
+    pub(crate) provider_status_refresh: EdrProviderStatusRefreshResult,
+    pub(crate) network_extension_provider: ProviderStatus,
+    pub(crate) sensor_state: EndpointSensorState,
+    pub(crate) receipt: SignedReceipt,
+    pub(crate) degraded_provider_receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrResponseActionInput {
-    action: EndpointDecisionAction,
+pub(crate) struct EdrResponseActionInput {
+    pub(crate) action: EndpointDecisionAction,
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default)]
-    process: Option<EdrGraphRootProcessSelectorInput>,
+    pub(crate) process: Option<EdrGraphRootProcessSelectorInput>,
     #[serde(default)]
-    actor: Option<EdrResponseActionActorInput>,
+    pub(crate) actor: Option<EdrResponseActionActorInput>,
     #[serde(default, alias = "ttlSeconds")]
-    ttl_seconds: Option<u64>,
+    pub(crate) ttl_seconds: Option<u64>,
     #[serde(default)]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
     #[serde(default, alias = "dryRun")]
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
-struct EdrGraphRootProcessSelectorInput {
-    pid: Option<u32>,
-    ppid: Option<u32>,
-    process_guid: Option<String>,
-    parent_process_guid: Option<String>,
-    image: Option<String>,
-    command_line: Option<String>,
-    cwd: Option<String>,
+pub(crate) struct EdrGraphRootProcessSelectorInput {
+    pub(crate) pid: Option<u32>,
+    pub(crate) ppid: Option<u32>,
+    pub(crate) process_guid: Option<String>,
+    pub(crate) parent_process_guid: Option<String>,
+    pub(crate) image: Option<String>,
+    pub(crate) command_line: Option<String>,
+    pub(crate) cwd: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
-struct EdrResponseActionActorInput {
-    endpoint_id: String,
-    host_id: Option<String>,
-    user_id: Option<String>,
-    session_id: Option<String>,
-    posture: Option<String>,
-    agent_id: Option<String>,
-    workload_id: Option<String>,
-    approval_id: Option<String>,
+pub(crate) struct EdrResponseActionActorInput {
+    pub(crate) endpoint_id: String,
+    pub(crate) host_id: Option<String>,
+    pub(crate) user_id: Option<String>,
+    pub(crate) session_id: Option<String>,
+    pub(crate) posture: Option<String>,
+    pub(crate) agent_id: Option<String>,
+    pub(crate) workload_id: Option<String>,
+    pub(crate) approval_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseActionResponse {
-    plan: EndpointResponsePlan,
-    graph: CausalGraph,
+pub(crate) struct EdrResponseActionResponse {
+    pub(crate) plan: EndpointResponsePlan,
+    pub(crate) graph: CausalGraph,
     #[serde(rename = "affectedIdentityCount")]
-    affected_identity_count: usize,
+    pub(crate) affected_identity_count: usize,
     #[serde(rename = "affectedToolCount")]
-    affected_tool_count: usize,
+    pub(crate) affected_tool_count: usize,
     #[serde(rename = "affectedIdentities")]
-    affected_identities: EdrPolicyEventHistoryAffectedIdentities,
+    pub(crate) affected_identities: EdrPolicyEventHistoryAffectedIdentities,
     #[serde(rename = "affectedTools")]
-    affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
-    receipt: SignedReceipt,
+    pub(crate) affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
+    pub(crate) receipt: SignedReceipt,
     #[serde(skip_serializing_if = "Option::is_none")]
-    execution: Option<EndpointResponseExecutionReport>,
+    pub(crate) execution: Option<EndpointResponseExecutionReport>,
     #[serde(
         rename = "evidenceBundleArtifact",
         skip_serializing_if = "Option::is_none"
     )]
-    evidence_bundle_artifact: Option<EdrEvidenceBundleArtifact>,
+    pub(crate) evidence_bundle_artifact: Option<EdrEvidenceBundleArtifact>,
     #[serde(rename = "executionReceipt", skip_serializing_if = "Option::is_none")]
-    execution_receipt: Option<SignedReceipt>,
+    pub(crate) execution_receipt: Option<SignedReceipt>,
     #[serde(
         rename = "evidenceBundleReceipt",
         skip_serializing_if = "Option::is_none"
     )]
-    evidence_bundle_receipt: Option<SignedReceipt>,
+    pub(crate) evidence_bundle_receipt: Option<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize)]
-struct EdrResponseExecutionQuery {
+pub(crate) struct EdrResponseExecutionQuery {
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrResponseExecutionRecord {
-    execution: EndpointResponseExecutionReport,
-    expires_at: chrono::DateTime<chrono::Utc>,
-    expired: bool,
-    rollback_ref: String,
+pub(crate) struct EdrResponseExecutionRecord {
+    pub(crate) execution: EndpointResponseExecutionReport,
+    pub(crate) expires_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) expired: bool,
+    pub(crate) rollback_ref: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    affected_identity_count: Option<usize>,
+    pub(crate) affected_identity_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    affected_tool_count: Option<usize>,
+    pub(crate) affected_tool_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    affected_identities: Option<EdrPolicyEventHistoryAffectedIdentities>,
+    pub(crate) affected_identities: Option<EdrPolicyEventHistoryAffectedIdentities>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    affected_tools: Option<Vec<EdrPolicyEventHistoryAffectedTool>>,
+    pub(crate) affected_tools: Option<Vec<EdrPolicyEventHistoryAffectedTool>>,
 }
 
 impl EdrResponseExecutionRecord {
@@ -4636,16 +4636,16 @@ impl EdrResponseExecutionRecord {
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseExecutionsResponse {
-    path: Option<String>,
-    execution_count: usize,
-    executions: Vec<EdrResponseExecutionRecord>,
+pub(crate) struct EdrResponseExecutionsResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) execution_count: usize,
+    pub(crate) executions: Vec<EdrResponseExecutionRecord>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseExecutionResponse {
-    path: Option<String>,
-    execution: EdrResponseExecutionRecord,
+pub(crate) struct EdrResponseExecutionResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) execution: EdrResponseExecutionRecord,
 }
 
 async fn response_execution_record_with_attribution(
@@ -4695,97 +4695,97 @@ async fn hydrate_response_execution_record_attribution(
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrResponseExecutionProofResponse {
-    execution_path: Option<String>,
-    receipt_path: Option<String>,
-    execution: EdrResponseExecutionRecord,
-    graph: EndpointGraphReference,
-    affected_identity_count: usize,
-    affected_tool_count: usize,
-    affected_identities: EdrPolicyEventHistoryAffectedIdentities,
-    affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
-    provider_state: EndpointSensorState,
-    evidence_bundle_artifact: EdrEvidenceBundleArtifact,
-    request_receipt: SignedReceipt,
-    execution_receipt: SignedReceipt,
-    evidence_bundle_receipt: SignedReceipt,
-    transition_receipts: Vec<SignedReceipt>,
-    rollback_receipts: Vec<SignedReceipt>,
-    acknowledgement_receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrResponseExecutionProofResponse {
+    pub(crate) execution_path: Option<String>,
+    pub(crate) receipt_path: Option<String>,
+    pub(crate) execution: EdrResponseExecutionRecord,
+    pub(crate) graph: EndpointGraphReference,
+    pub(crate) affected_identity_count: usize,
+    pub(crate) affected_tool_count: usize,
+    pub(crate) affected_identities: EdrPolicyEventHistoryAffectedIdentities,
+    pub(crate) affected_tools: Vec<EdrPolicyEventHistoryAffectedTool>,
+    pub(crate) provider_state: EndpointSensorState,
+    pub(crate) evidence_bundle_artifact: EdrEvidenceBundleArtifact,
+    pub(crate) request_receipt: SignedReceipt,
+    pub(crate) execution_receipt: SignedReceipt,
+    pub(crate) evidence_bundle_receipt: SignedReceipt,
+    pub(crate) transition_receipts: Vec<SignedReceipt>,
+    pub(crate) rollback_receipts: Vec<SignedReceipt>,
+    pub(crate) acknowledgement_receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseExecutionExpireResponse {
-    path: Option<String>,
-    expired_count: usize,
-    executions: Vec<EdrResponseExecutionRecord>,
-    receipts: Vec<SignedReceipt>,
-    rollback_count: usize,
-    rollbacks: Vec<EndpointResponseRollbackReport>,
-    rollback_receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrResponseExecutionExpireResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) expired_count: usize,
+    pub(crate) executions: Vec<EdrResponseExecutionRecord>,
+    pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) rollback_count: usize,
+    pub(crate) rollbacks: Vec<EndpointResponseRollbackReport>,
+    pub(crate) rollback_receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrResponseExecutionCancelInput {
+pub(crate) struct EdrResponseExecutionCancelInput {
     #[serde(default)]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseExecutionCancelResponse {
-    path: Option<String>,
-    execution: EdrResponseExecutionRecord,
-    receipt: SignedReceipt,
+pub(crate) struct EdrResponseExecutionCancelResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) execution: EdrResponseExecutionRecord,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrResponseExecutionRollbackInput {
+pub(crate) struct EdrResponseExecutionRollbackInput {
     #[serde(default)]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseExecutionRollbackResponse {
-    path: Option<String>,
-    execution: EdrResponseExecutionRecord,
-    rollback_transition: EdrResponseExecutionRecord,
-    rollback: EndpointResponseRollbackReport,
-    receipt: SignedReceipt,
-    transition_receipt: SignedReceipt,
+pub(crate) struct EdrResponseExecutionRollbackResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) execution: EdrResponseExecutionRecord,
+    pub(crate) rollback_transition: EdrResponseExecutionRecord,
+    pub(crate) rollback: EndpointResponseRollbackReport,
+    pub(crate) receipt: SignedReceipt,
+    pub(crate) transition_receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrResponseExecutionAcknowledgeInput {
+pub(crate) struct EdrResponseExecutionAcknowledgeInput {
     #[serde(default, alias = "acknowledgedBy")]
-    acknowledged_by: Option<String>,
+    pub(crate) acknowledged_by: Option<String>,
     #[serde(default)]
-    note: Option<String>,
+    pub(crate) note: Option<String>,
     #[serde(default, alias = "controlApi", alias = "controlCorrelation")]
-    control: Option<EdrResponseControlAcknowledgementInput>,
+    pub(crate) control: Option<EdrResponseControlAcknowledgementInput>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrResponseControlAcknowledgementInput {
+pub(crate) struct EdrResponseControlAcknowledgementInput {
     #[serde(default, alias = "responseActionID")]
-    response_action_id: Option<String>,
+    pub(crate) response_action_id: Option<String>,
     #[serde(default, alias = "deliveryID")]
-    delivery_id: Option<String>,
+    pub(crate) delivery_id: Option<String>,
     #[serde(default)]
-    target_kind: Option<String>,
+    pub(crate) target_kind: Option<String>,
     #[serde(default)]
-    target_id: Option<String>,
+    pub(crate) target_id: Option<String>,
     #[serde(default)]
-    ack_token: Option<String>,
+    pub(crate) ack_token: Option<String>,
     #[serde(default)]
-    status: Option<String>,
+    pub(crate) status: Option<String>,
     #[serde(default)]
-    resulting_state: Option<String>,
+    pub(crate) resulting_state: Option<String>,
     #[serde(default, alias = "url", alias = "baseUrl", alias = "controlApiUrl")]
-    control_api_url: Option<String>,
+    pub(crate) control_api_url: Option<String>,
     #[serde(
         default,
         alias = "apiKey",
@@ -4794,92 +4794,92 @@ struct EdrResponseControlAcknowledgementInput {
         alias = "controlApiToken",
         alias = "controlApiBearerToken"
     )]
-    control_api_token: Option<String>,
+    pub(crate) control_api_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseExecutionAcknowledgeResponse {
-    path: Option<String>,
-    execution: EdrResponseExecutionRecord,
-    acknowledgement: EndpointResponseAcknowledgementReport,
-    receipt: SignedReceipt,
+pub(crate) struct EdrResponseExecutionAcknowledgeResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) execution: EdrResponseExecutionRecord,
+    pub(crate) acknowledgement: EndpointResponseAcknowledgementReport,
+    pub(crate) receipt: SignedReceipt,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "controlPostback"
     )]
-    control_postback: Option<EdrResponseControlPostbackReport>,
+    pub(crate) control_postback: Option<EdrResponseControlPostbackReport>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrResponseControlPostbackReport {
-    control_api_url: String,
-    response_action_id: String,
-    accepted: bool,
-    retry_queued: bool,
+pub(crate) struct EdrResponseControlPostbackReport {
+    pub(crate) control_api_url: String,
+    pub(crate) response_action_id: String,
+    pub(crate) accepted: bool,
+    pub(crate) retry_queued: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    retry_id: Option<String>,
+    pub(crate) retry_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    http_status: Option<u16>,
+    pub(crate) http_status: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    response_hash: Option<String>,
+    pub(crate) response_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    error_hash: Option<String>,
+    pub(crate) error_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct EdrResponseAcknowledgementQuery {
-    limit: Option<usize>,
+pub(crate) struct EdrResponseAcknowledgementQuery {
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrControlAckPostbackRetryInput {
+pub(crate) struct EdrControlAckPostbackRetryInput {
     #[serde(default)]
-    force: bool,
+    pub(crate) force: bool,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrControlAckPostbackRetryResponse {
-    path: Option<String>,
-    attempted: usize,
-    delivered: usize,
-    failed: usize,
-    skipped: usize,
-    pending: usize,
-    attempts: Vec<EdrControlAckPostbackRetryAttemptRecord>,
+pub(crate) struct EdrControlAckPostbackRetryResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) attempted: usize,
+    pub(crate) delivered: usize,
+    pub(crate) failed: usize,
+    pub(crate) skipped: usize,
+    pub(crate) pending: usize,
+    pub(crate) attempts: Vec<EdrControlAckPostbackRetryAttemptRecord>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrControlAckPostbackRetryAttemptRecord {
-    retry_id: String,
-    response_action_id: String,
-    control_api_url: String,
-    route: ControlResponseAckPostbackRoute,
-    delivered: bool,
-    attempt_count: u32,
+pub(crate) struct EdrControlAckPostbackRetryAttemptRecord {
+    pub(crate) retry_id: String,
+    pub(crate) response_action_id: String,
+    pub(crate) control_api_url: String,
+    pub(crate) route: ControlResponseAckPostbackRoute,
+    pub(crate) delivered: bool,
+    pub(crate) attempt_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    http_status: Option<u16>,
+    pub(crate) http_status: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    response_hash: Option<String>,
+    pub(crate) response_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    error_hash: Option<String>,
+    pub(crate) error_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseAcknowledgementRecord {
-    acknowledgement: EndpointResponseAcknowledgementReport,
+pub(crate) struct EdrResponseAcknowledgementRecord {
+    pub(crate) acknowledgement: EndpointResponseAcknowledgementReport,
 }
 
 impl EdrResponseAcknowledgementRecord {
@@ -4889,10 +4889,10 @@ impl EdrResponseAcknowledgementRecord {
 }
 
 #[derive(Debug, Serialize)]
-struct EdrResponseAcknowledgementsResponse {
-    path: Option<String>,
-    count: usize,
-    acknowledgements: Vec<EdrResponseAcknowledgementRecord>,
+pub(crate) struct EdrResponseAcknowledgementsResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) count: usize,
+    pub(crate) acknowledgements: Vec<EdrResponseAcknowledgementRecord>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -4906,11 +4906,11 @@ pub(crate) struct StoredEndpointEvidenceBundle {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrEvidenceBundleArtifact {
-    bundle_id: String,
-    path: Option<String>,
-    byte_count: usize,
-    content_hash: String,
+pub(crate) struct EdrEvidenceBundleArtifact {
+    pub(crate) bundle_id: String,
+    pub(crate) path: Option<String>,
+    pub(crate) byte_count: usize,
+    pub(crate) content_hash: String,
 }
 
 impl EdrEvidenceBundleArtifact {
@@ -4925,343 +4925,343 @@ impl EdrEvidenceBundleArtifact {
 }
 
 #[derive(Debug, Serialize)]
-struct EdrEvidenceBundleResponse {
-    bundle: EndpointEvidenceBundleReference,
-    path: Option<String>,
-    byte_count: usize,
-    graph: CausalGraph,
+pub(crate) struct EdrEvidenceBundleResponse {
+    pub(crate) bundle: EndpointEvidenceBundleReference,
+    pub(crate) path: Option<String>,
+    pub(crate) byte_count: usize,
+    pub(crate) graph: CausalGraph,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrEvidenceBundleArchive {
-    bundle: EndpointEvidenceBundleReference,
-    artifact: EdrEvidenceBundleArtifact,
-    graph: CausalGraph,
-    receipts: Vec<SignedReceipt>,
+pub(crate) struct EdrEvidenceBundleArchive {
+    pub(crate) bundle: EndpointEvidenceBundleReference,
+    pub(crate) artifact: EdrEvidenceBundleArtifact,
+    pub(crate) graph: CausalGraph,
+    pub(crate) receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEvidenceBundleArchiveResponse {
-    archive_id: String,
-    generated_at: chrono::DateTime<chrono::Utc>,
-    archive_hash: String,
-    receipt_count: usize,
-    verification: EdrEvidenceBundleArchiveVerification,
-    archive: EdrEvidenceBundleArchive,
+pub(crate) struct EdrEvidenceBundleArchiveResponse {
+    pub(crate) archive_id: String,
+    pub(crate) generated_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) archive_hash: String,
+    pub(crate) receipt_count: usize,
+    pub(crate) verification: EdrEvidenceBundleArchiveVerification,
+    pub(crate) archive: EdrEvidenceBundleArchive,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrEvidenceBundleArchiveVerification {
-    verified: bool,
-    graph_content_hash: String,
-    content_hash_matches: bool,
-    artifact_matches_bundle: bool,
+pub(crate) struct EdrEvidenceBundleArchiveVerification {
+    pub(crate) verified: bool,
+    pub(crate) graph_content_hash: String,
+    pub(crate) content_hash_matches: bool,
+    pub(crate) artifact_matches_bundle: bool,
     #[serde(default)]
-    artifact_byte_count_matches: bool,
+    pub(crate) artifact_byte_count_matches: bool,
     #[serde(default)]
-    receipts_bind_bundle_id: bool,
+    pub(crate) receipts_bind_bundle_id: bool,
     #[serde(default)]
-    receipts_bind_actor: bool,
+    pub(crate) receipts_bind_actor: bool,
     #[serde(default)]
-    receipts_bind_policy: bool,
+    pub(crate) receipts_bind_policy: bool,
     #[serde(default)]
-    receipts_bind_sensor_state: bool,
+    pub(crate) receipts_bind_sensor_state: bool,
     #[serde(default)]
-    receipts_bind_endpoint_decision: bool,
+    pub(crate) receipts_bind_endpoint_decision: bool,
     #[serde(default)]
-    receipt_endpoint_ids: Vec<String>,
+    pub(crate) receipt_endpoint_ids: Vec<String>,
     #[serde(default)]
-    receipts_bind_endpoint_identity: bool,
+    pub(crate) receipts_bind_endpoint_identity: bool,
     #[serde(default)]
-    receipt_root_node_ids: Vec<String>,
+    pub(crate) receipt_root_node_ids: Vec<String>,
     #[serde(default)]
-    receipts_bind_root_node: bool,
-    graph_counts_match: bool,
-    receipt_count: usize,
+    pub(crate) receipts_bind_root_node: bool,
+    pub(crate) graph_counts_match: bool,
+    pub(crate) receipt_count: usize,
     #[serde(default)]
-    receipt_ids_unique: bool,
+    pub(crate) receipt_ids_unique: bool,
     #[serde(default)]
-    receipt_local_sequences: Vec<u64>,
+    pub(crate) receipt_local_sequences: Vec<u64>,
     #[serde(default)]
-    receipt_local_sequences_present: bool,
+    pub(crate) receipt_local_sequences_present: bool,
     #[serde(default)]
-    receipt_local_sequences_unique: bool,
+    pub(crate) receipt_local_sequences_unique: bool,
     #[serde(default)]
-    receipt_timestamps_parse: bool,
+    pub(crate) receipt_timestamps_parse: bool,
     #[serde(default)]
-    receipt_chronology_consistent: bool,
-    receipt_families_valid: bool,
+    pub(crate) receipt_chronology_consistent: bool,
+    pub(crate) receipt_families_valid: bool,
     #[serde(default)]
-    present_receipt_families: Vec<String>,
+    pub(crate) present_receipt_families: Vec<String>,
     #[serde(default)]
-    receipt_family_counts: BTreeMap<String, usize>,
+    pub(crate) receipt_family_counts: BTreeMap<String, usize>,
     #[serde(default)]
-    receipt_family_cardinality_valid: bool,
+    pub(crate) receipt_family_cardinality_valid: bool,
     #[serde(default)]
-    required_receipt_families: Vec<String>,
+    pub(crate) required_receipt_families: Vec<String>,
     #[serde(default)]
-    required_receipt_families_present: bool,
+    pub(crate) required_receipt_families_present: bool,
     #[serde(default)]
-    missing_required_receipt_families: Vec<String>,
-    receipt_signatures_valid: bool,
+    pub(crate) missing_required_receipt_families: Vec<String>,
+    pub(crate) receipt_signatures_valid: bool,
     #[serde(default)]
-    receipt_signers_consistent: bool,
-    receipts_bind_graph_slice: bool,
-    receipts_bind_content_hash: bool,
-    receipt_failure_count: usize,
-    receipt_failures: Vec<String>,
+    pub(crate) receipt_signers_consistent: bool,
+    pub(crate) receipts_bind_graph_slice: bool,
+    pub(crate) receipts_bind_content_hash: bool,
+    pub(crate) receipt_failure_count: usize,
+    pub(crate) receipt_failures: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrEvidenceBundleArchiveVerifyInput {
+pub(crate) struct EdrEvidenceBundleArchiveVerifyInput {
     #[serde(default)]
-    archive_id: Option<String>,
+    pub(crate) archive_id: Option<String>,
     #[serde(default)]
-    generated_at: Option<chrono::DateTime<chrono::Utc>>,
-    archive_hash: String,
+    pub(crate) generated_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) archive_hash: String,
     #[serde(default)]
-    receipt_count: Option<usize>,
+    pub(crate) receipt_count: Option<usize>,
     #[serde(default)]
-    verification: Option<EdrEvidenceBundleArchiveVerification>,
+    pub(crate) verification: Option<EdrEvidenceBundleArchiveVerification>,
     #[serde(default)]
-    trusted_signer_public_key: Option<String>,
-    archive: EdrEvidenceBundleArchive,
+    pub(crate) trusted_signer_public_key: Option<String>,
+    pub(crate) archive: EdrEvidenceBundleArchive,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEvidenceBundleArchiveVerifyResponse {
-    verified: bool,
-    expected_archive_id: String,
-    archive_id_matches: bool,
-    expected_archive_hash: String,
-    archive_hash: String,
-    archive_hash_matches: bool,
-    receipt_count_matches: bool,
-    verification_matches: bool,
-    generated_at_covers_receipts: bool,
-    newest_receipt_timestamp: Option<chrono::DateTime<chrono::Utc>>,
-    trusted_signer_public_key: Option<String>,
-    signer_trust_matches: bool,
-    verification: EdrEvidenceBundleArchiveVerification,
+pub(crate) struct EdrEvidenceBundleArchiveVerifyResponse {
+    pub(crate) verified: bool,
+    pub(crate) expected_archive_id: String,
+    pub(crate) archive_id_matches: bool,
+    pub(crate) expected_archive_hash: String,
+    pub(crate) archive_hash: String,
+    pub(crate) archive_hash_matches: bool,
+    pub(crate) receipt_count_matches: bool,
+    pub(crate) verification_matches: bool,
+    pub(crate) generated_at_covers_receipts: bool,
+    pub(crate) newest_receipt_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) trusted_signer_public_key: Option<String>,
+    pub(crate) signer_trust_matches: bool,
+    pub(crate) verification: EdrEvidenceBundleArchiveVerification,
 }
 
 #[derive(Debug, Deserialize)]
-struct EdrEvidenceBundleQuery {
+pub(crate) struct EdrEvidenceBundleQuery {
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEvidenceBundleRecord {
-    bundle: EndpointEvidenceBundleReference,
-    path: Option<String>,
-    byte_count: usize,
-    age_seconds: u64,
-    protected_by_active_response: bool,
+pub(crate) struct EdrEvidenceBundleRecord {
+    pub(crate) bundle: EndpointEvidenceBundleReference,
+    pub(crate) path: Option<String>,
+    pub(crate) byte_count: usize,
+    pub(crate) age_seconds: u64,
+    pub(crate) protected_by_active_response: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEvidenceBundlesResponse {
-    root: Option<String>,
-    bundle_count: usize,
-    protected_count: usize,
-    bundles: Vec<EdrEvidenceBundleRecord>,
+pub(crate) struct EdrEvidenceBundlesResponse {
+    pub(crate) root: Option<String>,
+    pub(crate) bundle_count: usize,
+    pub(crate) protected_count: usize,
+    pub(crate) bundles: Vec<EdrEvidenceBundleRecord>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrEvidenceBundleCompactionInput {
+pub(crate) struct EdrEvidenceBundleCompactionInput {
     #[serde(default, alias = "maxBundles")]
-    max_bundles: Option<usize>,
+    pub(crate) max_bundles: Option<usize>,
     #[serde(default, alias = "minAgeSeconds")]
-    min_age_seconds: Option<u64>,
+    pub(crate) min_age_seconds: Option<u64>,
     #[serde(default, alias = "dryRun")]
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEvidenceBundleCompactionRecord {
-    bundle_id: String,
-    graph_slice_id: String,
-    path: Option<String>,
-    byte_count: usize,
-    age_seconds: u64,
-    protected_by_active_response: bool,
-    removed: bool,
-    reason: String,
+pub(crate) struct EdrEvidenceBundleCompactionRecord {
+    pub(crate) bundle_id: String,
+    pub(crate) graph_slice_id: String,
+    pub(crate) path: Option<String>,
+    pub(crate) byte_count: usize,
+    pub(crate) age_seconds: u64,
+    pub(crate) protected_by_active_response: bool,
+    pub(crate) removed: bool,
+    pub(crate) reason: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrEvidenceBundleCompactionResponse {
-    root: Option<String>,
-    dry_run: bool,
-    max_bundles: Option<usize>,
-    min_age_seconds: u64,
-    bundle_count: usize,
-    candidate_count: usize,
-    removed_count: usize,
-    protected_count: usize,
-    records: Vec<EdrEvidenceBundleCompactionRecord>,
+pub(crate) struct EdrEvidenceBundleCompactionResponse {
+    pub(crate) root: Option<String>,
+    pub(crate) dry_run: bool,
+    pub(crate) max_bundles: Option<usize>,
+    pub(crate) min_age_seconds: u64,
+    pub(crate) bundle_count: usize,
+    pub(crate) candidate_count: usize,
+    pub(crate) removed_count: usize,
+    pub(crate) protected_count: usize,
+    pub(crate) records: Vec<EdrEvidenceBundleCompactionRecord>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrFlightRecorderResponse {
-    path: Option<String>,
-    observation_count: usize,
-    node_count: usize,
-    edge_count: usize,
+pub(crate) struct EdrFlightRecorderResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) observation_count: usize,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrFlightRecorderCompactionInput {
+pub(crate) struct EdrFlightRecorderCompactionInput {
     #[serde(default, alias = "maxObservations")]
-    max_observations: Option<usize>,
+    pub(crate) max_observations: Option<usize>,
     #[serde(default, alias = "minAgeSeconds")]
-    min_age_seconds: Option<u64>,
+    pub(crate) min_age_seconds: Option<u64>,
     #[serde(default, alias = "dryRun")]
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrFlightRecorderCompactionResponse {
-    path: Option<String>,
-    dry_run: bool,
-    max_observations: Option<usize>,
-    min_age_seconds: u64,
-    observation_count: usize,
-    candidate_count: usize,
-    removed_count: usize,
-    retained_count: usize,
-    protected_count: usize,
-    node_count: usize,
-    edge_count: usize,
-    records: Vec<EndpointFlightRecorderCompactionRecord>,
+pub(crate) struct EdrFlightRecorderCompactionResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) dry_run: bool,
+    pub(crate) max_observations: Option<usize>,
+    pub(crate) min_age_seconds: u64,
+    pub(crate) observation_count: usize,
+    pub(crate) candidate_count: usize,
+    pub(crate) removed_count: usize,
+    pub(crate) retained_count: usize,
+    pub(crate) protected_count: usize,
+    pub(crate) node_count: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) records: Vec<EndpointFlightRecorderCompactionRecord>,
 }
 
 #[derive(Debug, Deserialize)]
-struct EdrReceiptQuery {
+pub(crate) struct EdrReceiptQuery {
     #[serde(default, alias = "receiptId")]
-    receipt_id: Option<String>,
+    pub(crate) receipt_id: Option<String>,
     #[serde(default)]
-    family: Option<String>,
+    pub(crate) family: Option<String>,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default)]
-    action: Option<String>,
+    pub(crate) action: Option<String>,
     #[serde(default, alias = "findingId")]
-    finding_id: Option<String>,
+    pub(crate) finding_id: Option<String>,
     #[serde(default, alias = "ruleId")]
-    rule_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
     #[serde(default, alias = "graphSliceId")]
-    graph_slice_id: Option<String>,
+    pub(crate) graph_slice_id: Option<String>,
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default, alias = "executionId")]
-    execution_id: Option<String>,
+    pub(crate) execution_id: Option<String>,
     #[serde(default)]
-    status: Option<String>,
+    pub(crate) status: Option<String>,
     #[serde(default, alias = "actorEndpointId")]
-    actor_endpoint_id: Option<String>,
+    pub(crate) actor_endpoint_id: Option<String>,
     #[serde(default, alias = "actorUserId")]
-    actor_user_id: Option<String>,
+    pub(crate) actor_user_id: Option<String>,
     #[serde(default, alias = "actorSessionId")]
-    actor_session_id: Option<String>,
+    pub(crate) actor_session_id: Option<String>,
     #[serde(default, alias = "actorAgentId")]
-    actor_agent_id: Option<String>,
+    pub(crate) actor_agent_id: Option<String>,
     #[serde(default, alias = "actorWorkloadId")]
-    actor_workload_id: Option<String>,
+    pub(crate) actor_workload_id: Option<String>,
     #[serde(default, alias = "actorApprovalId")]
-    actor_approval_id: Option<String>,
+    pub(crate) actor_approval_id: Option<String>,
     #[serde(default, alias = "localSequence")]
-    local_sequence: Option<u64>,
+    pub(crate) local_sequence: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrReceiptUploadInput {
+pub(crate) struct EdrReceiptUploadInput {
     #[serde(default, alias = "receiptId")]
-    receipt_id: Option<String>,
+    pub(crate) receipt_id: Option<String>,
     #[serde(default)]
-    family: Option<String>,
+    pub(crate) family: Option<String>,
     #[serde(default)]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default)]
-    action: Option<String>,
+    pub(crate) action: Option<String>,
     #[serde(default, alias = "findingId")]
-    finding_id: Option<String>,
+    pub(crate) finding_id: Option<String>,
     #[serde(default, alias = "ruleId")]
-    rule_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
     #[serde(default, alias = "graphSliceId")]
-    graph_slice_id: Option<String>,
+    pub(crate) graph_slice_id: Option<String>,
     #[serde(default, alias = "rootNodeId")]
-    root_node_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
     #[serde(default, alias = "executionId")]
-    execution_id: Option<String>,
+    pub(crate) execution_id: Option<String>,
     #[serde(default)]
-    status: Option<String>,
+    pub(crate) status: Option<String>,
     #[serde(default, alias = "actorEndpointId")]
-    actor_endpoint_id: Option<String>,
+    pub(crate) actor_endpoint_id: Option<String>,
     #[serde(default, alias = "actorUserId")]
-    actor_user_id: Option<String>,
+    pub(crate) actor_user_id: Option<String>,
     #[serde(default, alias = "actorSessionId")]
-    actor_session_id: Option<String>,
+    pub(crate) actor_session_id: Option<String>,
     #[serde(default, alias = "actorAgentId")]
-    actor_agent_id: Option<String>,
+    pub(crate) actor_agent_id: Option<String>,
     #[serde(default, alias = "actorWorkloadId")]
-    actor_workload_id: Option<String>,
+    pub(crate) actor_workload_id: Option<String>,
     #[serde(default, alias = "actorApprovalId")]
-    actor_approval_id: Option<String>,
+    pub(crate) actor_approval_id: Option<String>,
     #[serde(default, alias = "localSequence")]
-    local_sequence: Option<u64>,
+    pub(crate) local_sequence: Option<u64>,
     #[serde(default, alias = "dryRun")]
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrReceiptsResponse {
-    path: Option<String>,
-    receipt_count: usize,
-    receipts: Vec<SignedReceipt>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EdrReceiptUploadResponse {
-    path: Option<String>,
-    dry_run: bool,
-    control_api_url: Option<String>,
-    selected_count: usize,
-    attempted: bool,
-    accepted: bool,
-    uploaded_count: usize,
-    http_status: Option<u16>,
-    response_hash: Option<String>,
-    error_hash: Option<String>,
-    skipped_reason: Option<String>,
-    records: Vec<EdrReceiptUploadRecord>,
+pub(crate) struct EdrReceiptsResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) receipt_count: usize,
+    pub(crate) receipts: Vec<SignedReceipt>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrReceiptUploadRecord {
-    receipt_id: Option<String>,
-    timestamp: String,
-    family: Option<String>,
-    verdict: String,
-    guard: String,
-    policy_name: String,
-    local_sequence: Option<u64>,
+pub(crate) struct EdrReceiptUploadResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) dry_run: bool,
+    pub(crate) control_api_url: Option<String>,
+    pub(crate) selected_count: usize,
+    pub(crate) attempted: bool,
+    pub(crate) accepted: bool,
+    pub(crate) uploaded_count: usize,
+    pub(crate) http_status: Option<u16>,
+    pub(crate) response_hash: Option<String>,
+    pub(crate) error_hash: Option<String>,
+    pub(crate) skipped_reason: Option<String>,
+    pub(crate) records: Vec<EdrReceiptUploadRecord>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EdrReceiptUploadRecord {
+    pub(crate) receipt_id: Option<String>,
+    pub(crate) timestamp: String,
+    pub(crate) family: Option<String>,
+    pub(crate) verdict: String,
+    pub(crate) guard: String,
+    pub(crate) policy_name: String,
+    pub(crate) local_sequence: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -5288,30 +5288,30 @@ struct ControlBatchStoreReceiptsRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrReceiptCompactionInput {
+pub(crate) struct EdrReceiptCompactionInput {
     #[serde(default, alias = "maxReceipts")]
-    max_receipts: Option<usize>,
+    pub(crate) max_receipts: Option<usize>,
     #[serde(default, alias = "minAgeSeconds")]
-    min_age_seconds: Option<u64>,
+    pub(crate) min_age_seconds: Option<u64>,
     #[serde(default, alias = "dryRun")]
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EdrReceiptCompactionRecord {
-    receipt_id: Option<String>,
-    timestamp: String,
-    age_seconds: u64,
-    family: Option<String>,
-    action: Option<String>,
-    finding_id: Option<String>,
-    rule_id: Option<String>,
-    graph_slice_id: Option<String>,
-    root_node_id: Option<String>,
-    local_sequence: Option<u64>,
-    removed: bool,
-    reason: String,
+    pub(crate) receipt_id: Option<String>,
+    pub(crate) timestamp: String,
+    pub(crate) age_seconds: u64,
+    pub(crate) family: Option<String>,
+    pub(crate) action: Option<String>,
+    pub(crate) finding_id: Option<String>,
+    pub(crate) rule_id: Option<String>,
+    pub(crate) graph_slice_id: Option<String>,
+    pub(crate) root_node_id: Option<String>,
+    pub(crate) local_sequence: Option<u64>,
+    pub(crate) removed: bool,
+    pub(crate) reason: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -5340,16 +5340,16 @@ pub(crate) struct EndpointReceiptIndexRecord {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrReceiptCompactionResponse {
-    path: Option<String>,
-    dry_run: bool,
-    max_receipts: Option<usize>,
-    min_age_seconds: u64,
-    receipt_count: usize,
-    candidate_count: usize,
-    removed_count: usize,
-    retained_count: usize,
-    records: Vec<EdrReceiptCompactionRecord>,
+pub(crate) struct EdrReceiptCompactionResponse {
+    pub(crate) path: Option<String>,
+    pub(crate) dry_run: bool,
+    pub(crate) max_receipts: Option<usize>,
+    pub(crate) min_age_seconds: u64,
+    pub(crate) receipt_count: usize,
+    pub(crate) candidate_count: usize,
+    pub(crate) removed_count: usize,
+    pub(crate) retained_count: usize,
+    pub(crate) records: Vec<EdrReceiptCompactionRecord>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -5373,95 +5373,95 @@ pub(crate) struct EdrReceiptFilter<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct EdrProtectionStateResponse {
-    policy: EndpointPolicySnapshot,
-    sensor_state: EndpointSensorState,
-    receipt: SignedReceipt,
-    degraded_provider_receipts: Vec<SignedReceipt>,
-    provider_recoveries: Vec<EdrProviderRecovery>,
+pub(crate) struct EdrProtectionStateResponse {
+    pub(crate) policy: EndpointPolicySnapshot,
+    pub(crate) sensor_state: EndpointSensorState,
+    pub(crate) receipt: SignedReceipt,
+    pub(crate) degraded_provider_receipts: Vec<SignedReceipt>,
+    pub(crate) provider_recoveries: Vec<EdrProviderRecovery>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrProviderRecovery {
-    provider_id: String,
-    provider_kind: EndpointProviderKind,
-    previous_active: bool,
-    previous_healthy: bool,
-    previous_degraded: bool,
-    previous_degradation_reasons: Vec<String>,
-    current_active: bool,
-    current_healthy: bool,
-    current_degraded: bool,
-    recovered_at: Option<chrono::DateTime<chrono::Utc>>,
+pub(crate) struct EdrProviderRecovery {
+    pub(crate) provider_id: String,
+    pub(crate) provider_kind: EndpointProviderKind,
+    pub(crate) previous_active: bool,
+    pub(crate) previous_healthy: bool,
+    pub(crate) previous_degraded: bool,
+    pub(crate) previous_degradation_reasons: Vec<String>,
+    pub(crate) current_active: bool,
+    pub(crate) current_healthy: bool,
+    pub(crate) current_degraded: bool,
+    pub(crate) recovered_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrDeceptionPlanInput {
-    root: String,
-    endpoint_id: String,
+pub(crate) struct EdrDeceptionPlanInput {
+    pub(crate) root: String,
+    pub(crate) endpoint_id: String,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrDeceptionPlanResponse {
-    artifact_count: usize,
-    plan: DeceptionPlan,
+pub(crate) struct EdrDeceptionPlanResponse {
+    pub(crate) artifact_count: usize,
+    pub(crate) plan: DeceptionPlan,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EdrMaterializeDeceptionPlanInput {
-    plan: DeceptionPlan,
+pub(crate) struct EdrMaterializeDeceptionPlanInput {
+    pub(crate) plan: DeceptionPlan,
 }
 
 #[derive(Debug, Serialize)]
-struct EdrMaterializeDeceptionPlanResponse {
-    report: DeceptionMaterializationReport,
-    registered_artifact_count: usize,
-    registry_path: Option<String>,
-    receipt: SignedReceipt,
+pub(crate) struct EdrMaterializeDeceptionPlanResponse {
+    pub(crate) report: DeceptionMaterializationReport,
+    pub(crate) registered_artifact_count: usize,
+    pub(crate) registry_path: Option<String>,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrCleanupDeceptionPlanInput {
-    plan: DeceptionPlan,
+pub(crate) struct EdrCleanupDeceptionPlanInput {
+    pub(crate) plan: DeceptionPlan,
     #[serde(default)]
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrCleanupDeceptionPlanResponse {
-    report: DeceptionCleanupReport,
-    deregistered_artifact_count: usize,
-    remaining_registered_artifact_count: usize,
-    registry_path: Option<String>,
-    receipt: SignedReceipt,
+pub(crate) struct EdrCleanupDeceptionPlanResponse {
+    pub(crate) report: DeceptionCleanupReport,
+    pub(crate) deregistered_artifact_count: usize,
+    pub(crate) remaining_registered_artifact_count: usize,
+    pub(crate) registry_path: Option<String>,
+    pub(crate) receipt: SignedReceipt,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EdrRotateDeceptionPlanInput {
-    old_plan: DeceptionPlan,
-    new_plan: DeceptionPlan,
+pub(crate) struct EdrRotateDeceptionPlanInput {
+    pub(crate) old_plan: DeceptionPlan,
+    pub(crate) new_plan: DeceptionPlan,
     #[serde(default)]
-    dry_run: Option<bool>,
+    pub(crate) dry_run: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EdrRotateDeceptionPlanResponse {
-    report: DeceptionRotationReport,
-    deregistered_artifact_count: usize,
-    registered_artifact_count: usize,
-    remaining_registered_artifact_count: usize,
-    registry_path: Option<String>,
-    cleanup_receipt: SignedReceipt,
+pub(crate) struct EdrRotateDeceptionPlanResponse {
+    pub(crate) report: DeceptionRotationReport,
+    pub(crate) deregistered_artifact_count: usize,
+    pub(crate) registered_artifact_count: usize,
+    pub(crate) remaining_registered_artifact_count: usize,
+    pub(crate) registry_path: Option<String>,
+    pub(crate) cleanup_receipt: SignedReceipt,
     #[serde(skip_serializing_if = "Option::is_none")]
-    materialization_receipt: Option<SignedReceipt>,
-    rotation_receipt: SignedReceipt,
+    pub(crate) materialization_receipt: Option<SignedReceipt>,
+    pub(crate) rotation_receipt: SignedReceipt,
 }
 
 fn default_apply_integrations_changes() -> bool {
@@ -25309,13 +25309,13 @@ struct NetworkExtensionFlowCounterSummary {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct NetworkExtensionReloadRequestProof {
-    requested: bool,
-    saved: bool,
-    request_id: Option<String>,
-    policy_snapshot_path: String,
-    generation: u64,
-    error: Option<String>,
+pub(crate) struct NetworkExtensionReloadRequestProof {
+    pub(crate) requested: bool,
+    pub(crate) saved: bool,
+    pub(crate) request_id: Option<String>,
+    pub(crate) policy_snapshot_path: String,
+    pub(crate) generation: u64,
+    pub(crate) error: Option<String>,
 }
 
 fn network_extension_flow_counter_summary(
