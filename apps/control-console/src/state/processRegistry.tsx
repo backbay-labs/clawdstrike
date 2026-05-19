@@ -12,6 +12,33 @@ const AgentExplorer = lazy(() =>
 const ReceiptVerifier = lazy(() =>
   import("../pages/ReceiptVerifier").then((m) => ({ default: m.ReceiptVerifier })),
 );
+const ExecutionProof = lazy(() =>
+  import("../pages/ExecutionProof").then((m) => ({ default: m.ExecutionProof })),
+);
+const PrivacyReport = lazy(() =>
+  import("../pages/PrivacyReport").then((m) => ({ default: m.PrivacyReport })),
+);
+const CausalGroups = lazy(() =>
+  import("../pages/CausalGroups").then((m) => ({ default: m.CausalGroups })),
+);
+const ProcessCause = lazy(() =>
+  import("../pages/ProcessCause").then((m) => ({ default: m.ProcessCause })),
+);
+const PolicyReplay = lazy(() =>
+  import("../pages/PolicyReplay").then((m) => ({ default: m.PolicyReplay })),
+);
+const RuleImpact = lazy(() =>
+  import("../pages/RuleImpact").then((m) => ({ default: m.RuleImpact })),
+);
+const LocalContainment = lazy(() =>
+  import("../pages/LocalContainment").then((m) => ({ default: m.LocalContainment })),
+);
+const AgentSecretTouches = lazy(() =>
+  import("../pages/AgentSecretTouches").then((m) => ({ default: m.AgentSecretTouches })),
+);
+const FleetCases = lazy(() =>
+  import("../pages/FleetCases").then((m) => ({ default: m.FleetCases })),
+);
 const PolicyEditor = lazy(() =>
   import("../pages/PolicyEditor").then((m) => ({ default: m.PolicyEditor })),
 );
@@ -174,6 +201,88 @@ function ReceiptVerifierSigil() {
   );
 }
 
+function ExecutionProofSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--gold)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 3h14v18H5z" />
+      <path d="M8 8h8M8 12h5" opacity={0.4} />
+      <path d="M9 17l2 2 4-5" stroke="var(--stamp-allowed)" />
+      <circle cx={18} cy={6} r={2} fill="var(--gold)" stroke="none" opacity={0.5} />
+    </svg>
+  );
+}
+
+function PrivacyReportSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--teal)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3l7 3v6c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6l7-3z" />
+      <path d="M8 11h8M8 15h5" opacity={0.38} />
+      <circle cx={17} cy={7} r={2} fill="var(--teal)" stroke="none" opacity={0.5} />
+    </svg>
+  );
+}
+
+function CausalGroupsSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--teal)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx={6} cy={7} r={2.5} />
+      <circle cx={18} cy={7} r={2.5} />
+      <circle cx={12} cy={18} r={2.5} />
+      <path d="M8.2 8.5l2.8 6.7M15.8 8.5l-2.8 6.7M8.5 7h7" opacity={0.45} />
+      <path d="M6 7h12" opacity={0.22} />
+    </svg>
+  );
+}
+
+function ProcessCauseSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--teal)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx={6} cy={6} r={2.3} />
+      <circle cx={18} cy={6} r={2.3} />
+      <circle cx={6} cy={18} r={2.3} />
+      <circle cx={18} cy={18} r={2.3} />
+      <path d="M8.2 6h7.6M6 8.2v7.6M8.2 18h7.6" opacity={0.35} />
+      <path d="M8 7.5l8 8.5" stroke="var(--gold)" opacity={0.7} />
+    </svg>
+  );
+}
+
 function PolicyEditorSigil() {
   return (
     <svg
@@ -189,6 +298,90 @@ function PolicyEditorSigil() {
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       <path d="M15.5 8.5l-5 5L8 11" opacity={0.4} />
       <path d="M14 3l2 2-6 6-2-2 6-6z" stroke="var(--teal)" opacity={0.6} />
+    </svg>
+  );
+}
+
+function RuleImpactSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--gold)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 18V6" opacity={0.4} />
+      <path d="M8 18V10" />
+      <path d="M12 18V4" />
+      <path d="M16 18V8" />
+      <path d="M20 18V12" opacity={0.55} />
+      <path d="M5 18h16" opacity={0.4} />
+      <circle cx={12} cy={4} r={2} fill="var(--teal)" stroke="none" opacity={0.65} />
+    </svg>
+  );
+}
+
+function LocalContainmentSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--teal)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3l7 3v6c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6l7-3z" />
+      <path d="M8 12h8" opacity={0.4} />
+      <path d="M12 8v8" opacity={0.4} />
+      <circle cx={12} cy={12} r={3} stroke="var(--gold)" />
+    </svg>
+  );
+}
+
+function AgentSecretTouchesSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--gold)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M7 10V7a5 5 0 0110 0v3" />
+      <rect x={5} y={10} width={14} height={10} rx={2} />
+      <path d="M12 14v3" opacity={0.5} />
+      <circle cx={12} cy={14} r={1.2} fill="var(--teal)" stroke="none" opacity={0.7} />
+      <path d="M4 20h16" opacity={0.35} />
+    </svg>
+  );
+}
+
+function FleetCasesSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--gold)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 5h16v14H4z" />
+      <path d="M8 5V3h8v2" opacity={0.55} />
+      <path d="M7 10h10M7 14h7" opacity={0.42} />
+      <path d="M17 13l3 3-3 3" stroke="var(--teal)" />
     </svg>
   );
 }
@@ -357,6 +550,15 @@ export const PROCESS_ICONS: Record<string, React.ReactNode> = {
   settings: <SettingsSigil />,
   "agent-explorer": <AgentExplorerSigil />,
   "receipt-verifier": <ReceiptVerifierSigil />,
+  "execution-proof": <ExecutionProofSigil />,
+  "privacy-report": <PrivacyReportSigil />,
+  "causal-groups": <CausalGroupsSigil />,
+  "process-cause": <ProcessCauseSigil />,
+  "policy-replay": <ReplaySigil />,
+  "rule-impact": <RuleImpactSigil />,
+  "local-containment": <LocalContainmentSigil />,
+  "agent-secret-touches": <AgentSecretTouchesSigil />,
+  "fleet-cases": <FleetCasesSigil />,
   "policy-editor": <PolicyEditorSigil />,
   "guard-playground": <GuardPlaygroundSigil />,
   "posture-map": <PostureMapSigil />,
@@ -445,6 +647,105 @@ export const processes: ProcessDefinition[] = [
     singleton: true,
     category: "security",
     description: "Verify Ed25519 receipt signatures",
+  },
+  {
+    id: "execution-proof",
+    name: "Proof at Execution",
+    icon: <ExecutionProofSigil />,
+    component: ExecutionProof,
+    defaultSize: { width: 1060, height: 720 },
+    minSize: { width: 820, height: 560 },
+    singleton: true,
+    category: "security",
+    description: "Inspect response execution proof packages",
+  },
+  {
+    id: "privacy-report",
+    name: "Privacy Report",
+    icon: <PrivacyReportSigil />,
+    component: PrivacyReport,
+    defaultSize: { width: 1060, height: 720 },
+    minSize: { width: 820, height: 560 },
+    singleton: true,
+    category: "security",
+    description: "Inspect redacted and raw-suppressed telemetry evidence",
+  },
+  {
+    id: "causal-groups",
+    name: "Causal Groups",
+    icon: <CausalGroupsSigil />,
+    component: CausalGroups,
+    defaultSize: { width: 1060, height: 720 },
+    minSize: { width: 820, height: 560 },
+    singleton: true,
+    category: "security",
+    description: "Group findings by causal graph context",
+  },
+  {
+    id: "process-cause",
+    name: "Process Cause",
+    icon: <ProcessCauseSigil />,
+    component: ProcessCause,
+    defaultSize: { width: 1120, height: 740 },
+    minSize: { width: 860, height: 580 },
+    singleton: true,
+    category: "security",
+    description: "Inspect process effects and export graph slices",
+  },
+  {
+    id: "policy-replay",
+    name: "Policy Replay",
+    icon: <ReplaySigil />,
+    component: PolicyReplay,
+    defaultSize: { width: 1120, height: 740 },
+    minSize: { width: 860, height: 580 },
+    singleton: true,
+    category: "security",
+    description: "Replay captured graph slices under current policy",
+  },
+  {
+    id: "rule-impact",
+    name: "Rule Impact",
+    icon: <RuleImpactSigil />,
+    component: RuleImpact,
+    defaultSize: { width: 1160, height: 760 },
+    minSize: { width: 880, height: 600 },
+    singleton: true,
+    category: "security",
+    description: "Generate staged rule-impact policy deltas",
+  },
+  {
+    id: "local-containment",
+    name: "Local Containment",
+    icon: <LocalContainmentSigil />,
+    component: LocalContainment,
+    defaultSize: { width: 1160, height: 760 },
+    minSize: { width: 880, height: 600 },
+    singleton: true,
+    category: "security",
+    description: "Plan, execute, and roll back local containment",
+  },
+  {
+    id: "agent-secret-touches",
+    name: "Agent Secret Touches",
+    icon: <AgentSecretTouchesSigil />,
+    component: AgentSecretTouches,
+    defaultSize: { width: 1160, height: 760 },
+    minSize: { width: 880, height: 600 },
+    singleton: true,
+    category: "security",
+    description: "Inspect agent credential touches and publish hunt evidence",
+  },
+  {
+    id: "fleet-cases",
+    name: "Fleet Cases",
+    icon: <FleetCasesSigil />,
+    component: FleetCases,
+    defaultSize: { width: 1160, height: 760 },
+    minSize: { width: 880, height: 600 },
+    singleton: true,
+    category: "security",
+    description: "Manage remote cases, evidence references, and signed case bundles",
   },
   {
     id: "policy-editor",
@@ -577,12 +878,76 @@ export const desktopIcons: DesktopIconConfig[] = [
   { id: "broker-theater", processId: "broker-theater", label: "Broker Theater", group: "core" },
   { id: "policy", processId: "policy", label: "Policies", group: "policy-ops" },
   { id: "policy-editor", processId: "policy-editor", label: "Policy Editor", group: "policy-ops" },
-  { id: "guard-playground", processId: "guard-playground", label: "Guard Lab", group: "policy-ops" },
+  {
+    id: "guard-playground",
+    processId: "guard-playground",
+    label: "Guard Lab",
+    group: "policy-ops",
+  },
   { id: "posture-map", processId: "posture-map", label: "Posture Map", group: "policy-ops" },
   { id: "agent-chat", processId: "agent-chat", label: "Agent Chat", group: "policy-ops" },
   { id: "receipt-verifier", processId: "receipt-verifier", label: "Receipts", group: "advanced" },
+  {
+    id: "execution-proof",
+    processId: "execution-proof",
+    label: "Execution Proof",
+    group: "advanced",
+  },
+  {
+    id: "privacy-report",
+    processId: "privacy-report",
+    label: "Privacy Report",
+    group: "advanced",
+  },
+  {
+    id: "causal-groups",
+    processId: "causal-groups",
+    label: "Causal Groups",
+    group: "advanced",
+  },
+  {
+    id: "process-cause",
+    processId: "process-cause",
+    label: "Process Cause",
+    group: "advanced",
+  },
+  {
+    id: "policy-replay",
+    processId: "policy-replay",
+    label: "Policy Replay",
+    group: "advanced",
+  },
+  {
+    id: "rule-impact",
+    processId: "rule-impact",
+    label: "Rule Impact",
+    group: "advanced",
+  },
+  {
+    id: "local-containment",
+    processId: "local-containment",
+    label: "Containment",
+    group: "advanced",
+  },
+  {
+    id: "agent-secret-touches",
+    processId: "agent-secret-touches",
+    label: "Secret Touches",
+    group: "advanced",
+  },
+  {
+    id: "fleet-cases",
+    processId: "fleet-cases",
+    label: "Fleet Cases",
+    group: "advanced",
+  },
   { id: "settings", processId: "settings", label: "Settings", group: "advanced" },
-  { id: "compliance-report", processId: "compliance-report", label: "Compliance", group: "advanced" },
+  {
+    id: "compliance-report",
+    processId: "compliance-report",
+    label: "Compliance",
+    group: "advanced",
+  },
   { id: "replay-mode", processId: "replay-mode", label: "Replay", group: "advanced" },
 ];
 
