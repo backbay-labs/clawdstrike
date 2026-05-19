@@ -126,6 +126,185 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertTrue(report.degradedReasons.contains("provider_state_unknown"))
     }
 
+    func testAuthorizationPublisherRequestMatchesAgentEndpointContract() throws {
+        let event = AuthorizationEvent(
+            path: "/tmp/clawdstrike-es-dogfood-test.txt",
+            decision: .deny,
+            latencyMs: 275,
+            deadlineMs: 200,
+            notifyObserved: false,
+            observedAt: Date(timeIntervalSince1970: 1_778_824_800)
+        )
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open-1",
+            hostId: "host-1",
+            userId: "user-1",
+            sessionId: "session-1",
+            process: EndpointSecurityAgentProcess(
+                pid: 42,
+                ppid: 7,
+                processGuid: "proc-1",
+                parentProcessGuid: "proc-parent-1",
+                image: "/bin/cat",
+                commandLine: "cat /tmp/clawdstrike-es-dogfood-test.txt",
+                cwd: "/tmp"
+            ),
+            metadata: ["dogfoodMarker": "clawdstrike-es-dogfood-test"]
+        )
+
+        let request = try EndpointSecurityAgentEventEncoder().authorizationOpenRequest(
+            event: event,
+            context: context
+        )
+        let encoded = try EndpointSecurityAgentEventEncoder().encode(request)
+        let payload = try jsonObject(encoded)
+        let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
+        let delivered = try XCTUnwrap(events.first)
+        let process = try XCTUnwrap(delivered["process"] as? [String: Any])
+        let metadata = try XCTUnwrap(delivered["metadata"] as? [String: Any])
+
+        XCTAssertEqual(delivered["eventId"] as? String, "es-auth-open-1")
+        XCTAssertEqual(delivered["kind"] as? String, "auth_open")
+        XCTAssertEqual(delivered["hostId"] as? String, "host-1")
+        XCTAssertEqual(delivered["userId"] as? String, "user-1")
+        XCTAssertEqual(delivered["sessionId"] as? String, "session-1")
+        XCTAssertEqual(delivered["path"] as? String, "/tmp/clawdstrike-es-dogfood-test.txt")
+        XCTAssertEqual(delivered["operation"] as? String, "open")
+        XCTAssertEqual(delivered["decision"] as? String, "deny")
+        XCTAssertEqual(delivered["deadlineMissed"] as? Bool, true)
+        XCTAssertEqual(delivered["deadlineMs"] as? Int, 200)
+        XCTAssertTrue((delivered["observedAt"] as? String)?.hasSuffix("Z") == true)
+        XCTAssertEqual(process["pid"] as? Int, 42)
+        XCTAssertEqual(process["ppid"] as? Int, 7)
+        XCTAssertEqual(process["processGuid"] as? String, "proc-1")
+        XCTAssertEqual(process["parentProcessGuid"] as? String, "proc-parent-1")
+        XCTAssertEqual(process["image"] as? String, "/bin/cat")
+        XCTAssertEqual(process["commandLine"] as? String, "cat /tmp/clawdstrike-es-dogfood-test.txt")
+        XCTAssertEqual(metadata["collectorKind"] as? String, "endpoint_security")
+        XCTAssertEqual(metadata["providerId"] as? String, "macos.endpoint_security")
+        XCTAssertEqual(metadata["deliveryPath"] as? String, "endpoint_security_agent_publisher")
+        XCTAssertEqual(metadata["dogfoodMarker"] as? String, "clawdstrike-es-dogfood-test")
+    }
+
+    func testAuthorizationPublisherRejectsEventsThatCannotReachAgentContract() throws {
+        let event = AuthorizationEvent(
+            path: "   ",
+            decision: .allow,
+            latencyMs: 1,
+            deadlineMs: 200,
+            notifyObserved: true
+        )
+        let context = EndpointSecurityAgentEventContext(
+            process: EndpointSecurityAgentProcess(image: "/bin/cat")
+        )
+
+        XCTAssertThrowsError(
+            try EndpointSecurityAgentEventEncoder().authorizationOpenRequest(
+                event: event,
+                context: context
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? EndpointSecurityAgentEventPublisherError,
+                .missingAuthorizationPath
+            )
+        }
+    }
+
+    func testPublisherPostsEndpointSecurityEventsWithBearerToken() async throws {
+        let transport = CapturingEndpointSecurityTransport()
+        let publisher = try EndpointSecurityAgentEventPublisher(
+            agentURL: "http://127.0.0.1:9878/",
+            bearerToken: "test-token",
+            transport: transport
+        )
+        let event = AuthorizationEvent(
+            path: "/tmp/clawdstrike-es-dogfood-test.txt",
+            decision: .allow,
+            latencyMs: 10,
+            deadlineMs: 200,
+            notifyObserved: true
+        )
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open-2",
+            process: EndpointSecurityAgentProcess(image: "/bin/cat")
+        )
+
+        let response = try await publisher.publishAuthorizationOpen(event: event, context: context)
+
+        XCTAssertEqual(response.statusCode, 200)
+        XCTAssertEqual(
+            transport.url?.absoluteString,
+            "http://127.0.0.1:9878/api/v1/agent/edr/endpoint-security/events"
+        )
+        XCTAssertEqual(transport.bearerToken, "test-token")
+        let body = try XCTUnwrap(transport.body)
+        let payload = try jsonObject(body)
+        let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
+        XCTAssertEqual(events.first?["eventId"] as? String, "es-auth-open-2")
+    }
+
+    func testPublisherRejectsRelativeAgentURL() {
+        XCTAssertThrowsError(
+            try EndpointSecurityAgentEventPublisher(
+                agentURL: "agent.sock",
+                bearerToken: "test-token",
+                transport: CapturingEndpointSecurityTransport()
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? EndpointSecurityAgentEventPublisherError,
+                .invalidAgentURL("agent.sock")
+            )
+        }
+    }
+
+    func testAuthorizationDecisionUsesEndpointSecurityAuthOpenFlags() {
+        XCTAssertEqual(EndpointSecurityAuthorizationDecision.allow.authorizedFlags, UInt32.max)
+        XCTAssertEqual(EndpointSecurityAuthorizationDecision.deny.authorizedFlags, 0)
+        XCTAssertEqual(EndpointSecurityAuthorizationDecision.allow.eventDecision, .allow)
+        XCTAssertEqual(EndpointSecurityAuthorizationDecision.deny.eventDecision, .deny)
+    }
+
+    func testAuthorizationRequestProducesDeadlineAwareObservationEvent() throws {
+        let observedAt = Date(timeIntervalSince1970: 1_778_824_800)
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open:101",
+            process: EndpointSecurityAgentProcess(
+                pid: 501,
+                ppid: 1,
+                processGuid: "macos:501:9",
+                image: "/bin/cat",
+                commandLine: "/bin/cat"
+            ),
+            metadata: [
+                "endpointSecurityEventType": "AUTH_OPEN",
+                "endpointSecurityRespondApi": "es_respond_flags_result"
+            ]
+        )
+        let request = EndpointSecurityAuthorizationRequest(
+            path: "/tmp/clawdstrike-es-auth-open.txt",
+            fflag: 1,
+            latencyMs: 51,
+            deadlineMs: 50,
+            observedAt: observedAt,
+            context: context
+        )
+
+        let event = request.authorizationEvent(decision: .deny)
+
+        XCTAssertEqual(event.eventType, "auth_open")
+        XCTAssertEqual(event.path, "/tmp/clawdstrike-es-auth-open.txt")
+        XCTAssertEqual(event.decision, .deny)
+        XCTAssertEqual(event.latencyMs, 51)
+        XCTAssertEqual(event.deadlineMs, 50)
+        XCTAssertEqual(event.observedAt, observedAt)
+        XCTAssertEqual(event.notifyObserved, false)
+        XCTAssertTrue(event.exceededDeadline)
+        XCTAssertEqual(request.context.eventId, "es-auth-open:101")
+        XCTAssertEqual(request.context.metadata["endpointSecurityRespondApi"], "es_respond_flags_result")
+    }
+
     func testStatusToolRejectsUnsupportedScenarioInsteadOfFallingBackToHealthy() {
         XCTAssertThrowsError(
             try EndpointSecurityFixtureScenario.resolve(commandLineArgument: "definitely-not-real")
@@ -143,6 +322,31 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? StatusToolScenarioError, .missingScenario)
         }
+    }
+
+    func testAgentTokenCandidatesPreferPlatformConfigPathWithLegacyFallback() {
+        let homeDirectory = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+
+        let candidates = ClawdStrikeAgentConfigPaths.agentTokenCandidates(
+            homeDirectory: homeDirectory
+        )
+
+        XCTAssertEqual(
+            candidates,
+            [
+                "/Users/tester/Library/Application Support/clawdstrike/agent-local-token",
+                "/Users/tester/.config/clawdstrike/agent-local-token",
+            ]
+        )
+    }
+
+    func testAgentTokenCandidatesUseExplicitPathOnly() {
+        let candidates = ClawdStrikeAgentConfigPaths.agentTokenCandidates(
+            explicitPath: "/tmp/clawdstrike-token",
+            homeDirectory: URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+        )
+
+        XCTAssertEqual(candidates, ["/tmp/clawdstrike-token"])
     }
 
     private func assertFixture(_ report: EndpointSecurityStatusReport, named name: String) throws {
@@ -171,5 +375,27 @@ final class EndpointSecurityExtensionTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("fixtures/macos/endpoint-security", isDirectory: true)
+    }
+
+    private func jsonObject(_ data: Data) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+}
+
+private final class CapturingEndpointSecurityTransport: EndpointSecurityAgentEventTransport {
+    var body: Data?
+    var url: URL?
+    var bearerToken: String?
+    var response = EndpointSecurityAgentPublishResponse(statusCode: 200, body: Data("{}".utf8))
+
+    func postEndpointSecurityEvents(
+        _ body: Data,
+        to url: URL,
+        bearerToken: String
+    ) async throws -> EndpointSecurityAgentPublishResponse {
+        self.body = body
+        self.url = url
+        self.bearerToken = bearerToken
+        return response
     }
 }

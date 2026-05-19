@@ -18,7 +18,11 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "EndpointSecurityExtension"
+            name: "EndpointSecurityExtension",
+            linkerSettings: [
+                .linkedLibrary("EndpointSecurity"),
+                .linkedLibrary("bsm")
+            ]
         ),
         .executableTarget(
             name: "EndpointSecurityStatusTool",

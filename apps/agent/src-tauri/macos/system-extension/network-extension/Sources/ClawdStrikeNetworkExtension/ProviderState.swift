@@ -160,6 +160,44 @@ public struct NetworkExtensionCounters: Codable, Equatable, Sendable {
     }
 }
 
+public struct NetworkExtensionProviderReloadObservation: Codable, Equatable, Sendable {
+    public var requestID: String?
+    public var command: String
+    public var policySnapshotPath: String?
+    public var generation: UInt64?
+    public var accepted: Bool
+    public var reloaded: Bool
+    public var error: String?
+
+    public init(
+        requestID: String?,
+        command: String,
+        policySnapshotPath: String?,
+        generation: UInt64?,
+        accepted: Bool,
+        reloaded: Bool,
+        error: String?
+    ) {
+        self.requestID = requestID
+        self.command = command
+        self.policySnapshotPath = policySnapshotPath
+        self.generation = generation
+        self.accepted = accepted
+        self.reloaded = reloaded
+        self.error = error
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case command
+        case policySnapshotPath = "policy_snapshot_path"
+        case generation
+        case accepted
+        case reloaded
+        case error
+    }
+}
+
 public struct ProviderSelectionEvidence: Codable, Equatable, Sendable {
     public var requestedProvider: NetworkExtensionProviderKind
     public var effectiveProvider: NetworkExtensionProviderKind
@@ -192,10 +230,13 @@ public struct NetworkExtensionProviderSnapshot: Codable, Equatable, Sendable {
     public var providerKind: NetworkExtensionProviderKind
     public var backendHint: MediationBackendHint?
     public var policySynced: Bool
+    public var enforcementReady: Bool
     public var hostStatus: HostProviderStatus
     public var attestationState: AttestationProviderState
     public var counters: NetworkExtensionCounters
     public var selectionEvidence: ProviderSelectionEvidence
+    public var lastReloadObservation: NetworkExtensionProviderReloadObservation?
+    public var lastError: String?
 
     public init(
         installState: SystemExtensionInstallState,
@@ -203,20 +244,26 @@ public struct NetworkExtensionProviderSnapshot: Codable, Equatable, Sendable {
         providerKind: NetworkExtensionProviderKind,
         backendHint: MediationBackendHint?,
         policySynced: Bool,
+        enforcementReady: Bool,
         hostStatus: HostProviderStatus,
         attestationState: AttestationProviderState,
         counters: NetworkExtensionCounters,
-        selectionEvidence: ProviderSelectionEvidence
+        selectionEvidence: ProviderSelectionEvidence,
+        lastReloadObservation: NetworkExtensionProviderReloadObservation? = nil,
+        lastError: String? = nil
     ) {
         self.installState = installState
         self.approval = approval
         self.providerKind = providerKind
         self.backendHint = backendHint
         self.policySynced = policySynced
+        self.enforcementReady = enforcementReady
         self.hostStatus = hostStatus
         self.attestationState = attestationState
         self.counters = counters
         self.selectionEvidence = selectionEvidence
+        self.lastReloadObservation = lastReloadObservation
+        self.lastError = lastError
     }
 
     enum CodingKeys: String, CodingKey {
@@ -225,10 +272,13 @@ public struct NetworkExtensionProviderSnapshot: Codable, Equatable, Sendable {
         case providerKind = "provider_kind"
         case backendHint = "backend_hint"
         case policySynced = "policy_synced"
+        case enforcementReady = "enforcement_ready"
         case hostStatus = "host_status"
         case attestationState = "attestation_state"
         case counters
         case selectionEvidence = "selection_evidence"
+        case lastReloadObservation = "last_reload_observation"
+        case lastError = "last_error"
     }
 }
 
@@ -239,9 +289,12 @@ public struct NetworkExtensionProviderInputs: Equatable, Sendable {
     public var backendHint: MediationBackendHint?
     public var filterRunning: Bool
     public var policySynced: Bool
+    public var enforcementReady: Bool
     public var degradedReasons: [String]
     public var lastHealthyAt: Date?
     public var counters: NetworkExtensionCounters
+    public var lastReloadObservation: NetworkExtensionProviderReloadObservation?
+    public var lastError: String?
 
     public init(
         installState: SystemExtensionInstallState = .unknown,
@@ -250,9 +303,12 @@ public struct NetworkExtensionProviderInputs: Equatable, Sendable {
         backendHint: MediationBackendHint? = nil,
         filterRunning: Bool = false,
         policySynced: Bool = false,
+        enforcementReady: Bool = false,
         degradedReasons: [String] = [],
         lastHealthyAt: Date? = nil,
-        counters: NetworkExtensionCounters = .init()
+        counters: NetworkExtensionCounters = .init(),
+        lastReloadObservation: NetworkExtensionProviderReloadObservation? = nil,
+        lastError: String? = nil
     ) {
         self.installState = installState
         self.approval = approval
@@ -260,9 +316,47 @@ public struct NetworkExtensionProviderInputs: Equatable, Sendable {
         self.backendHint = backendHint
         self.filterRunning = filterRunning
         self.policySynced = policySynced
+        self.enforcementReady = enforcementReady
         self.degradedReasons = degradedReasons
         self.lastHealthyAt = lastHealthyAt
         self.counters = counters
+        self.lastReloadObservation = lastReloadObservation
+        self.lastError = lastError
+    }
+}
+
+public protocol NetworkExtensionProviderRuntimeSnapshotStore {
+    func loadSnapshot() throws -> NetworkExtensionProviderSnapshot
+    func saveSnapshot(_ snapshot: NetworkExtensionProviderSnapshot) throws
+}
+
+public final class FileNetworkExtensionProviderRuntimeSnapshotStore:
+    NetworkExtensionProviderRuntimeSnapshotStore {
+    private let snapshotURL: URL
+    private let fileManager: FileManager
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+
+    public init(snapshotURL: URL, fileManager: FileManager = .default) {
+        self.snapshotURL = snapshotURL
+        self.fileManager = fileManager
+        self.encoder = JSONEncoder()
+        self.decoder = JSONDecoder()
+        self.encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    }
+
+    public func loadSnapshot() throws -> NetworkExtensionProviderSnapshot {
+        let data = try Data(contentsOf: snapshotURL)
+        return try decoder.decode(NetworkExtensionProviderSnapshot.self, from: data)
+    }
+
+    public func saveSnapshot(_ snapshot: NetworkExtensionProviderSnapshot) throws {
+        try fileManager.createDirectory(
+            at: snapshotURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try encoder.encode(snapshot)
+        try data.write(to: snapshotURL, options: [.atomic])
     }
 }
 
@@ -302,8 +396,93 @@ public enum NetworkExtensionStatusToolError: Error, Equatable, LocalizedError {
 }
 
 public enum NetworkExtensionStatusTool {
+    public static let egressPolicyPathEnvironment = "CLAWDSTRIKE_NETWORK_EXTENSION_EGRESS_POLICY_PATH"
+    public static let runtimeSnapshotPathEnvironment =
+        "CLAWDSTRIKE_NETWORK_EXTENSION_RUNTIME_SNAPSHOT_PATH"
+
     public static func liveSnapshot() -> NetworkExtensionProviderSnapshot {
-        NetworkExtensionStateProjector.snapshot(from: NetworkExtensionProviderInputs())
+        let environment = ProcessInfo.processInfo.environment
+        let policySnapshotURL = environment[egressPolicyPathEnvironment]
+            .flatMap(Self.nonEmptyPathURL)
+
+        if let runtimeSnapshotURL = environment[runtimeSnapshotPathEnvironment]
+            .flatMap(Self.nonEmptyPathURL) {
+            return liveSnapshot(
+                runtimeSnapshotURL: runtimeSnapshotURL,
+                fallbackPolicySnapshotURL: policySnapshotURL
+            )
+        }
+
+        if let policySnapshotURL,
+           FileManager.default.fileExists(atPath: runtimeSnapshotURL(for: policySnapshotURL).path) {
+            return liveSnapshot(
+                runtimeSnapshotURL: runtimeSnapshotURL(for: policySnapshotURL),
+                fallbackPolicySnapshotURL: policySnapshotURL
+            )
+        }
+
+        guard let policySnapshotURL else {
+            return NetworkExtensionStateProjector.snapshot(from: NetworkExtensionProviderInputs())
+        }
+        return liveSnapshot(policySnapshotURL: policySnapshotURL)
+    }
+
+    public static func liveSnapshot(policySnapshotURL: URL) -> NetworkExtensionProviderSnapshot {
+        let policy: NetworkExtensionEgressPolicy
+        do {
+            policy = try NetworkExtensionEgressPolicy.loadSnapshot(from: policySnapshotURL)
+        } catch {
+            return NetworkExtensionStateProjector.snapshot(
+                from: NetworkExtensionProviderInputs(
+                    backendHint: .legacyProxyOnlyRuntime,
+                    degradedReasons: ["policy_snapshot_unreadable_provider_runtime_unknown"],
+                    lastError: "policy_snapshot_unreadable"
+                )
+            )
+        }
+        return NetworkExtensionStateProjector.snapshot(
+            from: NetworkExtensionProviderInputs(
+                installState: .unknown,
+                approval: .unknown,
+                providerKind: .contentFilter,
+                backendHint: .legacyProxyOnlyRuntime,
+                filterRunning: false,
+                policySynced: true,
+                enforcementReady: policy.enforcementReady,
+                degradedReasons: ["policy_snapshot_loaded_provider_runtime_unknown"],
+                lastHealthyAt: nil,
+                counters: NetworkExtensionCounters(
+                    remediationRequests: UInt64(policy.restrictions.count)
+                )
+            )
+        )
+    }
+
+    public static func liveSnapshot(
+        runtimeSnapshotURL: URL,
+        fallbackPolicySnapshotURL: URL? = nil
+    ) -> NetworkExtensionProviderSnapshot {
+        do {
+            return try FileNetworkExtensionProviderRuntimeSnapshotStore(
+                snapshotURL: runtimeSnapshotURL
+            ).loadSnapshot()
+        } catch {
+            if let fallbackPolicySnapshotURL {
+                return liveSnapshot(policySnapshotURL: fallbackPolicySnapshotURL)
+            }
+            return NetworkExtensionStateProjector.snapshot(
+                from: NetworkExtensionProviderInputs(
+                    degradedReasons: ["provider_runtime_snapshot_unreadable"],
+                    lastError: "provider_runtime_snapshot_unreadable"
+                )
+            )
+        }
+    }
+
+    public static func runtimeSnapshotURL(for policySnapshotURL: URL) -> URL {
+        policySnapshotURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(policySnapshotURL.lastPathComponent).provider-runtime.json")
     }
 
     public static func fixtureSnapshot(_ scenario: NetworkExtensionFixtureScenario) -> NetworkExtensionProviderSnapshot {
@@ -364,6 +543,14 @@ public enum NetworkExtensionStatusTool {
             )
         }
     }
+
+    private static func nonEmptyPathURL(_ path: String) -> URL? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: trimmed)
+    }
 }
 
 public enum NetworkExtensionStateProjector {
@@ -375,6 +562,7 @@ public enum NetworkExtensionStateProjector {
             providerKind: inputs.providerKind,
             backendHint: inputs.backendHint,
             policySynced: inputs.policySynced,
+            enforcementReady: inputs.enforcementReady,
             hostStatus: HostProviderStatus(runtime: health.hostRuntime),
             attestationState: AttestationProviderState(
                 installed: health.installed,
@@ -391,7 +579,9 @@ public enum NetworkExtensionStateProjector {
                 effectiveProvider: .contentFilter,
                 backendHint: inputs.backendHint,
                 exceptionRequired: inputs.providerKind != .contentFilter
-            )
+            ),
+            lastReloadObservation: inputs.lastReloadObservation,
+            lastError: inputs.lastError
         )
     }
 
@@ -420,13 +610,14 @@ public enum NetworkExtensionStateProjector {
             .flatMap { $0 })
 
         if inputs.installState == .unknown && inputs.approval == .unknown {
+            let reasons = degradedReasons.isEmpty ? ["provider_state_unknown"] : degradedReasons
             return DerivedHealth(
                 installed: false,
                 approvalStatus: .unknown,
                 active: false,
                 healthy: false,
                 availability: .unavailable,
-                degradedReasons: ["provider_state_unknown"],
+                degradedReasons: reasons,
                 hostRuntime: .unknown,
                 lastHealthyTimestamp: nil
             )
@@ -495,6 +686,19 @@ public enum NetworkExtensionStateProjector {
                 availability: .degraded,
                 degradedReasons: degradedReasons,
                 hostRuntime: .degraded(reason: firstReason),
+                lastHealthyTimestamp: lastHealthyTimestamp(from: inputs.lastHealthyAt)
+            )
+        }
+
+        if inputs.enforcementReady {
+            return DerivedHealth(
+                installed: true,
+                approvalStatus: approvalStatus,
+                active: true,
+                healthy: true,
+                availability: .active,
+                degradedReasons: [],
+                hostRuntime: .active,
                 lastHealthyTimestamp: lastHealthyTimestamp(from: inputs.lastHealthyAt)
             )
         }

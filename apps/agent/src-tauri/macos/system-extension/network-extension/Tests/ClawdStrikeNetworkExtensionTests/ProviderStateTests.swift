@@ -115,6 +115,779 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertEqual(snapshot.attestationState.degradedReasons, ["non_enforcing_provider"])
     }
 
+    func testRunningSyncedEnforcementReadyProviderReportsActiveHealth() {
+        let snapshot = NetworkExtensionStateProjector.snapshot(
+            from: NetworkExtensionProviderInputs(
+                installState: .installed,
+                approval: .approved,
+                providerKind: .contentFilter,
+                backendHint: .legacyProxyOnlyRuntime,
+                filterRunning: true,
+                policySynced: true,
+                enforcementReady: true
+            )
+        )
+
+        XCTAssertEqual(snapshot.hostStatus.runtime, .active)
+        XCTAssertEqual(snapshot.attestationState.active, true)
+        XCTAssertEqual(snapshot.attestationState.healthy, true)
+        XCTAssertEqual(snapshot.attestationState.availability, .active)
+        XCTAssertEqual(snapshot.attestationState.degradedReasons, [])
+        XCTAssertTrue(snapshot.enforcementReady)
+    }
+
+    func testEgressPolicyBlocksExactActiveHostPortAndIgnoresExpiredRestrictions() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let policy = NetworkExtensionEgressPolicy(
+            restrictions: [
+                NetworkExtensionEgressRestriction(
+                    restrictionID: "restriction-expired",
+                    actionID: "action-expired",
+                    executionID: "execution-expired",
+                    target: "egress.example.invalid:443",
+                    expiresAt: now.addingTimeInterval(-1)
+                ),
+                NetworkExtensionEgressRestriction(
+                    restrictionID: "restriction-active",
+                    actionID: "action-active",
+                    executionID: "execution-active",
+                    target: "egress.example.invalid:443",
+                    expiresAt: now.addingTimeInterval(60)
+                ),
+            ]
+        )
+
+        let blocked = policy.decision(
+            for: NetworkExtensionFlowTarget(host: "Egress.Example.Invalid.", port: 443),
+            now: now
+        )
+        XCTAssertEqual(
+            blocked,
+            .block(policy.restrictions[1])
+        )
+        XCTAssertEqual(
+            policy.decision(
+                for: NetworkExtensionFlowTarget(host: "egress.example.invalid", port: 8443),
+                now: now
+            ),
+            .allow
+        )
+    }
+
+    func testEgressPolicyLoadsAgentGeneratedSnapshot() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": 1,
+              "generatedAt": "2026-05-15T15:00:00Z",
+              "restrictions": [
+                {
+                  "restrictionId": "egress_restriction_test",
+                  "executionId": "execution_test",
+                  "actionId": "action_test",
+                  "graphSliceId": "graph_slice_test",
+                  "rollbackRef": "rollback_test",
+                  "target": "egress.example.invalid:443",
+                  "targetHash": "sha256:test",
+                  "active": true,
+                  "createdAt": "2026-05-15T15:00:00Z",
+                  "expiresAt": "2026-05-15T15:10:00Z",
+                  "updatedAt": "2026-05-15T15:00:00Z"
+                }
+              ]
+            }
+            """.utf8
+        )
+        let policy = try NetworkExtensionEgressPolicy.decodeSnapshot(data: data)
+        let decision = policy.decision(
+            for: NetworkExtensionFlowTarget(host: "egress.example.invalid", port: 443),
+            now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        )
+
+        XCTAssertEqual(decision, .block(policy.restrictions[0]))
+    }
+
+    func testLiveSnapshotReportsLoadedPolicyWithoutClaimingProviderActive() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": 1,
+              "generatedAt": "2026-05-15T15:00:00Z",
+              "restrictions": [
+                {
+                  "restrictionId": "egress_restriction_test",
+                  "executionId": "execution_test",
+                  "actionId": "action_test",
+                  "target": "egress.example.invalid:443",
+                  "active": true,
+                  "expiresAt": "2026-05-15T15:10:00Z"
+                }
+              ]
+            }
+            """.utf8
+        )
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-policy-\(UUID().uuidString).json")
+        try data.write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+
+        let snapshot = NetworkExtensionStatusTool.liveSnapshot(policySnapshotURL: url)
+
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertTrue(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.remediationRequests, 1)
+        XCTAssertEqual(snapshot.hostStatus.runtime, .unknown)
+        XCTAssertEqual(snapshot.attestationState.active, false)
+        XCTAssertEqual(snapshot.attestationState.healthy, false)
+        XCTAssertEqual(snapshot.attestationState.availability, .unavailable)
+        XCTAssertEqual(
+            snapshot.attestationState.degradedReasons,
+            ["policy_snapshot_loaded_provider_runtime_unknown"]
+        )
+    }
+
+    func testLiveSnapshotReportsUnreadablePolicyWithoutClaimingProviderActive() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-invalid-policy-\(UUID().uuidString).json")
+        try Data("{ not valid json".utf8).write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+
+        let snapshot = NetworkExtensionStatusTool.liveSnapshot(policySnapshotURL: url)
+
+        XCTAssertFalse(snapshot.policySynced)
+        XCTAssertFalse(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.lastError, "policy_snapshot_unreadable")
+        XCTAssertEqual(snapshot.hostStatus.runtime, .unknown)
+        XCTAssertEqual(snapshot.attestationState.active, false)
+        XCTAssertEqual(snapshot.attestationState.healthy, false)
+        XCTAssertEqual(snapshot.attestationState.availability, .unavailable)
+        XCTAssertEqual(
+            snapshot.attestationState.degradedReasons,
+            ["policy_snapshot_unreadable_provider_runtime_unknown"]
+        )
+    }
+
+    func testLiveSnapshotPrefersProviderAuthoredRuntimeSnapshot() throws {
+        let policyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-policy-fallback-\(UUID().uuidString).json")
+        let runtimeURL = NetworkExtensionStatusTool.runtimeSnapshotURL(for: policyURL)
+        defer {
+            try? FileManager.default.removeItem(at: policyURL)
+            try? FileManager.default.removeItem(at: runtimeURL)
+        }
+        try Data("{ not valid json".utf8).write(to: policyURL)
+        let providerSnapshot = NetworkExtensionStateProjector.snapshot(
+            from: NetworkExtensionProviderInputs(
+                installState: .installed,
+                approval: .approved,
+                providerKind: .contentFilter,
+                backendHint: nil,
+                filterRunning: true,
+                policySynced: true,
+                enforcementReady: true,
+                counters: NetworkExtensionCounters(
+                    flowsObserved: 9,
+                    flowsBlocked: 3,
+                    remediationRequests: 2,
+                    droppedVerdicts: 0
+                ),
+                lastReloadObservation: NetworkExtensionProviderReloadObservation(
+                    requestID: "runtime-snapshot-reload",
+                    command: "reload_policy",
+                    policySnapshotPath: policyURL.path,
+                    generation: 88,
+                    accepted: true,
+                    reloaded: true,
+                    error: nil
+                )
+            )
+        )
+        try FileNetworkExtensionProviderRuntimeSnapshotStore(snapshotURL: runtimeURL)
+            .saveSnapshot(providerSnapshot)
+
+        let snapshot = NetworkExtensionStatusTool.liveSnapshot(
+            runtimeSnapshotURL: runtimeURL,
+            fallbackPolicySnapshotURL: policyURL
+        )
+
+        XCTAssertEqual(snapshot.hostStatus.runtime, .active)
+        XCTAssertEqual(snapshot.attestationState.availability, .active)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 9)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 3)
+        XCTAssertEqual(snapshot.counters.remediationRequests, 2)
+        XCTAssertEqual(snapshot.lastReloadObservation?.requestID, "runtime-snapshot-reload")
+        XCTAssertEqual(snapshot.lastReloadObservation?.generation, 88)
+    }
+
+    func testContentFilterRuntimePersistsProviderRuntimeSnapshot() throws {
+        let policyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-runtime-policy-\(UUID().uuidString).json")
+        let runtimeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-runtime-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: policyURL)
+            try? FileManager.default.removeItem(at: runtimeURL)
+        }
+        try writePolicySnapshot(
+            to: policyURL,
+            target: "persist-runtime.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        let store = FileNetworkExtensionProviderRuntimeSnapshotStore(snapshotURL: runtimeURL)
+        let runtime = NetworkExtensionContentFilterRuntime(
+            policySnapshotURL: policyURL,
+            runtimeSnapshotStore: store
+        )
+
+        XCTAssertTrue(runtime.requestPolicyReloadFromHostApp(
+            requestID: "persist-runtime-reload",
+            policySnapshotPath: policyURL.path,
+            generation: 5150
+        ))
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(
+                host: "persist-runtime.example.invalid",
+                port: 443
+            ),
+            now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        )
+
+        XCTAssertEqual(
+            decision,
+            .block(NetworkExtensionEgressRestriction(
+                restrictionID: "egress_restriction_test",
+                actionID: "action_test",
+                executionID: "execution_test",
+                target: "persist-runtime.example.invalid:443",
+                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+            ))
+        )
+        XCTAssertTrue(runtime.persistSnapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        ))
+
+        let snapshot = try store.loadSnapshot()
+        XCTAssertEqual(snapshot.hostStatus.runtime, .active)
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertTrue(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.remediationRequests, 1)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
+        XCTAssertEqual(snapshot.lastReloadObservation?.requestID, "persist-runtime-reload")
+        XCTAssertEqual(snapshot.lastReloadObservation?.generation, 5150)
+    }
+
+    func testPolicyReloaderReloadsOnlyChangedSnapshots() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-reload-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+
+        try writePolicySnapshot(
+            to: url,
+            target: "first.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        var reloader = NetworkExtensionEgressPolicyReloader(snapshotURL: url)
+
+        XCTAssertTrue(try reloader.reloadIfChanged())
+        XCTAssertEqual(reloader.policy?.restrictions.first?.target, "first.example.invalid:443")
+        XCTAssertFalse(try reloader.reloadIfChanged())
+
+        Thread.sleep(forTimeInterval: 0.01)
+        try writePolicySnapshot(
+            to: url,
+            target: "second.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:01Z"
+        )
+
+        XCTAssertTrue(try reloader.reloadIfChanged())
+        XCTAssertEqual(reloader.policy?.restrictions.first?.target, "second.example.invalid:443")
+    }
+
+    func testContentFilterRuntimeRemediationReloadRequestRefreshesPolicyAndCounters() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-reload-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+        try writePolicySnapshot(
+            to: url,
+            target: "first.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
+        let evaluationTime = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+
+        runtime.requestPolicyReloadFromHostApp()
+
+        XCTAssertEqual(
+            runtime.snapshot(
+                installState: .installed,
+                approval: .approved,
+                backendHint: nil,
+                filterRunning: true
+            ).counters.remediationRequests,
+            1
+        )
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "first.example.invalid", port: 443),
+                now: evaluationTime
+            ),
+            .block(NetworkExtensionEgressRestriction(
+                restrictionID: "egress_restriction_test",
+                actionID: "action_test",
+                executionID: "execution_test",
+                target: "first.example.invalid:443",
+                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+            ))
+        )
+
+        Thread.sleep(forTimeInterval: 0.01)
+        try writePolicySnapshot(
+            to: url,
+            target: "second.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:01Z"
+        )
+
+        runtime.requestPolicyReloadFromHostApp()
+
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+        XCTAssertEqual(snapshot.counters.remediationRequests, 2)
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertTrue(snapshot.enforcementReady)
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "first.example.invalid", port: 443),
+                now: evaluationTime
+            ),
+            .allow
+        )
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "second.example.invalid", port: 443),
+                now: evaluationTime
+            ),
+            .block(NetworkExtensionEgressRestriction(
+                restrictionID: "egress_restriction_test",
+                actionID: "action_test",
+                executionID: "execution_test",
+                target: "second.example.invalid:443",
+                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+            ))
+        )
+    }
+
+    func testProviderCommandReloadPolicyRefreshesWatchedSnapshotAndReturnsCounters() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-command-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+        try writePolicySnapshot(
+            to: url,
+            target: "first.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let context = NetworkExtensionProviderCommandContext(
+            installState: .installed,
+            approval: .approved,
+            backendHint: .legacyProxyOnlyRuntime,
+            filterRunning: true
+        )
+
+        let firstResponseData = try NetworkExtensionProviderCommand.handle(
+            Data(
+                """
+                {
+                  "command": "reload_policy",
+                  "requestId": "reload-test-1",
+                  "policySnapshotPath": "\(url.path)"
+                }
+                """.utf8
+            ),
+            runtime: runtime,
+            context: context
+        )
+        let decoder = JSONDecoder()
+        let firstResponse = try decoder.decode(
+            NetworkExtensionProviderCommandResponse.self,
+            from: firstResponseData
+        )
+
+        XCTAssertEqual(firstResponse.requestID, "reload-test-1")
+        XCTAssertEqual(firstResponse.command, "reload_policy")
+        XCTAssertTrue(firstResponse.accepted)
+        XCTAssertTrue(firstResponse.reloaded)
+        XCTAssertNil(firstResponse.error)
+        XCTAssertEqual(firstResponse.snapshot?.counters.remediationRequests, 1)
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "first.example.invalid", port: 443),
+                now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+            ),
+            .block(NetworkExtensionEgressRestriction(
+                restrictionID: "egress_restriction_test",
+                actionID: "action_test",
+                executionID: "execution_test",
+                target: "first.example.invalid:443",
+                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+            ))
+        )
+
+        Thread.sleep(forTimeInterval: 0.01)
+        try writePolicySnapshot(
+            to: url,
+            target: "second.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:01Z"
+        )
+
+        let secondResponseData = try NetworkExtensionProviderCommand.handle(
+            Data(
+                """
+                {
+                  "command": "reload_policy",
+                  "requestId": "reload-test-2"
+                }
+                """.utf8
+            ),
+            runtime: runtime,
+            context: context
+        )
+        let secondResponse = try decoder.decode(
+            NetworkExtensionProviderCommandResponse.self,
+            from: secondResponseData
+        )
+
+        XCTAssertEqual(secondResponse.requestID, "reload-test-2")
+        XCTAssertTrue(secondResponse.accepted)
+        XCTAssertTrue(secondResponse.reloaded)
+        XCTAssertEqual(secondResponse.snapshot?.counters.remediationRequests, 2)
+        XCTAssertTrue(secondResponse.snapshot?.policySynced == true)
+        XCTAssertTrue(secondResponse.snapshot?.enforcementReady == true)
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "second.example.invalid", port: 443),
+                now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+            ),
+            .block(NetworkExtensionEgressRestriction(
+                restrictionID: "egress_restriction_test",
+                actionID: "action_test",
+                executionID: "execution_test",
+                target: "second.example.invalid:443",
+                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+            ))
+        )
+    }
+
+    func testProviderVendorConfigurationBuildsReloadPolicyCommandEnvelope() throws {
+        let vendorConfiguration = NetworkExtensionProviderVendorConfiguration.reloadPolicy(
+            requestID: "reload-vendor-test",
+            policySnapshotPath: "/tmp/clawdstrike/network-extension-egress-policy.json",
+            generation: 42
+        )
+
+        XCTAssertEqual(
+            vendorConfiguration[NetworkExtensionProviderVendorConfiguration.commandKey] as? String,
+            NetworkExtensionProviderCommand.reloadPolicyCommand
+        )
+        XCTAssertEqual(
+            vendorConfiguration[NetworkExtensionProviderVendorConfiguration.requestIDKey] as? String,
+            "reload-vendor-test"
+        )
+        XCTAssertEqual(
+            vendorConfiguration[NetworkExtensionProviderVendorConfiguration.policySnapshotPathKey] as? String,
+            "/tmp/clawdstrike/network-extension-egress-policy.json"
+        )
+        XCTAssertEqual(
+            vendorConfiguration[NetworkExtensionProviderVendorConfiguration.generationKey] as? UInt64,
+            42
+        )
+
+        let commandData = try NetworkExtensionProviderVendorConfiguration.commandData(
+            from: vendorConfiguration
+        )
+        let decoded = try JSONSerialization.jsonObject(with: commandData) as? [String: Any]
+
+        XCTAssertEqual(decoded?["command"] as? String, NetworkExtensionProviderCommand.reloadPolicyCommand)
+        XCTAssertEqual(decoded?["requestId"] as? String, "reload-vendor-test")
+        XCTAssertEqual(
+            decoded?["policySnapshotPath"] as? String,
+            "/tmp/clawdstrike/network-extension-egress-policy.json"
+        )
+        XCTAssertEqual(decoded?["generation"] as? Int, 42)
+    }
+
+    func testProviderVendorConfigurationHandlerAppliesReloadCommandOnce() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-vendor-handler-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+        try writePolicySnapshot(
+            to: url,
+            target: "vendor-handler.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let context = NetworkExtensionProviderCommandContext(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+        let vendorConfiguration = NetworkExtensionProviderVendorConfiguration.reloadPolicy(
+            requestID: "reload-vendor-observed",
+            policySnapshotPath: url.path,
+            generation: 99
+        )
+        var handler = NetworkExtensionProviderVendorConfigurationHandler()
+
+        let firstResponse = try XCTUnwrap(handler.handleIfChanged(
+            vendorConfiguration,
+            runtime: runtime,
+            context: context
+        ))
+
+        XCTAssertEqual(firstResponse.requestID, "reload-vendor-observed")
+        XCTAssertEqual(firstResponse.command, NetworkExtensionProviderCommand.reloadPolicyCommand)
+        XCTAssertTrue(firstResponse.accepted)
+        XCTAssertTrue(firstResponse.reloaded)
+        XCTAssertNil(firstResponse.error)
+        XCTAssertEqual(firstResponse.snapshot?.counters.remediationRequests, 1)
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "vendor-handler.example.invalid", port: 443),
+                now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+            ),
+            .block(NetworkExtensionEgressRestriction(
+                restrictionID: "egress_restriction_test",
+                actionID: "action_test",
+                executionID: "execution_test",
+                target: "vendor-handler.example.invalid:443",
+                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+            ))
+        )
+
+        XCTAssertNil(try handler.handleIfChanged(
+            vendorConfiguration,
+            runtime: runtime,
+            context: context
+        ))
+        XCTAssertEqual(
+            runtime.snapshot(
+                installState: .installed,
+                approval: .approved,
+                backendHint: nil,
+                filterRunning: true
+            ).counters.remediationRequests,
+            1
+        )
+    }
+
+    func testProviderCommandSnapshotBindsLastReloadObservation() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-reload-observation-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+        try writePolicySnapshot(
+            to: url,
+            target: "reload-observed.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let context = NetworkExtensionProviderCommandContext(
+            installState: .installed,
+            approval: .approved,
+            backendHint: .legacyProxyOnlyRuntime,
+            filterRunning: true
+        )
+
+        let responseData = try NetworkExtensionProviderCommand.handle(
+            Data(
+                """
+                {
+                  "command": "reload_policy",
+                  "requestId": "reload-observation-test",
+                  "policySnapshotPath": "\(url.path)",
+                  "generation": 5150
+                }
+                """.utf8
+            ),
+            runtime: runtime,
+            context: context
+        )
+        let responseJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+        )
+        let snapshot = try XCTUnwrap(responseJSON["snapshot"] as? [String: Any])
+        let observation = try XCTUnwrap(snapshot["last_reload_observation"] as? [String: Any])
+
+        XCTAssertEqual(observation["request_id"] as? String, "reload-observation-test")
+        XCTAssertEqual(observation["command"] as? String, "reload_policy")
+        XCTAssertEqual(observation["policy_snapshot_path"] as? String, url.path)
+        XCTAssertEqual(observation["generation"] as? Int, 5150)
+        XCTAssertEqual(observation["accepted"] as? Bool, true)
+        XCTAssertEqual(observation["reloaded"] as? Bool, true)
+    }
+
+    func testProviderCommandPersistsRuntimeSnapshotForLatePolicySource() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-late-source-\(UUID().uuidString).json")
+        let runtimeURL = NetworkExtensionStatusTool.runtimeSnapshotURL(for: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: runtimeURL)
+        }
+        try writePolicySnapshot(
+            to: url,
+            target: "late-source.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let context = NetworkExtensionProviderCommandContext(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+
+        _ = try NetworkExtensionProviderCommand.handle(
+            Data(
+                """
+                {
+                  "command": "reload_policy",
+                  "requestId": "reload-late-source",
+                  "policySnapshotPath": "\(url.path)",
+                  "generation": 6161
+                }
+                """.utf8
+            ),
+            runtime: runtime,
+            context: context
+        )
+
+        let persisted = try FileNetworkExtensionProviderRuntimeSnapshotStore(
+            snapshotURL: runtimeURL
+        ).loadSnapshot()
+        XCTAssertEqual(persisted.hostStatus.runtime, .active)
+        XCTAssertTrue(persisted.policySynced)
+        XCTAssertTrue(persisted.enforcementReady)
+        XCTAssertEqual(persisted.counters.remediationRequests, 1)
+        XCTAssertEqual(persisted.lastReloadObservation?.requestID, "reload-late-source")
+        XCTAssertEqual(persisted.lastReloadObservation?.generation, 6161)
+    }
+
+    func testProviderCommandSnapshotBindsReloadFailureError() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-reload-failure-\(UUID().uuidString).json")
+        try Data("{ not valid json".utf8).write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let context = NetworkExtensionProviderCommandContext(
+            installState: .installed,
+            approval: .approved,
+            backendHint: .legacyProxyOnlyRuntime,
+            filterRunning: true
+        )
+
+        let responseData = try NetworkExtensionProviderCommand.handle(
+            Data(
+                """
+                {
+                  "command": "reload_policy",
+                  "requestId": "reload-failure-test",
+                  "policySnapshotPath": "\(url.path)",
+                  "generation": 5151
+                }
+                """.utf8
+            ),
+            runtime: runtime,
+            context: context
+        )
+        let responseJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+        )
+        let snapshot = try XCTUnwrap(responseJSON["snapshot"] as? [String: Any])
+        let observation = try XCTUnwrap(snapshot["last_reload_observation"] as? [String: Any])
+        let attestation = try XCTUnwrap(snapshot["attestation_state"] as? [String: Any])
+
+        XCTAssertEqual(responseJSON["requestId"] as? String, "reload-failure-test")
+        XCTAssertEqual(responseJSON["accepted"] as? Bool, true)
+        XCTAssertEqual(responseJSON["reloaded"] as? Bool, false)
+        XCTAssertEqual(responseJSON["error"] as? String, "policy_reload_failed")
+        XCTAssertEqual(snapshot["policy_synced"] as? Bool, false)
+        XCTAssertEqual(snapshot["enforcement_ready"] as? Bool, false)
+        XCTAssertEqual(snapshot["last_error"] as? String, "policy_reload_failed")
+        XCTAssertEqual(observation["request_id"] as? String, "reload-failure-test")
+        XCTAssertEqual(observation["accepted"] as? Bool, true)
+        XCTAssertEqual(observation["reloaded"] as? Bool, false)
+        XCTAssertEqual(observation["error"] as? String, "policy_reload_failed")
+        XCTAssertEqual(
+            attestation["degraded_reasons"] as? [String],
+            ["policy_reload_failed", "policy_not_synced"]
+        )
+    }
+
+    func testReloadRequesterPersistsVendorConfigurationWithoutDroppingExistingKeys() throws {
+        let store = FakeVendorConfigurationStore(
+            loadedVendorConfiguration: [
+                "existing.key": "preserved",
+            ]
+        )
+
+        let result = try NetworkExtensionProviderReloadRequester.requestReload(
+            policySnapshotPath: "/tmp/clawdstrike/network-extension-egress-policy.json",
+            generation: 7,
+            requestID: "reload-request-test",
+            store: store
+        )
+
+        XCTAssertTrue(result.saved)
+        XCTAssertEqual(result.command, NetworkExtensionProviderCommand.reloadPolicyCommand)
+        XCTAssertEqual(result.requestID, "reload-request-test")
+        XCTAssertEqual(result.policySnapshotPath, "/tmp/clawdstrike/network-extension-egress-policy.json")
+        XCTAssertEqual(result.generation, 7)
+        XCTAssertEqual(store.savedVendorConfigurations.count, 1)
+
+        let saved = try XCTUnwrap(store.savedVendorConfigurations.first)
+        XCTAssertEqual(saved["existing.key"] as? String, "preserved")
+        XCTAssertEqual(
+            saved[NetworkExtensionProviderVendorConfiguration.commandKey] as? String,
+            NetworkExtensionProviderCommand.reloadPolicyCommand
+        )
+        XCTAssertEqual(
+            saved[NetworkExtensionProviderVendorConfiguration.requestIDKey] as? String,
+            "reload-request-test"
+        )
+        XCTAssertEqual(
+            saved[NetworkExtensionProviderVendorConfiguration.policySnapshotPathKey] as? String,
+            "/tmp/clawdstrike/network-extension-egress-policy.json"
+        )
+        XCTAssertEqual(
+            saved[NetworkExtensionProviderVendorConfiguration.generationKey] as? UInt64,
+            7
+        )
+    }
+
     func testFixtureEvidenceDecodesForSelectionInactiveUnavailableAndApprovalBlockedPaths() throws {
         let selectionFixture = try loadFixture(named: "content-filter-provider-selection.json")
         let inactiveFixture = try loadFixture(named: "content-filter-provider-inactive.json")
@@ -126,6 +899,7 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertEqual(selectionFixture.backendHint, .legacyProxyOnlyRuntime)
         XCTAssertEqual(selectionFixture.hostStatus.runtime, .degraded(reason: "non_enforcing_provider"))
         XCTAssertEqual(selectionFixture.attestationState.availability, .degraded)
+        XCTAssertFalse(selectionFixture.enforcementReady)
         XCTAssertEqual(inactiveFixture.hostStatus.runtime, .inactive)
         XCTAssertEqual(inactiveFixture.attestationState.availability, .inactive)
         XCTAssertEqual(inactiveFixture.attestationState.degradedReasons, ["provider_failed"])
@@ -194,5 +968,45 @@ final class ProviderStateTests: XCTestCase {
 
     private enum FixtureLookupError: Error {
         case notFound
+    }
+
+    private final class FakeVendorConfigurationStore: NetworkExtensionProviderVendorConfigurationStore {
+        var loadedVendorConfiguration: [String: Any]
+        var savedVendorConfigurations: [[String: Any]]
+
+        init(loadedVendorConfiguration: [String: Any]) {
+            self.loadedVendorConfiguration = loadedVendorConfiguration
+            self.savedVendorConfigurations = []
+        }
+
+        func loadVendorConfiguration() throws -> [String: Any] {
+            loadedVendorConfiguration
+        }
+
+        func saveVendorConfiguration(_ vendorConfiguration: [String: Any]) throws {
+            savedVendorConfigurations.append(vendorConfiguration)
+        }
+    }
+
+    private func writePolicySnapshot(to url: URL, target: String, generatedAt: String) throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": 1,
+              "generatedAt": "\(generatedAt)",
+              "restrictions": [
+                {
+                  "restrictionId": "egress_restriction_test",
+                  "executionId": "execution_test",
+                  "actionId": "action_test",
+                  "target": "\(target)",
+                  "active": true,
+                  "expiresAt": "2026-05-15T15:10:00Z"
+                }
+              ]
+            }
+            """.utf8
+        )
+        try data.write(to: url)
     }
 }

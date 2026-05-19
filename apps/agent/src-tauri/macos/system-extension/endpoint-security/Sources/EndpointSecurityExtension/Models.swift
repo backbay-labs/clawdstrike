@@ -316,3 +316,44 @@ public enum StatusToolScenarioError: Error, Equatable, LocalizedError {
         }
     }
 }
+
+public enum ClawdStrikeAgentConfigPaths {
+    public static func configDirectory(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> URL {
+        #if os(macOS)
+        return homeDirectory
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("clawdstrike", isDirectory: true)
+        #else
+        return homeDirectory
+            .appendingPathComponent(".config", isDirectory: true)
+            .appendingPathComponent("clawdstrike", isDirectory: true)
+        #endif
+    }
+
+    public static func legacyDotConfigDirectory(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> URL {
+        homeDirectory
+            .appendingPathComponent(".config", isDirectory: true)
+            .appendingPathComponent("clawdstrike", isDirectory: true)
+    }
+
+    public static func agentTokenCandidates(
+        explicitPath: String? = nil,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> [String] {
+        if let explicitPath, !explicitPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return [explicitPath]
+        }
+        let primary = configDirectory(homeDirectory: homeDirectory)
+            .appendingPathComponent("agent-local-token")
+            .path
+        let legacy = legacyDotConfigDirectory(homeDirectory: homeDirectory)
+            .appendingPathComponent("agent-local-token")
+            .path
+        return primary == legacy ? [primary] : [primary, legacy]
+    }
+}

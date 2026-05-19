@@ -18,6 +18,7 @@
     "flows_observed" : 0,
     "remediation_requests" : 0
   },
+  "enforcement_ready" : false,
   "host_status" : {
     "runtime" : {
       "reason" : "approval_blocked",
