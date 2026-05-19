@@ -1219,8 +1219,8 @@ impl<'a, F: Function> Env<'a, F> {
                     let mut fixed_assigned = 0;
                     let mut total_regs = 0;
                     for preg in self.env.preferred_regs_by_class[class as u8 as usize]
-                        .iter()
-                        .chain(self.env.non_preferred_regs_by_class[class as u8 as usize].iter())
+                        .into_iter()
+                        .chain(self.env.non_preferred_regs_by_class[class as u8 as usize])
                     {
                         trace!(" -> PR {:?}", preg);
                         let start = LiveRangeKey::from_range(&CodeRange {

@@ -1,67 +1,354 @@
 //! Debugging API.
 
+use super::store::AsStoreOpaque;
+use crate::code::StoreCode;
+use crate::module::RegisterBreakpointState;
+use crate::store::StoreId;
+use crate::vm::{Activation, Backtrace};
 use crate::{
-    AnyRef, AsContext, AsContextMut, CodeMemory, ExnRef, ExternRef, Func, Instance, Module,
+    AnyRef, AsContextMut, CodeMemory, ExnRef, Extern, ExternRef, Func, Instance, Module,
     OwnedRooted, StoreContext, StoreContextMut, Val,
     code::StoreCodePC,
     module::ModuleRegistry,
     store::{AutoAssertNoGc, StoreOpaque},
-    vm::{CompiledModuleId, FrameOrHostCode, StoreBacktrace, VMContext},
+    vm::{CompiledModuleId, VMContext},
 };
-use alloc::collections::BTreeSet;
+use crate::{Caller, Result, Store};
+use alloc::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 use alloc::vec;
 use alloc::vec::Vec;
-use anyhow::Result;
 use core::{ffi::c_void, ptr::NonNull};
 #[cfg(feature = "gc")]
 use wasmtime_environ::FrameTable;
+// Re-export ModulePC so downstream crates can use it.
+pub use wasmtime_environ::ModulePC;
 use wasmtime_environ::{
-    DefinedFuncIndex, FrameInstPos, FrameStackShape, FrameStateSlot, FrameStateSlotOffset,
-    FrameTableBreakpointData, FrameTableDescriptorIndex, FrameValType, FuncKey, Trap,
+    DefinedFuncIndex, EntityIndex, FrameInstPos, FrameStackShape, FrameStateSlot,
+    FrameStateSlotOffset, FrameTableBreakpointData, FrameTableDescriptorIndex, FrameValType,
+    FuncIndex, FuncKey, GlobalIndex, MemoryIndex, TableIndex, TagIndex, Trap,
 };
-use wasmtime_unwinder::Frame;
+use wasmtime_unwinder::{Frame, FrameCursor};
 
-use super::store::AsStoreOpaque;
+impl<T> Store<T> {
+    /// Provide a frame handle for all activations, in order from
+    /// innermost (most recently called) to outermost on the stack.
+    ///
+    /// An activation is a contiguous sequence of Wasm frames (called
+    /// functions) that were called from host code and called back out
+    /// to host code. If there are activations from multiple stores on
+    /// the stack, for example if Wasm code in one store calls out to
+    /// host code which invokes another Wasm function in another
+    /// store, then the other stores are "opaque" to our view here in
+    /// the same way that host code is.
+    ///
+    /// Returns an empty list if debug instrumentation is not enabled
+    /// for the engine containing this store.
+    pub fn debug_exit_frames(&mut self) -> impl Iterator<Item = FrameHandle> {
+        self.as_store_opaque().debug_exit_frames()
+    }
+
+    /// Start an edit session to update breakpoints.
+    pub fn edit_breakpoints<'a>(&'a mut self) -> Option<BreakpointEdit<'a>> {
+        self.as_store_opaque().edit_breakpoints()
+    }
+
+    /// Get a vector of all Instances held in the Store, for debug
+    /// purposes.
+    ///
+    /// Guest debugging must be enabled for this accessor to return
+    /// any instances. If it is not, an empty vector is returned.
+    pub fn debug_all_instances(&mut self) -> Vec<Instance> {
+        self.as_store_opaque().debug_all_instances()
+    }
+
+    /// Get a vector of all Modules held in the Store, for debug
+    /// purposes.
+    ///
+    /// Guest debugging must be enabled for this accessor to return
+    /// any modules. If it is not, an empty vector is returned.
+    pub fn debug_all_modules(&mut self) -> Vec<Module> {
+        self.as_store_opaque().debug_all_modules()
+    }
+}
 
 impl<'a, T> StoreContextMut<'a, T> {
-    /// Provide an object that captures Wasm stack state, including
-    /// Wasm VM-level values (locals and operand stack).
+    /// Provide a frame handle for all activations, in order from
+    /// innermost (most recently called) to outermost on the stack.
     ///
-    /// This object views all activations for the current store that
-    /// are on the stack. An activation is a contiguous sequence of
-    /// Wasm frames (called functions) that were called from host code
-    /// and called back out to host code. If there are activations
-    /// from multiple stores on the stack, for example if Wasm code in
-    /// one store calls out to host code which invokes another Wasm
-    /// function in another store, then the other stores are "opaque"
-    /// to our view here in the same way that host code is.
-    ///
-    /// Returns `None` if debug instrumentation is not enabled for
-    /// the engine containing this store.
-    pub fn debug_frames(self) -> Option<DebugFrameCursor<'a, T>> {
-        if !self.engine().tunables().debug_guest {
-            return None;
-        }
-
-        let iter = StoreBacktrace::new(self);
-        let mut view = DebugFrameCursor {
-            iter,
-            is_trapping_frame: false,
-            frames: vec![],
-            current: None,
-        };
-        view.move_to_parent(); // Load the first frame.
-        Some(view)
+    /// See [`Store::debug_exit_frames`] for more details.
+    pub fn debug_exit_frames(&mut self) -> impl Iterator<Item = FrameHandle> {
+        self.0.as_store_opaque().debug_exit_frames()
     }
 
     /// Start an edit session to update breakpoints.
     pub fn edit_breakpoints(self) -> Option<BreakpointEdit<'a>> {
+        self.0.as_store_opaque().edit_breakpoints()
+    }
+
+    /// Get a vector of all Instances held in the Store, for debug
+    /// purposes.
+    ///
+    /// See [`Store::debug_all_instances`] for more details.
+    pub fn debug_all_instances(self) -> Vec<Instance> {
+        self.0.as_store_opaque().debug_all_instances()
+    }
+
+    /// Get a vector of all Modules held in the Store, for debug
+    /// purposes.
+    ///
+    /// See [`Store::debug_all_modules`] for more details.
+    pub fn debug_all_modules(self) -> Vec<Module> {
+        self.0.as_store_opaque().debug_all_modules()
+    }
+}
+
+impl<'a, T> Caller<'a, T> {
+    /// Provide a frame handle for all activations, in order from
+    /// innermost (most recently called) to outermost on the stack.
+    ///
+    /// See [`Store::debug_exit_frames`] for more details.
+    pub fn debug_exit_frames(&mut self) -> impl Iterator<Item = FrameHandle> {
+        self.store.0.as_store_opaque().debug_exit_frames()
+    }
+
+    /// Start an edit session to update breakpoints.
+    pub fn edit_breakpoints<'b>(&'b mut self) -> Option<BreakpointEdit<'b>> {
+        self.store.0.as_store_opaque().edit_breakpoints()
+    }
+
+    /// Get a vector of all Instances held in the Store, for debug
+    /// purposes.
+    ///
+    /// See [`Store::debug_all_instances`] for more details.
+    pub fn debug_all_instances(&mut self) -> Vec<Instance> {
+        self.store.0.as_store_opaque().debug_all_instances()
+    }
+
+    /// Get a vector of all Modules held in the Store, for debug
+    /// purposes.
+    ///
+    /// See [`Store::debug_all_modules`] for more details.
+    pub fn debug_all_modules(&mut self) -> Vec<Module> {
+        self.store.0.as_store_opaque().debug_all_modules()
+    }
+}
+
+impl StoreOpaque {
+    fn debug_exit_frames(&mut self) -> impl Iterator<Item = FrameHandle> {
+        let activations = if self.engine().tunables().debug_guest {
+            Backtrace::activations(self)
+        } else {
+            vec![]
+        };
+
+        activations
+            .into_iter()
+            // SAFETY: each activation is currently active and will
+            // remain so (we have a mutable borrow of the store).
+            .filter_map(|act| unsafe { FrameHandle::exit_frame(self, act) })
+    }
+
+    fn edit_breakpoints<'a>(&'a mut self) -> Option<BreakpointEdit<'a>> {
         if !self.engine().tunables().debug_guest {
             return None;
         }
 
-        let (breakpoints, registry) = self.0.breakpoints_and_registry_mut();
+        let (breakpoints, registry) = self.breakpoints_and_registry_mut();
         Some(breakpoints.edit(registry))
+    }
+
+    fn debug_all_instances(&mut self) -> Vec<Instance> {
+        if !self.engine().tunables().debug_guest {
+            return vec![];
+        }
+
+        self.all_instances().collect()
+    }
+
+    fn debug_all_modules(&self) -> Vec<Module> {
+        if !self.engine().tunables().debug_guest {
+            return vec![];
+        }
+
+        self.modules().all_modules().cloned().collect()
+    }
+}
+
+impl Instance {
+    /// Get access to a global within this instance's globals index
+    /// space.
+    ///
+    /// This permits accessing globals whether they are exported or
+    /// not. However, it is only available for purposes of debugging,
+    /// and so is only permitted when `guest_debug` is enabled in the
+    /// Engine's configuration. The intent of the Wasmtime API is to
+    /// enforce the Wasm type system's encapsulation even in the host
+    /// API, except where necessary for developer tooling.
+    ///
+    /// `None` is returned for any global index that is out-of-bounds.
+    ///
+    /// `None` is returned if guest-debugging is not enabled in the
+    /// engine configuration for this Store.
+    pub fn debug_global(
+        &self,
+        mut store: impl AsContextMut,
+        global_index: u32,
+    ) -> Option<crate::Global> {
+        self.debug_export(
+            store.as_context_mut().0,
+            GlobalIndex::from_bits(global_index).into(),
+        )
+        .and_then(|s| s.into_global())
+    }
+
+    /// Get access to a memory (unshared only) within this instance's
+    /// memory index space.
+    ///
+    /// This permits accessing memories whether they are exported or
+    /// not. However, it is only available for purposes of debugging,
+    /// and so is only permitted when `guest_debug` is enabled in the
+    /// Engine's configuration. The intent of the Wasmtime API is to
+    /// enforce the Wasm type system's encapsulation even in the host
+    /// API, except where necessary for developer tooling.
+    ///
+    /// `None` is returned for any memory index that is out-of-bounds.
+    ///
+    /// `None` is returned for any shared memory (use
+    /// `debug_shared_memory` instead).
+    ///
+    /// `None` is returned if guest-debugging is not enabled in the
+    /// engine configuration for this Store.
+    pub fn debug_memory(
+        &self,
+        mut store: impl AsContextMut,
+        memory_index: u32,
+    ) -> Option<crate::Memory> {
+        self.debug_export(
+            store.as_context_mut().0,
+            MemoryIndex::from_bits(memory_index).into(),
+        )
+        .and_then(|s| s.into_memory())
+    }
+
+    /// Get access to a shared memory within this instance's memory
+    /// index space.
+    ///
+    /// This permits accessing memories whether they are exported or
+    /// not. However, it is only available for purposes of debugging,
+    /// and so is only permitted when `guest_debug` is enabled in the
+    /// Engine's configuration. The intent of the Wasmtime API is to
+    /// enforce the Wasm type system's encapsulation even in the host
+    /// API, except where necessary for developer tooling.
+    ///
+    /// `None` is returned for any memory index that is out-of-bounds.
+    ///
+    /// `None` is returned for any unshared memory (use `debug_memory`
+    /// instead).
+    ///
+    /// `None` is returned if guest-debugging is not enabled in the
+    /// engine configuration for this Store.
+    pub fn debug_shared_memory(
+        &self,
+        mut store: impl AsContextMut,
+        memory_index: u32,
+    ) -> Option<crate::SharedMemory> {
+        self.debug_export(
+            store.as_context_mut().0,
+            MemoryIndex::from_bits(memory_index).into(),
+        )
+        .and_then(|s| s.into_shared_memory())
+    }
+
+    /// Get access to a table within this instance's table index
+    /// space.
+    ///
+    /// This permits accessing tables whether they are exported or
+    /// not. However, it is only available for purposes of debugging,
+    /// and so is only permitted when `guest_debug` is enabled in the
+    /// Engine's configuration. The intent of the Wasmtime API is to
+    /// enforce the Wasm type system's encapsulation even in the host
+    /// API, except where necessary for developer tooling.
+    ///
+    /// `None` is returned for any table index that is out-of-bounds.
+    ///
+    /// `None` is returned if guest-debugging is not enabled in the
+    /// engine configuration for this Store.
+    pub fn debug_table(
+        &self,
+        mut store: impl AsContextMut,
+        table_index: u32,
+    ) -> Option<crate::Table> {
+        self.debug_export(
+            store.as_context_mut().0,
+            TableIndex::from_bits(table_index).into(),
+        )
+        .and_then(|s| s.into_table())
+    }
+
+    /// Get access to a function within this instance's function index
+    /// space.
+    ///
+    /// This permits accessing functions whether they are exported or
+    /// not. However, it is only available for purposes of debugging,
+    /// and so is only permitted when `guest_debug` is enabled in the
+    /// Engine's configuration. The intent of the Wasmtime API is to
+    /// enforce the Wasm type system's encapsulation even in the host
+    /// API, except where necessary for developer tooling.
+    ///
+    /// `None` is returned for any function index that is
+    /// out-of-bounds.
+    ///
+    /// `None` is returned if guest-debugging is not enabled in the
+    /// engine configuration for this Store.
+    pub fn debug_function(
+        &self,
+        mut store: impl AsContextMut,
+        function_index: u32,
+    ) -> Option<crate::Func> {
+        self.debug_export(
+            store.as_context_mut().0,
+            FuncIndex::from_bits(function_index).into(),
+        )
+        .and_then(|s| s.into_func())
+    }
+
+    /// Get access to a tag within this instance's tag index space.
+    ///
+    /// This permits accessing tags whether they are exported or
+    /// not. However, it is only available for purposes of debugging,
+    /// and so is only permitted when `guest_debug` is enabled in the
+    /// Engine's configuration. The intent of the Wasmtime API is to
+    /// enforce the Wasm type system's encapsulation even in the host
+    /// API, except where necessary for developer tooling.
+    ///
+    /// `None` is returned for any tag index that is out-of-bounds.
+    ///
+    /// `None` is returned if guest-debugging is not enabled in the
+    /// engine configuration for this Store.
+    pub fn debug_tag(&self, mut store: impl AsContextMut, tag_index: u32) -> Option<crate::Tag> {
+        self.debug_export(
+            store.as_context_mut().0,
+            TagIndex::from_bits(tag_index).into(),
+        )
+        .and_then(|s| s.into_tag())
+    }
+
+    fn debug_export(&self, store: &mut StoreOpaque, index: EntityIndex) -> Option<Extern> {
+        if !store.engine().tunables().debug_guest {
+            return None;
+        }
+
+        let env_module = self._module(store).env_module();
+        if !env_module.is_valid(index) {
+            return None;
+        }
+        let store_id = store.id();
+        let (instance, registry) = store.instance_and_module_registry_mut(self.id());
+        // SAFETY: the `store` and `registry` are associated with
+        // this instance as we fetched the instance directly from
+        // the store above.
+        let export = unsafe { instance.get_export_by_index_mut(registry, store_id, index) };
+        Some(Extern::from_wasmtime_export(export, store.engine()))
     }
 }
 
@@ -83,158 +370,210 @@ impl<'a, T> StoreContext<'a, T> {
     }
 }
 
-/// A view of an active stack frame, with the ability to move up the
-/// stack.
+/// A handle to a stack frame, valid as long as execution is not
+/// resumed in the associated `Store`.
 ///
-/// See the documentation on `Store::debug_frames` for more information
-/// about which frames this view will show.
-pub struct DebugFrameCursor<'a, T: 'static> {
-    /// Iterator over frames.
-    ///
-    /// This iterator owns the store while the view exists (accessible
-    /// as `iter.store`).
-    iter: StoreBacktrace<'a, T>,
+/// This handle can be held and cloned and used to refer to a frame
+/// within a paused store. It is cheap: it internally consists of a
+/// pointer to the actual frame, together with some metadata to
+/// determine when that pointer has gone stale.
+///
+/// At the API level, any usage of this frame handle requires a
+/// mutable borrow of the `Store`, because the `Store` logically owns
+/// the stack(s) for any execution within it. However, the existence
+/// of the handle itself does not hold a borrow on the `Store`; hence,
+/// the `Store` can continue to be used and queried, and some state
+/// (e.g. memories, tables, GC objects) can even be mutated, as long
+/// as execution is not resumed. The intent of this API is to allow a
+/// wide variety of debugger implementation strategies that expose
+/// stack frames and also allow other commands/actions at the same
+/// time.
+///
+/// The user can use [`FrameHandle::is_valid`] to determine if the
+/// handle is still valid and usable.
+#[derive(Clone)]
+pub struct FrameHandle {
+    /// The unwinder cursor at this frame.
+    cursor: FrameCursor,
 
-    /// Is the next frame to be visited by the iterator a trapping
-    /// frame?
-    ///
-    /// This alters how we interpret `pc`: for a trap, we look at the
-    /// instruction that *starts* at `pc`, while for all frames
-    /// further up the stack (i.e., at a callsite), we look at the
-    /// instruction that *ends* at `pc`.
-    is_trapping_frame: bool,
+    /// The index of the virtual frame within the physical frame.
+    virtual_frame_idx: usize,
 
-    /// Virtual frame queue: decoded from `iter`, not yet
-    /// yielded. Innermost frame on top (last).
-    ///
-    /// This is only non-empty when there is more than one virtual
-    /// frame in a physical frame (i.e., for inlining); thus, its size
-    /// is bounded by our inlining depth.
-    frames: Vec<VirtualFrame>,
+    /// The unique Store this frame came from, to ensure the handle is
+    /// used with the correct Store.
+    store_id: StoreId,
 
-    /// Currently focused virtual frame.
-    current: Option<FrameData>,
+    /// Store `execution_version`.
+    store_version: u64,
 }
 
-/// The result type from `DebugFrameCursor::move_to_parent()`:
-/// indicates whether the cursor skipped over host code to move to the
-/// next Wasm frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FrameParentResult {
-    /// The new frame is in the same Wasm activation.
-    SameActivation,
-    /// The new frame is in the next higher Wasm activation on the
-    /// stack.
-    NewActivation,
-}
-
-impl<'a, T: 'static> DebugFrameCursor<'a, T> {
-    /// Move up to the next frame in the activation.
+impl FrameHandle {
+    /// Create a new FrameHandle at the exit frame of an activation.
     ///
-    /// Returns `FrameParentMove` as an indication whether the
-    /// moved-to frame is in the same activation or skipped over host
-    /// code.
-    pub fn move_to_parent(&mut self) -> FrameParentResult {
-        // If there are no virtual frames to yield, take and decode
-        // the next physical frame.
-        //
-        // Note that `if` rather than `while` here, and the assert
-        // that we get some virtual frames back, enforce the invariant
-        // that each physical frame decodes to at least one virtual
-        // frame (i.e., there are no physical frames for interstitial
-        // functions or other things that we completely ignore). If
-        // this ever changes, we can remove the assert and convert
-        // this to a loop that polls until it finds virtual frames.
-        let mut result = FrameParentResult::SameActivation;
-        self.current = None;
-        while self.frames.is_empty() {
-            let Some(next_frame) = self.iter.next() else {
-                return result;
-            };
-            self.frames = match next_frame {
-                FrameOrHostCode::Frame(frame) => VirtualFrame::decode(
-                    self.iter.store_mut().0.as_store_opaque(),
-                    frame,
-                    self.is_trapping_frame,
-                ),
-                FrameOrHostCode::HostCode => {
-                    result = FrameParentResult::NewActivation;
-                    continue;
-                }
-            };
-            debug_assert!(!self.frames.is_empty());
-            self.is_trapping_frame = false;
+    /// # Safety
+    ///
+    /// The provided activation must be valid currently.
+    unsafe fn exit_frame(store: &mut StoreOpaque, activation: Activation) -> Option<FrameHandle> {
+        // SAFETY: activation is valid as per our safety condition.
+        let mut cursor = unsafe { activation.cursor() };
+
+        // Find the first virtual frame. Each physical frame may have
+        // zero or more virtual frames.
+        while !cursor.done() {
+            let (cache, registry) = store.frame_data_cache_mut_and_registry();
+            let frames = cache.lookup_or_compute(registry, cursor.frame());
+            if frames.len() > 0 {
+                return Some(FrameHandle {
+                    cursor,
+                    virtual_frame_idx: 0,
+                    store_id: store.id(),
+                    store_version: store.vm_store_context().execution_version,
+                });
+            }
+            // SAFETY: activation is still valid (valid on entry per
+            // our safety condition, and we have not returned control
+            // since above).
+            unsafe {
+                cursor.advance(store.unwinder());
+            }
         }
 
-        // Take a frame and focus it as the current one.
-        self.current = self.frames.pop().map(|vf| FrameData::compute(vf));
-        result
+        None
     }
 
-    /// Has the iterator reached the end of the activation?
-    pub fn done(&self) -> bool {
-        self.current.is_none()
+    /// Determine whether this handle can still be used to refer to a
+    /// frame.
+    pub fn is_valid(&self, mut store: impl AsContextMut) -> bool {
+        let store = store.as_context_mut();
+        self.is_valid_impl(store.0.as_store_opaque())
     }
 
-    fn frame_data(&self) -> &FrameData {
-        self.current.as_ref().expect("No current frame")
+    fn is_valid_impl(&self, store: &StoreOpaque) -> bool {
+        let id = store.id();
+        let version = store.vm_store_context().execution_version;
+        self.store_id == id && self.store_version == version
     }
 
-    fn raw_instance(&self) -> &crate::vm::Instance {
+    /// Get a handle to the next frame up the activation (the one that
+    /// called this frame), if any.
+    pub fn parent(&self, mut store: impl AsContextMut) -> Result<Option<FrameHandle>> {
+        let mut store = store.as_context_mut();
+        if !self.is_valid(&mut store) {
+            crate::error::bail!("Frame handle is no longer valid.");
+        }
+
+        let mut parent = self.clone();
+        parent.virtual_frame_idx += 1;
+
+        while !parent.cursor.done() {
+            let (cache, registry) = store
+                .0
+                .as_store_opaque()
+                .frame_data_cache_mut_and_registry();
+            let frames = cache.lookup_or_compute(registry, parent.cursor.frame());
+            if parent.virtual_frame_idx < frames.len() {
+                return Ok(Some(parent));
+            }
+            parent.virtual_frame_idx = 0;
+            // SAFETY: activation is valid because we checked validity
+            // wrt execution version at the top of this function, and
+            // we have not returned since.
+            unsafe {
+                parent.cursor.advance(store.0.as_store_opaque().unwinder());
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn frame_data<'a>(&self, store: &'a mut StoreOpaque) -> Result<&'a FrameData> {
+        if !self.is_valid_impl(store) {
+            crate::error::bail!("Frame handle is no longer valid.");
+        }
+        let (cache, registry) = store.frame_data_cache_mut_and_registry();
+        let frames = cache.lookup_or_compute(registry, self.cursor.frame());
+        // `virtual_frame_idx` counts up for ease of iteration
+        // behavior, while the frames are stored in outer-to-inner
+        // (i.e., caller to callee) order, so we need to reverse here.
+        Ok(&frames[frames.len() - 1 - self.virtual_frame_idx])
+    }
+
+    fn raw_instance<'a>(&self, store: &mut StoreOpaque) -> Result<&'a crate::vm::Instance> {
+        let frame_data = self.frame_data(store)?;
+
         // Read out the vmctx slot.
 
-        // SAFETY: vmctx is always at offset 0 in the slot.
-        // (See crates/cranelift/src/func_environ.rs in `update_stack_slot_vmctx()`.)
-        let vmctx: *mut VMContext = unsafe { *(self.frame_data().slot_addr as *mut _) };
+        // SAFETY: vmctx is always at offset 0 in the slot.  (See
+        // crates/cranelift/src/func_environ.rs in
+        // `update_stack_slot_vmctx()`.)  The frame/activation is
+        // still valid because we verified this in `frame_data` above.
+        let vmctx: usize =
+            unsafe { *(frame_data.slot_addr(self.cursor.frame().fp()) as *mut usize) };
+        let vmctx: *mut VMContext = core::ptr::with_exposed_provenance_mut(vmctx);
         let vmctx = NonNull::new(vmctx).expect("null vmctx in debug state slot");
         // SAFETY: the stored vmctx value is a valid instance in this
         // store; we only visit frames from this store in the
         // backtrace.
         let instance = unsafe { crate::vm::Instance::from_vmctx(vmctx) };
         // SAFETY: the instance pointer read above is valid.
-        unsafe { instance.as_ref() }
+        Ok(unsafe { instance.as_ref() })
     }
 
     /// Get the instance associated with the current frame.
-    pub fn instance(&mut self) -> Instance {
-        let instance = self.raw_instance();
-        Instance::from_wasmtime(instance.id(), self.iter.store_mut().0.as_store_opaque())
+    pub fn instance(&self, mut store: impl AsContextMut) -> Result<Instance> {
+        let store = store.as_context_mut();
+        let instance = self.raw_instance(store.0.as_store_opaque())?;
+        let id = instance.id();
+        Ok(Instance::from_wasmtime(id, store.0.as_store_opaque()))
     }
 
     /// Get the module associated with the current frame, if any
     /// (i.e., not a container instance for a host-created entity).
-    pub fn module(&self) -> Option<&Module> {
-        let instance = self.raw_instance();
-        instance.runtime_module()
+    pub fn module<'a, T: 'static>(
+        &self,
+        store: impl Into<StoreContextMut<'a, T>>,
+    ) -> Result<Option<&'a Module>> {
+        let store = store.into();
+        let instance = self.raw_instance(store.0.as_store_opaque())?;
+        Ok(instance.runtime_module())
     }
 
     /// Get the raw function index associated with the current frame, and the
-    /// PC as an offset within its code section, if it is a Wasm
-    /// function directly from the given `Module` (rather than a
-    /// trampoline).
-    pub fn wasm_function_index_and_pc(&self) -> Option<(DefinedFuncIndex, u32)> {
-        let data = self.frame_data();
-        let FuncKey::DefinedWasmFunction(module, func) = data.func_key else {
-            return None;
+    /// module-relative PC as an offset within the module binary, if
+    /// this is a Wasm function directly from the given `Module`
+    /// (rather than a trampoline).
+    pub fn wasm_function_index_and_pc(
+        &self,
+        mut store: impl AsContextMut,
+    ) -> Result<Option<(DefinedFuncIndex, ModulePC)>> {
+        let mut store = store.as_context_mut();
+        let frame_data = self.frame_data(store.0.as_store_opaque())?;
+        let FuncKey::DefinedWasmFunction(module, func) = frame_data.func_key else {
+            return Ok(None);
         };
+        let wasm_pc = frame_data.wasm_pc;
         debug_assert_eq!(
             module,
-            self.module()
+            self.module(&mut store)?
                 .expect("module should be defined if this is a defined function")
                 .env_module()
                 .module_index
         );
-        Some((func, data.wasm_pc))
+        Ok(Some((func, wasm_pc)))
     }
 
     /// Get the number of locals in this frame.
-    pub fn num_locals(&self) -> u32 {
-        u32::try_from(self.frame_data().locals.len()).unwrap()
+    pub fn num_locals(&self, mut store: impl AsContextMut) -> Result<u32> {
+        let store = store.as_context_mut();
+        let frame_data = self.frame_data(store.0.as_store_opaque())?;
+        Ok(u32::try_from(frame_data.locals.len()).unwrap())
     }
 
     /// Get the depth of the operand stack in this frame.
-    pub fn num_stacks(&self) -> u32 {
-        u32::try_from(self.frame_data().stack.len()).unwrap()
+    pub fn num_stacks(&self, mut store: impl AsContextMut) -> Result<u32> {
+        let store = store.as_context_mut();
+        let frame_data = self.frame_data(store.0.as_store_opaque())?;
+        Ok(u32::try_from(frame_data.stack.len()).unwrap())
     }
 
     /// Get the type and value of the given local in this frame.
@@ -243,13 +582,16 @@ impl<'a, T: 'static> DebugFrameCursor<'a, T> {
     ///
     /// Panics if the index is out-of-range (greater than
     /// `num_locals()`).
-    pub fn local(&mut self, index: u32) -> Val {
-        let data = self.frame_data();
-        let (offset, ty) = data.locals[usize::try_from(index).unwrap()];
-        let slot_addr = data.slot_addr;
+    pub fn local(&self, mut store: impl AsContextMut, index: u32) -> Result<Val> {
+        let store = store.as_context_mut();
+        let frame_data = self.frame_data(store.0.as_store_opaque())?;
+        let (offset, ty) = frame_data.locals[usize::try_from(index).unwrap()];
+        let slot_addr = frame_data.slot_addr(self.cursor.frame().fp());
         // SAFETY: compiler produced metadata to describe this local
-        // slot and stored a value of the correct type into it.
-        unsafe { read_value(&mut self.iter.store_mut().0, slot_addr, offset, ty) }
+        // slot and stored a value of the correct type into it. Slot
+        // address is valid because we checked liveness of the
+        // activation/frame via `frame_data` above.
+        Ok(unsafe { read_value(store.0.as_store_opaque(), slot_addr, offset, ty) })
     }
 
     /// Get the type and value of the given operand-stack value in
@@ -259,33 +601,68 @@ impl<'a, T: 'static> DebugFrameCursor<'a, T> {
     /// from there are more recently pushed values.  In other words,
     /// index order reads the Wasm virtual machine's abstract stack
     /// state left-to-right.
-    pub fn stack(&mut self, index: u32) -> Val {
-        let data = self.frame_data();
-        let (offset, ty) = data.stack[usize::try_from(index).unwrap()];
-        let slot_addr = data.slot_addr;
+    pub fn stack(&self, mut store: impl AsContextMut, index: u32) -> Result<Val> {
+        let store = store.as_context_mut();
+        let frame_data = self.frame_data(store.0.as_store_opaque())?;
+        let (offset, ty) = frame_data.stack[usize::try_from(index).unwrap()];
+        let slot_addr = frame_data.slot_addr(self.cursor.frame().fp());
         // SAFETY: compiler produced metadata to describe this
         // operand-stack slot and stored a value of the correct type
-        // into it.
-        unsafe { read_value(&mut self.iter.store_mut().0, slot_addr, offset, ty) }
+        // into it. Slot address is valid because we checked liveness
+        // of the activation/frame via `frame_data` above.
+        Ok(unsafe { read_value(store.0.as_store_opaque(), slot_addr, offset, ty) })
+    }
+}
+
+/// A cache from `StoreCodePC`s for modules' private code within a
+/// store to pre-computed layout data for the virtual stack frame(s)
+/// present at that physical PC.
+pub(crate) struct FrameDataCache {
+    /// For a given physical PC, the list of virtual frames, from
+    /// inner (most recently called/inlined) to outer.
+    by_pc: BTreeMap<StoreCodePC, Vec<FrameData>>,
+}
+
+impl FrameDataCache {
+    pub(crate) fn new() -> FrameDataCache {
+        FrameDataCache {
+            by_pc: BTreeMap::new(),
+        }
+    }
+
+    /// Look up (or compute) the list of `FrameData`s from a physical
+    /// `Frame`.
+    fn lookup_or_compute<'a>(
+        &'a mut self,
+        registry: &ModuleRegistry,
+        frame: Frame,
+    ) -> &'a [FrameData] {
+        let pc = StoreCodePC::from_raw(frame.pc());
+        match self.by_pc.entry(pc) {
+            Entry::Occupied(frames) => frames.into_mut(),
+            Entry::Vacant(v) => {
+                // Although inlining can mix modules, `module` is the
+                // module that actually contains the physical PC
+                // (i.e., the outermost function that inlined the
+                // others).
+                let (module, frames) = VirtualFrame::decode(registry, frame.pc());
+                let frames = frames
+                    .into_iter()
+                    .map(|frame| FrameData::compute(frame, &module))
+                    .collect::<Vec<_>>();
+                v.insert(frames)
+            }
+        }
     }
 }
 
 /// Internal data pre-computed for one stack frame.
 ///
-/// This combines physical frame info (pc, fp) with the module this PC
-/// maps to (yielding a frame table) and one frame as produced by the
-/// progpoint lookup (Wasm PC, frame descriptor index, stack shape).
+/// This represents one frame as produced by the progpoint lookup
+/// (Wasm PC, frame descriptor index, stack shape).
 struct VirtualFrame {
-    /// The frame pointer.
-    fp: *const u8,
-    /// The resolved module handle for the physical PC.
-    ///
-    /// The module for each inlined frame within the physical frame is
-    /// resolved from the vmctx reachable for each such frame; this
-    /// module isused only for looking up the frame table.
-    module: Module,
-    /// The Wasm PC for this frame.
-    wasm_pc: u32,
+    /// The module-relative Wasm PC for this frame.
+    wasm_pc: ModulePC,
     /// The frame descriptor for this frame.
     frame_descriptor: FrameTableDescriptorIndex,
     /// The stack shape for this frame.
@@ -295,38 +672,34 @@ struct VirtualFrame {
 impl VirtualFrame {
     /// Return virtual frames corresponding to a physical frame, from
     /// outermost to innermost.
-    fn decode(store: &mut StoreOpaque, frame: Frame, is_trapping_frame: bool) -> Vec<VirtualFrame> {
-        let (module_with_code, pc) = store
-            .modules()
-            .module_and_code_by_pc(frame.pc())
+    fn decode(registry: &ModuleRegistry, pc: usize) -> (Module, Vec<VirtualFrame>) {
+        let (module_with_code, pc) = registry
+            .module_and_code_by_pc(pc)
             .expect("Wasm frame PC does not correspond to a module");
         let module = module_with_code.module();
         let table = module.frame_table().unwrap();
         let pc = u32::try_from(pc).expect("PC offset too large");
-        let pos = if is_trapping_frame {
-            FrameInstPos::Pre
-        } else {
-            FrameInstPos::Post
-        };
-        let program_points = table.find_program_point(pc, pos).expect("There must be a program point record in every frame when debug instrumentation is enabled");
+        let program_points = table.find_program_point(pc, FrameInstPos::Post)
+            .expect("There must be a program point record in every frame when debug instrumentation is enabled");
 
-        program_points
-            .map(|(wasm_pc, frame_descriptor, stack_shape)| VirtualFrame {
-                fp: core::ptr::with_exposed_provenance(frame.fp()),
-                module: module.clone(),
-                wasm_pc,
-                frame_descriptor,
-                stack_shape,
-            })
-            .collect()
+        (
+            module.clone(),
+            program_points
+                .map(|(wasm_pc, frame_descriptor, stack_shape)| VirtualFrame {
+                    wasm_pc,
+                    frame_descriptor,
+                    stack_shape,
+                })
+                .collect(),
+        )
     }
 }
 
 /// Data computed when we visit a given frame.
 struct FrameData {
-    slot_addr: *const u8,
+    slot_to_fp_offset: usize,
     func_key: FuncKey,
-    wasm_pc: u32,
+    wasm_pc: ModulePC,
     /// Shape of locals in this frame.
     ///
     /// We need to store this locally because `FrameView` cannot
@@ -346,16 +719,14 @@ struct FrameData {
 }
 
 impl FrameData {
-    fn compute(frame: VirtualFrame) -> Self {
-        let frame_table = frame.module.frame_table().unwrap();
+    fn compute(frame: VirtualFrame, module: &Module) -> Self {
+        let frame_table = module.frame_table().unwrap();
         // Parse the frame descriptor.
         let (data, slot_to_fp_offset) = frame_table
             .frame_descriptor(frame.frame_descriptor)
             .unwrap();
         let frame_state_slot = FrameStateSlot::parse(data).unwrap();
-        let slot_addr = frame
-            .fp
-            .wrapping_sub(usize::try_from(slot_to_fp_offset).unwrap());
+        let slot_to_fp_offset = usize::try_from(slot_to_fp_offset).unwrap();
 
         // Materialize the stack shape so we have O(1) access to its
         // elements, and so we don't need to keep the borrow to the
@@ -370,12 +741,17 @@ impl FrameData {
         let locals = frame_state_slot.locals().collect::<Vec<_>>();
 
         FrameData {
-            slot_addr,
+            slot_to_fp_offset,
             func_key: frame_state_slot.func_key(),
             wasm_pc: frame.wasm_pc,
             stack,
             locals,
         }
+    }
+
+    fn slot_addr(&self, fp: usize) -> *mut u8 {
+        let fp: *mut u8 = core::ptr::with_exposed_provenance_mut(fp);
+        fp.wrapping_sub(self.slot_to_fp_offset)
     }
 }
 
@@ -417,7 +793,8 @@ unsafe fn read_value(
             Val::F64(value)
         }
         FrameValType::V128 => {
-            let value = unsafe { *(address as *const u128) };
+            // Vectors are always stored as little-endian.
+            let value = unsafe { u128::from_le_bytes(*(address as *const [u8; 16])) };
             Val::V128(value.into())
         }
         FrameValType::AnyRef => {
@@ -485,24 +862,12 @@ pub(crate) fn gc_refs_in_frame<'a>(ft: FrameTable<'a>, pc: u32, fp: *mut usize) 
     ret
 }
 
-impl<'a, T: 'static> AsContext for DebugFrameCursor<'a, T> {
-    type Data = T;
-    fn as_context(&self) -> StoreContext<'_, Self::Data> {
-        StoreContext(self.iter.store().0)
-    }
-}
-impl<'a, T: 'static> AsContextMut for DebugFrameCursor<'a, T> {
-    fn as_context_mut(&mut self) -> StoreContextMut<'_, Self::Data> {
-        StoreContextMut(self.iter.store_mut().0)
-    }
-}
-
 /// One debug event that occurs when running Wasm code on a store with
 /// a debug handler attached.
 #[derive(Debug)]
 pub enum DebugEvent<'a> {
-    /// An `anyhow::Error` was raised by a hostcall.
-    HostcallError(&'a anyhow::Error),
+    /// A [`wasmtime::Error`](crate::Error) was raised by a hostcall.
+    HostcallError(&'a crate::Error),
     /// An exception is thrown and caught by Wasm. The current state
     /// is at the throw-point.
     CaughtExceptionThrown(OwnedRooted<ExnRef>),
@@ -560,6 +925,8 @@ pub enum DebugEvent<'a> {
 ///       another async stack, and the stack that polls the future
 ///       running a particular Wasm invocation could change after each
 ///       suspend point in the handler.
+///
+/// [`Store::run_concurrent`]: crate::Store::run_concurrent
 pub trait DebugHandler: Clone + Send + Sync + 'static {
     /// The data expected on the store that this handler is attached
     /// to.
@@ -578,23 +945,31 @@ pub trait DebugHandler: Clone + Send + Sync + 'static {
 pub(crate) struct BreakpointState {
     /// Single-step mode.
     single_step: bool,
-    /// Breakpoints added individually.
-    breakpoints: BTreeSet<BreakpointKey>,
+    /// Breakpoints added individually. Maps from the actual
+    /// (possibly slipped-forward) breakpoint key to a reference
+    /// count. Multiple requested PCs may map to the same actual
+    /// breakpoint when they are slipped forward.
+    breakpoints: BTreeMap<BreakpointKey, usize>,
+    /// When a requested breakpoint PC does not exactly match an
+    /// opcode boundary, we "slip" it forward to the next available
+    /// PC. This map records the redirect from the requested key to
+    /// the actual key so that `remove_breakpoint` can undo it.
+    breakpoint_redirects: BTreeMap<BreakpointKey, BreakpointKey>,
 }
 
 /// A breakpoint.
 pub struct Breakpoint {
     /// Reference to the module in which we are setting the breakpoint.
     pub module: Module,
-    /// Wasm PC offset within the module.
-    pub pc: u32,
+    /// Module-relative Wasm PC offset.
+    pub pc: ModulePC,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct BreakpointKey(CompiledModuleId, u32);
+struct BreakpointKey(CompiledModuleId, ModulePC);
 
 impl BreakpointKey {
-    fn from_raw(module: &Module, pc: u32) -> BreakpointKey {
+    fn from_raw(module: &Module, pc: ModulePC) -> BreakpointKey {
         BreakpointKey(module.id(), pc)
     }
 
@@ -638,21 +1013,40 @@ impl BreakpointState {
         &'a self,
         registry: &'a ModuleRegistry,
     ) -> impl Iterator<Item = Breakpoint> + 'a {
-        self.breakpoints.iter().map(|key| key.get(registry))
+        self.breakpoints.keys().map(|key| key.get(registry))
     }
 
     pub(crate) fn is_single_step(&self) -> bool {
         self.single_step
     }
+
+    /// Internal helper to patch a new module for
+    /// single-stepping. When a module is newly registered in a
+    /// `Store`, we need to patch all breakpoints into the copy for
+    /// this `Store` if single-stepping is currently enabled.
+    pub(crate) fn patch_new_module(&self, code: &mut StoreCode, module: &Module) -> Result<()> {
+        // Apply single-step state if single-stepping is enabled. Note
+        // that no other individual breakpoints will exist yet (as
+        // this is a newly registered module).
+        if self.single_step {
+            let mem = code.code_memory_mut().unwrap();
+            mem.unpublish()?;
+            BreakpointEdit::apply_single_step(mem, module, true, |_key| false)?;
+            mem.publish()?;
+        }
+        Ok(())
+    }
 }
 
 impl<'a> BreakpointEdit<'a> {
     fn get_code_memory<'b>(
+        breakpoints: &BreakpointState,
         registry: &'b mut ModuleRegistry,
         dirty_modules: &mut BTreeSet<StoreCodePC>,
         module: &Module,
     ) -> Result<&'b mut CodeMemory> {
-        let store_code_pc = registry.store_code_base_or_register(module)?;
+        let store_code_pc =
+            registry.store_code_base_or_register(module, RegisterBreakpointState(breakpoints))?;
         let code_memory = registry
             .store_code_mut(store_code_pc)
             .expect("Just checked presence above")
@@ -684,17 +1078,35 @@ impl<'a> BreakpointEdit<'a> {
     /// Add a breakpoint in the given module at the given PC in that
     /// module.
     ///
+    /// If the requested PC does not fall exactly on an opcode
+    /// boundary, the breakpoint is "slipped" forward to the next
+    /// available opcode PC.
+    ///
     /// No effect if the breakpoint is already set.
-    pub fn add_breakpoint(&mut self, module: &Module, pc: u32) -> Result<()> {
-        let key = BreakpointKey::from_raw(module, pc);
-        self.state.breakpoints.insert(key);
-        log::trace!("patching in breakpoint {key:?}");
-        let mem = Self::get_code_memory(self.registry, &mut self.dirty_modules, module)?;
+    pub fn add_breakpoint(&mut self, module: &Module, pc: ModulePC) -> Result<()> {
         let frame_table = module
             .frame_table()
             .expect("Frame table must be present when guest-debug is enabled");
-        let patches = frame_table.lookup_breakpoint_patches_by_pc(pc);
-        Self::patch(patches, mem, true);
+        let actual_pc = frame_table.nearest_breakpoint(pc).unwrap_or(pc);
+        let requested_key = BreakpointKey::from_raw(module, pc);
+        let actual_key = BreakpointKey::from_raw(module, actual_pc);
+
+        if actual_pc != pc {
+            log::trace!("slipping breakpoint from {requested_key:?} to {actual_key:?}");
+            self.state
+                .breakpoint_redirects
+                .insert(requested_key, actual_key);
+        }
+
+        let refcount = self.state.breakpoints.entry(actual_key).or_insert(0);
+        *refcount += 1;
+        if *refcount == 1 {
+            // First reference: actually patch the code.
+            let mem =
+                Self::get_code_memory(self.state, self.registry, &mut self.dirty_modules, module)?;
+            let patches = frame_table.lookup_breakpoint_patches_by_pc(actual_pc);
+            Self::patch(patches, mem, true);
+        }
         Ok(())
     }
 
@@ -702,16 +1114,53 @@ impl<'a> BreakpointEdit<'a> {
     /// that module.
     ///
     /// No effect if the breakpoint was not set.
-    pub fn remove_breakpoint(&mut self, module: &Module, pc: u32) -> Result<()> {
-        let key = BreakpointKey::from_raw(module, pc);
-        self.state.breakpoints.remove(&key);
-        if !self.state.single_step {
-            let mem = Self::get_code_memory(self.registry, &mut self.dirty_modules, module)?;
-            let frame_table = module
-                .frame_table()
-                .expect("Frame table must be present when guest-debug is enabled");
-            let patches = frame_table.lookup_breakpoint_patches_by_pc(pc);
-            Self::patch(patches, mem, false);
+    pub fn remove_breakpoint(&mut self, module: &Module, pc: ModulePC) -> Result<()> {
+        let requested_key = BreakpointKey::from_raw(module, pc);
+        let actual_key = self
+            .state
+            .breakpoint_redirects
+            .remove(&requested_key)
+            .unwrap_or(requested_key);
+        let actual_pc = actual_key.1;
+
+        if let Some(refcount) = self.state.breakpoints.get_mut(&actual_key) {
+            *refcount -= 1;
+            if *refcount == 0 {
+                self.state.breakpoints.remove(&actual_key);
+                if !self.state.single_step {
+                    let mem = Self::get_code_memory(
+                        self.state,
+                        self.registry,
+                        &mut self.dirty_modules,
+                        module,
+                    )?;
+                    let frame_table = module
+                        .frame_table()
+                        .expect("Frame table must be present when guest-debug is enabled");
+                    let patches = frame_table.lookup_breakpoint_patches_by_pc(actual_pc);
+                    Self::patch(patches, mem, false);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_single_step<F: Fn(&BreakpointKey) -> bool>(
+        mem: &mut CodeMemory,
+        module: &Module,
+        enabled: bool,
+        key_enabled: F,
+    ) -> Result<()> {
+        let table = module
+            .frame_table()
+            .expect("Frame table must be present when guest-debug is enabled");
+        for (wasm_pc, patch) in table.breakpoint_patches() {
+            let key = BreakpointKey::from_raw(&module, wasm_pc);
+            let this_enabled = enabled || key_enabled(&key);
+            log::trace!(
+                "single_step: enabled {enabled} key {key:?} -> this_enabled {this_enabled}"
+            );
+            Self::patch(core::iter::once(patch), mem, this_enabled);
         }
         Ok(())
     }
@@ -725,20 +1174,18 @@ impl<'a> BreakpointEdit<'a> {
             "single_step({enabled}) with breakpoint set {:?}",
             self.state.breakpoints
         );
+        if self.state.single_step == enabled {
+            // No change to current state; don't go through the effort of re-patching and
+            // re-publishing code.
+            return Ok(());
+        }
         let modules = self.registry.all_modules().cloned().collect::<Vec<_>>();
         for module in modules {
-            let mem = Self::get_code_memory(self.registry, &mut self.dirty_modules, &module)?;
-            let table = module
-                .frame_table()
-                .expect("Frame table must be present when guest-debug is enabled");
-            for (wasm_pc, patch) in table.breakpoint_patches() {
-                let key = BreakpointKey::from_raw(&module, wasm_pc);
-                let this_enabled = enabled || self.state.breakpoints.contains(&key);
-                log::trace!(
-                    "single_step: enabled {enabled} key {key:?} -> this_enabled {this_enabled}"
-                );
-                Self::patch(core::iter::once(patch), mem, this_enabled);
-            }
+            let mem =
+                Self::get_code_memory(self.state, self.registry, &mut self.dirty_modules, &module)?;
+            Self::apply_single_step(mem, &module, enabled, |key| {
+                self.state.breakpoints.contains_key(key)
+            })?;
         }
 
         self.state.single_step = enabled;
@@ -790,7 +1237,7 @@ impl<'a> Drop for BreakpointEdit<'a> {
 ///
 /// [1]: https://searchfox.org/firefox-main/rev/7496c8515212669451d7e775a00c2be07da38ca5/js/src/jit/AutoWritableJitCode.h#26-56
 #[cfg(feature = "std")]
-fn abort_on_republish_error(e: anyhow::Error) -> ! {
+fn abort_on_republish_error(e: crate::Error) -> ! {
     log::error!(
         "Failed to re-publish executable code: {e:?}. Wasmtime cannot return through JIT code on the stack and cannot even panic; aborting the process."
     );
@@ -804,6 +1251,6 @@ fn abort_on_republish_error(e: anyhow::Error) -> ! {
 /// let's panic anyway; the panic propagation through the trampolines
 /// will at least deterministically crash.
 #[cfg(not(feature = "std"))]
-fn abort_on_republish_error(e: anyhow::Error) -> ! {
+fn abort_on_republish_error(e: crate::Error) -> ! {
     panic!("Failed to re-publish executable code: {e:?}");
 }

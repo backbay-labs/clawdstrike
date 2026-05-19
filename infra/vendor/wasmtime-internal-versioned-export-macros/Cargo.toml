@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "wasmtime-internal-versioned-export-macros"
-version = "41.0.4"
+version = "44.0.1"
 authors = ["The Wasmtime Project Developers"]
 build = false
 autolib = false

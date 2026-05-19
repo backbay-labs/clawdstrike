@@ -444,21 +444,9 @@ impl<'a, F: Function> Env<'a, F> {
             env.preferred_regs_by_class[RegClass::Float as usize].clone(),
             env.preferred_regs_by_class[RegClass::Vector as usize].clone(),
         ];
-        regs[0].extend(
-            env.non_preferred_regs_by_class[RegClass::Int as usize]
-                .iter()
-                .cloned(),
-        );
-        regs[1].extend(
-            env.non_preferred_regs_by_class[RegClass::Float as usize]
-                .iter()
-                .cloned(),
-        );
-        regs[2].extend(
-            env.non_preferred_regs_by_class[RegClass::Vector as usize]
-                .iter()
-                .cloned(),
-        );
+        regs[0].union_from(env.non_preferred_regs_by_class[RegClass::Int as usize]);
+        regs[1].union_from(env.non_preferred_regs_by_class[RegClass::Float as usize]);
+        regs[2].union_from(env.non_preferred_regs_by_class[RegClass::Vector as usize]);
         let allocatable_regs = PRegSet::from(env);
         let num_available_pregs: PartedByRegClass<i16> = PartedByRegClass {
             items: [
@@ -508,9 +496,9 @@ impl<'a, F: Function> Env<'a, F> {
             ],
             preferred_victim: PartedByRegClass {
                 items: [
-                    regs[0].last().cloned().unwrap_or(PReg::invalid()),
-                    regs[1].last().cloned().unwrap_or(PReg::invalid()),
-                    regs[2].last().cloned().unwrap_or(PReg::invalid()),
+                    regs[0].max_preg().unwrap_or(PReg::invalid()),
+                    regs[1].max_preg().unwrap_or(PReg::invalid()),
+                    regs[2].max_preg().unwrap_or(PReg::invalid()),
                 ],
             },
             reused_input_to_reuse_op: vec![usize::MAX; max_operand_len as usize],

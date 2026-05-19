@@ -67,16 +67,15 @@ use crate::dbg::DisplayList;
 use crate::dominator_tree::DominatorTree;
 use crate::entity::SparseSet;
 use crate::flowgraph::{BlockPredecessor, ControlFlowGraph};
-use crate::ir::ExceptionTableItem;
 use crate::ir::entities::AnyEntity;
 use crate::ir::instructions::{CallInfo, InstructionFormat, ResolvedConstraint};
 use crate::ir::{self, ArgumentExtension, BlockArg, ExceptionTable};
 use crate::ir::{
     ArgumentPurpose, Block, Constant, DynamicStackSlot, FuncRef, Function, GlobalValue, Inst,
-    JumpTable, MemFlags, MemoryTypeData, Opcode, SigRef, StackSlot, Type, Value, ValueDef,
-    ValueList, types,
+    JumpTable, MemFlags, Opcode, SigRef, StackSlot, Type, Value, ValueDef, ValueList, types,
 };
-use crate::isa::TargetIsa;
+use crate::ir::{ExceptionTableItem, Signature};
+use crate::isa::{CallConv, TargetIsa};
 use crate::print_errors::pretty_verifier_error;
 use crate::settings::FlagsOrIsa;
 use crate::timing;
@@ -84,6 +83,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt::{self, Display, Formatter};
+use cranelift_entity::packed_option::ReservedValue;
 
 /// A verifier error.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -407,53 +407,6 @@ impl<'a> Verifier<'a> {
         }
 
         // Invalid global values shouldn't stop us from verifying the rest of the function
-        Ok(())
-    }
-
-    fn verify_memory_types(&self, errors: &mut VerifierErrors) -> VerifierStepResult {
-        // Verify that all fields are statically-sized and lie within
-        // the struct, do not overlap, and are in offset order
-        for (mt, mt_data) in &self.func.memory_types {
-            match mt_data {
-                MemoryTypeData::Struct { size, fields } => {
-                    let mut last_offset = 0;
-                    for field in fields {
-                        if field.offset < last_offset {
-                            errors.report((
-                                mt,
-                                format!(
-                                    "memory type {} has a field at offset {}, which is out-of-order",
-                                    mt, field.offset
-                                ),
-                            ));
-                        }
-                        last_offset = match field.offset.checked_add(u64::from(field.ty.bytes())) {
-                            Some(o) => o,
-                            None => {
-                                errors.report((
-                                        mt,
-                                        format!(
-                                            "memory type {} has a field at offset {} of size {}; offset plus size overflows a u64",
-                                            mt, field.offset, field.ty.bytes()),
-                                ));
-                                break;
-                            }
-                        };
-
-                        if last_offset > *size {
-                            errors.report((
-                                        mt,
-                                        format!(
-                                            "memory type {} has a field at offset {} of size {} that overflows the struct size {}",
-                                            mt, field.offset, field.ty.bytes(), *size),
-                                          ));
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
         Ok(())
     }
 
@@ -2082,12 +2035,55 @@ impl<'a> Verifier<'a> {
         Ok(())
     }
 
+    fn verify_signature(
+        &self,
+        sig: &Signature,
+        entity: impl Into<AnyEntity>,
+        errors: &mut VerifierErrors,
+    ) -> VerifierStepResult {
+        match sig.call_conv {
+            CallConv::PreserveAll => {
+                if !sig.returns.is_empty() {
+                    errors.fatal((
+                        entity,
+                        "Signature with `preserve_all` ABI cannot have return values".to_string(),
+                    ))?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn verify_signatures(&self, errors: &mut VerifierErrors) -> VerifierStepResult {
+        // Verify this function's own signature.
+        self.verify_signature(&self.func.signature, AnyEntity::Function, errors)?;
+        // Verify signatures referenced by any extfunc, using that
+        // extfunc as the entity to which to attach the error.
+        for (func, funcdata) in &self.func.dfg.ext_funcs {
+            // Non-contiguous func entities result in placeholders
+            // with invalid signatures; skip them.
+            if !funcdata.signature.is_reserved_value() {
+                self.verify_signature(&self.func.dfg.signatures[funcdata.signature], func, errors)?;
+            }
+        }
+        // Verify all signatures, including those only used by
+        // e.g. indirect calls. Technically this re-verifies
+        // signatures verified above but we want the first pass to
+        // attach errors to funcrefs and we also need to verify all
+        // defined signatures.
+        for (sig, sigdata) in &self.func.dfg.signatures {
+            self.verify_signature(sigdata, sig, errors)?;
+        }
+        Ok(())
+    }
+
     pub fn run(&self, errors: &mut VerifierErrors) -> VerifierStepResult {
         self.verify_global_values(errors)?;
-        self.verify_memory_types(errors)?;
         self.typecheck_entry_block_params(errors)?;
         self.check_entry_not_cold(errors)?;
         self.typecheck_function_signature(errors)?;
+        self.verify_signatures(errors)?;
 
         for block in self.func.layout.blocks() {
             if self.func.layout.first_inst(block).is_none() {

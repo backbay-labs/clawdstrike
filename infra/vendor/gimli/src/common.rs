@@ -148,6 +148,10 @@ pub struct DebugMacinfoOffset<T = usize>(pub T);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DebugMacroOffset<T = usize>(pub T);
 
+/// An offset into the `.debug_names` section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DebugNamesOffset<T = usize>(pub T);
+
 /// An offset into either the `.debug_ranges` section or the `.debug_rnglists` section,
 /// depending on the version of the unit the offset was contained in.
 ///
@@ -212,45 +216,11 @@ impl<T> From<T> for EhFrameOffset<T> {
 }
 
 /// An offset into the `.debug_info` or `.debug_types` sections.
+///
+/// This type does not store which section the offset applies to. You will need to either
+/// determine that from the context of its use, or store a [`SectionId`] along with it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub enum UnitSectionOffset<T = usize> {
-    /// An offset into the `.debug_info` section.
-    DebugInfoOffset(DebugInfoOffset<T>),
-    /// An offset into the `.debug_types` section.
-    DebugTypesOffset(DebugTypesOffset<T>),
-}
-
-impl<T> From<DebugInfoOffset<T>> for UnitSectionOffset<T> {
-    fn from(offset: DebugInfoOffset<T>) -> Self {
-        UnitSectionOffset::DebugInfoOffset(offset)
-    }
-}
-
-impl<T> From<DebugTypesOffset<T>> for UnitSectionOffset<T> {
-    fn from(offset: DebugTypesOffset<T>) -> Self {
-        UnitSectionOffset::DebugTypesOffset(offset)
-    }
-}
-
-impl<T> UnitSectionOffset<T>
-where
-    T: Clone,
-{
-    /// Returns the `DebugInfoOffset` inside, or `None` otherwise.
-    pub fn as_debug_info_offset(&self) -> Option<DebugInfoOffset<T>> {
-        match self {
-            UnitSectionOffset::DebugInfoOffset(offset) => Some(offset.clone()),
-            UnitSectionOffset::DebugTypesOffset(_) => None,
-        }
-    }
-    /// Returns the `DebugTypesOffset` inside, or `None` otherwise.
-    pub fn as_debug_types_offset(&self) -> Option<DebugTypesOffset<T>> {
-        match self {
-            UnitSectionOffset::DebugInfoOffset(_) => None,
-            UnitSectionOffset::DebugTypesOffset(offset) => Some(offset.clone()),
-        }
-    }
-}
+pub struct UnitSectionOffset<T = usize>(pub T);
 
 /// An identifier for a DWARF section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -283,6 +253,8 @@ pub enum SectionId {
     DebugMacinfo,
     /// The `.debug_macro` section.
     DebugMacro,
+    /// The `.debug_names` section.
+    DebugNames,
     /// The `.debug_pubnames` section.
     DebugPubNames,
     /// The `.debug_pubtypes` section.
@@ -319,6 +291,7 @@ impl SectionId {
             SectionId::DebugLocLists => ".debug_loclists",
             SectionId::DebugMacinfo => ".debug_macinfo",
             SectionId::DebugMacro => ".debug_macro",
+            SectionId::DebugNames => ".debug_names",
             SectionId::DebugPubNames => ".debug_pubnames",
             SectionId::DebugPubTypes => ".debug_pubtypes",
             SectionId::DebugRanges => ".debug_ranges",
@@ -385,17 +358,12 @@ pub struct DwoId(pub u64);
 
 /// The "type" of file with DWARF debugging information. This determines, among other things,
 /// which files DWARF sections should be loaded from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DwarfFileType {
     /// A normal executable or object file.
+    #[default]
     Main,
     /// A .dwo split DWARF file.
     Dwo,
     // TODO: Supplementary files, .dwps?
-}
-
-impl Default for DwarfFileType {
-    fn default() -> Self {
-        DwarfFileType::Main
-    }
 }

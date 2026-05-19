@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "wasmtime-internal-jit-icache-coherence"
-version = "41.0.4"
+version = "44.0.1"
 authors = ["The Wasmtime Project Developers"]
 build = false
 autolib = false
@@ -35,12 +35,12 @@ one-core = []
 name = "wasmtime_internal_jit_icache_coherence"
 path = "src/lib.rs"
 
-[dependencies.anyhow]
-version = "1.0.100"
-default-features = false
-
 [dependencies.cfg-if]
 version = "1.0"
+
+[dependencies.wasmtime-core]
+version = "=44.0.1"
+package = "wasmtime-internal-core"
 
 [target.'cfg(any(target_os = "linux", target_vendor = "apple", target_os = "freebsd", target_os = "android"))'.dependencies.libc]
 version = "0.2.177"
@@ -89,4 +89,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

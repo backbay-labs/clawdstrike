@@ -16,11 +16,25 @@ pub mod drc;
 pub mod null;
 
 use crate::{
-    WasmArrayType, WasmCompositeInnerType, WasmCompositeType, WasmStorageType, WasmStructType,
-    WasmValType,
+    WasmArrayType, WasmCompositeInnerType, WasmCompositeType, WasmExnType, WasmStorageType,
+    WasmStructType, WasmValType, error::OutOfMemory, prelude::*,
 };
-use crate::{WasmExnType, prelude::*};
+use alloc::sync::Arc;
 use core::alloc::Layout;
+
+/// Poison byte written over unallocated GC heap memory when `cfg(gc_zeal)` is
+/// enabled.
+pub const POISON: u8 = 0b00001111;
+
+/// Assert a condition, but only when `gc_zeal` is enabled.
+#[macro_export]
+macro_rules! gc_assert {
+    ($($arg:tt)*) => {
+        if cfg!(gc_zeal) {
+            assert!($($arg)*);
+        }
+    };
+}
 
 /// Discriminant to check whether GC reference is an `i31ref` or not.
 pub const I31_DISCRIMINANT: u32 = 1;
@@ -122,7 +136,9 @@ fn common_struct_or_exn_layout(
     fields: &[crate::WasmFieldType],
     header_size: u32,
     header_align: u32,
-) -> (u32, u32, Vec<GcStructLayoutField>) {
+) -> (u32, u32, TryVec<GcStructLayoutField>) {
+    use crate::PanicOnOom as _;
+
     // Process each field, aligning it to its natural alignment.
     //
     // We don't try and do any fancy field reordering to minimize padding (yet?)
@@ -143,7 +159,8 @@ fn common_struct_or_exn_layout(
             let is_gc_ref = f.element_type.is_vmgcref_type_and_not_i31();
             GcStructLayoutField { offset, is_gc_ref }
         })
-        .collect();
+        .try_collect::<TryVec<_>, _>()
+        .panic_on_oom();
 
     // Ensure that the final size is a multiple of the alignment, for
     // simplicity.
@@ -228,12 +245,12 @@ pub trait GcTypeLayouts {
         assert!(!ty.shared);
         match &ty.inner {
             WasmCompositeInnerType::Array(ty) => Some(self.array_layout(ty).into()),
-            WasmCompositeInnerType::Struct(ty) => Some(self.struct_layout(ty).into()),
+            WasmCompositeInnerType::Struct(ty) => Some(Arc::new(self.struct_layout(ty)).into()),
             WasmCompositeInnerType::Func(_) => None,
             WasmCompositeInnerType::Cont(_) => {
                 unimplemented!("Stack switching feature not compatible with GC, yet")
             }
-            WasmCompositeInnerType::Exn(ty) => Some(self.exn_layout(ty).into()),
+            WasmCompositeInnerType::Exn(ty) => Some(Arc::new(self.exn_layout(ty)).into()),
         }
     }
 
@@ -254,7 +271,7 @@ pub enum GcLayout {
     Array(GcArrayLayout),
 
     /// The layout of a GC-managed struct or exception object.
-    Struct(GcStructLayout),
+    Struct(Arc<GcStructLayout>),
 }
 
 impl From<GcArrayLayout> for GcLayout {
@@ -263,16 +280,22 @@ impl From<GcArrayLayout> for GcLayout {
     }
 }
 
-impl From<GcStructLayout> for GcLayout {
-    fn from(layout: GcStructLayout) -> Self {
+impl From<Arc<GcStructLayout>> for GcLayout {
+    fn from(layout: Arc<GcStructLayout>) -> Self {
         Self::Struct(layout)
+    }
+}
+
+impl TryClone for GcLayout {
+    fn try_clone(&self) -> core::result::Result<Self, wasmtime_core::error::OutOfMemory> {
+        Ok(self.clone())
     }
 }
 
 impl GcLayout {
     /// Get the underlying `GcStructLayout`, or panic.
     #[track_caller]
-    pub fn unwrap_struct(&self) -> &GcStructLayout {
+    pub fn unwrap_struct(&self) -> &Arc<GcStructLayout> {
         match self {
             Self::Struct(s) => s,
             _ => panic!("GcLayout::unwrap_struct on non-struct GC layout"),
@@ -358,7 +381,7 @@ impl GcArrayLayout {
 /// tuples of typed fields with a certain size. The only difference in
 /// practice is that an exception object also carries a tag reference
 /// (at a fixed offset as per `GcTypeLayouts::exception_tag_offset`).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct GcStructLayout {
     /// The size (in bytes) of this struct.
     pub size: u32,
@@ -368,10 +391,21 @@ pub struct GcStructLayout {
 
     /// The fields of this struct. The `i`th entry contains information about
     /// the `i`th struct field's layout.
-    pub fields: Vec<GcStructLayoutField>,
+    pub fields: TryVec<GcStructLayoutField>,
 
     /// Whether this is an exception object layout.
     pub is_exception: bool,
+}
+
+impl TryClone for GcStructLayout {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(GcStructLayout {
+            size: self.size,
+            align: self.align,
+            fields: self.fields.try_clone()?,
+            is_exception: self.is_exception,
+        })
+    }
 }
 
 impl GcStructLayout {
@@ -395,6 +429,12 @@ pub struct GcStructLayoutField {
     /// Note: it is okay for this to be `false` for `i31ref`s, since they never
     /// actually reference another GC object.
     pub is_gc_ref: bool,
+}
+
+impl TryClone for GcStructLayoutField {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(*self)
+    }
 }
 
 /// The kind of an object in a GC heap.
@@ -459,15 +499,16 @@ impl VMGcKind {
     #[inline]
     pub fn from_high_bits_of_u32(val: u32) -> VMGcKind {
         let masked = val & Self::MASK;
-        match masked {
-            x if x == Self::ExternRef.as_u32() => Self::ExternRef,
-            x if x == Self::AnyRef.as_u32() => Self::AnyRef,
-            x if x == Self::EqRef.as_u32() => Self::EqRef,
-            x if x == Self::ArrayRef.as_u32() => Self::ArrayRef,
-            x if x == Self::StructRef.as_u32() => Self::StructRef,
-            x if x == Self::ExnRef.as_u32() => Self::ExnRef,
-            _ => panic!("invalid `VMGcKind`: {masked:#032b}"),
-        }
+        let result = Self::try_from_u32(masked)
+            .unwrap_or_else(|| panic!("invalid `VMGcKind`: {masked:#032b}"));
+
+        let poison_kind = u32::from_le_bytes([POISON, POISON, POISON, POISON]) & VMGcKind::MASK;
+        debug_assert_ne!(
+            masked, poison_kind,
+            "No valid `VMGcKind` should overlap with the poison pattern"
+        );
+
+        result
     }
 
     /// Does this kind match the other kind?
@@ -482,6 +523,22 @@ impl VMGcKind {
     #[inline]
     pub fn as_u32(self) -> u32 {
         self as u32
+    }
+
+    /// Try to convert a `u32` into a `VMGcKind`.
+    ///
+    /// Returns `None` if the value doesn't match any known kind.
+    #[inline]
+    pub fn try_from_u32(x: u32) -> Option<VMGcKind> {
+        match x {
+            _ if x == Self::ExternRef.as_u32() => Some(Self::ExternRef),
+            _ if x == Self::AnyRef.as_u32() => Some(Self::AnyRef),
+            _ if x == Self::EqRef.as_u32() => Some(Self::EqRef),
+            _ if x == Self::ArrayRef.as_u32() => Some(Self::ArrayRef),
+            _ if x == Self::StructRef.as_u32() => Some(Self::StructRef),
+            _ if x == Self::ExnRef.as_u32() => Some(Self::ExnRef),
+            _ => None,
+        }
     }
 }
 

@@ -24,14 +24,6 @@ impl Tag {
     }
 
     /// Create a new tag instance from a given TagType.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic when used with a [`Store`](`crate::Store`)
-    /// which has a [`ResourceLimiterAsync`](`crate::ResourceLimiterAsync`)
-    /// (see also: [`Store::limiter_async`](`crate::Store::limiter_async`).
-    /// When using an async resource limiter, use [`Tag::new_async`]
-    /// instead.
     pub fn new(mut store: impl AsContextMut, ty: &TagType) -> Result<Tag> {
         generate_tag_export(store.as_context_mut().0, ty)
     }
@@ -66,6 +58,15 @@ impl Tag {
 
     pub(crate) fn comes_from_same_store(&self, store: &StoreOpaque) -> bool {
         store.id() == self.instance.store_id()
+    }
+
+    /// Returns a stable identifier for this tag within its store.
+    ///
+    /// This allows distinguishing tags when introspecting them
+    /// e.g. via debug APIs.
+    #[cfg(feature = "debug")]
+    pub fn debug_index_in_store(&self) -> u64 {
+        u64::from(self.instance.instance().as_u32()) << 32 | u64::from(self.index.as_u32())
     }
 
     /// Determines whether this tag is reference equal to the other

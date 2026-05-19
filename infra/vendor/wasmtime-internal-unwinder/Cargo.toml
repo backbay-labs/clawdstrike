@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "wasmtime-internal-unwinder"
-version = "41.0.4"
+version = "44.0.1"
 authors = ["The Wasmtime Project Developers"]
 build = "build.rs"
 autolib = false
@@ -45,7 +45,7 @@ path = "src/lib.rs"
 version = "1.0"
 
 [dependencies.cranelift-codegen]
-version = "0.128.4"
+version = "0.131.1"
 features = [
     "std",
     "unwind",
@@ -58,7 +58,7 @@ version = "0.4.28"
 default-features = false
 
 [dependencies.object]
-version = "0.37.3"
+version = "0.39.0"
 features = [
     "read_core",
     "elf",
@@ -66,7 +66,7 @@ features = [
 default-features = false
 
 [dependencies.wasmtime-environ]
-version = "=41.0.4"
+version = "=44.0.1"
 
 [lints.clippy]
 allow_attributes_without_reason = "warn"
@@ -103,4 +103,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

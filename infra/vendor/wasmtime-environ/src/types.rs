@@ -1,8 +1,9 @@
-use crate::{Tunables, WasmResult, wasm_unsupported};
-use alloc::borrow::Cow;
+use crate::{
+    PanicOnOom as _, Tunables, WasmResult, collections::TryCow, error::OutOfMemory, prelude::*,
+    wasm_unsupported,
+};
 use alloc::boxed::Box;
 use core::{fmt, ops::Range};
-use cranelift_entity::entity_impl;
 use serde_derive::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
@@ -140,6 +141,12 @@ pub enum WasmValType {
     V128,
     /// Reference type
     Ref(WasmRefType),
+}
+
+impl TryClone for WasmValType {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(*self)
+    }
 }
 
 impl fmt::Display for WasmValType {
@@ -677,27 +684,39 @@ pub enum WasmHeapBottomType {
 }
 
 /// WebAssembly function type -- equivalent of `wasmparser`'s FuncType.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct WasmFuncType {
-    params: Box<[WasmValType]>,
-    non_i31_gc_ref_params_count: usize,
-    returns: Box<[WasmValType]>,
-    non_i31_gc_ref_returns_count: usize,
+    #[serde(deserialize_with = "WasmFuncType::deserialize_params_results")]
+    params_results: Box<[WasmValType]>,
+    params_len: u32,
+    non_i31_gc_ref_params_count: u32,
+    non_i31_gc_ref_results_count: u32,
+}
+
+impl TryClone for WasmFuncType {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(Self {
+            params_results: TryClone::try_clone(&self.params_results)?,
+            params_len: self.params_len,
+            non_i31_gc_ref_params_count: self.non_i31_gc_ref_params_count,
+            non_i31_gc_ref_results_count: self.non_i31_gc_ref_results_count,
+        })
+    }
 }
 
 impl fmt::Display for WasmFuncType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(func")?;
-        if !self.params.is_empty() {
+        if !self.params().is_empty() {
             write!(f, " (param")?;
-            for p in self.params.iter() {
+            for p in self.params() {
                 write!(f, " {p}")?;
             }
             write!(f, ")")?;
         }
-        if !self.returns.is_empty() {
+        if !self.results().is_empty() {
             write!(f, " (result")?;
-            for r in self.returns.iter() {
+            for r in self.results() {
                 write!(f, " {r}")?;
             }
             write!(f, ")")?;
@@ -711,11 +730,8 @@ impl TypeTrace for WasmFuncType {
     where
         F: FnMut(EngineOrModuleTypeIndex) -> Result<(), E>,
     {
-        for p in self.params.iter() {
-            p.trace(func)?;
-        }
-        for r in self.returns.iter() {
-            r.trace(func)?;
+        for ty in self.params_results.iter() {
+            ty.trace(func)?;
         }
         Ok(())
     }
@@ -724,64 +740,90 @@ impl TypeTrace for WasmFuncType {
     where
         F: FnMut(&mut EngineOrModuleTypeIndex) -> Result<(), E>,
     {
-        for p in self.params.iter_mut() {
-            p.trace_mut(func)?;
-        }
-        for r in self.returns.iter_mut() {
-            r.trace_mut(func)?;
+        for ty in self.params_results.iter_mut() {
+            ty.trace_mut(func)?;
         }
         Ok(())
     }
 }
 
 impl WasmFuncType {
+    fn deserialize_params_results<'de, D>(deserializer: D) -> Result<Box<[WasmValType]>, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        let tys: crate::collections::TryVec<WasmValType> =
+            serde::Deserialize::deserialize(deserializer)?;
+        let tys = tys
+            .into_boxed_slice()
+            .map_err(|oom| serde::de::Error::custom(oom))?;
+        Ok(tys)
+    }
+
     /// Creates a new function type from the provided `params` and `returns`.
     #[inline]
-    pub fn new(params: Box<[WasmValType]>, returns: Box<[WasmValType]>) -> Self {
-        let non_i31_gc_ref_params_count = params
+    pub fn new(
+        params: impl IntoIterator<Item = WasmValType>,
+        results: impl IntoIterator<Item = WasmValType>,
+    ) -> Result<Self, OutOfMemory> {
+        let mut params_results: crate::collections::TryVec<_> = params.into_iter().try_collect()?;
+        let non_i31_gc_ref_params_count = params_results
             .iter()
             .filter(|p| p.is_vmgcref_type_and_not_i31())
             .count();
-        let non_i31_gc_ref_returns_count = returns
+
+        let params_len = params_results.len();
+        params_results.try_extend(results)?;
+        let non_i31_gc_ref_results_count = params_results[params_len..]
             .iter()
             .filter(|r| r.is_vmgcref_type_and_not_i31())
             .count();
-        WasmFuncType {
-            params,
+
+        let params_results = params_results.into_boxed_slice()?;
+        let params_len = u32::try_from(params_len).unwrap();
+        let non_i31_gc_ref_params_count = u32::try_from(non_i31_gc_ref_params_count).unwrap();
+        let non_i31_gc_ref_results_count = u32::try_from(non_i31_gc_ref_results_count).unwrap();
+
+        Ok(Self {
+            params_results,
+            params_len,
             non_i31_gc_ref_params_count,
-            returns,
-            non_i31_gc_ref_returns_count,
-        }
+            non_i31_gc_ref_results_count,
+        })
+    }
+
+    fn results_start(&self) -> usize {
+        usize::try_from(self.params_len).unwrap()
     }
 
     /// Function params types.
     #[inline]
     pub fn params(&self) -> &[WasmValType] {
-        &self.params
+        &self.params_results[..self.results_start()]
     }
 
     /// How many `externref`s are in this function's params?
     #[inline]
     pub fn non_i31_gc_ref_params_count(&self) -> usize {
-        self.non_i31_gc_ref_params_count
+        usize::try_from(self.non_i31_gc_ref_params_count).unwrap()
     }
 
     /// Returns params types.
     #[inline]
-    pub fn returns(&self) -> &[WasmValType] {
-        &self.returns
+    pub fn results(&self) -> &[WasmValType] {
+        &self.params_results[self.results_start()..]
     }
 
     /// How many `externref`s are in this function's returns?
     #[inline]
-    pub fn non_i31_gc_ref_returns_count(&self) -> usize {
-        self.non_i31_gc_ref_returns_count
+    pub fn non_i31_gc_ref_results_count(&self) -> usize {
+        usize::try_from(self.non_i31_gc_ref_results_count).unwrap()
     }
 
     /// Is this function type compatible with trampoline usage in Wasmtime?
     pub fn is_trampoline_type(&self) -> bool {
         self.params().iter().all(|p| *p == p.trampoline_type())
-            && self.returns().iter().all(|r| *r == r.trampoline_type())
+            && self.results().iter().all(|r| *r == r.trampoline_type())
     }
 
     /// Get the version of this function type that is suitable for usage as a
@@ -809,20 +851,20 @@ impl WasmFuncType {
     /// references themselves (unless the trampolines start doing explicit,
     /// fallible downcasts, but if we ever need that, then we might want to
     /// redesign this stuff).
-    pub fn trampoline_type(&self) -> Cow<'_, Self> {
+    pub fn trampoline_type(&self) -> Result<TryCow<'_, Self>, OutOfMemory> {
         if self.is_trampoline_type() {
-            return Cow::Borrowed(self);
+            return Ok(TryCow::Borrowed(self));
         }
 
-        Cow::Owned(Self::new(
-            self.params().iter().map(|p| p.trampoline_type()).collect(),
-            self.returns().iter().map(|r| r.trampoline_type()).collect(),
-        ))
+        Ok(TryCow::Owned(Self::new(
+            self.params().iter().map(|p| p.trampoline_type()),
+            self.results().iter().map(|r| r.trampoline_type()),
+        )?))
     }
 }
 
 /// WebAssembly continuation type -- equivalent of `wasmparser`'s ContType.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct WasmContType(EngineOrModuleTypeIndex);
 
 impl fmt::Display for WasmContType {
@@ -900,6 +942,15 @@ pub struct WasmExnType {
     /// type descriptor without referencing other type descriptors; so
     /// we directly inline the information here.
     pub fields: Box<[WasmFieldType]>,
+}
+
+impl TryClone for WasmExnType {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(Self {
+            func_ty: self.func_ty,
+            fields: self.fields.try_clone()?,
+        })
+    }
 }
 
 impl fmt::Display for WasmExnType {
@@ -994,13 +1045,19 @@ impl WasmStorageType {
 }
 
 /// The type of a struct field or array element.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct WasmFieldType {
     /// The field's element type.
     pub element_type: WasmStorageType,
 
     /// Whether this field can be mutated or not.
     pub mutable: bool,
+}
+
+impl TryClone for WasmFieldType {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(*self)
+    }
 }
 
 impl fmt::Display for WasmFieldType {
@@ -1030,7 +1087,7 @@ impl TypeTrace for WasmFieldType {
 }
 
 /// A concrete array type.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct WasmArrayType(pub WasmFieldType);
 
 impl fmt::Display for WasmArrayType {
@@ -1060,6 +1117,14 @@ impl TypeTrace for WasmArrayType {
 pub struct WasmStructType {
     /// The fields that make up this struct type.
     pub fields: Box<[WasmFieldType]>,
+}
+
+impl TryClone for WasmStructType {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(Self {
+            fields: self.fields.try_clone()?,
+        })
+    }
 }
 
 impl fmt::Display for WasmStructType {
@@ -1094,7 +1159,7 @@ impl TypeTrace for WasmStructType {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[expect(missing_docs, reason = "self-describing type")]
 pub struct WasmCompositeType {
     /// The type defined inside the composite type.
@@ -1102,6 +1167,15 @@ pub struct WasmCompositeType {
     /// Is the composite type shared? This is part of the
     /// shared-everything-threads proposal.
     pub shared: bool,
+}
+
+impl TryClone for WasmCompositeType {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(Self {
+            inner: self.inner.try_clone()?,
+            shared: self.shared,
+        })
+    }
 }
 
 impl fmt::Display for WasmCompositeType {
@@ -1118,7 +1192,7 @@ impl fmt::Display for WasmCompositeType {
 }
 
 /// A function, array, or struct type.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[expect(missing_docs, reason = "self-describing variants")]
 pub enum WasmCompositeInnerType {
     Array(WasmArrayType),
@@ -1126,6 +1200,18 @@ pub enum WasmCompositeInnerType {
     Struct(WasmStructType),
     Cont(WasmContType),
     Exn(WasmExnType),
+}
+
+impl TryClone for WasmCompositeInnerType {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(match self {
+            Self::Array(ty) => Self::Array(*ty),
+            Self::Func(ty) => Self::Func(ty.try_clone()?),
+            Self::Struct(ty) => Self::Struct(ty.try_clone()?),
+            Self::Cont(ty) => Self::Cont(*ty),
+            Self::Exn(ty) => Self::Exn(ty.try_clone()?),
+        })
+    }
 }
 
 impl fmt::Display for WasmCompositeInnerType {
@@ -1262,7 +1348,7 @@ impl TypeTrace for WasmCompositeType {
 }
 
 /// A concrete, user-defined (or host-defined) Wasm type.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct WasmSubType {
     /// Whether this type is forbidden from being the supertype of any other
     /// type.
@@ -1273,6 +1359,16 @@ pub struct WasmSubType {
 
     /// The array, function, or struct that is defined.
     pub composite_type: WasmCompositeType,
+}
+
+impl TryClone for WasmSubType {
+    fn try_clone(&self) -> Result<Self, OutOfMemory> {
+        Ok(Self {
+            is_final: self.is_final,
+            supertype: self.supertype,
+            composite_type: self.composite_type.try_clone()?,
+        })
+    }
 }
 
 impl fmt::Display for WasmSubType {
@@ -1430,7 +1526,7 @@ impl TypeTrace for WasmSubType {
 /// (rec (type (func $f (result (ref null $g))))
 ///      (type (func $g (result (ref null $f)))))
 /// ```
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct WasmRecGroup {
     /// The types inside of this recgroup.
     pub types: Box<[WasmSubType]>,
@@ -1458,67 +1554,80 @@ impl TypeTrace for WasmRecGroup {
     }
 }
 
+macro_rules! entity_impl_with_try_clone {
+    ( $ty:ident ) => {
+        cranelift_entity::entity_impl!($ty);
+
+        impl TryClone for $ty {
+            #[inline]
+            fn try_clone(&self) -> Result<Self, $crate::error::OutOfMemory> {
+                Ok(*self)
+            }
+        }
+    };
+}
+
 /// Index type of a function (imported or defined) inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct FuncIndex(u32);
-entity_impl!(FuncIndex);
+entity_impl_with_try_clone!(FuncIndex);
 
 /// Index type of a defined function inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct DefinedFuncIndex(u32);
-entity_impl!(DefinedFuncIndex);
+entity_impl_with_try_clone!(DefinedFuncIndex);
 
 /// Index type of a defined table inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct DefinedTableIndex(u32);
-entity_impl!(DefinedTableIndex);
+entity_impl_with_try_clone!(DefinedTableIndex);
 
 /// Index type of a defined memory inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct DefinedMemoryIndex(u32);
-entity_impl!(DefinedMemoryIndex);
+entity_impl_with_try_clone!(DefinedMemoryIndex);
 
 /// Index type of a defined memory inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct OwnedMemoryIndex(u32);
-entity_impl!(OwnedMemoryIndex);
+entity_impl_with_try_clone!(OwnedMemoryIndex);
 
 /// Index type of a defined global inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct DefinedGlobalIndex(u32);
-entity_impl!(DefinedGlobalIndex);
+entity_impl_with_try_clone!(DefinedGlobalIndex);
 
 /// Index type of a table (imported or defined) inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct TableIndex(u32);
-entity_impl!(TableIndex);
+entity_impl_with_try_clone!(TableIndex);
 
 /// Index type of a global variable (imported or defined) inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct GlobalIndex(u32);
-entity_impl!(GlobalIndex);
+entity_impl_with_try_clone!(GlobalIndex);
 
 /// Index type of a linear memory (imported or defined) inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct MemoryIndex(u32);
-entity_impl!(MemoryIndex);
+entity_impl_with_try_clone!(MemoryIndex);
 
 /// Index type of a canonicalized recursive type group inside a WebAssembly
 /// module (as opposed to canonicalized within the whole engine).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct ModuleInternedRecGroupIndex(u32);
-entity_impl!(ModuleInternedRecGroupIndex);
+entity_impl_with_try_clone!(ModuleInternedRecGroupIndex);
 
 /// Index type of a canonicalized recursive type group inside the whole engine
 /// (as opposed to canonicalized within just a single Wasm module).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct EngineInternedRecGroupIndex(u32);
-entity_impl!(EngineInternedRecGroupIndex);
+entity_impl_with_try_clone!(EngineInternedRecGroupIndex);
 
 /// Index type of a type (imported or defined) inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct TypeIndex(u32);
-entity_impl!(TypeIndex);
+entity_impl_with_try_clone!(TypeIndex);
 
 /// A canonicalized type index referencing a type within a single recursion
 /// group from another type within that same recursion group.
@@ -1527,7 +1636,7 @@ entity_impl!(TypeIndex);
 /// groups.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct RecGroupRelativeTypeIndex(u32);
-entity_impl!(RecGroupRelativeTypeIndex);
+entity_impl_with_try_clone!(RecGroupRelativeTypeIndex);
 
 /// A canonicalized type index for a type within a single WebAssembly module.
 ///
@@ -1538,7 +1647,7 @@ entity_impl!(RecGroupRelativeTypeIndex);
 /// involve entities defined in different modules).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct ModuleInternedTypeIndex(u32);
-entity_impl!(ModuleInternedTypeIndex);
+entity_impl_with_try_clone!(ModuleInternedTypeIndex);
 
 /// A canonicalized type index into an engine's shared type registry.
 ///
@@ -1550,7 +1659,7 @@ entity_impl!(ModuleInternedTypeIndex);
 #[repr(transparent)] // Used directly by JIT code.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct VMSharedTypeIndex(u32);
-entity_impl!(VMSharedTypeIndex);
+entity_impl_with_try_clone!(VMSharedTypeIndex);
 
 impl VMSharedTypeIndex {
     /// Create a new `VMSharedTypeIndex`.
@@ -1581,22 +1690,22 @@ impl Default for VMSharedTypeIndex {
 /// Index type of a passive data segment inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct DataIndex(u32);
-entity_impl!(DataIndex);
+entity_impl_with_try_clone!(DataIndex);
 
 /// Index type of a passive element segment inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct ElemIndex(u32);
-entity_impl!(ElemIndex);
+entity_impl_with_try_clone!(ElemIndex);
 
 /// Index type of a defined tag inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct DefinedTagIndex(u32);
-entity_impl!(DefinedTagIndex);
+entity_impl_with_try_clone!(DefinedTagIndex);
 
 /// Index type of an event inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct TagIndex(u32);
-entity_impl!(TagIndex);
+entity_impl_with_try_clone!(TagIndex);
 
 /// Index into the global list of modules found within an entire component.
 ///
@@ -1604,7 +1713,7 @@ entity_impl!(TagIndex);
 /// the original component has finished being translated.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct StaticModuleIndex(u32);
-entity_impl!(StaticModuleIndex);
+entity_impl_with_try_clone!(StaticModuleIndex);
 
 /// An index of an entity.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
@@ -1849,23 +1958,39 @@ impl ConstExpr {
     /// We use this for certain table optimizations that rely on
     /// knowing for sure that index 0 is not referenced.
     pub fn provably_nonzero_i32(&self) -> bool {
-        assert!(self.ops.len() > 0);
-        if self.ops.len() > 1 {
-            // Compound expressions not yet supported: conservatively
-            // return `false` (we can't prove nonzero).
-            return false;
-        }
-        // Exactly one op at this point.
-        match self.ops[0] {
-            // An actual zero value -- definitely not nonzero!
-            ConstOp::I32Const(0) => false,
-            // Any other constant value -- provably nonzero, if above
-            // did not match.
-            ConstOp::I32Const(_) => true,
-            // Anything else: we can't prove anything.
+        match self.const_eval() {
+            Some(GlobalConstValue::I32(x)) => x != 0,
+
+            // Conservatively return `false` for non-const-eval-able expressions
+            // as well as everything else.
             _ => false,
         }
     }
+
+    /// Attempt to evaluate the given const-expr at compile time.
+    pub fn const_eval(&self) -> Option<GlobalConstValue> {
+        // TODO: Actually maintain an evaluation stack and handle `i32.add`,
+        // `i32.sub`, etc... const ops.
+        match self.ops() {
+            [ConstOp::I32Const(x)] => Some(GlobalConstValue::I32(*x)),
+            [ConstOp::I64Const(x)] => Some(GlobalConstValue::I64(*x)),
+            [ConstOp::F32Const(x)] => Some(GlobalConstValue::F32(*x)),
+            [ConstOp::F64Const(x)] => Some(GlobalConstValue::F64(*x)),
+            [ConstOp::V128Const(x)] => Some(GlobalConstValue::V128(*x)),
+            _ => None,
+        }
+    }
+}
+
+/// A global's constant value, known at compile time.
+#[expect(missing_docs, reason = "self-describing variants")]
+#[derive(Clone, Copy)]
+pub enum GlobalConstValue {
+    I32(i32),
+    I64(i64),
+    F32(u32),
+    F64(u64),
+    V128(u128),
 }
 
 /// The subset of Wasm opcodes that are constant.
@@ -2195,6 +2320,36 @@ impl Memory {
         let max = self.maximum_byte_size().unwrap_or(u64::MAX);
         max > tunables.memory_reservation
     }
+
+    /// Tests whether this memory type is allowed to grow up to `size` bytes.
+    ///
+    /// This is only applicable to custom-page-size memories which have a page
+    /// size of a single byte. In that situation growth beyond `-1i32 as u32`
+    /// bytes is not allowed because at that point memory growth succeeding and
+    /// failing would be indistinguishable in the return value of `memory.grow`,
+    /// for example. To handle this 32-bit memories are only allowed to grow to
+    /// `-2i32 as u32`, for example, and 64-bit memories with a page size of 1
+    /// are allowed to grow up to the maximum size.
+    pub fn allow_growth_to(&self, size: usize) -> bool {
+        if self.page_size_log2 != 0 {
+            return true;
+        }
+        match self.idx_type {
+            // For a 32-bit memory using 1-byte pages the last 2 bytes of the
+            // 32-bit address space are addressable but disallowed for now.  A
+            // memory that is 4GiB in size cannot report its size via
+            // `memory.size`, and a memory that is 4GiB-1 bytes in size cannot
+            // be distinguished when 1 byte is added from an allocation
+            // failure.  To handle this the memory is capped at 4GiB-2 which
+            // means that all memory-related instructions and such will have
+            // unambiguous return codes.
+            IndexType::I32 => size < 0xffff_ffff,
+
+            // Assume that for a 64-bit memory using 1-byte pages it's going to
+            // exhaust system resources before a limit is actually reached.
+            IndexType::I64 => true,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -2366,13 +2521,13 @@ pub trait TypeConvert {
             .params()
             .iter()
             .map(|t| self.convert_valtype(*t))
-            .collect::<WasmResult<_>>()?;
+            .collect::<WasmResult<Vec<_>>>()?;
         let results = ty
             .results()
             .iter()
             .map(|t| self.convert_valtype(*t))
-            .collect::<WasmResult<_>>()?;
-        Ok(WasmFuncType::new(params, results))
+            .collect::<WasmResult<Vec<_>>>()?;
+        Ok(WasmFuncType::new(params, results).panic_on_oom())
     }
 
     /// Converts a wasmparser value type to a wasmtime type
@@ -2426,4 +2581,24 @@ pub trait TypeConvert {
     /// Converts the specified type index from a heap type into a canonicalized
     /// heap type.
     fn lookup_type_index(&self, index: wasmparser::UnpackedIndex) -> EngineOrModuleTypeIndex;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wasm_func_type_new() -> Result<()> {
+        let i32 = WasmValType::I32;
+        let anyref = WasmValType::Ref(WasmRefType {
+            nullable: true,
+            heap_type: WasmHeapType::Any,
+        });
+        let ty = WasmFuncType::new([i32, i32, anyref, anyref], [i32, anyref])?;
+        assert_eq!(ty.params(), &[i32, i32, anyref, anyref]);
+        assert_eq!(ty.non_i31_gc_ref_params_count(), 2);
+        assert_eq!(ty.results(), &[i32, anyref]);
+        assert_eq!(ty.non_i31_gc_ref_results_count(), 1);
+        Ok(())
+    }
 }

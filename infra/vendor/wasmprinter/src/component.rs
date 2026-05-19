@@ -145,12 +145,6 @@ impl Printer<'_, '_> {
                 self.print_component_val_type(state, &ty)?;
             }
 
-            if let Some(refines) = case.refines {
-                self.result.write_str(" ")?;
-                self.start_group("refines ")?;
-                write!(&mut self.result, "{refines}")?;
-                self.end_group()?;
-            }
             self.end_group()?;
         }
         self.end_group()?;
@@ -169,7 +163,21 @@ impl Printer<'_, '_> {
         Ok(())
     }
 
-    pub(crate) fn print_fixed_size_list_type(
+    pub(crate) fn print_map_type(
+        &mut self,
+        state: &State,
+        key_ty: &ComponentValType,
+        value_ty: &ComponentValType,
+    ) -> Result<()> {
+        self.start_group("map ")?;
+        self.print_component_val_type(state, key_ty)?;
+        self.result.write_str(" ")?;
+        self.print_component_val_type(state, value_ty)?;
+        self.end_group()?;
+        Ok(())
+    }
+
+    pub(crate) fn print_fixed_length_list_type(
         &mut self,
         state: &State,
         element_ty: &ComponentValType,
@@ -278,8 +286,9 @@ impl Printer<'_, '_> {
             ComponentDefinedType::Record(fields) => self.print_record_type(state, fields)?,
             ComponentDefinedType::Variant(cases) => self.print_variant_type(state, cases)?,
             ComponentDefinedType::List(ty) => self.print_list_type(state, ty)?,
-            ComponentDefinedType::FixedSizeList(ty, elements) => {
-                self.print_fixed_size_list_type(state, ty, *elements)?
+            ComponentDefinedType::Map(key, value) => self.print_map_type(state, key, value)?,
+            ComponentDefinedType::FixedLengthList(ty, elements) => {
+                self.print_fixed_length_list_type(state, ty, *elements)?
             }
             ComponentDefinedType::Tuple(tys) => self.print_tuple_type(state, tys)?,
             ComponentDefinedType::Flags(names) => self.print_flag_or_enum_type("flags", names)?,
@@ -947,9 +956,6 @@ impl Printer<'_, '_> {
                         Ok(())
                     })?;
                 }
-                CanonicalFunction::BackpressureSet => {
-                    self.print_intrinsic(state, "canon backpressure.set", &|_, _| Ok(()))?;
-                }
                 CanonicalFunction::BackpressureInc => {
                     self.print_intrinsic(state, "canon backpressure.inc", &|_, _| Ok(()))?;
                 }
@@ -1157,8 +1163,8 @@ impl Printer<'_, '_> {
                         me.end_group()
                     })?;
                 }
-                CanonicalFunction::ThreadSwitchTo { cancellable } => {
-                    self.print_intrinsic(state, "canon thread.switch-to", &|me, _| {
+                CanonicalFunction::ThreadSuspendToSuspended { cancellable } => {
+                    self.print_intrinsic(state, "canon thread.suspend-to-suspended", &|me, _| {
                         if cancellable {
                             me.result.write_str(" cancellable")?;
                         }
@@ -1173,11 +1179,19 @@ impl Printer<'_, '_> {
                         Ok(())
                     })?;
                 }
-                CanonicalFunction::ThreadResumeLater => {
-                    self.print_intrinsic(state, "canon thread.resume-later", &|_, _| Ok(()))?;
+                CanonicalFunction::ThreadSuspendTo { cancellable } => {
+                    self.print_intrinsic(state, "canon thread.suspend-to", &|me, _| {
+                        if cancellable {
+                            me.result.write_str(" cancellable")?;
+                        }
+                        Ok(())
+                    })?;
                 }
-                CanonicalFunction::ThreadYieldTo { cancellable } => {
-                    self.print_intrinsic(state, "canon thread.yield-to", &|me, _| {
+                CanonicalFunction::ThreadUnsuspend => {
+                    self.print_intrinsic(state, "canon thread.unsuspend", &|_, _| Ok(()))?;
+                }
+                CanonicalFunction::ThreadYieldToSuspended { cancellable } => {
+                    self.print_intrinsic(state, "canon thread.yield-to-suspended", &|me, _| {
                         if cancellable {
                             me.result.write_str(" cancellable")?;
                         }

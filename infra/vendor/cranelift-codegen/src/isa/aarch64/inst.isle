@@ -1822,6 +1822,9 @@
 (decl pure use_fp16 () bool)
 (extern constructor use_fp16 use_fp16)
 
+(decl pure use_csdb () bool)
+(extern constructor use_csdb use_csdb)
+
 ;; Extractor helpers for various immediate constants ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (decl pure partial move_wide_const_from_u64 (Type u64) MoveWideConst)
@@ -1956,7 +1959,7 @@
 (decl imm12_from_value (Imm12) Value)
 (extractor
   (imm12_from_value n)
-  (iconst (u64_from_imm64 (imm12_from_u64 n))))
+  (iconst _ (u64_from_imm64 (imm12_from_u64 n))))
 ;; Conceptually the same as `imm12_from_value`, but tries negating the constant
 ;; value (first sign-extending to handle narrow widths).
 (spec (imm12_from_negated_value arg)
@@ -1980,7 +1983,7 @@
 )
 (decl pure partial imm12_from_negated_value (Value) Imm12)
 (rule imm12_from_negated_value
-  (imm12_from_negated_value (has_type ty (iconst n)))
+  (imm12_from_negated_value (has_type ty (iconst _ n)))
   (if-let (imm12_from_u64 imm) (i64_cast_unsigned (i64_checked_neg (i64_sextend_imm64 ty n))))
   imm)
 
@@ -2474,7 +2477,9 @@
 
 ;; Helper for emitting `MInst.FpuCSel16` / `MInst.FpuCSel32` / `MInst.FpuCSel64`
 ;; instructions.
-(decl fpu_csel (Type Cond Reg Reg) ConsumesFlags)
+;;
+;; Recursion: may recurse once to downgrade from F16 to F32 when FP16 is not enabled.
+(decl rec fpu_csel (Type Cond Reg Reg) ConsumesFlags)
 (rule (fpu_csel $F16 cond if_true if_false)
         (fpu_csel $F32 cond if_true if_false))
 
@@ -2524,9 +2529,11 @@
         dst))
 
 ;; Helper for emitting `MInst.MovToFpu` instructions.
+;;
+;; Recursion: may recurse once to downgrade from F16 to F32 when FP16 is not enabled.
 (spec (mov_to_fpu x s)
   (provide (= result (zero_ext 64 (conv_to s x)))))
-(decl mov_to_fpu (Reg ScalarSize) Reg)
+(decl rec mov_to_fpu (Reg ScalarSize) Reg)
 (rule (mov_to_fpu x size)
       (let ((dst WritableReg (temp_writable_reg $I8X16))
             (_ Unit (emit (MInst.MovToFpu dst x size))))
@@ -3614,23 +3621,17 @@
 ;; are zero-extending the value.
 (rule 3 (imm (integral_ty ty) (ImmExtend.Zero) k)
       (if-let n (move_wide_const_from_u64 ty k))
-      (add_range_fact
-       (movz n (operand_size ty))
-       64 k k))
+      (movz n (operand_size ty)))
 (rule 2 (imm (integral_ty (ty_32_or_64 ty)) (ImmExtend.Zero) k)
       (if-let n (move_wide_const_from_inverted_u64 ty k))
-      (add_range_fact
-       (movn n (operand_size ty))
-       64 k k))
+      (movn n (operand_size ty)))
 
 ;; Weird logical-instruction immediate in ORI using zero register; to simplify,
 ;; we only match when we are zero-extending the value.
 (rule 1 (imm (integral_ty ty) (ImmExtend.Zero) k)
       (if-let n (imm_logic_from_u64 ty k))
       (if-let m (imm_size_from_type ty))
-      (add_range_fact
-       (orr_imm ty (zero_reg) n)
-       m k k))
+      (orr_imm ty (zero_reg) n))
 
 (decl load_constant_full (Type ImmExtend OperandSize u64) Reg)
 (extern constructor load_constant_full load_constant_full)
@@ -3751,7 +3752,7 @@
           (MInst.TrapIf (cond_br_cond (Cond.Hs)) tc))))
 
 (decl sink_atomic_load (Inst) Reg)
-(rule (sink_atomic_load x @ (atomic_load _ addr))
+(rule (sink_atomic_load x @ (atomic_load _ _ addr))
       (let ((_ Unit (sink_inst x)))
            (put_in_reg addr)))
 
@@ -3773,18 +3774,18 @@
       (alu_rrr op ty x y))
 
 ;; Special cases for when one operand is a constant.
-(rule (alu_rs_imm_logic_commutative op ty x (iconst k))
+(rule (alu_rs_imm_logic_commutative op ty x (iconst _ k))
       (if-let imm (imm_logic_from_imm64 ty k))
       (alu_rr_imm_logic op ty x imm))
-(rule 1 (alu_rs_imm_logic_commutative op ty (iconst k) x)
+(rule 1 (alu_rs_imm_logic_commutative op ty (iconst _ k) x)
       (if-let imm (imm_logic_from_imm64 ty k))
       (alu_rr_imm_logic op ty x imm))
 
 ;; Special cases for when one operand is shifted left by a constant.
-(rule (alu_rs_imm_logic_commutative op ty x (ishl y (iconst k)))
+(rule (alu_rs_imm_logic_commutative op ty x (ishl _ y (iconst _ k)))
       (if-let amt (lshl_from_imm64 ty k))
       (alu_rrr_shift op ty x y amt))
-(rule 1 (alu_rs_imm_logic_commutative op ty (ishl x (iconst k)) y)
+(rule 1 (alu_rs_imm_logic_commutative op ty (ishl _ x (iconst _ k)) y)
       (if-let amt (lshl_from_imm64 ty k))
       (alu_rrr_shift op ty y x amt))
 
@@ -3801,10 +3802,10 @@
 (decl alu_rs_imm_logic (ALUOp Type Value Value) Reg)
 (rule -1 (alu_rs_imm_logic op ty x y)
       (alu_rrr op ty x y))
-(rule (alu_rs_imm_logic op ty x (iconst k))
+(rule (alu_rs_imm_logic op ty x (iconst _ k))
       (if-let imm (imm_logic_from_imm64 ty k))
       (alu_rr_imm_logic op ty x imm))
-(rule (alu_rs_imm_logic op ty x (ishl y (iconst k)))
+(rule (alu_rs_imm_logic op ty x (ishl _ y (iconst _ k)))
       (if-let amt (lshl_from_imm64 ty k))
       (alu_rrr_shift op ty x y amt))
 
@@ -3901,15 +3902,15 @@
 
 (rule 0 (amode ty val offset)
         (amode_no_more_iconst ty val offset))
-(rule 1 (amode ty (iadd x (i32_from_iconst y)) offset)
+(rule 1 (amode ty (iadd _ x (i32_from_iconst y)) offset)
         (if-let new_offset (i32_checked_add y offset))
         (amode_no_more_iconst ty x new_offset))
-(rule 2 (amode ty (iadd (i32_from_iconst x) y) offset)
+(rule 2 (amode ty (iadd _ (i32_from_iconst x) y) offset)
         (if-let new_offset (i32_checked_add x offset))
         (amode_no_more_iconst ty y new_offset))
 
 (rule 3
-      (amode ty (stack_addr slot offset1) offset2)
+      (amode ty (stack_addr _ slot offset1) offset2)
       (AMode.SlotOffset
        (abi_stackslot_offset_into_slot_region slot offset1 offset2)))
 
@@ -3935,15 +3936,15 @@
 ;; instructions. Constants on the other hand added to the amode represent only
 ;; a single instruction folded in, so fewer instructions should be generated
 ;; with these higher priority than the rules above.
-(rule 3 (amode_no_more_iconst ty (iadd x y) offset)
+(rule 3 (amode_no_more_iconst ty (iadd _ x y) offset)
         (AMode.RegReg (amode_add x offset) y))
-(rule 4 (amode_no_more_iconst ty (iadd x (uextend y @ (value_type $I32))) offset)
+(rule 4 (amode_no_more_iconst ty (iadd _ x (uextend _ y @ (value_type $I32))) offset)
         (AMode.RegExtended (amode_add x offset) y (ExtendOp.UXTW)))
-(rule 4 (amode_no_more_iconst ty (iadd x (sextend y @ (value_type $I32))) offset)
+(rule 4 (amode_no_more_iconst ty (iadd _ x (sextend _ y @ (value_type $I32))) offset)
         (AMode.RegExtended (amode_add x offset) y (ExtendOp.SXTW)))
-(rule 5 (amode_no_more_iconst ty (iadd (uextend x @ (value_type $I32)) y) offset)
+(rule 5 (amode_no_more_iconst ty (iadd _ (uextend _ x @ (value_type $I32)) y) offset)
         (AMode.RegExtended (amode_add y offset) x (ExtendOp.UXTW)))
-(rule 5 (amode_no_more_iconst ty (iadd (sextend x @ (value_type $I32)) y) offset)
+(rule 5 (amode_no_more_iconst ty (iadd _ (sextend _ x @ (value_type $I32)) y) offset)
         (AMode.RegExtended (amode_add y offset) x (ExtendOp.SXTW)))
 
 ;; `RegScaled*` rules where this matches an addition of an "index register" to a
@@ -3953,19 +3954,19 @@
 ;; Note that this can additionally bundle an extending operation but the
 ;; extension must happen before the shift. This will pattern-match the shift
 ;; first and then if that succeeds afterwards try to find an extend.
-(rule 6 (amode_no_more_iconst ty (iadd x (ishl y (iconst (u64_from_imm64 n)))) offset)
-        (if-let true (u64_eq (ty_bytes ty) (u64_wrapping_shl 1 (shift_masked_imm ty n))))
+(rule 6 (amode_no_more_iconst ty (iadd _ x (ishl shift_ty y (iconst _ (u64_from_imm64 n)))) offset)
+        (if-let true (u64_eq (ty_bytes ty) (u64_wrapping_shl 1 (shift_masked_imm shift_ty n))))
         (amode_reg_scaled (amode_add x offset) y))
-(rule 7 (amode_no_more_iconst ty (iadd (ishl y (iconst (u64_from_imm64 n))) x) offset)
-        (if-let true (u64_eq (ty_bytes ty) (u64_wrapping_shl 1 (shift_masked_imm ty n))))
+(rule 7 (amode_no_more_iconst ty (iadd _ (ishl shift_ty y (iconst _ (u64_from_imm64 n))) x) offset)
+        (if-let true (u64_eq (ty_bytes ty) (u64_wrapping_shl 1 (shift_masked_imm shift_ty n))))
         (amode_reg_scaled (amode_add x offset) y))
 
 (decl amode_reg_scaled (Reg Value) AMode)
 (rule 0 (amode_reg_scaled base index)
         (AMode.RegScaled base index))
-(rule 1 (amode_reg_scaled base (uextend index @ (value_type $I32)))
+(rule 1 (amode_reg_scaled base (uextend _ index @ (value_type $I32)))
         (AMode.RegScaledExtended base index (ExtendOp.UXTW)))
-(rule 1 (amode_reg_scaled base (sextend index @ (value_type $I32)))
+(rule 1 (amode_reg_scaled base (sextend _ index @ (value_type $I32)))
         (AMode.RegScaledExtended base index (ExtendOp.SXTW)))
 
 ;; Helper to add a 32-bit signed immediate to the register provided. This will
@@ -4003,7 +4004,7 @@
 
 
 (decl sink_load_into_addr (Type Inst) Reg)
-(rule (sink_load_into_addr ty x @ (load _ addr (offset32 offset)))
+(rule (sink_load_into_addr ty x @ (load _ _ addr (offset32 offset)))
       (let ((_ Unit (sink_inst x)))
         (add_imm_to_addr addr (i64_cast_unsigned offset))))
 
@@ -4017,7 +4018,9 @@
 ;; Note that we must make sure that all bits outside the lowest 16 are set to 0
 ;; because this function is also used to load wider constants (that have zeros
 ;; in their most significant bits).
-(decl constant_f16 (u16) Reg)
+;;
+;; Recursion: forms cycle with `constant_f32`. Invokes 32-bit case when FP16 is not supported.
+(decl rec constant_f16 (u16) Reg)
 (rule 3 (constant_f16 n)
         (if-let false (use_fp16))
         (constant_f32 n))
@@ -4036,7 +4039,9 @@
 ;; Note that we must make sure that all bits outside the lowest 32 are set to 0
 ;; because this function is also used to load wider constants (that have zeros
 ;; in their most significant bits).
-(decl constant_f32 (u32) Reg)
+;;
+;; Recursion: forms cycle with `constant_f16`. Invokes 16-bit case when FP16 is supported.
+(decl rec constant_f32 (u32) Reg)
 (rule 3 (constant_f32 0)
         (vec_dup_imm (asimd_mov_mod_imm_zero (ScalarSize.Size32))
                      false
@@ -4099,7 +4104,9 @@
 ;;
 ;; The 64-bit input here only uses the low bits for the lane size in
 ;; `VectorSize` and all other bits are ignored.
-(decl splat_const (u64 VectorSize) Reg)
+;;
+;; Recursion: bounded since the recursive call always reduces lane size.
+(decl rec splat_const (u64 VectorSize) Reg)
 
 ;; If the splat'd constant can itself be reduced in size then attempt to do so
 ;; as it will make it easier to create the immediates in the instructions below.
@@ -4956,7 +4963,8 @@
         (MInst.CSel dst (Cond.Eq) tmp1 tmp2)
         (value_reg dst))))
 
-(decl lower_bmask (Type Type ValueRegs) ValueRegs)
+; Recursion: bounded since recursive calls reduce type width (128-bit to 64-bit).
+(decl rec lower_bmask (Type Type ValueRegs) ValueRegs)
 
 
 ;; For conversions that exactly fit a register, we can use csetm.

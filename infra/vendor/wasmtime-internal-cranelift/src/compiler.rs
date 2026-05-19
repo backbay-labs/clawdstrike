@@ -37,7 +37,7 @@ use wasmtime_environ::{
     Abi, AddressMapSection, BuiltinFunctionIndex, CacheStore, CompileError, CompiledFunctionBody,
     DefinedFuncIndex, FlagValue, FrameInstPos, FrameStackShape, FrameStateSlotBuilder,
     FrameTableBuilder, FuncKey, FunctionBodyData, FunctionLoc, HostCall, InliningCompiler,
-    ModuleTranslation, ModuleTypesBuilder, PtrSize, StackMapSection, StaticModuleIndex,
+    ModulePC, ModuleTranslation, ModuleTypesBuilder, PtrSize, StackMapSection, StaticModuleIndex,
     TrapEncodingBuilder, TrapSentinel, TripleExt, Tunables, WasmFuncType, WasmValType, prelude::*,
 };
 use wasmtime_unwinder::ExceptionTableBuilder;
@@ -434,10 +434,38 @@ impl wasmtime_environ::Compiler for Compiler {
             callee,
             &[callee_vmctx, caller_vmctx, args_base, args_len],
         );
+
+        // Increment the "execution version" on the VMStoreContext if
+        // guest debugging is enabled.
+        if self.tunables.debug_guest {
+            let vmstore_ctx_ptr = builder.ins().load(
+                pointer_type,
+                MemFlags::trusted().with_readonly(),
+                caller_vmctx,
+                i32::from(ptr_size.vmctx_store_context()),
+            );
+            let old_version = builder.ins().load(
+                ir::types::I64,
+                MemFlags::trusted(),
+                vmstore_ctx_ptr,
+                i32::from(ptr_size.vmstore_context_execution_version()),
+            );
+            let new_version = builder.ins().iadd_imm(old_version, 1);
+            builder.ins().store(
+                MemFlags::trusted(),
+                new_version,
+                vmstore_ctx_ptr,
+                i32::from(ptr_size.vmstore_context_execution_version()),
+            );
+        }
+
+        // Invoke `raise` if the callee (host) returned an error.
         let succeeded = builder.func.dfg.inst_results(call)[0];
         self.raise_if_host_trapped(&mut builder, caller_vmctx, succeeded);
+
+        // Return results from the array as native return values.
         let results =
-            self.load_values_from_array(wasm_func_ty.returns(), &mut builder, args_base, args_len);
+            self.load_values_from_array(wasm_func_ty.results(), &mut builder, args_base, args_len);
         builder.ins().return_(&results);
         builder.finalize();
 
@@ -492,7 +520,7 @@ impl wasmtime_environ::Compiler for Compiler {
             }
         }
 
-        let mut breakpoint_table = Vec::new();
+        let mut breakpoint_table: Vec<(ModulePC, Range<u32>)> = Vec::new();
         let mut nop_units = None;
 
         let mut ret = Vec::with_capacity(funcs.len());
@@ -1040,7 +1068,7 @@ impl Compiler {
 
         // Compute the size of the values vector.
         let value_size = mem::size_of::<u128>();
-        let values_vec_len = cmp::max(ty.params().len(), ty.returns().len());
+        let values_vec_len = cmp::max(ty.params().len(), ty.results().len());
         let values_vec_byte_size = u32::try_from(value_size * values_vec_len).unwrap();
         let values_vec_len = u32::try_from(values_vec_len).unwrap();
 
@@ -1391,7 +1419,7 @@ impl Compiler {
         builder.switch_to_block(normal_return);
         self.store_values_to_array(
             &mut builder,
-            callee_sig.returns(),
+            callee_sig.results(),
             &normal_return_values,
             values_vec_ptr,
             values_vec_len,
@@ -1595,7 +1623,7 @@ fn clif_to_env_frame_tables<'a>(
         for frame_tags in tag_site.tags.chunks_exact(3) {
             let &[
                 ir::DebugTag::StackSlot(slot),
-                ir::DebugTag::User(wasm_pc),
+                ir::DebugTag::User(wasm_pc_raw),
                 ir::DebugTag::User(stack_shape),
             ] = frame_tags
             else {
@@ -1617,7 +1645,7 @@ fn clif_to_env_frame_tables<'a>(
             });
 
             frames.push((
-                wasm_pc,
+                ModulePC::new(wasm_pc_raw),
                 frame_descriptor,
                 FrameStackShape::from_raw(stack_shape),
             ));
@@ -1641,8 +1669,8 @@ fn clif_to_env_frame_tables<'a>(
 /// Wasmtime's serialized metadata.
 fn clif_to_env_breakpoints(
     range: Range<u64>,
-    breakpoint_patches: impl Iterator<Item = (u32, Range<u32>)>,
-    patch_table: &mut Vec<(u32, Range<u32>)>,
+    breakpoint_patches: impl Iterator<Item = (ModulePC, Range<u32>)>,
+    patch_table: &mut Vec<(ModulePC, Range<u32>)>,
 ) -> Result<()> {
     patch_table.extend(breakpoint_patches.map(|(wasm_pc, offset_range)| {
         let start = offset_range.start + u32::try_from(range.start).unwrap();

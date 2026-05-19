@@ -89,6 +89,10 @@ indices! {
     pub struct TypeResultIndex(u32);
     /// Index pointing to a list type in the component model.
     pub struct TypeListIndex(u32);
+    /// Index pointing to a map type in the component model.
+    pub struct TypeMapIndex(u32);
+    /// Index pointing to a fixed size list type in the component model.
+    pub struct TypeFixedLengthListIndex(u32);
     /// Index pointing to a future type in the component model.
     pub struct TypeFutureIndex(u32);
 
@@ -281,6 +285,7 @@ pub struct ComponentTypes {
     pub(super) component_instances: PrimaryMap<TypeComponentInstanceIndex, TypeComponentInstance>,
     pub(super) functions: PrimaryMap<TypeFuncIndex, TypeFunc>,
     pub(super) lists: PrimaryMap<TypeListIndex, TypeList>,
+    pub(super) maps: PrimaryMap<TypeMapIndex, TypeMap>,
     pub(super) records: PrimaryMap<TypeRecordIndex, TypeRecord>,
     pub(super) variants: PrimaryMap<TypeVariantIndex, TypeVariant>,
     pub(super) tuples: PrimaryMap<TypeTupleIndex, TypeTuple>,
@@ -296,6 +301,7 @@ pub struct ComponentTypes {
     pub(super) stream_tables: PrimaryMap<TypeStreamTableIndex, TypeStreamTable>,
     pub(super) error_context_tables:
         PrimaryMap<TypeComponentLocalErrorContextTableIndex, TypeErrorContextTable>,
+    pub(super) fixed_length_lists: PrimaryMap<TypeFixedLengthListIndex, TypeFixedLengthList>,
 }
 
 impl TypeTrace for ComponentTypes {
@@ -360,7 +366,9 @@ impl ComponentTypes {
                 &CanonicalAbiInfo::SCALAR8
             }
 
-            InterfaceType::String | InterfaceType::List(_) => &CanonicalAbiInfo::POINTER_PAIR,
+            InterfaceType::String | InterfaceType::List(_) | InterfaceType::Map(_) => {
+                &CanonicalAbiInfo::POINTER_PAIR
+            }
 
             InterfaceType::Record(i) => &self[*i].abi,
             InterfaceType::Variant(i) => &self[*i].abi,
@@ -369,6 +377,7 @@ impl ComponentTypes {
             InterfaceType::Enum(i) => &self[*i].abi,
             InterfaceType::Option(i) => &self[*i].abi,
             InterfaceType::Result(i) => &self[*i].abi,
+            InterfaceType::FixedLengthList(i) => &self[*i].abi,
         }
     }
 
@@ -412,12 +421,14 @@ impl_index! {
     impl Index<TypeOptionIndex> for ComponentTypes { TypeOption => options }
     impl Index<TypeResultIndex> for ComponentTypes { TypeResult => results }
     impl Index<TypeListIndex> for ComponentTypes { TypeList => lists }
+    impl Index<TypeMapIndex> for ComponentTypes { TypeMap => maps }
     impl Index<TypeResourceTableIndex> for ComponentTypes { TypeResourceTable => resource_tables }
     impl Index<TypeFutureIndex> for ComponentTypes { TypeFuture => futures }
     impl Index<TypeStreamIndex> for ComponentTypes { TypeStream => streams }
     impl Index<TypeFutureTableIndex> for ComponentTypes { TypeFutureTable => future_tables }
     impl Index<TypeStreamTableIndex> for ComponentTypes { TypeStreamTable => stream_tables }
     impl Index<TypeComponentLocalErrorContextTableIndex> for ComponentTypes { TypeErrorContextTable => error_context_tables }
+    impl Index<TypeFixedLengthListIndex> for ComponentTypes { TypeFixedLengthList => fixed_length_lists }
 }
 
 // Additionally forward anything that can index `ModuleTypes` to `ModuleTypes`
@@ -586,6 +597,7 @@ pub enum InterfaceType {
     Variant(TypeVariantIndex),
     List(TypeListIndex),
     Tuple(TypeTupleIndex),
+    Map(TypeMapIndex),
     Flags(TypeFlagsIndex),
     Enum(TypeEnumIndex),
     Option(TypeOptionIndex),
@@ -595,6 +607,7 @@ pub enum InterfaceType {
     Future(TypeFutureTableIndex),
     Stream(TypeStreamTableIndex),
     ErrorContext(TypeComponentLocalErrorContextTableIndex),
+    FixedLengthList(TypeFixedLengthListIndex),
 }
 
 /// Bye information about a type in the canonical ABI, with metadata for both
@@ -1173,6 +1186,34 @@ impl TypeResourceTable {
 pub struct TypeList {
     /// The element type of the list.
     pub element: InterfaceType,
+}
+
+/// Shape of a "map" interface type.
+#[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Debug)]
+pub struct TypeMap {
+    /// The key type of the map.
+    pub key: InterfaceType,
+    /// The value type of the map.
+    pub value: InterfaceType,
+    /// Byte information for each map entry represented as `tuple<key, value>`.
+    pub entry_abi: CanonicalAbiInfo,
+    /// Offset in bytes from the start of the entry tuple to the value field in
+    /// memory32.
+    pub value_offset32: u32,
+    /// Offset in bytes from the start of the entry tuple to the value field in
+    /// memory64.
+    pub value_offset64: u32,
+}
+
+/// Shape of a "fixed size list" interface type.
+#[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Debug)]
+pub struct TypeFixedLengthList {
+    /// The element type of the list.
+    pub element: InterfaceType,
+    /// The fixed length of the list.
+    pub size: u32,
+    /// Byte information about this type in the canonical ABI.
+    pub abi: CanonicalAbiInfo,
 }
 
 /// Maximum number of flat types, for either params or results.

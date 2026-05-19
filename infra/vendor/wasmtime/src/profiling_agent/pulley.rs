@@ -32,8 +32,10 @@
 //! example code in the `pulley-interpreter` crate or `pulley/examples/*.rs` in
 //! the Wasmtime repository.
 
+use crate::ToWasmtimeResult as _;
 use crate::prelude::*;
 use crate::profiling_agent::ProfilingAgent;
+#[cfg(feature = "runtime")]
 use crate::vm::Interpreter;
 use pulley_interpreter::profile::{ExecutingPc, Recorder, Samples};
 use std::mem;
@@ -97,7 +99,7 @@ pub fn new() -> Result<Box<dyn ProfilingAgent>> {
     let filename = format!("./pulley-{pid}.data");
     let mut agent = PulleyAgent {
         state: Arc::new(State {
-            recorder: Mutex::new(Recorder::new(&filename)?),
+            recorder: Mutex::new(Recorder::new(&filename).to_wasmtime_result()?),
             sampling: Default::default(),
             sampling_done: Condvar::new(),
             sampling_freq: std::env::var("PULLEY_SAMPLING_FREQ")
@@ -140,6 +142,7 @@ impl ProfilingAgent for PulleyAgent {
     /// Registers a new interpreter coming online. Interpreters, with
     /// `pulley-profile` enabled, store a shadow program counter updated on each
     /// instruction which we can read from a different thread.
+    #[cfg(feature = "runtime")]
     fn register_interpreter(&self, interpreter: &Interpreter) {
         let pc = interpreter.pulley().executing_pc();
         self.state

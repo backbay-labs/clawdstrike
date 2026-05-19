@@ -30,9 +30,9 @@ use core::num::NonZeroU32;
 use core::ptr::{self, NonNull};
 use wasmtime_unwinder::Handler;
 
-pub use self::backtrace::Backtrace;
 #[cfg(feature = "debug")]
-pub(crate) use self::backtrace::{FrameOrHostCode, StoreBacktrace};
+pub(crate) use self::backtrace::Activation;
+pub use self::backtrace::Backtrace;
 #[cfg(feature = "gc")]
 pub use wasmtime_unwinder::Frame;
 
@@ -544,7 +544,7 @@ mod call_thread_state {
         #[cfg(feature = "coredump")]
         pub(super) capture_coredump: bool,
 
-        pub(crate) vm_store_context: NonNull<VMStoreContext>,
+        pub(crate) vm_store_context: Cell<NonNull<VMStoreContext>>,
         pub(crate) unwinder: &'static dyn Unwind,
 
         pub(super) prev: Cell<tls::Ptr>,
@@ -579,10 +579,10 @@ mod call_thread_state {
                 unwinder: store.unwinder(),
                 #[cfg(all(has_native_signals))]
                 signal_handler: store.signal_handler(),
-                capture_backtrace: store.engine().config().wasm_backtrace,
+                capture_backtrace: store.engine().config().wasm_backtrace_max_frames.is_some(),
                 #[cfg(feature = "coredump")]
                 capture_coredump: store.engine().config().coredump_on_trap,
-                vm_store_context: store.vm_store_context_ptr(),
+                vm_store_context: Cell::new(store.vm_store_context_ptr()),
                 prev: Cell::new(ptr::null()),
                 old_state,
             }
@@ -670,7 +670,7 @@ mod call_thread_state {
             }
 
             unsafe {
-                let cx = self.vm_store_context.as_ref();
+                let cx = self.vm_store_context.get().as_ref();
                 swap(
                     &cx.last_wasm_exit_trampoline_fp,
                     &mut (*self.old_state).last_wasm_exit_trampoline_fp,
@@ -740,7 +740,7 @@ impl CallThreadState {
     /// called using, for example, the `unwind` function below.
     ///
     /// Note that this is a relatively low-level function and will panic if
-    /// mis-used.
+    /// misused.
     ///
     /// # Panics
     ///
@@ -751,6 +751,10 @@ impl CallThreadState {
             let prev = self.unwind.replace(UnwindState::None);
             assert!(prev.is_none());
         }
+
+        // Avoid unused-variable warning in non-exceptions/GC build.
+        let _ = store;
+
         let state = match reason {
             #[cfg(all(feature = "std", panic = "unwind"))]
             UnwindReason::Panic(err) => {
@@ -807,10 +811,10 @@ impl CallThreadState {
             }
         };
 
-        // Avoid unused-variable warning in non-exceptions/GC build.
-        let _ = store;
-
         self.unwind.set(state);
+
+        // Re-derive our VMStoreContext pointer for provenance.
+        self.vm_store_context.set(store.vm_store_context_ptr());
     }
 
     /// Helper function to perform an actual unwinding operation.
@@ -833,10 +837,14 @@ impl CallThreadState {
             let result = match &unwind {
                 #[cfg(feature = "gc")]
                 UnwindState::UnwindToWasm(_) => {
+                    use wasmtime_core::alloc::PanicOnOom;
+
                     assert!(store.as_store_opaque().has_pending_exception());
                     let exn = store
                         .as_store_opaque()
                         .pending_exception_owned_rooted()
+                        // TODO(#12069): handle allocation failure here
+                        .panic_on_oom()
                         .expect("exception should be set when we are throwing");
                     store.block_on_debug_handler(crate::DebugEvent::CaughtExceptionThrown(exn))
                 }
@@ -845,9 +853,13 @@ impl CallThreadState {
                     reason: UnwindReason::Trap(TrapReason::Exception),
                     ..
                 } => {
+                    use wasmtime_core::alloc::PanicOnOom;
+
                     let exn = store
                         .as_store_opaque()
                         .pending_exception_owned_rooted()
+                        // TODO(#12069): handle allocation failure here
+                        .panic_on_oom()
                         .expect("exception should be set when we are throwing");
                     store.block_on_debug_handler(crate::DebugEvent::UncaughtExceptionThrown(
                         exn.clone(),
@@ -940,7 +952,7 @@ impl CallThreadState {
 
     pub(crate) fn entry_trap_handler(&self) -> Handler {
         unsafe {
-            let vm_store_context = self.vm_store_context.as_ref();
+            let vm_store_context = self.vm_store_context.get().as_ref();
             let fp = *vm_store_context.last_wasm_entry_fp.get();
             let sp = *vm_store_context.last_wasm_entry_sp.get();
             let pc = *vm_store_context.last_wasm_entry_trap_handler.get();
@@ -1049,8 +1061,10 @@ impl CallThreadState {
         faulting_addr: Option<usize>,
         trap: wasmtime_environ::Trap,
     ) {
-        let backtrace = self.capture_backtrace(self.vm_store_context.as_ptr(), Some((pc, fp)));
-        let coredump_stack = self.capture_coredump(self.vm_store_context.as_ptr(), Some((pc, fp)));
+        let backtrace =
+            self.capture_backtrace(self.vm_store_context.get().as_ptr(), Some((pc, fp)));
+        let coredump_stack =
+            self.capture_coredump(self.vm_store_context.get().as_ptr(), Some((pc, fp)));
         self.unwind.set(UnwindState::UnwindToHost {
             reason: UnwindReason::Trap(TrapReason::Jit {
                 pc,

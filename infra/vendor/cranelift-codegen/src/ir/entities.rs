@@ -57,7 +57,6 @@ impl Block {
 /// - [`f64const`](super::InstBuilder::f64const) for 64-bit float constants
 /// - [`f128const`](super::InstBuilder::f128const) for 128-bit float constants
 /// - [`vconst`](super::InstBuilder::vconst) for vector constants
-/// - [`null`](super::InstBuilder::null) for null reference constants
 ///
 /// Any `InstBuilder` instruction that has an output will also return a `Value`.
 ///
@@ -181,25 +180,6 @@ entity_impl!(GlobalValue, "gv");
 
 impl GlobalValue {
     /// Create a new global value reference from its number.
-    ///
-    /// This method is for use by the parser.
-    pub fn with_number(n: u32) -> Option<Self> {
-        if n < u32::MAX { Some(Self(n)) } else { None }
-    }
-}
-
-/// An opaque reference to a memory type.
-///
-/// A `MemoryType` is a descriptor of a struct layout in memory, with
-/// types and proof-carrying-code facts optionally attached to the
-/// fields.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
-pub struct MemoryType(u32);
-entity_impl!(MemoryType, "mt");
-
-impl MemoryType {
-    /// Create a new memory type reference from its number.
     ///
     /// This method is for use by the parser.
     pub fn with_number(n: u32) -> Option<Self> {
@@ -401,8 +381,6 @@ pub enum AnyEntity {
     DynamicType(DynamicType),
     /// A Global value.
     GlobalValue(GlobalValue),
-    /// A memory type.
-    MemoryType(MemoryType),
     /// A jump table.
     JumpTable(JumpTable),
     /// A constant.
@@ -428,7 +406,6 @@ impl fmt::Display for AnyEntity {
             Self::DynamicStackSlot(r) => r.fmt(f),
             Self::DynamicType(r) => r.fmt(f),
             Self::GlobalValue(r) => r.fmt(f),
-            Self::MemoryType(r) => r.fmt(f),
             Self::JumpTable(r) => r.fmt(f),
             Self::Constant(r) => r.fmt(f),
             Self::FuncRef(r) => r.fmt(f),
@@ -484,12 +461,6 @@ impl From<DynamicType> for AnyEntity {
 impl From<GlobalValue> for AnyEntity {
     fn from(r: GlobalValue) -> Self {
         Self::GlobalValue(r)
-    }
-}
-
-impl From<MemoryType> for AnyEntity {
-    fn from(r: MemoryType) -> Self {
-        Self::MemoryType(r)
     }
 }
 

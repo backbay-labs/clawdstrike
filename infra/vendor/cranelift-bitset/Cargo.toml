@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "cranelift-bitset"
-version = "0.128.4"
+version = "0.131.1"
 authors = ["The Cranelift Project Developers"]
 build = false
 autolib = false
@@ -57,6 +57,10 @@ default-features = false
 version = "1.0.228"
 optional = true
 
+[dependencies.wasmtime-core]
+version = "=44.0.1"
+package = "wasmtime-internal-core"
+
 [lints.clippy]
 allow_attributes_without_reason = "warn"
 clone_on_copy = "warn"
@@ -92,4 +96,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

@@ -1,9 +1,8 @@
 use alloc::vec::Vec;
-use indexmap::IndexSet;
-use std::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut};
 
 use crate::common::{Encoding, RangeListsOffset, SectionId};
-use crate::write::{Address, BaseId, Error, Result, Section, Sections, Writer};
+use crate::write::{Address, BaseId, Error, FnvIndexSet, Result, Section, Sections, Writer};
 
 define_section!(
     DebugRanges,
@@ -30,7 +29,7 @@ define_id!(
 #[derive(Debug, Default)]
 pub struct RangeListTable {
     base_id: BaseId,
-    ranges: IndexSet<RangeList>,
+    ranges: FnvIndexSet<RangeList>,
 }
 
 impl RangeListTable {
@@ -145,7 +144,7 @@ impl RangeListTable {
         w.write_u8(encoding.address_size)?;
         w.write_u8(0)?; // segment_selector_size
         w.write_u32(0)?; // offset_entry_count (when set to zero DW_FORM_rnglistx can't be used, see section 7.28)
-                         // FIXME implement DW_FORM_rnglistx writing and implement the offset entry list
+        // FIXME implement DW_FORM_rnglistx writing and implement the offset entry list
 
         for range_list in self.ranges.iter() {
             offsets.push(w.offset());
@@ -226,43 +225,53 @@ mod convert {
     use super::*;
 
     use crate::read::{self, Reader};
-    use crate::write::{ConvertError, ConvertResult, ConvertUnitContext};
+    use crate::write::{ConvertError, ConvertResult};
 
     impl RangeList {
         /// Create a range list by reading the data from the give range list iter.
         pub(crate) fn from<R: Reader<Offset = usize>>(
             mut from: read::RawRngListIter<R>,
-            context: &ConvertUnitContext<'_, R>,
+            from_unit: read::UnitRef<'_, R>,
+            convert_address: &dyn Fn(u64) -> Option<Address>,
         ) -> ConvertResult<Self> {
-            let mut have_base_address = context.base_address != Address::Constant(0);
-            let convert_address =
-                |x| (context.convert_address)(x).ok_or(ConvertError::InvalidAddress);
+            let convert_address = |x| convert_address(x).ok_or(ConvertError::InvalidAddress);
+            // The CU DW_AT_low_pc was parsed with `Reader::read_address`.
+            // We could pass it to `convert_address`, but we rely on `read_address`
+            // returning 0 if and only if it was an unrelocated 0 value.
+            // If it is 0, then DWARF v2-4 ranges are address pairs unless there is a
+            // base address entry, otherwise they must be offset pairs.
+            // We don't handle the possibility of this being a tombstone since I don't
+            // think that can occur.
+            let mut have_base_address = from_unit.low_pc != 0;
             let mut ranges = Vec::new();
             while let Some(from_range) = from.next()? {
                 let range = match from_range {
                     read::RawRngListEntry::AddressOrOffsetPair { begin, end } => {
-                        // These were parsed as addresses, even if they are offsets.
+                        // These were parsed with `Reader::read_address`, even if they are
+                        // offsets, so we need to apply the conversion function.
+                        // For executables, the converted values will be `Address::Constant`
+                        // for both offsets and addresses.
+                        // For relocatable objects, we expect offsets to be `Address::Constant`
+                        // and addresses to be `Address::Symbol`.
                         let begin = convert_address(begin)?;
                         let end = convert_address(end)?;
-                        match (begin, end) {
-                            (Address::Constant(begin_offset), Address::Constant(end_offset)) => {
-                                if have_base_address {
-                                    Range::OffsetPair {
-                                        begin: begin_offset,
-                                        end: end_offset,
-                                    }
-                                } else {
-                                    Range::StartEnd { begin, end }
-                                }
+                        // We must use the presence of a base address to disambiguate between
+                        // offsets and addresses for both executables and relocatable objects.
+                        // (This logic is also used in `LocationList::from`.)
+                        if have_base_address {
+                            let (Address::Constant(begin_offset), Address::Constant(end_offset)) =
+                                (begin, end)
+                            else {
+                                // We have a relocatable object file that uses both a base address
+                                // and an address pair.
+                                return Err(ConvertError::InvalidRangeRelativeAddress);
+                            };
+                            Range::OffsetPair {
+                                begin: begin_offset,
+                                end: end_offset,
                             }
-                            _ => {
-                                if have_base_address {
-                                    // At least one of begin/end is an address, but we also have
-                                    // a base address. Adding addresses is undefined.
-                                    return Err(ConvertError::InvalidRangeRelativeAddress);
-                                }
-                                Range::StartEnd { begin, end }
-                            }
+                        } else {
+                            Range::StartEnd { begin, end }
                         }
                     }
                     read::RawRngListEntry::BaseAddress { addr } => {
@@ -272,16 +281,16 @@ mod convert {
                     }
                     read::RawRngListEntry::BaseAddressx { addr } => {
                         have_base_address = true;
-                        let address = convert_address(context.dwarf.address(context.unit, addr)?)?;
+                        let address = convert_address(from_unit.address(addr)?)?;
                         Range::BaseAddress { address }
                     }
                     read::RawRngListEntry::StartxEndx { begin, end } => {
-                        let begin = convert_address(context.dwarf.address(context.unit, begin)?)?;
-                        let end = convert_address(context.dwarf.address(context.unit, end)?)?;
+                        let begin = convert_address(from_unit.address(begin)?)?;
+                        let end = convert_address(from_unit.address(end)?)?;
                         Range::StartEnd { begin, end }
                     }
                     read::RawRngListEntry::StartxLength { begin, length } => {
-                        let begin = convert_address(context.dwarf.address(context.unit, begin)?)?;
+                        let begin = convert_address(from_unit.address(begin)?)?;
                         Range::StartLength { begin, length }
                     }
                     read::RawRngListEntry::OffsetPair { begin, end } => {
@@ -315,24 +324,17 @@ mod convert {
 #[cfg(feature = "read")]
 mod tests {
     use super::*;
+    use crate::LittleEndian;
     use crate::common::{
-        DebugAbbrevOffset, DebugAddrBase, DebugInfoOffset, DebugLocListsBase, DebugRngListsBase,
-        DebugStrOffsetsBase, Format,
+        DebugAbbrevOffset, DebugAddrBase, DebugLocListsBase, DebugRngListsBase,
+        DebugStrOffsetsBase, Format, UnitSectionOffset,
     };
     use crate::read;
-    use crate::write::{
-        ConvertUnitContext, EndianVec, LineStringTable, LocationListTable, Range, RangeListTable,
-        StringTable,
-    };
-    use crate::LittleEndian;
-    use std::collections::HashMap;
-    use std::sync::Arc;
+    use crate::write::{EndianVec, Range, RangeListTable};
+    use alloc::sync::Arc;
 
     #[test]
     fn test_range() {
-        let mut line_strings = LineStringTable::default();
-        let mut strings = StringTable::default();
-
         for &version in &[2, 3, 4, 5] {
             for &address_size in &[4, 8] {
                 for &format in &[Format::Dwarf32, Format::Dwarf64] {
@@ -384,7 +386,8 @@ mod tests {
                             0,
                             read::UnitType::Compilation,
                             DebugAbbrevOffset(0),
-                            DebugInfoOffset(0).into(),
+                            SectionId::DebugInfo,
+                            UnitSectionOffset(0),
                             read::EndianSlice::default(),
                         ),
                         abbreviations: Arc::new(read::Abbreviations::default()),
@@ -398,20 +401,11 @@ mod tests {
                         line_program: None,
                         dwo_id: None,
                     };
-                    let context = ConvertUnitContext {
-                        dwarf: &dwarf,
-                        unit: &unit,
-                        line_strings: &mut line_strings,
-                        strings: &mut strings,
-                        ranges: &mut ranges,
-                        locations: &mut LocationListTable::default(),
-                        convert_address: &|address| Some(Address::Constant(address)),
-                        base_address: Address::Constant(0),
-                        line_program_offset: None,
-                        line_program_files: Vec::new(),
-                        entry_ids: &HashMap::new(),
-                    };
-                    let convert_range_list = RangeList::from(read_range_list, &context).unwrap();
+                    let convert_range_list =
+                        RangeList::from(read_range_list, unit.unit_ref(&dwarf), &|address| {
+                            Some(Address::Constant(address))
+                        })
+                        .unwrap();
 
                     if version <= 4 {
                         range_list.0[0] = Range::StartEnd {

@@ -6,12 +6,14 @@ use crate::runtime::vm::memory::Memory;
 use crate::runtime::vm::mpk::ProtectionKey;
 use crate::runtime::vm::table::Table;
 use crate::runtime::vm::{CompiledModuleId, ModuleRuntimeInfo};
-use crate::store::{InstanceId, StoreOpaque, StoreResourceLimiter};
+use crate::store::{Asyncness, InstanceId, StoreOpaque, StoreResourceLimiter};
 use crate::{OpaqueRootScope, Val};
+use core::future::Future;
+use core::pin::Pin;
 use core::{mem, ptr};
 use wasmtime_environ::{
     DefinedMemoryIndex, DefinedTableIndex, HostPtr, InitMemory, MemoryInitialization,
-    MemoryInitializer, Module, PrimaryMap, SizeOverflow, TableInitialValue, Trap, VMOffsets,
+    MemoryInitializer, Module, SizeOverflow, TableInitialValue, Trap, VMOffsets,
 };
 
 #[cfg(feature = "gc")]
@@ -127,7 +129,6 @@ impl GcHeapAllocationIndex {
 ///
 /// This trait is unsafe as it requires knowledge of Wasmtime's runtime
 /// internals to implement correctly.
-#[async_trait::async_trait]
 pub unsafe trait InstanceAllocator: Send + Sync {
     /// Validate whether a component (including all of its contained core
     /// modules) is allocatable by this instance allocator.
@@ -184,12 +185,15 @@ pub unsafe trait InstanceAllocator: Send + Sync {
     fn decrement_core_instance_count(&self);
 
     /// Allocate a memory for an instance.
-    async fn allocate_memory(
-        &self,
-        request: &mut InstanceAllocationRequest<'_, '_>,
-        ty: &wasmtime_environ::Memory,
+    ///
+    /// Returns `Err(OutOfMemory)` if boxing the future fails. The inner
+    /// `Result` covers other allocation errors (e.g. resource limits).
+    fn allocate_memory<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        request: &'a mut InstanceAllocationRequest<'b, 'c>,
+        ty: &'a wasmtime_environ::Memory,
         memory_index: Option<DefinedMemoryIndex>,
-    ) -> Result<(MemoryAllocationIndex, Memory)>;
+    ) -> Pin<Box<dyn Future<Output = Result<(MemoryAllocationIndex, Memory)>> + Send + 'a>>;
 
     /// Deallocate an instance's previously allocated memory.
     ///
@@ -206,12 +210,15 @@ pub unsafe trait InstanceAllocator: Send + Sync {
     );
 
     /// Allocate a table for an instance.
-    async fn allocate_table(
-        &self,
-        req: &mut InstanceAllocationRequest<'_, '_>,
-        table: &wasmtime_environ::Table,
+    ///
+    /// Returns `Err(OutOfMemory)` if boxing the future fails. The inner
+    /// `Result` covers other allocation errors (e.g. resource limits).
+    fn allocate_table<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        req: &'a mut InstanceAllocationRequest<'b, 'c>,
+        table: &'a wasmtime_environ::Table,
         table_index: DefinedTableIndex,
-    ) -> Result<(TableAllocationIndex, Table)>;
+    ) -> Pin<Box<dyn Future<Output = Result<(TableAllocationIndex, Table)>> + Send + 'a>>;
 
     /// Deallocate an instance's previously allocated table.
     ///
@@ -326,8 +333,8 @@ impl dyn InstanceAllocator + '_ {
 
         let mut guard = DeallocateOnDrop {
             run_deallocate: true,
-            memories: PrimaryMap::with_capacity(num_defined_memories),
-            tables: PrimaryMap::with_capacity(num_defined_tables),
+            memories: TryPrimaryMap::with_capacity(num_defined_memories)?,
+            tables: TryPrimaryMap::with_capacity(num_defined_tables)?,
             allocator: self,
         };
 
@@ -344,14 +351,13 @@ impl dyn InstanceAllocator + '_ {
                 request,
                 mem::take(&mut guard.memories),
                 mem::take(&mut guard.tables),
-                &module.memories,
-            ))
+            )?)
         };
 
         struct DeallocateOnDrop<'a> {
             run_deallocate: bool,
-            memories: PrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
-            tables: PrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
+            memories: TryPrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
+            tables: TryPrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
             allocator: &'a (dyn InstanceAllocator + 'a),
         }
 
@@ -395,7 +401,7 @@ impl dyn InstanceAllocator + '_ {
     async fn allocate_memories(
         &self,
         request: &mut InstanceAllocationRequest<'_, '_>,
-        memories: &mut PrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
+        memories: &mut TryPrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
     ) -> Result<()> {
         let module = request.runtime_info.env_module();
 
@@ -412,7 +418,7 @@ impl dyn InstanceAllocator + '_ {
             let memory = self
                 .allocate_memory(request, ty, Some(memory_index))
                 .await?;
-            memories.push(memory);
+            memories.push(memory)?;
         }
 
         Ok(())
@@ -426,7 +432,7 @@ impl dyn InstanceAllocator + '_ {
     /// `Self::allocate_memories`.
     unsafe fn deallocate_memories(
         &self,
-        memories: &mut PrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
+        memories: &mut TryPrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
     ) {
         for (memory_index, (allocation_index, memory)) in mem::take(memories) {
             // Because deallocating memory is infallible, we don't need to worry
@@ -448,7 +454,7 @@ impl dyn InstanceAllocator + '_ {
     async fn allocate_tables(
         &self,
         request: &mut InstanceAllocationRequest<'_, '_>,
-        tables: &mut PrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
+        tables: &mut TryPrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
     ) -> Result<()> {
         let module = request.runtime_info.env_module();
 
@@ -463,7 +469,7 @@ impl dyn InstanceAllocator + '_ {
                 .expect("should be a defined table since we skipped imported ones");
 
             let table = self.allocate_table(request, table, def_index).await?;
-            tables.push(table);
+            tables.push(table)?;
         }
 
         Ok(())
@@ -477,7 +483,7 @@ impl dyn InstanceAllocator + '_ {
     /// `Self::allocate_tables`.
     unsafe fn deallocate_tables(
         &self,
-        tables: &mut PrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
+        tables: &mut TryPrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
     ) {
         for (table_index, (allocation_index, table)) in mem::take(tables) {
             // SAFETY: the tables here were allocated from this allocator per
@@ -493,25 +499,25 @@ fn check_table_init_bounds(
     store: &mut StoreOpaque,
     instance: InstanceId,
     module: &Module,
+    context: &mut ConstEvalContext,
+    const_evaluator: &mut ConstExprEvaluator,
 ) -> Result<()> {
-    let mut const_evaluator = ConstExprEvaluator::default();
     let mut store = OpaqueRootScope::new(store);
 
     for segment in module.table_initialization.segments.iter() {
-        let mut context = ConstEvalContext::new(instance);
         let start = const_evaluator
-            .eval_int(&mut store, &mut context, &segment.offset)
+            .eval_int(&mut store, context, &segment.offset)
             .expect("const expression should be valid");
-        let start = usize::try_from(start.unwrap_i32().cast_unsigned()).unwrap();
-        let end = start.checked_add(usize::try_from(segment.elements.len()).unwrap());
+        let start = get_index(start, module.tables[segment.table_index].idx_type);
+        let end = start.checked_add(segment.elements.len());
 
         let table = store.instance_mut(instance).get_table(segment.table_index);
         match end {
-            Some(end) if end <= table.size() => {
+            Some(end) if end <= u64::try_from(table.size())? => {
                 // Initializer is in bounds
             }
             _ => {
-                bail!("table out of bounds: elements segment does not fit")
+                bail!(Trap::TableOutOfBounds);
             }
         }
     }
@@ -558,13 +564,11 @@ async fn initialize_tables(
         let start = const_evaluator
             .eval_int(&mut store, context, &segment.offset)
             .expect("const expression should be valid");
-        let start = get_index(
-            start,
-            store.instance(context.instance).env_module().tables[segment.table_index].idx_type,
-        );
+        let start = get_index(start, module.tables[segment.table_index].idx_type);
         Instance::table_init_segment(
             &mut store,
             limiter.as_deref_mut(),
+            context.asyncness,
             context.instance,
             const_evaluator,
             segment.table_index,
@@ -590,12 +594,12 @@ fn get_memory_init_start(
     store: &mut StoreOpaque,
     init: &MemoryInitializer,
     instance: InstanceId,
+    context: &mut ConstEvalContext,
+    const_evaluator: &mut ConstExprEvaluator,
 ) -> Result<u64> {
-    let mut context = ConstEvalContext::new(instance);
-    let mut const_evaluator = ConstExprEvaluator::default();
     let mut store = OpaqueRootScope::new(store);
     const_evaluator
-        .eval_int(&mut store, &mut context, &init.offset)
+        .eval_int(&mut store, context, &init.offset)
         .map(|v| {
             get_index(
                 v,
@@ -608,10 +612,12 @@ fn check_memory_init_bounds(
     store: &mut StoreOpaque,
     instance: InstanceId,
     initializers: &[MemoryInitializer],
+    context: &mut ConstEvalContext,
+    const_evaluator: &mut ConstExprEvaluator,
 ) -> Result<()> {
     for init in initializers {
         let memory = store.instance_mut(instance).get_memory(init.memory_index);
-        let start = get_memory_init_start(store, init, instance)?;
+        let start = get_memory_init_start(store, init, instance, context, const_evaluator)?;
         let end = usize::try_from(start)
             .ok()
             .and_then(|start| start.checked_add(init.data.len()));
@@ -621,7 +627,7 @@ fn check_memory_init_bounds(
                 // Initializer is in bounds
             }
             _ => {
-                bail!("memory out of bounds: data segment does not fit")
+                bail!(Trap::MemoryOutOfBounds);
             }
         }
     }
@@ -729,12 +735,18 @@ fn initialize_memories(
     Ok(())
 }
 
-fn check_init_bounds(store: &mut StoreOpaque, instance: InstanceId, module: &Module) -> Result<()> {
-    check_table_init_bounds(store, instance, module)?;
+fn check_init_bounds(
+    store: &mut StoreOpaque,
+    instance: InstanceId,
+    context: &mut ConstEvalContext,
+    const_evaluator: &mut ConstExprEvaluator,
+    module: &Module,
+) -> Result<()> {
+    check_table_init_bounds(store, instance, module, context, const_evaluator)?;
 
     match &module.memory_initialization {
         MemoryInitialization::Segmented(initializers) => {
-            check_memory_init_bounds(store, instance, initializers)?;
+            check_memory_init_bounds(store, instance, initializers, context, const_evaluator)?;
         }
         // Statically validated already to have everything in-bounds.
         MemoryInitialization::Static { .. } => {}
@@ -805,17 +817,18 @@ pub async fn initialize_instance(
     instance: InstanceId,
     module: &Module,
     is_bulk_memory: bool,
+    asyncness: Asyncness,
 ) -> Result<()> {
+    let mut context = ConstEvalContext::new(instance, asyncness);
+    let mut const_evaluator = ConstExprEvaluator::default();
+
     // If bulk memory is not enabled, bounds check the data and element segments before
     // making any changes. With bulk memory enabled, initializers are processed
     // in-order and side effects are observed up to the point of an out-of-bounds
     // initializer, so the early checking is not desired.
     if !is_bulk_memory {
-        check_init_bounds(store, instance, module)?;
+        check_init_bounds(store, instance, &mut context, &mut const_evaluator, module)?;
     }
-
-    let mut context = ConstEvalContext::new(instance);
-    let mut const_evaluator = ConstExprEvaluator::default();
 
     initialize_globals(
         store,

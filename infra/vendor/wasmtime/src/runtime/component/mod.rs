@@ -124,8 +124,6 @@ pub use self::concurrent::{
     GuardedStreamReader, JoinHandle, ReadBuffer, Source, StreamAny, StreamConsumer, StreamProducer,
     StreamReader, StreamResult, VMComponentAsyncStore, VecBuffer, WriteBuffer,
 };
-#[cfg(feature = "component-model-async")]
-pub use self::func::TaskExit;
 pub use self::func::{
     ComponentNamedList, ComponentType, Func, Lift, Lower, TypedFunc, WasmList, WasmStr,
 };
@@ -139,7 +137,7 @@ pub use self::values::Val;
 
 pub(crate) use self::instance::RuntimeImport;
 pub(crate) use self::resources::HostResourceData;
-pub(crate) use self::store::ComponentInstanceId;
+pub(crate) use self::store::{ComponentInstanceId, RuntimeInstance};
 
 // Re-export wasm_wave crate so the compatible version of this dep doesn't have to be
 // tracked separately from wasmtime.
@@ -161,7 +159,6 @@ pub mod __internal {
     pub use alloc::boxed::Box;
     pub use alloc::string::String;
     pub use alloc::vec::Vec;
-    pub use anyhow;
     pub use core::cell::RefCell;
     pub use core::future::Future;
     pub use core::mem::transmute;
@@ -288,8 +285,7 @@ pub(crate) use self::store::ComponentStoreData;
 ///         // The `async` flag is used to indicate that a Rust-level `async`
 ///         // function is used on the host. This means that the host is allowed
 ///         // to do async I/O. Note though that to WebAssembly itself the
-///         // function will still be blocking. This requires
-///         // `Config::async_support` to be `true` as well.
+///         // function will still be blocking.
 ///         "wasi:io/poll.poll": async,
 ///
 ///         // The `store` flag means that the host function will have access
@@ -468,6 +464,16 @@ pub(crate) use self::store::ComponentStoreData;
 ///     //
 ///     // By default this is `wasmtime`.
 ///     wasmtime_crate: path::to::wasmtime,
+///
+///     // Whether to use `anyhow::Result` for trappable host-defined function
+///     // imports, rather than `wasmtime::Result`.
+///     //
+///     // By default, this is false and `wasmtime::Result` is used instead of
+///     // `anyhow::Result`.
+///     //
+///     // When enabled, the generated code requires the `"anyhow"` cargo feature
+///     // to also be enabled in the `wasmtime` crate.
+///     anyhow: false,
 ///
 ///     // This is an in-source alternative to using `WASMTIME_DEBUG_BINDGEN`.
 ///     //

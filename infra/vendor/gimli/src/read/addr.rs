@@ -115,6 +115,14 @@ impl<R: Reader> fallible_iterator::FallibleIterator for AddrHeaderIter<R> {
     }
 }
 
+impl<R: Reader> Iterator for AddrHeaderIter<R> {
+    type Item = Result<AddrHeader<R>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        AddrHeaderIter::next(self).transpose()
+    }
+}
+
 /// A header for a set of entries in the `.debug_addr` section.
 ///
 /// These entries all belong to a single unit.
@@ -148,7 +156,7 @@ where
         let address_size = rest.read_address_size()?;
         let segment_size = rest.read_u8()?;
         if segment_size != 0 {
-            return Err(Error::UnsupportedSegmentSize);
+            return Err(Error::UnsupportedSegmentSize(segment_size));
         }
 
         // unit_length + version + address_size + segment_size
@@ -210,9 +218,6 @@ where
 }
 
 /// An iterator over the addresses from a `.debug_addr` section.
-///
-/// Can be [used with
-/// `FallibleIterator`](./index.html#using-with-fallibleiterator).
 #[derive(Debug, Clone)]
 pub struct AddrEntryIter<R: Reader> {
     input: R,
@@ -248,6 +253,14 @@ impl<R: Reader> fallible_iterator::FallibleIterator for AddrEntryIter<R> {
 
     fn next(&mut self) -> ::core::result::Result<Option<Self::Item>, Self::Error> {
         AddrEntryIter::next(self)
+    }
+}
+
+impl<R: Reader> Iterator for AddrEntryIter<R> {
+    type Item = Result<u64>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        AddrEntryIter::next(self).transpose()
     }
 }
 

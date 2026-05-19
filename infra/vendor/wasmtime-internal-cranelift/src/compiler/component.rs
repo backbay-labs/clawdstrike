@@ -1,14 +1,18 @@
 //! Compilation support for the component model.
 
-use crate::{TRAP_ALWAYS, TRAP_CANNOT_ENTER, TRAP_INTERNAL_ASSERT, compiler::Compiler};
+use crate::func_environ::BuiltinFunctions;
+use crate::trap::TranslateTrap;
+use crate::{TRAP_CANNOT_LEAVE_COMPONENT, TRAP_INTERNAL_ASSERT, compiler::Compiler};
+use cranelift_codegen::cursor::FuncCursor;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{self, InstBuilder, MemFlags, Value};
 use cranelift_codegen::isa::{CallConv, TargetIsa};
 use cranelift_frontend::FunctionBuilder;
 use wasmtime_environ::error::{Result, bail};
 use wasmtime_environ::{
-    Abi, CompiledFunctionBody, EntityRef, FuncKey, HostCall, PtrSize, TrapSentinel, Tunables,
-    WasmFuncType, WasmValType, component::*, fact::PREPARE_CALL_FIXED_PARAMS,
+    Abi, BuiltinFunctionIndex, CompiledFunctionBody, EntityRef, FuncKey, HostCall, PanicOnOom as _,
+    PtrSize, TrapSentinel, Tunables, WasmFuncType, WasmValType, component::*,
+    fact::PREPARE_CALL_FIXED_PARAMS,
 };
 
 struct TrampolineCompiler<'a> {
@@ -20,7 +24,7 @@ struct TrampolineCompiler<'a> {
     offsets: VMComponentOffsets<u8>,
     block0: ir::Block,
     signature: &'a WasmFuncType,
-    tunables: &'a Tunables,
+    builtins: BuiltinFunctions,
 }
 
 /// What host functions can be called, used in `translate_hostcall` below.
@@ -48,9 +52,6 @@ impl From<GetLibcallFn> for HostCallee {
 
 /// How to interpret the results of a host function.
 enum HostResult {
-    /// The host function has no results.
-    None,
-
     /// The host function returns the sentinel specified which is interpreted
     /// and translated to the real return value.
     Sentinel(TrapSentinel),
@@ -100,7 +101,6 @@ impl<'a> TrampolineCompiler<'a> {
         component: &'a Component,
         types: &'a ComponentTypesBuilder,
         signature: &'a WasmFuncType,
-        tunables: &'a Tunables,
     ) -> TrampolineCompiler<'a> {
         let isa = &*compiler.isa;
         let func = ir::Function::with_name_signature(
@@ -117,11 +117,13 @@ impl<'a> TrampolineCompiler<'a> {
             offsets: VMComponentOffsets::new(isa.pointer_bytes(), component),
             block0,
             signature,
-            tunables,
+            builtins: BuiltinFunctions::new(compiler),
         }
     }
 
     fn translate(&mut self, trampoline: &Trampoline) {
+        self.check_may_leave(trampoline);
+
         match trampoline {
             Trampoline::Transcoder {
                 op,
@@ -160,21 +162,6 @@ impl<'a> TrampolineCompiler<'a> {
                     },
                 );
             }
-            Trampoline::AlwaysTrap => {
-                if self.tunables.signals_based_traps {
-                    self.builder.ins().trap(TRAP_ALWAYS);
-                    return;
-                }
-                self.translate_libcall(
-                    host::trap,
-                    TrapSentinel::Falsy,
-                    WasmArgs::InRegisters,
-                    |me, params| {
-                        let code = wasmtime_environ::Trap::AlwaysTrapAdapter as u8;
-                        params.push(me.builder.ins().iconst(ir::types::I32, i64::from(code)));
-                    },
-                );
-            }
             Trampoline::ResourceNew { instance, ty } => {
                 // Currently this only supports resources represented by `i32`
                 assert_eq!(self.signature.params()[0], WasmValType::I32);
@@ -190,7 +177,7 @@ impl<'a> TrampolineCompiler<'a> {
             }
             Trampoline::ResourceRep { instance, ty } => {
                 // Currently this only supports resources represented by `i32`
-                assert_eq!(self.signature.returns()[0], WasmValType::I32);
+                assert_eq!(self.signature.results()[0], WasmValType::I32);
                 self.translate_libcall(
                     host::resource_rep32,
                     TrapSentinel::NegativeOne,
@@ -638,22 +625,6 @@ impl<'a> TrampolineCompiler<'a> {
                     |_, _| {},
                 );
             }
-            Trampoline::ResourceEnterCall => {
-                self.translate_libcall(
-                    host::resource_enter_call,
-                    HostResult::None,
-                    WasmArgs::InRegisters,
-                    |_, _| {},
-                );
-            }
-            Trampoline::ResourceExitCall => {
-                self.translate_libcall(
-                    host::resource_exit_call,
-                    TrapSentinel::Falsy,
-                    WasmArgs::InRegisters,
-                    |_, _| {},
-                );
-            }
             Trampoline::PrepareCall { memory } => {
                 self.translate_libcall(
                     host::prepare_call,
@@ -668,10 +639,7 @@ impl<'a> TrampolineCompiler<'a> {
             Trampoline::SyncStartCall { callback } => {
                 let pointer_type = self.isa.pointer_type();
                 let (values_vec_ptr, len) = self.compiler.allocate_stack_array_and_spill_args(
-                    &WasmFuncType::new(
-                        Box::new([]),
-                        self.signature.returns().iter().copied().collect(),
-                    ),
+                    &WasmFuncType::new([], self.signature.results().iter().copied()).panic_on_oom(),
                     &mut self.builder,
                     &[],
                 );
@@ -732,17 +700,25 @@ impl<'a> TrampolineCompiler<'a> {
                     |_, _| {},
                 );
             }
-            Trampoline::CheckBlocking => {
+            Trampoline::Trap => {
                 self.translate_libcall(
-                    host::check_blocking,
+                    host::trap,
                     TrapSentinel::Falsy,
                     WasmArgs::InRegisters,
                     |_, _| {},
                 );
             }
-            Trampoline::Trap => {
+            Trampoline::EnterSyncCall => {
                 self.translate_libcall(
-                    host::trap,
+                    host::enter_sync_call,
+                    TrapSentinel::Falsy,
+                    WasmArgs::InRegisters,
+                    |_, _| {},
+                );
+            }
+            Trampoline::ExitSyncCall => {
+                self.translate_libcall(
+                    host::exit_sync_call,
                     TrapSentinel::Falsy,
                     WasmArgs::InRegisters,
                     |_, _| {},
@@ -794,12 +770,30 @@ impl<'a> TrampolineCompiler<'a> {
                     },
                 );
             }
-            Trampoline::ThreadSwitchTo {
+            Trampoline::ThreadSuspendToSuspended {
                 instance,
                 cancellable,
             } => {
                 self.translate_libcall(
-                    host::thread_switch_to,
+                    host::thread_suspend_to_suspended,
+                    TrapSentinel::NegativeOne,
+                    WasmArgs::InRegisters,
+                    |me, params| {
+                        params.push(me.index_value(*instance));
+                        params.push(
+                            me.builder
+                                .ins()
+                                .iconst(ir::types::I8, i64::from(*cancellable)),
+                        );
+                    },
+                );
+            }
+            Trampoline::ThreadSuspendTo {
+                instance,
+                cancellable,
+            } => {
+                self.translate_libcall(
+                    host::thread_suspend_to,
                     TrapSentinel::NegativeOne,
                     WasmArgs::InRegisters,
                     |me, params| {
@@ -830,9 +824,9 @@ impl<'a> TrampolineCompiler<'a> {
                     },
                 );
             }
-            Trampoline::ThreadResumeLater { instance } => {
+            Trampoline::ThreadUnsuspend { instance } => {
                 self.translate_libcall(
-                    host::thread_resume_later,
+                    host::thread_unsuspend,
                     TrapSentinel::Falsy,
                     WasmArgs::InRegisters,
                     |me, params| {
@@ -840,12 +834,12 @@ impl<'a> TrampolineCompiler<'a> {
                     },
                 );
             }
-            Trampoline::ThreadYieldTo {
+            Trampoline::ThreadYieldToSuspended {
                 instance,
                 cancellable,
             } => {
                 self.translate_libcall(
-                    host::thread_yield_to,
+                    host::thread_yield_to_suspended,
                     TrapSentinel::NegativeOne,
                     WasmArgs::InRegisters,
                     |me, params| {
@@ -975,10 +969,8 @@ impl<'a> TrampolineCompiler<'a> {
             // A mixture of the above two.
             WasmArgs::InRegistersUpTo(n) => {
                 let (values_vec_ptr, len) = self.compiler.allocate_stack_array_and_spill_args(
-                    &WasmFuncType::new(
-                        self.signature.params().iter().skip(n).copied().collect(),
-                        Box::new([]),
-                    ),
+                    &WasmFuncType::new(self.signature.params().iter().skip(n).copied(), [])
+                        .panic_on_oom(),
                     &mut self.builder,
                     &wasm_params[n..],
                 );
@@ -1029,7 +1021,7 @@ impl<'a> TrampolineCompiler<'a> {
         // accounts for the ABI of this function when storing results.
         let result = self.builder.func.dfg.inst_results(call).get(0).copied();
         let result_ty = result.map(|v| self.builder.func.dfg.value_type(v));
-        let expected = self.signature.returns();
+        let expected = self.signature.results();
         match host_result.into() {
             HostResult::Sentinel(TrapSentinel::NegativeOne) => {
                 assert_eq!(expected.len(), 1);
@@ -1051,17 +1043,13 @@ impl<'a> TrampolineCompiler<'a> {
                 self.abi_store_results(&[]);
             }
             HostResult::Sentinel(_) => todo!("support additional return types if/when necessary"),
-            HostResult::None => {
-                assert!(result.is_none());
-                self.abi_store_results(&[]);
-            }
 
             HostResult::MultiValue { ptr, len } => {
                 let ptr = ptr.or(val_raw_ptr).unwrap();
                 let len = len.or(val_raw_len).unwrap();
                 self.raise_if_host_trapped(result.unwrap());
                 let results = self.compiler.load_values_from_array(
-                    self.signature.returns(),
+                    self.signature.results(),
                     &mut self.builder,
                     ptr,
                     len,
@@ -1138,11 +1126,21 @@ impl<'a> TrampolineCompiler<'a> {
         //      brif should_run_destructor, run_destructor_block, return_block
         //
         //    run_destructor_block:
-        //      ;; test may_enter, but only if the component instances
+        //      ;; test may_leave, but only if the component instances
         //      ;; differ
-        //      flags = load.i32 vmctx+$offset
-        //      masked = band flags, $FLAG_MAY_ENTER
-        //      trapz masked, CANNOT_ENTER_CODE
+        //      flags = load.i32 vmctx+$instance_flags_offset
+        //      masked = band flags, $FLAG_MAY_LEAVE
+        //      trapz masked, $TRAP_CANNOT_LEAVE_COMPONENT
+        //
+        //      ;; set may_block to false, saving the old value to restore
+        //      ;; later, but only if the component instances differ and
+        //      ;; concurrency is enabled
+        //      old_may_block = load.i32 vmctx+$may_block_offset
+        //      store 0, vmctx+$may_block_offset
+        //
+        //      ;; call enter_sync_call, but only if the component instances
+        //      ;; differ and concurrency is enabled
+        //      ...
         //
         //      ;; ============================================================
         //      ;; this is conditionally emitted based on whether the resource
@@ -1155,6 +1153,15 @@ impl<'a> TrampolineCompiler<'a> {
         //      callee_vmctx = load.ptr dtor+$offset
         //      call_indirect func_addr, callee_vmctx, vmctx, rep
         //      ;; ============================================================
+        //
+        //      ;; restore old value of may_block
+        //      store old_may_block, vmctx+$may_block_offset
+        //
+        //      ;; if needed, call exit_sync_call
+        //      ...
+        //
+        //      ;; if needed, restore the old value of may_block
+        //      store old_may_block, vmctx+$may_block_offset
         //
         //      jump return_block
         //
@@ -1185,26 +1192,59 @@ impl<'a> TrampolineCompiler<'a> {
 
         self.builder.switch_to_block(run_destructor_block);
 
-        // If this is a defined resource within the component itself then a
-        // check needs to be emitted for the `may_enter` flag. Note though
-        // that this check can be elided if the resource table resides in
-        // the same component instance that defined the resource as the
-        // component is calling itself.
-        if let Some(def) = resource_def {
+        // If this is a component-defined resource, the `may_leave` flag must be
+        // checked.  Additionally, if concurrency is enabled, the `may_block`
+        // field must be updated and `enter_sync_call` called. Note though that
+        // all of that may be elided if the resource table resides in the same
+        // component instance that defined the resource as the component is
+        // calling itself.
+        let old_may_block = if let Some(def) = resource_def {
             if self.types[resource].unwrap_concrete_instance() != def.instance {
-                let flags = self.builder.ins().load(
-                    ir::types::I32,
-                    trusted,
-                    vmctx,
-                    i32::try_from(self.offsets.instance_flags(def.instance)).unwrap(),
-                );
-                let masked = self
-                    .builder
-                    .ins()
-                    .band_imm(flags, i64::from(FLAG_MAY_ENTER));
-                self.builder.ins().trapz(masked, TRAP_CANNOT_ENTER);
+                self.check_may_leave_instance(self.types[resource].unwrap_concrete_instance());
+
+                if self.compiler.tunables.concurrency_support {
+                    // Stash the old value of `may_block` and then set it to false.
+                    let old_may_block = self.builder.ins().load(
+                        ir::types::I32,
+                        trusted,
+                        vmctx,
+                        i32::try_from(self.offsets.task_may_block()).unwrap(),
+                    );
+                    let zero = self.builder.ins().iconst(ir::types::I32, i64::from(0));
+                    self.builder.ins().store(
+                        ir::MemFlags::trusted(),
+                        zero,
+                        vmctx,
+                        i32::try_from(self.offsets.task_may_block()).unwrap(),
+                    );
+
+                    // Call `enter_sync_call`
+                    //
+                    // FIXME: Apply the optimizations described in #12311.
+                    let host_args = vec![
+                        vmctx,
+                        self.builder
+                            .ins()
+                            .iconst(ir::types::I32, i64::from(instance.as_u32())),
+                        self.builder.ins().iconst(ir::types::I32, i64::from(0)),
+                        self.builder
+                            .ins()
+                            .iconst(ir::types::I32, i64::from(def.instance.as_u32())),
+                    ];
+                    let call = self.call_libcall(vmctx, host::enter_sync_call, &host_args);
+                    let result = self.builder.func.dfg.inst_results(call).get(0).copied();
+                    self.raise_if_host_trapped(result.unwrap());
+
+                    Some(old_may_block)
+                } else {
+                    None
+                }
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         // Conditionally emit destructor-execution code based on whether we
         // statically know that a destructor exists or not.
@@ -1253,6 +1293,24 @@ impl<'a> TrampolineCompiler<'a> {
                 &[callee_vmctx, caller_vmctx, rep],
             );
         }
+
+        if let Some(old_may_block) = old_may_block {
+            // Call `exit_sync_call`
+            //
+            // FIXME: Apply the optimizations described in #12311.
+            let call = self.call_libcall(vmctx, host::exit_sync_call, &[vmctx]);
+            let result = self.builder.func.dfg.inst_results(call).get(0).copied();
+            self.raise_if_host_trapped(result.unwrap());
+
+            // Restore the old value of `may_block`
+            self.builder.ins().store(
+                ir::MemFlags::trusted(),
+                old_may_block,
+                vmctx,
+                i32::try_from(self.offsets.task_may_block()).unwrap(),
+            );
+        }
+
         self.builder.ins().jump(return_block, &[]);
         self.builder.seal_block(run_destructor_block);
 
@@ -1355,8 +1413,12 @@ impl<'a> TrampolineCompiler<'a> {
         self.builder.ins().return_(results);
     }
 
+    fn caller_vmctx(&self) -> ir::Value {
+        self.builder.func.dfg.block_params(self.block0)[1]
+    }
+
     fn raise_if_host_trapped(&mut self, succeeded: ir::Value) {
-        let caller_vmctx = self.builder.func.dfg.block_params(self.block0)[1];
+        let caller_vmctx = self.caller_vmctx();
         self.compiler
             .raise_if_host_trapped(&mut self.builder, caller_vmctx, succeeded);
     }
@@ -1395,6 +1457,127 @@ impl<'a> TrampolineCompiler<'a> {
         self.compiler
             .call_indirect_host(&mut self.builder, index, host_sig, host_fn, args)
     }
+
+    fn check_may_leave(&mut self, trampoline: &Trampoline) {
+        let instance = match trampoline {
+            // These intrinsics explicitly do not check the may-leave flag.
+            Trampoline::ResourceRep { .. }
+            | Trampoline::ThreadIndex
+            | Trampoline::BackpressureInc { .. }
+            | Trampoline::BackpressureDec { .. }
+            | Trampoline::ContextGet { .. }
+            | Trampoline::ContextSet { .. } => return,
+
+            // Intrinsics used in adapters generated by FACT that aren't called
+            // directly from guest wasm, so no check is needed.
+            Trampoline::ResourceTransferOwn
+            | Trampoline::ResourceTransferBorrow
+            | Trampoline::PrepareCall { .. }
+            | Trampoline::SyncStartCall { .. }
+            | Trampoline::AsyncStartCall { .. }
+            | Trampoline::FutureTransfer
+            | Trampoline::StreamTransfer
+            | Trampoline::ErrorContextTransfer
+            | Trampoline::Trap
+            | Trampoline::EnterSyncCall
+            | Trampoline::ExitSyncCall
+            | Trampoline::Transcoder { .. } => return,
+
+            Trampoline::LowerImport { options, .. } => self.component.options[*options].instance,
+
+            Trampoline::ResourceNew { instance, .. }
+            | Trampoline::ResourceDrop { instance, .. }
+            | Trampoline::TaskReturn { instance, .. }
+            | Trampoline::TaskCancel { instance }
+            | Trampoline::WaitableSetNew { instance }
+            | Trampoline::WaitableSetWait { instance, .. }
+            | Trampoline::WaitableSetPoll { instance, .. }
+            | Trampoline::WaitableSetDrop { instance }
+            | Trampoline::WaitableJoin { instance }
+            | Trampoline::ThreadYield { instance, .. }
+            | Trampoline::ThreadNewIndirect { instance, .. }
+            | Trampoline::ThreadSuspend { instance, .. }
+            | Trampoline::ThreadSuspendToSuspended { instance, .. }
+            | Trampoline::ThreadSuspendTo { instance, .. }
+            | Trampoline::ThreadUnsuspend { instance, .. }
+            | Trampoline::ThreadYieldToSuspended { instance, .. }
+            | Trampoline::SubtaskDrop { instance }
+            | Trampoline::SubtaskCancel { instance, .. }
+            | Trampoline::ErrorContextNew { instance, .. }
+            | Trampoline::ErrorContextDebugMessage { instance, .. }
+            | Trampoline::ErrorContextDrop { instance, .. }
+            | Trampoline::StreamNew { instance, .. }
+            | Trampoline::StreamRead { instance, .. }
+            | Trampoline::StreamWrite { instance, .. }
+            | Trampoline::StreamCancelRead { instance, .. }
+            | Trampoline::StreamCancelWrite { instance, .. }
+            | Trampoline::StreamDropReadable { instance, .. }
+            | Trampoline::StreamDropWritable { instance, .. }
+            | Trampoline::FutureNew { instance, .. }
+            | Trampoline::FutureRead { instance, .. }
+            | Trampoline::FutureWrite { instance, .. }
+            | Trampoline::FutureCancelRead { instance, .. }
+            | Trampoline::FutureCancelWrite { instance, .. }
+            | Trampoline::FutureDropReadable { instance, .. }
+            | Trampoline::FutureDropWritable { instance, .. } => *instance,
+        };
+
+        self.check_may_leave_instance(instance)
+    }
+
+    fn check_may_leave_instance(&mut self, instance: RuntimeComponentInstanceIndex) {
+        let vmctx = self.builder.func.dfg.block_params(self.block0)[0];
+
+        let flags = self.builder.ins().load(
+            ir::types::I32,
+            ir::MemFlags::trusted(),
+            vmctx,
+            i32::try_from(self.offsets.instance_flags(instance)).unwrap(),
+        );
+        let may_leave_bit = self
+            .builder
+            .ins()
+            .band_imm(flags, i64::from(FLAG_MAY_LEAVE));
+        let (mut traps, builder) = self.traps();
+        traps.trapz(builder, may_leave_bit, TRAP_CANNOT_LEAVE_COMPONENT);
+    }
+
+    fn traps(&mut self) -> (TrapTranslator<'_>, &mut FunctionBuilder<'a>) {
+        (
+            TrapTranslator {
+                compiler: self.compiler,
+                vmctx: self.caller_vmctx(),
+                builtins: &mut self.builtins,
+            },
+            &mut self.builder,
+        )
+    }
+}
+
+// Helper structure to implement `TranslateTrap`. This isn't possible to do
+// natively for `TrampolineCompiler` because it stores `FunctionBuilder`
+// internally. This differs from `FuncEnvironment` for core wasm which stores it
+// externally, hence the slightly different idioms to bridge here.
+struct TrapTranslator<'a> {
+    compiler: &'a Compiler,
+    vmctx: ir::Value,
+    builtins: &'a mut BuiltinFunctions,
+}
+
+impl TranslateTrap for TrapTranslator<'_> {
+    fn compiler(&self) -> &Compiler {
+        self.compiler
+    }
+    fn vmctx_val(&mut self, _: &mut FuncCursor<'_>) -> ir::Value {
+        self.vmctx
+    }
+    fn builtin_funcref(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        index: BuiltinFunctionIndex,
+    ) -> ir::FuncRef {
+        self.builtins.load_builtin(builder.func, index)
+    }
 }
 
 impl ComponentCompiler for Compiler {
@@ -1404,7 +1587,7 @@ impl ComponentCompiler for Compiler {
         types: &ComponentTypesBuilder,
         key: FuncKey,
         abi: Abi,
-        tunables: &Tunables,
+        _tunables: &Tunables,
         symbol: &str,
     ) -> Result<CompiledFunctionBody> {
         let (abi2, trampoline_index) = key.unwrap_component_trampoline();
@@ -1436,14 +1619,7 @@ impl ComponentCompiler for Compiler {
         }
 
         let mut compiler = self.function_compiler();
-        let mut c = TrampolineCompiler::new(
-            self,
-            &mut compiler,
-            &component.component,
-            types,
-            sig,
-            tunables,
-        );
+        let mut c = TrampolineCompiler::new(self, &mut compiler, &component.component, types, sig);
 
         // If we are crossing the Wasm-to-native boundary, we need to save the
         // exit FP and return address for stack walking purposes. However, we
@@ -1482,7 +1658,7 @@ impl ComponentCompiler for Compiler {
 
     fn compile_intrinsic(
         &self,
-        tunables: &Tunables,
+        _tunables: &Tunables,
         component: &ComponentTranslation,
         types: &ComponentTypesBuilder,
         intrinsic: UnsafeIntrinsic,
@@ -1490,9 +1666,10 @@ impl ComponentCompiler for Compiler {
         symbol: &str,
     ) -> Result<CompiledFunctionBody> {
         let wasm_func_ty = WasmFuncType::new(
-            intrinsic.core_params().into(),
-            intrinsic.core_results().into(),
-        );
+            intrinsic.core_params().iter().copied(),
+            intrinsic.core_results().iter().copied(),
+        )
+        .panic_on_oom();
 
         match abi {
             // Fall through to the trampoline compiler.
@@ -1527,7 +1704,6 @@ impl ComponentCompiler for Compiler {
             &component.component,
             &types,
             &wasm_func_ty,
-            tunables,
         );
 
         match intrinsic {

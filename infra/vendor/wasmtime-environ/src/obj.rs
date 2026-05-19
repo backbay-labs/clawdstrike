@@ -104,9 +104,8 @@ pub const ELF_WASMTIME_TRAPS: &str = ".wasmtime.traps";
 /// This section is used at runtime to allow the unwinder to find
 /// exception handler blocks active at particular callsites.
 ///
-/// This section's format is defined by the
-/// [`wasmtime_unwinder::ExceptionTableBuilder`] data structure. Its
-/// code offsets are relative to the start of the text segment.
+/// This section's format is defined by the `ExceptionTableBuilder` data
+/// structure. Its code offsets are relative to the start of the text segment.
 pub const ELF_WASMTIME_EXCEPTIONS: &str = ".wasmtime.exceptions";
 
 /// A custom binary-encoded section of the wasmtime compilation
@@ -116,7 +115,7 @@ pub const ELF_WASMTIME_EXCEPTIONS: &str = ".wasmtime.exceptions";
 /// VM-level state from state stack slots.
 ///
 /// This section's format is defined by the
-/// [`wasmtime_environ::FrameTableBuilder`] data structure. Its code
+/// [`crate::compile::FrameTableBuilder`] data structure. Its code
 /// offsets are relative to the start of the text segment.
 pub const ELF_WASMTIME_FRAMES: &str = ".wasmtime.frames";
 
@@ -177,6 +176,24 @@ pub const ELF_NAME_DATA: &'static str = ".name.wasm";
 /// and is instead indexed directly by relative indices stored in compilation
 /// metadata.
 pub const ELF_WASMTIME_DWARF: &str = ".wasmtime.dwarf";
+
+/// This is the name of the section in the final ELF image which contains the
+/// original Wasm bytecode for the module, preserved verbatim to support
+/// debugger access to the source bytecode.
+///
+/// This section is only emitted when the `guest-debug` tunable is enabled at
+/// compile time. Its contents are the concatenated raw bytes of all core
+/// module Wasm binaries in the artifact.
+pub const ELF_WASMTIME_WASM_BYTECODE: &str = ".wasmtime.wasm_bytecode";
+
+/// This is the name of the companion section to [`ELF_WASMTIME_WASM_BYTECODE`]
+/// that stores the end-offset table used to locate individual module bytecodes
+/// within the concatenated data.
+///
+/// The section contains one little-endian `u32` per core module in
+/// the artifact giving the *end* of that module's bytecode in the
+/// concatenated bytecode section above.
+pub const ELF_WASMTIME_WASM_BYTECODE_ENDS: &str = ".wasmtime.wasm_bytecode_ends";
 
 /// Workaround to implement `core::error::Error` until
 /// gimli-rs/object#747 is settled.

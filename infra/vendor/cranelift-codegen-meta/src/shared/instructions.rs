@@ -1652,7 +1652,7 @@ pub(crate) fn define(
         Conditional select of bits.
 
         For each bit in `c`, this instruction selects the corresponding bit from `x` if the bit
-        in `x` is 1 and the corresponding bit from `y` if the bit in `c` is 0. See also:
+        in `c` is 1 and the corresponding bit from `y` if the bit in `c` is 0. See also:
         `select`.
         "#,
             &formats.ternary,
@@ -1667,7 +1667,7 @@ pub(crate) fn define(
 
     ig.push(
         Inst::new(
-            "x86_blendv",
+            "blendv",
             r#"
         A bitselect-lookalike instruction except with the semantics of
         `blendv`-related instructions on x86.

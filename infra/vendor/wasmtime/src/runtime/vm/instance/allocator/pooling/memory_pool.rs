@@ -167,7 +167,7 @@ enum ImageSlot {
     ///
     /// Future use of this slot will use `MemoryImageSlot` to continue to
     /// re-instantiate and reuse images and such. This state is entered after
-    /// and allocated slot is successfully deallcoated.
+    /// and allocated slot is successfully deallocated.
     PreviouslyUsed(MemoryImageSlot),
 }
 
@@ -456,6 +456,10 @@ impl MemoryPool {
 
     /// Deallocate a previously-allocated memory.
     ///
+    /// If `image` is `None` then the state of this memory's slot is left
+    /// unknown. Otherwise `image` is used to retain information about the state
+    /// of this slot.
+    ///
     /// # Safety
     ///
     /// The memory must have been previously allocated from this pool and
@@ -463,11 +467,12 @@ impl MemoryPool {
     /// must never be used again.
     ///
     /// The caller must have already called `clear_and_remain_ready` on the
-    /// memory's image and flushed any enqueued decommits for this memory.
+    /// memory's image and flushed any enqueued decommits for this memory. Note
+    /// that if `image` is `None` then this is not required.
     pub unsafe fn deallocate(
         &self,
         allocation_index: MemoryAllocationIndex,
-        image: MemoryImageSlot,
+        image: Option<MemoryImageSlot>,
         bytes_resident: usize,
     ) {
         self.return_memory_image_slot(allocation_index, image);
@@ -502,7 +507,7 @@ impl MemoryPool {
         // associated with a module (not just module and memory). The latter
         // would require care to make sure that its maintenance wouldn't be too
         // expensive for normal allocation/free operations.
-        for stripe in &self.stripes {
+        for (stripe_index, stripe) in self.stripes.iter().enumerate() {
             for i in 0..self.memories_per_instance {
                 use wasmtime_environ::EntityRef;
                 let memory_index = DefinedMemoryIndex::new(i);
@@ -517,10 +522,11 @@ impl MemoryPool {
                     // If anything fails then the slot will be in an "unknown"
                     // state which means that on next use it'll be remapped with
                     // anonymous memory.
-                    let index = MemoryAllocationIndex(id.0);
+                    let index = StripedAllocationIndex(id.0)
+                        .as_unstriped_slot_index(stripe_index, self.stripes.len());
                     if let Ok(mut slot) = self.take_memory_image_slot(index) {
                         if slot.remove_image().is_ok() {
-                            self.return_memory_image_slot(index, slot);
+                            self.return_memory_image_slot(index, Some(slot));
                         }
                     }
 
@@ -587,16 +593,23 @@ impl MemoryPool {
     }
 
     /// Return ownership of the given image slot.
+    ///
+    /// If `slot` is not provided then it's reset with `Unknown` meaning a
+    /// future allocation will need to pave over it to use it.
     fn return_memory_image_slot(
         &self,
         allocation_index: MemoryAllocationIndex,
-        slot: MemoryImageSlot,
+        slot: Option<MemoryImageSlot>,
     ) {
-        assert!(!slot.is_dirty());
-
         let prev = mem::replace(
             &mut *self.image_slots[allocation_index.index()].lock().unwrap(),
-            ImageSlot::PreviouslyUsed(slot),
+            match slot {
+                Some(slot) => {
+                    assert!(!slot.is_dirty());
+                    ImageSlot::PreviouslyUsed(slot)
+                }
+                None => ImageSlot::Unknown,
+            },
         );
         assert!(matches!(prev, ImageSlot::Unknown));
     }
@@ -680,10 +693,7 @@ impl SlabConstraints {
         let guard_bytes = HostAlignedByteCount::new_rounded_up_u64(tunables.memory_guard_size)
             .context("guard region is too large")?;
 
-        let num_slots = limits
-            .total_memories
-            .try_into()
-            .context("too many memories")?;
+        let num_slots = usize::try_from(limits.total_memories).context("too many memories")?;
 
         let constraints = SlabConstraints {
             max_memory_bytes,

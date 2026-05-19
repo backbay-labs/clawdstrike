@@ -5,7 +5,6 @@ use crate::ir;
 use crate::ir::builder::ReplaceBuilder;
 use crate::ir::dynamic_type::{DynamicTypeData, DynamicTypes};
 use crate::ir::instructions::{CallInfo, InstructionData};
-use crate::ir::pcc::Fact;
 use crate::ir::user_stack_maps::{UserStackMapEntry, UserStackMapEntryVec};
 use crate::ir::{
     Block, BlockArg, BlockCall, ConstantData, ConstantPool, DynamicType, ExceptionTables,
@@ -144,9 +143,6 @@ pub struct DataFlowGraph {
     /// Primary value table with entries for all values.
     values: PrimaryMap<Value, ValueDataPacked>,
 
-    /// Facts: proof-carrying-code assertions about values.
-    pub facts: SecondaryMap<Value, Option<Fact>>,
-
     /// Function signature table. These signatures are referenced by indirect call instructions as
     /// well as the external function references.
     pub signatures: PrimaryMap<SigRef, Signature>,
@@ -181,7 +177,6 @@ impl DataFlowGraph {
             dynamic_types: DynamicTypes::new(),
             value_lists: ValueListPool::new(),
             values: PrimaryMap::new(),
-            facts: SecondaryMap::new(),
             signatures: PrimaryMap::new(),
             ext_funcs: PrimaryMap::new(),
             values_labels: None,
@@ -207,7 +202,6 @@ impl DataFlowGraph {
         self.constants.clear();
         self.immediates.clear();
         self.jump_tables.clear();
-        self.facts.clear();
     }
 
     /// Get the total number of instructions created in this function, whether they are currently
@@ -489,21 +483,6 @@ impl DataFlowGraph {
         //   removed), and unions (but the egraph pass ensures there are no
         //   aliases before creating unions).
 
-        // Merge `facts` from any alias onto the aliased value. Note that if
-        // there was a chain of aliases, at this point every alias that was in
-        // the chain points to the same final value, so their facts will all be
-        // merged together.
-        for value in self.facts.keys() {
-            if let ValueData::Alias { original, .. } = self.values[value].into() {
-                if let Some(new_fact) = self.facts[value].take() {
-                    match &mut self.facts[original] {
-                        Some(old_fact) => *old_fact = Fact::intersect(old_fact, &new_fact),
-                        old_fact => *old_fact = Some(new_fact),
-                    }
-                }
-            }
-        }
-
         // - `signatures` and `ext_funcs` have no values.
 
         if let Some(values_labels) = &mut self.values_labels {
@@ -718,7 +697,7 @@ enum ValueData {
 /// Layout:
 ///
 /// ```plain
-///        | tag:2 |  type:14        |    x:24       | y:24          |
+///        | tag:2 |  type:14        |    x:32       | y:32          |
 ///
 /// Inst       00     ty               inst output     inst index
 /// Param      01     ty               blockparam num  block index
@@ -727,76 +706,50 @@ enum ValueData {
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
-struct ValueDataPacked(u64);
-
-/// Encodes a value in 0..2^32 into 0..2^n, where n is less than 32
-/// (and is implied by `mask`), by translating 2^32-1 (0xffffffff)
-/// into 2^n-1 and panic'ing on 2^n..2^32-1.
-fn encode_narrow_field(x: u32, bits: u8) -> u32 {
-    let max = (1 << bits) - 1;
-    if x == 0xffff_ffff {
-        max
-    } else {
-        debug_assert!(
-            x < max,
-            "{x} does not fit into {bits} bits (must be less than {max} to \
-             allow for a 0xffffffff sentinel)"
-        );
-        x
-    }
-}
-
-/// The inverse of the above `encode_narrow_field`: unpacks 2^n-1 into
-/// 2^32-1.
-fn decode_narrow_field(x: u32, bits: u8) -> u32 {
-    if x == (1 << bits) - 1 { 0xffff_ffff } else { x }
+#[repr(Rust, packed)]
+struct ValueDataPacked {
+    x: u32,
+    y: u32,
+    flags_and_type: u16,
 }
 
 impl ValueDataPacked {
-    const Y_SHIFT: u8 = 0;
-    const Y_BITS: u8 = 24;
-    const X_SHIFT: u8 = Self::Y_SHIFT + Self::Y_BITS;
-    const X_BITS: u8 = 24;
-    const TYPE_SHIFT: u8 = Self::X_SHIFT + Self::X_BITS;
+    const TYPE_SHIFT: u8 = 0;
     const TYPE_BITS: u8 = 14;
     const TAG_SHIFT: u8 = Self::TYPE_SHIFT + Self::TYPE_BITS;
     const TAG_BITS: u8 = 2;
 
-    const TAG_INST: u64 = 0;
-    const TAG_PARAM: u64 = 1;
-    const TAG_ALIAS: u64 = 2;
-    const TAG_UNION: u64 = 3;
+    const TAG_INST: u16 = 0;
+    const TAG_PARAM: u16 = 1;
+    const TAG_ALIAS: u16 = 2;
+    const TAG_UNION: u16 = 3;
 
-    fn make(tag: u64, ty: Type, x: u32, y: u32) -> ValueDataPacked {
+    fn make(tag: u16, ty: Type, x: u32, y: u32) -> ValueDataPacked {
         debug_assert!(tag < (1 << Self::TAG_BITS));
         debug_assert!(ty.repr() < (1 << Self::TYPE_BITS));
 
-        let x = encode_narrow_field(x, Self::X_BITS);
-        let y = encode_narrow_field(y, Self::Y_BITS);
-
-        ValueDataPacked(
-            (tag << Self::TAG_SHIFT)
-                | ((ty.repr() as u64) << Self::TYPE_SHIFT)
-                | ((x as u64) << Self::X_SHIFT)
-                | ((y as u64) << Self::Y_SHIFT),
-        )
+        ValueDataPacked {
+            x,
+            y,
+            flags_and_type: (tag << Self::TAG_SHIFT) | (ty.repr() << Self::TYPE_SHIFT),
+        }
     }
 
     #[inline(always)]
-    fn field(self, shift: u8, bits: u8) -> u64 {
-        (self.0 >> shift) & ((1 << bits) - 1)
+    fn field(self, shift: u8, bits: u8) -> u16 {
+        (self.flags_and_type >> shift) & ((1 << bits) - 1)
     }
 
     #[inline(always)]
     fn ty(self) -> Type {
-        let ty = self.field(ValueDataPacked::TYPE_SHIFT, ValueDataPacked::TYPE_BITS) as u16;
+        let ty = self.field(ValueDataPacked::TYPE_SHIFT, ValueDataPacked::TYPE_BITS);
         Type::from_repr(ty)
     }
 
     #[inline(always)]
     fn set_type(&mut self, ty: Type) {
-        self.0 &= !(((1 << Self::TYPE_BITS) - 1) << Self::TYPE_SHIFT);
-        self.0 |= (ty.repr() as u64) << Self::TYPE_SHIFT;
+        self.flags_and_type &= !(((1 << Self::TYPE_BITS) - 1) << Self::TYPE_SHIFT);
+        self.flags_and_type |= ty.repr() << Self::TYPE_SHIFT;
     }
 }
 
@@ -822,35 +775,30 @@ impl From<ValueData> for ValueDataPacked {
 impl From<ValueDataPacked> for ValueData {
     fn from(data: ValueDataPacked) -> Self {
         let tag = data.field(ValueDataPacked::TAG_SHIFT, ValueDataPacked::TAG_BITS);
-        let ty = u16::try_from(data.field(ValueDataPacked::TYPE_SHIFT, ValueDataPacked::TYPE_BITS))
-            .expect("Mask should ensure result fits in a u16");
-        let x = u32::try_from(data.field(ValueDataPacked::X_SHIFT, ValueDataPacked::X_BITS))
-            .expect("Mask should ensure result fits in a u32");
-        let y = u32::try_from(data.field(ValueDataPacked::Y_SHIFT, ValueDataPacked::Y_BITS))
-            .expect("Mask should ensure result fits in a u32");
+        let ty = data.field(ValueDataPacked::TYPE_SHIFT, ValueDataPacked::TYPE_BITS);
 
         let ty = Type::from_repr(ty);
         match tag {
             ValueDataPacked::TAG_INST => ValueData::Inst {
                 ty,
-                num: u16::try_from(x).expect("Inst result num should fit in u16"),
-                inst: Inst::from_bits(decode_narrow_field(y, ValueDataPacked::Y_BITS)),
+                num: u16::try_from(data.x).expect("Inst result num should fit in u16"),
+                inst: Inst::from_bits(data.y),
             },
             ValueDataPacked::TAG_PARAM => ValueData::Param {
                 ty,
-                num: u16::try_from(x).expect("Blockparam index should fit in u16"),
-                block: Block::from_bits(decode_narrow_field(y, ValueDataPacked::Y_BITS)),
+                num: u16::try_from(data.x).expect("Blockparam index should fit in u16"),
+                block: Block::from_bits(data.y),
             },
             ValueDataPacked::TAG_ALIAS => ValueData::Alias {
                 ty,
-                original: Value::from_bits(decode_narrow_field(y, ValueDataPacked::Y_BITS)),
+                original: Value::from_bits(data.y),
             },
             ValueDataPacked::TAG_UNION => ValueData::Union {
                 ty,
-                x: Value::from_bits(decode_narrow_field(x, ValueDataPacked::X_BITS)),
-                y: Value::from_bits(decode_narrow_field(y, ValueDataPacked::Y_BITS)),
+                x: Value::from_bits(data.x),
+                y: Value::from_bits(data.y),
             },
-            _ => panic!("Invalid tag {} in ValueDataPacked 0x{:x}", tag, data.0),
+            _ => panic!("Invalid tag {tag} in ValueDataPacked"),
         }
     }
 }
@@ -1106,13 +1054,7 @@ impl DataFlowGraph {
         // Get the controlling type variable.
         let ctrl_typevar = self.ctrl_typevar(inst);
         // Create new result values.
-        let num_results = self.make_inst_results(new_inst, ctrl_typevar);
-        // Copy over PCC facts, if any.
-        for i in 0..num_results {
-            let old_result = self.inst_results(inst)[i];
-            let new_result = self.inst_results(new_inst)[i];
-            self.facts[new_result] = self.facts[old_result].clone();
-        }
+        self.make_inst_results(new_inst, ctrl_typevar);
         new_inst
     }
 
@@ -1446,38 +1388,6 @@ impl DataFlowGraph {
     /// `change_to_alias()`.
     pub fn detach_inst_results(&mut self, inst: Inst) {
         self.results[inst].clear(&mut self.value_lists);
-    }
-
-    /// Merge the facts for two values. If both values have facts and
-    /// they differ, both values get a special "conflict" fact that is
-    /// never satisfied.
-    pub fn merge_facts(&mut self, a: Value, b: Value) {
-        let a = self.resolve_aliases(a);
-        let b = self.resolve_aliases(b);
-        match (&self.facts[a], &self.facts[b]) {
-            (Some(a), Some(b)) if a == b => { /* nothing */ }
-            (None, None) => { /* nothing */ }
-            (Some(a), None) => {
-                self.facts[b] = Some(a.clone());
-            }
-            (None, Some(b)) => {
-                self.facts[a] = Some(b.clone());
-            }
-            (Some(a_fact), Some(b_fact)) => {
-                assert_eq!(self.value_type(a), self.value_type(b));
-                let merged = Fact::intersect(a_fact, b_fact);
-                crate::trace!(
-                    "facts merge on {} and {}: {:?}, {:?} -> {:?}",
-                    a,
-                    b,
-                    a_fact,
-                    b_fact,
-                    merged,
-                );
-                self.facts[a] = Some(merged.clone());
-                self.facts[b] = Some(merged);
-            }
-        }
     }
 }
 

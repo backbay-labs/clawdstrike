@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "wasmtime-environ"
-version = "41.0.4"
+version = "44.0.1"
 authors = ["The Wasmtime Project Developers"]
 build = false
 autolib = false
@@ -37,6 +37,11 @@ resolver = "2"
 all-features = true
 
 [features]
+anyhow = ["wasmtime-core/anyhow"]
+backtrace = [
+    "std",
+    "wasmtime-core/backtrace",
+]
 compile = [
     "gimli/write",
     "object/write_core",
@@ -50,19 +55,22 @@ component-model = [
     "wasmparser/component-model",
 ]
 demangle = [
-    "std",
     "dep:rustc-demangle",
     "dep:cpp_demangle",
 ]
 gc = []
 gc-drc = ["gc"]
 gc-null = ["gc"]
+rr = ["component-model"]
 stack-switching = []
 std = [
     "anyhow/std",
     "object/std",
     "wasmparser/std",
     "indexmap/std",
+    "wasmtime-core/std",
+    "cpp_demangle?/std",
+    "rustc-demangle?/std",
 ]
 threads = ["std"]
 wmemcheck = ["std"]
@@ -70,6 +78,11 @@ wmemcheck = ["std"]
 [lib]
 name = "wasmtime_environ"
 path = "src/lib.rs"
+
+[[example]]
+name = "btrees"
+path = "examples/btrees.rs"
+required-features = ["std"]
 
 [[example]]
 name = "factc"
@@ -85,19 +98,29 @@ default-features = false
 
 [dependencies.cpp_demangle]
 version = "0.4.3"
+features = ["alloc"]
 optional = true
+default-features = false
+
+[dependencies.cranelift-bforest]
+version = "0.131.1"
 
 [dependencies.cranelift-bitset]
-version = "0.128.4"
+version = "0.131.1"
 features = ["enable-serde"]
 
 [dependencies.cranelift-entity]
-version = "0.128.4"
+version = "0.131.1"
 features = ["enable-serde"]
 
 [dependencies.gimli]
-version = "0.32.3"
+version = "0.33.0"
 features = ["read"]
+default-features = false
+
+[dependencies.hashbrown]
+version = "0.16"
+features = ["default-hasher"]
 default-features = false
 
 [dependencies.indexmap]
@@ -110,7 +133,7 @@ version = "0.4.28"
 default-features = false
 
 [dependencies.object]
-version = "0.37.3"
+version = "0.39.0"
 features = [
     "read_core",
     "elf",
@@ -125,6 +148,7 @@ default-features = false
 [dependencies.rustc-demangle]
 version = "0.1.16"
 optional = true
+default-features = false
 
 [dependencies.semver]
 version = "1.0.27"
@@ -140,6 +164,10 @@ default-features = false
 [dependencies.serde_derive]
 version = "1.0.228"
 
+[dependencies.sha2]
+version = "0.10.2"
+default-features = false
+
 [dependencies.smallvec]
 version = "1.15.1"
 features = [
@@ -151,11 +179,11 @@ features = [
 version = "0.13.0"
 
 [dependencies.wasm-encoder]
-version = "0.243.0"
+version = "0.246.1"
 optional = true
 
 [dependencies.wasmparser]
-version = "0.243.0"
+version = "0.246.1"
 features = [
     "simd",
     "validate",
@@ -165,13 +193,18 @@ features = [
 default-features = false
 
 [dependencies.wasmprinter]
-version = "0.243.0"
+version = "0.246.1"
 optional = true
 
 [dependencies.wasmtime-component-util]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-component-util"
+
+[dependencies.wasmtime-core]
+version = "=44.0.1"
+features = ["serde"]
+package = "wasmtime-internal-core"
 
 [dev-dependencies.arbitrary]
 version = "1.4.2"
@@ -193,7 +226,7 @@ default-features = false
 version = "0.11.5"
 
 [dev-dependencies.object]
-version = "0.37.3"
+version = "0.39.0"
 features = [
     "read_core",
     "elf",
@@ -202,7 +235,7 @@ features = [
 default-features = false
 
 [dev-dependencies.wat]
-version = "1.243.0"
+version = "1.246.1"
 
 [lints.clippy]
 allow_attributes_without_reason = "warn"
@@ -239,4 +272,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

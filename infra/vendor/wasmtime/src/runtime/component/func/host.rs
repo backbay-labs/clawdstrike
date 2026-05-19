@@ -1,5 +1,6 @@
 //! Implementation of calling Rust-defined functions from components.
 
+#[cfg(feature = "component-model-async")]
 use crate::component::concurrent;
 #[cfg(feature = "component-model-async")]
 use crate::component::concurrent::{Accessor, Status};
@@ -13,11 +14,12 @@ use crate::runtime::vm::component::{
     ComponentInstance, VMComponentContext, VMLowering, VMLoweringCallee,
 };
 use crate::runtime::vm::{VMOpaqueContext, VMStore};
+use crate::store::Asyncness;
 use crate::{AsContextMut, CallHook, StoreContextMut, ValRaw};
 use alloc::sync::Arc;
 use core::any::Any;
 use core::mem::{self, MaybeUninit};
-#[cfg(feature = "component-model-async")]
+#[cfg(feature = "async")]
 use core::pin::Pin;
 use core::ptr::NonNull;
 use wasmtime_environ::component::{
@@ -47,6 +49,10 @@ pub struct HostFunc {
     /// type is a zero-sized-type. Host functions are allowed, though, to close
     /// over the environment as well.
     func: Box<dyn Any + Send + Sync>,
+
+    /// Whether or not this host function was defined in such a way that async
+    /// stack switching is required when calling it.
+    asyncness: Asyncness,
 }
 
 impl core::fmt::Debug for HostFunc {
@@ -62,7 +68,15 @@ enum HostResult<T> {
 }
 
 impl HostFunc {
-    fn new<T, F, P, R>(func: F) -> Arc<HostFunc>
+    /// Creates a new host function based on the implementation of `func`.
+    ///
+    /// The `asyncness` parameter indicates whether the `func` requires
+    /// wasm to be on a fiber. This is used to propagate to the `Store` during
+    /// instantiation to ensure that this guarantee is met.
+    ///
+    /// Note that if `asyncness` is mistaken then that'll result in panics
+    /// in Wasmtime, but not memory unsafety.
+    fn new<T, F, P, R>(asyncness: Asyncness, func: F) -> Arc<HostFunc>
     where
         T: 'static,
         R: Send + Sync + 'static,
@@ -72,27 +86,53 @@ impl HostFunc {
             entrypoint: F::cabi_entrypoint,
             typecheck: F::typecheck,
             func: Box::new(func),
+            asyncness,
         })
     }
 
-    /// Creates a new, statically typed, synchronous, host function from the
-    /// `func` provided.
-    pub(crate) fn from_closure<T, F, P, R>(func: F) -> Arc<HostFunc>
+    /// Equivalent for `Linker::func_wrap`
+    pub(crate) fn func_wrap<T, F, P, R>(func: F) -> Arc<HostFunc>
     where
         T: 'static,
         F: Fn(StoreContextMut<T>, P) -> Result<R> + Send + Sync + 'static,
         P: ComponentNamedList + Lift + 'static,
         R: ComponentNamedList + Lower + 'static,
     {
-        Self::new(StaticHostFn::<_, false>::new(move |store, params| {
-            HostResult::Done(func(store, params))
-        }))
+        Self::new(
+            Asyncness::No,
+            StaticHostFn::<_, false>::new(move |store, params| {
+                HostResult::Done(func(store, params))
+            }),
+        )
     }
 
-    /// Creates a new, statically typed, asynchronous, host function from the
-    /// `func` provided.
+    /// Equivalent for `Linker::func_wrap_async`
+    #[cfg(feature = "async")]
+    pub(crate) fn func_wrap_async<T, F, P, R>(func: F) -> Arc<HostFunc>
+    where
+        T: 'static,
+        F: Fn(StoreContextMut<'_, T>, P) -> Box<dyn Future<Output = Result<R>> + Send + '_>
+            + Send
+            + Sync
+            + 'static,
+        P: ComponentNamedList + Lift + 'static,
+        R: ComponentNamedList + Lower + 'static,
+    {
+        Self::new(
+            Asyncness::Yes,
+            StaticHostFn::<_, false>::new(move |store, params| {
+                HostResult::Done(
+                    store
+                        .block_on(|store| Pin::from(func(store, params)))
+                        .and_then(|r| r),
+                )
+            }),
+        )
+    }
+
+    /// Equivalent for `Linker::func_wrap_concurrent`
     #[cfg(feature = "component-model-async")]
-    pub(crate) fn from_concurrent<T, F, P, R>(func: F) -> Arc<HostFunc>
+    pub(crate) fn func_wrap_concurrent<T, F, P, R>(func: F) -> Arc<HostFunc>
     where
         T: 'static,
         F: Fn(&Accessor<T>, P) -> Pin<Box<dyn Future<Output = Result<R>> + Send + '_>>
@@ -103,36 +143,73 @@ impl HostFunc {
         R: ComponentNamedList + Lower + 'static,
     {
         let func = Arc::new(func);
-        Self::new(StaticHostFn::<_, true>::new(move |store, params| {
-            let func = func.clone();
-            HostResult::Future(Box::pin(
-                store.wrap_call(move |accessor| func(accessor, params)),
-            ))
-        }))
+        Self::new(
+            Asyncness::Yes,
+            StaticHostFn::<_, true>::new(move |store, params| {
+                let func = func.clone();
+                HostResult::Future(Box::pin(
+                    store.wrap_call(move |accessor| func(accessor, params)),
+                ))
+            }),
+        )
     }
 
-    /// Creates a new, dynamically typed, synchronous, host function from the
-    /// `func` provided.
-    pub(crate) fn new_dynamic<T: 'static, F>(func: F) -> Arc<HostFunc>
+    /// Equivalent of `Linker::func_new`
+    pub(crate) fn func_new<T, F>(func: F) -> Arc<HostFunc>
     where
+        T: 'static,
         F: Fn(StoreContextMut<'_, T>, ComponentFunc, &[Val], &mut [Val]) -> Result<()>
             + Send
             + Sync
             + 'static,
     {
-        Self::new(DynamicHostFn::<_, false>::new(
-            move |store, ty, mut params_and_results, result_start| {
-                let (params, results) = params_and_results.split_at_mut(result_start);
-                let result = func(store, ty, params, results).map(move |()| params_and_results);
-                HostResult::Done(result)
-            },
-        ))
+        Self::new(
+            Asyncness::No,
+            DynamicHostFn::<_, false>::new(
+                move |store, ty, mut params_and_results, result_start| {
+                    let (params, results) = params_and_results.split_at_mut(result_start);
+                    let result = func(store, ty, params, results).map(move |()| params_and_results);
+                    HostResult::Done(result)
+                },
+            ),
+        )
     }
 
-    /// Creates a new, dynamically typed, asynchronous, host function from the
-    /// `func` provided.
+    /// Equivalent of `Linker::func_new_async`
+    #[cfg(feature = "async")]
+    pub(crate) fn func_new_async<T, F>(func: F) -> Arc<HostFunc>
+    where
+        T: 'static,
+        F: for<'a> Fn(
+                StoreContextMut<'a, T>,
+                ComponentFunc,
+                &'a [Val],
+                &'a mut [Val],
+            ) -> Box<dyn Future<Output = Result<()>> + Send + 'a>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self::new(
+            Asyncness::Yes,
+            DynamicHostFn::<_, false>::new(
+                move |store, ty, mut params_and_results, result_start| {
+                    let (params, results) = params_and_results.split_at_mut(result_start);
+                    let result = store
+                        .with_blocking(|store, cx| {
+                            cx.block_on(Pin::from(func(store, ty, params, results)))
+                        })
+                        .and_then(|r| r);
+                    let result = result.map(move |()| params_and_results);
+                    HostResult::Done(result)
+                },
+            ),
+        )
+    }
+
+    /// Equivalent of `Linker::func_new_concurrent`
     #[cfg(feature = "component-model-async")]
-    pub(crate) fn new_dynamic_concurrent<T, F>(func: F) -> Arc<HostFunc>
+    pub(crate) fn func_new_concurrent<T, F>(func: F) -> Arc<HostFunc>
     where
         T: 'static,
         F: for<'a> Fn(
@@ -146,18 +223,21 @@ impl HostFunc {
             + 'static,
     {
         let func = Arc::new(func);
-        Self::new(DynamicHostFn::<_, true>::new(
-            move |store, ty, mut params_and_results, result_start| {
-                let func = func.clone();
-                HostResult::Future(Box::pin(store.wrap_call(move |accessor| {
-                    Box::pin(async move {
-                        let (params, results) = params_and_results.split_at_mut(result_start);
-                        func(accessor, ty, params, results).await?;
-                        Ok(params_and_results)
-                    })
-                })))
-            },
-        ))
+        Self::new(
+            Asyncness::Yes,
+            DynamicHostFn::<_, true>::new(
+                move |store, ty, mut params_and_results, result_start| {
+                    let func = func.clone();
+                    HostResult::Future(Box::pin(store.wrap_call(move |accessor| {
+                        Box::pin(async move {
+                            let (params, results) = params_and_results.split_at_mut(result_start);
+                            func(accessor, ty, params, results).await?;
+                            Ok(params_and_results)
+                        })
+                    })))
+                },
+            ),
+        )
     }
 
     pub fn typecheck(&self, ty: TypeFuncIndex, types: &InstanceType<'_>) -> Result<()> {
@@ -170,6 +250,10 @@ impl HostFunc {
             callee: NonNull::new(self.entrypoint as *mut _).unwrap().into(),
             data: data.into(),
         }
+    }
+
+    pub fn asyncness(&self) -> Asyncness {
+        self.asyncness
     }
 }
 
@@ -277,35 +361,50 @@ where
     /// arguments are translated to Rust types.
     fn entrypoint(
         &self,
-        store: StoreContextMut<'_, T>,
+        mut store: StoreContextMut<'_, T>,
         instance: Instance,
         ty: TypeFuncIndex,
         options: OptionsIndex,
         storage: &mut [MaybeUninit<ValRaw>],
     ) -> Result<()> {
         let vminstance = instance.id().get(store.0);
-        let opts = &vminstance.component().env_component().options[options];
-        let caller_instance = opts.instance;
-        let flags = vminstance.instance_flags(caller_instance);
+        let async_ = vminstance.component().env_component().options[options].async_;
 
-        // Perform a dynamic check that this instance can indeed be left.
-        // Exiting the component is disallowed, for example, when the `realloc`
-        // function calls a canonical import.
-        if unsafe { !flags.may_leave() } {
-            return Err(anyhow!(crate::Trap::CannotLeaveComponent));
+        // If this is a synchronous-lower of a host-async function, then the
+        // guest is blocking. Test, in the context of the guest task, if that's
+        // allowed.
+        if !async_ && Self::ASYNC {
+            store.0.check_blocking()?;
         }
 
-        if opts.async_ {
+        // Enter the host by pushing a `HostTask` into the concurrent state.
+        let host_task = store.0.host_task_create()?;
+
+        let host_task_complete = if async_ {
             #[cfg(feature = "component-model-async")]
-            return self.call_async_lower(store, instance, ty, options, storage);
+            {
+                self.call_async_lower(store.as_context_mut(), instance, ty, options, storage)?
+            }
             #[cfg(not(feature = "component-model-async"))]
             unreachable!(
                 "async-lowered imports should have failed validation \
                  when `component-model-async` feature disabled"
             );
         } else {
-            self.call_sync_lower(store, instance, ty, options, storage)
+            self.call_sync_lower(store.as_context_mut(), instance, ty, options, storage)?;
+            true
+        };
+
+        // If the host task completed, then it's deallocated.
+        //
+        // Note that if the host task did not exit then the `call_async_lower`
+        // function transitively would have updated the current guest thread to
+        // the caller of this host function.
+        if host_task_complete {
+            store.0.host_task_delete(host_task)?;
         }
+
+        Ok(())
     }
 
     /// Implementation of the "sync" ABI.
@@ -323,24 +422,13 @@ where
         options: OptionsIndex,
         storage: &mut [MaybeUninit<ValRaw>],
     ) -> Result<()> {
-        if Self::ASYNC {
-            // The caller has synchronously lowered an async function, meaning
-            // the caller can only call it from an async task (i.e. a task
-            // created via a call to an async export).  Otherwise, we'll trap.
-            concurrent::check_blocking(store.0)?;
-        }
-
         let mut lift = LiftContext::new(store.0.store_opaque_mut(), options, instance);
         let (params, rest) = self.load_params(&mut lift, ty, MAX_FLAT_PARAMS, storage)?;
-        #[cfg(feature = "component-model-async")]
-        let caller_instance = lift.options().instance;
 
         let ret = match self.run(store.as_context_mut(), params) {
             HostResult::Done(result) => result?,
             #[cfg(feature = "component-model-async")]
-            HostResult::Future(future) => {
-                concurrent::poll_and_block(store.0, future, caller_instance)?
-            }
+            HostResult::Future(future) => concurrent::poll_and_block(store.0, future)?,
         };
 
         let mut lower = LowerContext::new(store, options, instance);
@@ -359,7 +447,7 @@ where
                 ptr,
             )?)
         };
-        Self::lower_result_and_exit_call(&mut lower, ty, ret, dst)
+        Self::lower_result_and_exit_call(&mut lower, ty, Some(ret), dst)
     }
 
     /// Implementation of the "async" ABI of the component model.
@@ -375,7 +463,7 @@ where
         ty: TypeFuncIndex,
         options: OptionsIndex,
         storage: &mut [MaybeUninit<ValRaw>],
-    ) -> Result<()> {
+    ) -> Result<bool> {
         use wasmtime_environ::component::MAX_FLAT_ASYNC_PARAMS;
 
         let (component, store) = instance.component_and_store_mut(store.0);
@@ -386,7 +474,6 @@ where
         // Lift the parameters, either from flat storage or from linear
         // memory.
         let mut lift = LiftContext::new(store.0.store_opaque_mut(), options, instance);
-        let caller_instance = lift.options().instance;
         let (params, rest) = self.load_params(&mut lift, ty, MAX_FLAT_ASYNC_PARAMS, storage)?;
 
         // Load/validate the return pointer, if present.
@@ -412,14 +499,14 @@ where
                 Self::lower_result_and_exit_call(
                     &mut LowerContext::new(store, options, instance),
                     ty,
-                    result?,
+                    Some(result?),
                     Destination::Memory(retptr),
                 )?;
                 None
             }
             #[cfg(feature = "component-model-async")]
             HostResult::Future(future) => {
-                instance.first_poll(store, future, caller_instance, move |store, ret| {
+                instance.first_poll(store, future, move |store, ret| {
                     Self::lower_result_and_exit_call(
                         &mut LowerContext::new(store, options, instance),
                         ty,
@@ -436,7 +523,7 @@ where
             Status::Returned.pack(None)
         }));
 
-        Ok(())
+        Ok(task.is_none())
     }
 
     /// Loads parameters the wasm arguments `storage`.
@@ -453,7 +540,6 @@ where
         let fty = &lift.types[ty];
         let param_tys = &lift.types[fty.params];
         let param_flat_count = param_tys.abi.flat_count(max_flat_params);
-        lift.enter_call();
         let src = match param_flat_count {
             Some(cnt) => {
                 let params = &storage[..cnt];
@@ -482,19 +568,30 @@ where
     fn lower_result_and_exit_call(
         lower: &mut LowerContext<'_, T>,
         ty: TypeFuncIndex,
-        ret: R,
+        ret: Option<R>,
         dst: Destination<'_>,
     ) -> Result<()> {
-        let caller_instance = lower.options().instance;
-        let mut flags = lower.instance_mut().instance_flags(caller_instance);
-        unsafe {
-            flags.set_may_leave(false);
+        // Before lowering below semantically ensure that the caller has dropped
+        // all of its borrows and such.
+        lower.validate_scope_exit()?;
+
+        // At this point we're transitioning back to the caller task which means
+        // that the current task needs to be updated. This will restore the
+        // currently running thread as the caller's thread, for example if
+        // lowering below calls `realloc` it'll use the right context.
+        lower.store.0.host_task_reenter_caller()?;
+
+        if let Some(ret) = ret {
+            let caller_instance = lower.options().instance;
+            let mut flags = lower.instance_mut().instance_flags(caller_instance);
+            unsafe {
+                flags.set_may_leave(false);
+            }
+            Self::lower_result(lower, ty, ret, dst)?;
+            unsafe {
+                flags.set_may_leave(true);
+            }
         }
-        Self::lower_result(lower, ty, ret, dst)?;
-        unsafe {
-            flags.set_may_leave(true);
-        }
-        lower.exit_call()?;
         Ok(())
     }
 }
