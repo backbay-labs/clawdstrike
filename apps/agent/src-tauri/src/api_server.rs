@@ -5948,13 +5948,19 @@ pub(crate) fn validate_response_action_actor(
             "live response execution requires actor identity".to_string(),
         ));
     };
-    if response_action_actor_identity_present(actor) {
-        return Ok(());
+    if !response_action_actor_identity_present(actor) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "live response execution actor must include userId, sessionId, agentId, workloadId, or approvalId".to_string(),
+        ));
     }
-    Err((
-        StatusCode::BAD_REQUEST,
-        "live response execution actor must include userId, sessionId, agentId, workloadId, or approvalId".to_string(),
-    ))
+    if non_empty(actor.approval_id.as_deref()).is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "live response execution requires actor approvalId".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn response_action_actor_identity_present(actor: &EdrResponseActionActorInput) -> bool {
@@ -19334,6 +19340,24 @@ mod tests {
             "workloadId": "endpoint-response-engine",
             "approvalId": "approval-response-action"
         })
+    }
+
+    #[test]
+    fn live_response_actor_requires_approval_id() {
+        let actor_without_approval = EdrResponseActionActorInput {
+            endpoint_id: "endpoint-test".to_string(),
+            user_id: Some("operator:test".to_string()),
+            session_id: Some("session-response-action".to_string()),
+            agent_id: Some("agent-api:test".to_string()),
+            workload_id: Some("endpoint-response-engine".to_string()),
+            approval_id: None,
+            ..EdrResponseActionActorInput::default()
+        };
+
+        let err = validate_response_action_actor(Some(&actor_without_approval)).unwrap_err();
+
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert!(err.1.contains("approvalId"));
     }
 
     fn assert_unknown_field_rejected<T>(payload: serde_json::Value, field: &str)
@@ -37826,10 +37850,16 @@ guards:
             .oneshot(req)
             .await
             .unwrap_or_else(|e| panic!("response action request failed: {e}"));
-        assert_eq!(response.status(), StatusCode::OK);
+        let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
             .await
             .unwrap_or_else(|e| panic!("failed to read response action response: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "unexpected response action response body: {}",
+            String::from_utf8_lossy(&bytes)
+        );
         let payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode response action response: {e}"));
 
@@ -39654,10 +39684,16 @@ guards:
             .oneshot(req)
             .await
             .unwrap_or_else(|e| panic!("response action request failed: {e}"));
-        assert_eq!(response.status(), StatusCode::OK);
+        let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
             .await
             .unwrap_or_else(|e| panic!("failed to read response action response: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "unexpected response action response body: {}",
+            String::from_utf8_lossy(&bytes)
+        );
         let payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode response action response: {e}"));
 
@@ -40851,10 +40887,16 @@ guards:
             .oneshot(req)
             .await
             .unwrap_or_else(|e| panic!("execution acknowledgement request failed: {e}"));
-        assert_eq!(response.status(), StatusCode::OK);
+        let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
             .await
             .unwrap_or_else(|e| panic!("failed to read execution acknowledgement response: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "unexpected execution acknowledgement response body: {}",
+            String::from_utf8_lossy(&bytes)
+        );
         let acknowledgement_payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode execution acknowledgement response: {e}"));
         assert_eq!(

@@ -5,6 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use hush_core::{canonicalize_json, sha256};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::action::EndpointDecisionAction;
 use super::actor::EndpointDecisionActor;
@@ -213,10 +214,12 @@ impl EndpointResponsePlan {
                 ],
             )
         });
+        let created_at = Utc::now();
+        let issuance_id = Uuid::now_v7().to_string();
         let action_name = action.as_str();
         let ttl = ttl_seconds.to_string();
         let mode = if dry_run { "dry_run" } else { "execute" };
-        let action_id = stable_id(
+        let stable_action_id = stable_id(
             "response_action",
             [
                 root_node_id.as_str(),
@@ -226,12 +229,12 @@ impl EndpointResponsePlan {
                 ttl.as_str(),
             ],
         );
+        let action_id = format!("{stable_action_id}:{issuance_id}");
         let rollback_ref = if !dry_run && action == EndpointDecisionAction::CollectEvidence {
             format!("rollback:noop:{action_id}")
         } else {
             format!("rollback:{action_id}")
         };
-        let created_at = Utc::now();
         let expires_at = created_at + chrono::Duration::seconds(ttl_seconds as i64);
 
         Self {
@@ -248,6 +251,32 @@ impl EndpointResponsePlan {
             node_count: graph.nodes.len(),
             edge_count: graph.edges.len(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn response_plan_action_ids_do_not_collapse_repeated_actions() {
+        let graph = CausalGraph::default();
+
+        let first = EndpointResponsePlan::restrict_egress_execution(
+            "process:repeat",
+            &graph,
+            600,
+            "repeat restriction",
+        );
+        let second = EndpointResponsePlan::restrict_egress_execution(
+            "process:repeat",
+            &graph,
+            600,
+            "repeat restriction",
+        );
+
+        assert_ne!(first.action_id, second.action_id);
+        assert_ne!(first.rollback_ref, second.rollback_ref);
     }
 }
 

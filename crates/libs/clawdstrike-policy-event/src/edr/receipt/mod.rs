@@ -14,6 +14,7 @@ use hush_core::{
     canonicalize_json, sha256, Hash, Provenance, Receipt, SignedReceipt, Signer, Verdict,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::{
     action::EndpointDecisionAction,
@@ -1972,7 +1973,6 @@ impl EndpointDecisionReceipt {
             require_response_execution_id_evidence(
                 &self.evidence,
                 &self.decision,
-                self.graph.process_node_id.as_deref().unwrap_or_default(),
                 self.graph.graph_slice_id.as_deref().unwrap_or_default(),
                 self.graph.content_hash.as_deref(),
             )?;
@@ -1981,7 +1981,6 @@ impl EndpointDecisionReceipt {
             require_response_execution_evidence_bundle_evidence(
                 &self.evidence,
                 &self.decision,
-                self.graph.process_node_id.as_deref().unwrap_or_default(),
                 self.graph.graph_slice_id.as_deref().unwrap_or_default(),
                 self.graph.content_hash.as_deref(),
             )?;
@@ -2008,17 +2007,14 @@ impl EndpointDecisionReceipt {
             )?;
             require_response_rollback_status_evidence(&self.decision, &self.evidence)?;
             require_response_reason_evidence(&self.evidence)?;
-            let response_action_id = response_action_id_from_signed_response_fields(
-                self.graph.process_node_id.as_deref().unwrap_or_default(),
-                self.graph.graph_slice_id.as_deref().unwrap_or_default(),
-                &self.decision.action,
-                self.decision.ttl_seconds.unwrap_or_default(),
-            );
+            let rollback_ref = self.decision.rollback_ref.as_deref().unwrap_or_default();
+            let response_action_id =
+                response_action_id_from_rollback_ref(&self.decision.action, rollback_ref)?;
             require_response_rollback_execution_id_evidence(
                 &self.evidence,
                 self.decision.finding_id.as_deref(),
                 response_action_id.as_str(),
-                self.decision.rollback_ref.as_deref().unwrap_or_default(),
+                rollback_ref,
             )?;
             require_response_effect_count_evidence(
                 &self.evidence,
@@ -2041,12 +2037,9 @@ impl EndpointDecisionReceipt {
             )?;
             require_response_acknowledgement_status_evidence(&self.decision, &self.evidence)?;
             require_response_acknowledged_by_evidence(&self.actor, &self.evidence)?;
-            let response_action_id = response_action_id_from_signed_response_fields(
-                self.graph.process_node_id.as_deref().unwrap_or_default(),
-                self.graph.graph_slice_id.as_deref().unwrap_or_default(),
-                &self.decision.action,
-                self.decision.ttl_seconds.unwrap_or_default(),
-            );
+            let rollback_ref = self.decision.rollback_ref.as_deref().unwrap_or_default();
+            let response_action_id =
+                response_action_id_from_rollback_ref(&self.decision.action, rollback_ref)?;
             require_response_acknowledgement_note_evidence(&self.evidence)?;
             require_response_control_acknowledgement_evidence(&self.evidence)?;
             require_response_effect_count_evidence(
@@ -2065,7 +2058,7 @@ impl EndpointDecisionReceipt {
                 &self.evidence,
                 self.decision.finding_id.as_deref(),
                 response_action_id.as_str(),
-                self.decision.rollback_ref.as_deref().unwrap_or_default(),
+                rollback_ref,
                 self.actor.agent_id.as_deref().unwrap_or_default(),
             )?;
         }
@@ -2258,20 +2251,20 @@ fn require_response_request_receipt_evidence(
     rollback_ref: &str,
 ) -> Result<()> {
     let dry_run = response_request_dry_run_from_decision(decision)?;
-    let response_action_id = response_action_id_from_signed_response_fields_with_mode(
+    let response_action_id = decision
+        .finding_id
+        .as_deref()
+        .ok_or_else(|| anyhow!("response action id is required"))?;
+    require_response_action_id_matches_signed_response_fields(
+        response_action_id,
         root_node_id,
         graph_slice_id,
         &decision.action,
         ttl_seconds,
         if dry_run { "dry_run" } else { "execute" },
-    );
-    if decision.finding_id.as_deref() != Some(response_action_id.as_str()) {
-        return Err(anyhow!(
-            "response action id evidence hash must match signed response action fields"
-        ));
-    }
+    )?;
     let expected_rollback_ref =
-        expected_response_rollback_ref(&decision.action, dry_run, &response_action_id);
+        expected_response_rollback_ref(&decision.action, dry_run, response_action_id);
     if rollback_ref != expected_rollback_ref {
         return Err(anyhow!(
             "response rollback evidence hash must match signed response action fields"
@@ -2279,7 +2272,7 @@ fn require_response_request_receipt_evidence(
     }
     require_response_receipt_evidence_fields(
         evidence,
-        response_action_id.as_str(),
+        response_action_id,
         root_node_id,
         graph_slice_id,
         graph_content_hash,
@@ -2296,12 +2289,15 @@ fn require_response_receipt_evidence(
     ttl_seconds: u64,
     rollback_ref: &str,
 ) -> Result<()> {
-    let response_action_id = response_action_id_from_signed_response_fields(
+    let response_action_id = response_action_id_from_rollback_ref(action, rollback_ref)?;
+    require_response_action_id_matches_signed_response_fields(
+        response_action_id.as_str(),
         root_node_id,
         graph_slice_id,
         action,
         ttl_seconds,
-    );
+        "execute",
+    )?;
     require_evidence_value_hash(
         evidence,
         "responseActionId",
@@ -2375,6 +2371,57 @@ fn require_response_receipt_evidence_fields(
     Ok(())
 }
 
+fn response_action_id_from_rollback_ref(
+    action: &EndpointDecisionAction,
+    rollback_ref: &str,
+) -> Result<String> {
+    let action_id = if action == &EndpointDecisionAction::CollectEvidence {
+        rollback_ref
+            .strip_prefix("rollback:noop:")
+            .or_else(|| rollback_ref.strip_prefix("rollback:"))
+    } else {
+        rollback_ref.strip_prefix("rollback:")
+    }
+    .ok_or_else(|| {
+        anyhow!("response rollback evidence hash must match signed response action fields")
+    })?;
+    require_nonempty(action_id, "response action id")?;
+    Ok(action_id.to_string())
+}
+
+fn require_response_action_id_matches_signed_response_fields(
+    response_action_id: &str,
+    root_node_id: &str,
+    graph_slice_id: &str,
+    action: &EndpointDecisionAction,
+    ttl_seconds: u64,
+    mode: &str,
+) -> Result<()> {
+    let stable_response_action_id = response_action_id_from_signed_response_fields_with_mode(
+        root_node_id,
+        graph_slice_id,
+        action,
+        ttl_seconds,
+        mode,
+    );
+    if response_action_id == stable_response_action_id {
+        return Ok(());
+    }
+    let Some(issuance_id) = response_action_id
+        .strip_prefix(stable_response_action_id.as_str())
+        .and_then(|suffix| suffix.strip_prefix(':'))
+    else {
+        return Err(anyhow!(
+            "response action id evidence hash must match signed response action fields"
+        ));
+    };
+    Uuid::parse_str(issuance_id).map_err(|_| {
+        anyhow!("response action id evidence hash must match signed response action fields")
+    })?;
+    Ok(())
+}
+
+#[cfg(test)]
 pub(crate) fn response_action_id_from_signed_response_fields(
     root_node_id: &str,
     graph_slice_id: &str,
@@ -2819,7 +2866,6 @@ fn require_response_reason_evidence(evidence: &[EndpointReceiptEvidence]) -> Res
 fn require_response_execution_id_evidence(
     evidence: &[EndpointReceiptEvidence],
     decision: &EndpointDecisionRecord,
-    root_node_id: &str,
     graph_slice_id: &str,
     graph_content_hash: Option<&str>,
 ) -> Result<()> {
@@ -2831,7 +2877,6 @@ fn require_response_execution_id_evidence(
     )?;
     let Some(expected_execution_id) = response_execution_id_from_signed_fields(
         decision,
-        root_node_id,
         graph_slice_id,
         graph_content_hash,
         evidence,
@@ -2855,7 +2900,6 @@ fn require_response_execution_id_evidence(
 fn require_response_execution_evidence_bundle_evidence(
     evidence: &[EndpointReceiptEvidence],
     decision: &EndpointDecisionRecord,
-    root_node_id: &str,
     graph_slice_id: &str,
     graph_content_hash: Option<&str>,
 ) -> Result<()> {
@@ -2863,7 +2907,6 @@ fn require_response_execution_evidence_bundle_evidence(
         .ok_or_else(|| anyhow!("execution evidence bundle graph content hash is required"))?;
     let evidence_bundle_id = response_execution_bundle_id_from_signed_fields(
         decision,
-        root_node_id,
         graph_slice_id,
         graph_content_hash,
     )?;
@@ -2883,7 +2926,6 @@ fn require_response_execution_evidence_bundle_evidence(
 
 fn response_execution_id_from_signed_fields(
     decision: &EndpointDecisionRecord,
-    root_node_id: &str,
     graph_slice_id: &str,
     graph_content_hash: Option<&str>,
     evidence: &[EndpointReceiptEvidence],
@@ -2893,24 +2935,15 @@ fn response_execution_id_from_signed_fields(
         graph_content_hash.ok_or_else(|| anyhow!("execution id graph content hash is required"))?;
     let evidence_bundle_id = response_execution_bundle_id_from_signed_fields(
         decision,
-        root_node_id,
         graph_slice_id,
         graph_content_hash,
     )?;
-    let ttl_seconds = decision
-        .ttl_seconds
-        .ok_or_else(|| anyhow!("response ttl seconds is required"))?;
-    let response_action_id = response_action_id_from_signed_response_fields(
-        root_node_id,
-        graph_slice_id,
-        &decision.action,
-        ttl_seconds,
-    );
+    let rollback_ref = decision
+        .rollback_ref
+        .as_deref()
+        .ok_or_else(|| anyhow!("response rollback ref is required"))?;
+    let response_action_id = response_action_id_from_rollback_ref(&decision.action, rollback_ref)?;
     if let Some(prefix) = response_execution_transition_id_prefix(status) {
-        let rollback_ref = decision
-            .rollback_ref
-            .as_deref()
-            .ok_or_else(|| anyhow!("response rollback ref is required"))?;
         let reason_hash = response_execution_reason_evidence_hash(evidence)?;
         return Ok(Some(response_execution_transition_id_from_reason_hash(
             prefix,
@@ -3924,19 +3957,14 @@ fn response_control_acknowledgement_binding_digest_from_evidence(
 
 fn response_execution_bundle_id_from_signed_fields(
     decision: &EndpointDecisionRecord,
-    root_node_id: &str,
     graph_slice_id: &str,
     graph_content_hash: &str,
 ) -> Result<String> {
-    let ttl_seconds = decision
-        .ttl_seconds
-        .ok_or_else(|| anyhow!("response ttl seconds is required"))?;
-    let response_action_id = response_action_id_from_signed_response_fields(
-        root_node_id,
-        graph_slice_id,
-        &decision.action,
-        ttl_seconds,
-    );
+    let rollback_ref = decision
+        .rollback_ref
+        .as_deref()
+        .ok_or_else(|| anyhow!("response rollback ref is required"))?;
+    let response_action_id = response_action_id_from_rollback_ref(&decision.action, rollback_ref)?;
     let status = response_execution_status_from_decision(decision)?;
     if status == "failed" {
         return Ok(stable_id(
