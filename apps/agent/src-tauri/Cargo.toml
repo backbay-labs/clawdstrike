@@ -88,3 +88,5 @@ async-nats = { path = "../../../infra/vendor/async-nats" }
 [lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+
+[workspace]
