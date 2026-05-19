@@ -19,6 +19,7 @@ serde_yaml.workspace = true
 chrono.workspace = true
 clawdstrike = { workspace = true, default-features = false, features = ["policy-event"] }
 clawdstrike-ocsf.workspace = true
+hush-core.workspace = true
 hunt-query = { workspace = true, optional = true }
 uuid.workspace = true
 anyhow.workspace = true
