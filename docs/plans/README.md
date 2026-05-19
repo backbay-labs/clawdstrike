@@ -16,5 +16,6 @@ See `docs/plans/decisions/` for individual decision records.
 - `docs/plans/multi-agent/codex-swarm-playbook.md` - project-wide Codex swarm/orchestration playbook for lane planning, worktrees, and parallel execution.
 - `docs/plans/clawdstrike/huntronomer/README.md` - Huntronomer desktop refactor index, architecture set, and v1 roadmap.
 - `docs/plans/clawdstrike/huntronomer/workspace-shell/README.md` - Huntronomer workspace-shell architecture, service contract, roadmap, and active swarm plan.
+- `docs/plans/clawdstrike/endpoint-decision-engine/README.md` - local runtime-integrity EDR architecture for causal evidence, policy simulation, safe response, and signed endpoint receipts.
 
 Related point-in-time audit reports live in `docs/audits/`.

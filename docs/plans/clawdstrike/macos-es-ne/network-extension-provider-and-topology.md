@@ -66,6 +66,19 @@ The active implementation map uses a combined system-extension container with la
 - NE subtree: `apps/agent/src-tauri/macos/system-extension/network-extension/**`
 - entitlement and plist assets: `apps/agent/src-tauri/macos/system-extension/{entitlements,plists,profiles}/**`
 
+The current NE subtree has advanced past a pure allow-all scaffold: the content-filter provider has
+an exact host:port egress policy primitive, block decisions for active unexpired restrictions,
+blocked-flow counters, and an `enforcement_ready` health signal. The agent also projects active
+local response-ledger egress restrictions into a compact
+`network-extension-egress-policy.json` snapshot that the Swift policy decoder can load. The status
+helper can surface snapshot readiness through `policy_synced` and `enforcement_ready` while leaving
+runtime inactive/unknown unless the provider actually reports activation. The content-filter
+provider code can reload changed snapshots before flow decisions, and `restrict_egress` execution
+receipts now bind the current provider runtime, sync/readiness fields, and reported counters. The
+remaining hard boundary is deployed activation and verification: the product must not claim OS-wide
+response containment until a running provider is shown to reload the generated snapshot, block a real
+flow, and report a verified counter increment.
+
 ## Required Review Questions
 
 Before `NEINT` is accepted, review must answer:
