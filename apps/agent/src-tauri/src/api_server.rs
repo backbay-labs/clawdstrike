@@ -69,7 +69,7 @@ use clawdstrike_policy_event::edr::{
     HoneyArtifact, PackageManager, SupplyChainRuntimeGuard,
 };
 use clawdstrike_policy_event::event::PolicyEvent;
-use clawdstrike_policy_event::simulate::{replay_events, SimulationResult};
+use clawdstrike_policy_event::simulate::replay_events;
 use futures::{Stream, StreamExt, TryStreamExt};
 use hush_core::{canonicalize_json, sha256, Keypair, SignedReceipt};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -90,7 +90,9 @@ use tower_http::services::{ServeDir, ServeFile};
 
 pub(crate) use crate::edr::conversion::*;
 pub(crate) use crate::edr::dto::*;
+pub(crate) use crate::edr::policy_events::*;
 pub(crate) use crate::edr::queries::*;
+pub(crate) use crate::edr::response::*;
 
 const HUSHD_AUTHORIZATION_HEADER: &str = "x-hushd-authorization";
 const AGENT_AUTH_COOKIE_NAME: &str = "clawdstrike_agent_auth";
@@ -128,7 +130,7 @@ const EDR_MAX_RAW_ARTIFACT_APPROVAL_REASON_BYTES: usize = 1024;
 const EDR_DEFAULT_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 100;
 const EDR_MAX_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 1_000;
 pub(crate) const EDR_NETWORK_EXTENSION_EGRESS_POLICY_SCHEMA_VERSION: u32 = 1;
-const EDR_POLICY_DELTA_SCHEMA_VERSION: &str = "clawdstrike.endpoint_policy_delta.v1";
+pub(crate) const EDR_POLICY_DELTA_SCHEMA_VERSION: &str = "clawdstrike.endpoint_policy_delta.v1";
 const EDR_DEFAULT_POLICY_EVENT_IMPACT_CAUSAL_DEPTH: usize = 3;
 const EDR_MAX_POLICY_EVENT_IMPACT_CONTEXTS: usize = 16;
 const EDR_MAX_POLICY_EVENT_IMPACT_CHAINS_PER_CONTEXT: usize = 8;
@@ -7341,216 +7343,10 @@ fn staged_detection_stage_entry(
         })
 }
 
-fn build_edr_policy_delta_artifact(
-    staged: &EdrStagedDetectionRecord,
-    stage_entry: &EdrDetectionCandidateStage,
-    policy_delta_id: String,
-    generated_at: chrono::DateTime<chrono::Utc>,
-    generated_by: &str,
-    note: Option<String>,
-) -> Result<EdrPolicyDeltaArtifact, (StatusCode, String)> {
-    validate_policy_delta_stage_action(staged.stage.as_str(), &stage_entry.action)?;
-    let target_policy_epoch = staged.policy.policy_epoch.saturating_add(1).max(1);
-    let target_policy = EdrPolicyDeltaTargetPolicy {
-        base_policy_version: staged.policy.policy_version.clone(),
-        base_policy_hash: staged.policy.policy_hash.clone(),
-        base_policy_epoch: staged.policy.policy_epoch,
-        target_policy_epoch,
-    };
-    let rollout = EdrPolicyDeltaRollout {
-        stage: staged.stage.clone(),
-        action: stage_entry.action.clone(),
-        recommended_stage: staged.recommended_stage.clone(),
-        promotion_gate: stage_entry.promotion_gate.clone(),
-        cross_window_impact_hash: staged.cross_window_impact_hash.clone(),
-        cross_window_recommendation_hash: staged.cross_window_recommendation_hash.clone(),
-        developer_breakage_score: staged.simulation.developer_breakage_score,
-        impact_level: staged.simulation.impact_level.as_str().to_string(),
-        would_block: staged.simulation.would_block,
-    };
-    let source_simulation_receipt_id = staged.simulation_receipt.receipt.receipt_id.clone();
-    let policy_patch =
-        build_edr_policy_delta_patch(staged, stage_entry, &target_policy, generated_at)?;
-
-    Ok(EdrPolicyDeltaArtifact {
-        schema_version: EDR_POLICY_DELTA_SCHEMA_VERSION.to_string(),
-        policy_delta_id,
-        generated_at,
-        generated_by: generated_by.to_string(),
-        note,
-        staged_detection_id: staged.staged_detection_id.clone(),
-        source_simulation_id: staged.simulation.simulation_id.clone(),
-        source_simulation_receipt_id,
-        source_affected_identities: staged.simulation.affected_identities.clone(),
-        source_affected_tools: staged.simulation.affected_tools.clone(),
-        candidate: staged.candidate.clone(),
-        target_policy,
-        rollout,
-        policy_patch,
-    })
-}
-
-fn build_edr_policy_delta_patch(
-    staged: &EdrStagedDetectionRecord,
-    stage_entry: &EdrDetectionCandidateStage,
-    target_policy: &EdrPolicyDeltaTargetPolicy,
-    generated_at: chrono::DateTime<chrono::Utc>,
-) -> Result<Value, (StatusCode, String)> {
-    let mut overlay = serde_json::json!({
-        "version": staged.policy.policy_version,
-        "policy_epoch": target_policy.target_policy_epoch,
-        "merge_strategy": "deep_merge",
-        "endpoint_decision_engine": {
-            "generated_rules": [{
-                "id": staged.candidate.rule_id,
-                "stage": staged.stage,
-                "action": stage_entry.action.as_str(),
-                "description": staged.candidate.description,
-                "generated_at": generated_at.to_rfc3339(),
-                "staged_detection_id": staged.staged_detection_id,
-                "simulation_id": staged.simulation.simulation_id,
-                "graph_slice_id": staged.candidate.graph_slice_id,
-                "root": {
-                    "node_id": staged.candidate.root_node_id,
-                    "kind": causal_node_kind_name(&staged.candidate.root_kind),
-                    "label": staged.candidate.root_label,
-                },
-                "impact": {
-                    "developer_breakage_score": staged.simulation.developer_breakage_score,
-                    "impact_level": staged.simulation.impact_level.as_str(),
-                    "affected_node_count": staged.simulation.affected_node_count,
-                    "affected_process_count": staged.simulation.affected_process_count,
-                    "affected_file_count": staged.simulation.affected_file_count,
-                    "affected_network_count": staged.simulation.affected_network_count,
-                    "affected_credential_count": staged.simulation.affected_credential_count,
-                    "affected_tool_count": staged.simulation.affected_tool_count,
-                    "affected_identity_context": staged.simulation.affected_identities,
-                    "affected_tool_context": staged.simulation.affected_tools,
-                }
-            }]
-        }
-    });
-
-    if policy_delta_stage_is_enforcing(&staged.stage, &stage_entry.action) {
-        if let Some(guard_patch) = conventional_policy_guard_patch(staged, &stage_entry.action) {
-            merge_json_values(&mut overlay, guard_patch);
-        }
-    }
-    if let Some(rule) = overlay
-        .get_mut("endpoint_decision_engine")
-        .and_then(|engine| engine.get_mut("generated_rules"))
-        .and_then(serde_json::Value::as_array_mut)
-        .and_then(|rules| rules.first_mut())
-    {
-        if let Some(hash) = staged.cross_window_impact_hash.as_deref() {
-            rule["cross_window_impact_hash"] = serde_json::Value::String(hash.to_string());
-        }
-        if let Some(hash) = staged.cross_window_recommendation_hash.as_deref() {
-            rule["cross_window_recommendation_hash"] = serde_json::Value::String(hash.to_string());
-        }
-    }
-
-    Ok(overlay)
-}
-
-fn policy_delta_stage_is_enforcing(stage: &str, action: &EndpointDecisionAction) -> bool {
-    matches!(stage, "limited_block" | "full_block")
-        && policy_delta_enforcement_action_supported(action)
-}
-
-fn policy_delta_enforcement_action_supported(action: &EndpointDecisionAction) -> bool {
-    matches!(
-        action,
-        EndpointDecisionAction::Block
-            | EndpointDecisionAction::RestrictEgress
-            | EndpointDecisionAction::SuspendProcessTree
-            | EndpointDecisionAction::QuarantineFile
-            | EndpointDecisionAction::RevokeGrant
-            | EndpointDecisionAction::DisablePersistence
-    )
-}
-
-fn validate_policy_delta_stage_action(
-    stage: &str,
-    action: &EndpointDecisionAction,
-) -> Result<(), (StatusCode, String)> {
-    if matches!(stage, "limited_block" | "full_block")
-        && !policy_delta_enforcement_action_supported(action)
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "{} can be simulated or dry-run only; policy deltas cannot promote it to {stage} because enforcement stages require rollback-capable policy actions",
-                action.as_str()
-            ),
-        ));
-    }
-    Ok(())
-}
-
-fn conventional_policy_guard_patch(
-    staged: &EdrStagedDetectionRecord,
-    action: &EndpointDecisionAction,
-) -> Option<Value> {
-    match (&staged.candidate.root_kind, action) {
-        (
-            CausalNodeKind::Network,
-            EndpointDecisionAction::RestrictEgress | EndpointDecisionAction::Block,
-        ) => {
-            let target = staged.candidate.root_label.trim();
-            if target.is_empty() {
-                return None;
-            }
-            Some(serde_json::json!({
-                "guards": {
-                    "egress_allowlist": {
-                        "block": [target]
-                    }
-                }
-            }))
-        }
-        (
-            CausalNodeKind::File | CausalNodeKind::Credential,
-            EndpointDecisionAction::QuarantineFile | EndpointDecisionAction::Block,
-        ) => {
-            let pattern = staged.candidate.root_label.trim();
-            if pattern.is_empty() {
-                return None;
-            }
-            Some(serde_json::json!({
-                "guards": {
-                    "forbidden_path": {
-                        "patterns": [pattern]
-                    }
-                }
-            }))
-        }
-        _ => None,
-    }
-}
-
-fn merge_json_values(target: &mut Value, source: Value) {
-    let Value::Object(source_obj) = source else {
-        *target = source;
-        return;
-    };
-    let Value::Object(target_obj) = target else {
-        *target = Value::Object(source_obj);
-        return;
-    };
-
-    for (key, value) in source_obj {
-        if let Some(existing) = target_obj.get_mut(&key) {
-            if existing.is_object() && value.is_object() {
-                merge_json_values(existing, value);
-            } else {
-                *existing = value;
-            }
-        } else {
-            target_obj.insert(key, value);
-        }
-    }
-}
+// build_edr_policy_delta_artifact, build_edr_policy_delta_patch,
+// policy_delta_stage_is_enforcing, policy_delta_enforcement_action_supported,
+// validate_policy_delta_stage_action, conventional_policy_guard_patch, merge_json_values
+// moved to crate::edr::policy_events
 
 fn policy_delta_artifact_hash(artifact: &EdrPolicyDeltaArtifact) -> Result<String> {
     let value = serde_json::to_value(artifact)
@@ -9289,33 +9085,7 @@ fn ipv6_is_unicast_link_local(ip: &std::net::Ipv6Addr) -> bool {
     (ip.segments()[0] & 0xffc0) == 0xfe80
 }
 
-fn quarantine_file_target_path(
-    plan: &EndpointResponsePlan,
-    graph: &CausalGraph,
-) -> Result<PathBuf> {
-    let node = graph
-        .nodes
-        .get(&plan.root_node_id)
-        .ok_or_else(|| anyhow::anyhow!("root node not found: {}", plan.root_node_id))?;
-    if !matches!(
-        node.kind,
-        CausalNodeKind::File | CausalNodeKind::BrowserDownload
-    ) {
-        return Err(anyhow::anyhow!(
-            "root node must be a file or browser_download node, got {:?}",
-            node.kind
-        ));
-    }
-    let path = PathBuf::from(node.label.trim());
-    if !path.is_absolute() {
-        return Err(anyhow::anyhow!(
-            "quarantine target path must be absolute: {}",
-            node.label
-        ));
-    }
-    Ok(path)
-}
-
+// quarantine_file_target_path moved to crate::edr::response
 fn disable_persistence_target_path(
     plan: &EndpointResponsePlan,
     graph: &CausalGraph,
@@ -9850,63 +9620,8 @@ async fn revoke_local_integration_secret_grant(
     })
 }
 
-#[derive(Debug, Clone)]
-struct ProcessSignalTarget {
-    pid: u32,
-    label: String,
-}
-
-fn suspend_process_tree_targets(
-    plan: &EndpointResponsePlan,
-    graph: &CausalGraph,
-) -> Result<Vec<ProcessSignalTarget>> {
-    let root = graph
-        .nodes
-        .get(&plan.root_node_id)
-        .ok_or_else(|| anyhow::anyhow!("root node not found: {}", plan.root_node_id))?;
-    if root.kind != CausalNodeKind::Process {
-        return Err(anyhow::anyhow!(
-            "root node must be a process node for process-tree response, got {:?}",
-            root.kind
-        ));
-    }
-
-    let root_pid = process_node_pid(root)
-        .ok_or_else(|| anyhow::anyhow!("root process node is missing pid attribute"))?;
-    let mut targets = vec![ProcessSignalTarget {
-        pid: root_pid,
-        label: root.label.clone(),
-    }];
-    for node in graph.nodes.values() {
-        if node.node_id == root.node_id || node.kind != CausalNodeKind::Process {
-            continue;
-        }
-        if let Some(pid) = process_node_pid(node) {
-            targets.push(ProcessSignalTarget {
-                pid,
-                label: node.label.clone(),
-            });
-        }
-    }
-    targets.sort_by_key(|target| target.pid);
-    targets.dedup_by_key(|target| target.pid);
-    targets.sort_by_key(|target| {
-        if target.pid == root_pid {
-            (0_u8, target.pid)
-        } else {
-            (1_u8, target.pid)
-        }
-    });
-    Ok(targets)
-}
-
-fn process_node_pid(node: &clawdstrike_policy_event::edr::CausalNode) -> Option<u32> {
-    node.attributes
-        .get("pid")
-        .and_then(Value::as_u64)
-        .and_then(|pid| u32::try_from(pid).ok())
-}
-
+// ProcessSignalTarget, suspend_process_tree_targets moved to crate::edr::response
+// process_node_pid moved to crate::edr::response
 fn validate_process_signal_targets(targets: &[ProcessSignalTarget]) -> Result<()> {
     if targets.is_empty() {
         return Err(anyhow::anyhow!(
@@ -11035,107 +10750,9 @@ fn profile_d_script_file_name_is_safe(file_name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-fn quarantine_file_effect(
-    execution: &EndpointResponseExecutionReport,
-) -> Result<&EndpointResponseExecutionEffect> {
-    execution
-        .effects
-        .iter()
-        .find(|effect| effect.effect_type == "quarantine_file")
-        .ok_or_else(|| anyhow::anyhow!("execution has no quarantine_file effect"))
-}
-
-fn disable_persistence_effect(
-    execution: &EndpointResponseExecutionReport,
-) -> Result<&EndpointResponseExecutionEffect> {
-    execution
-        .effects
-        .iter()
-        .find(|effect| effect.effect_type == "disable_persistence")
-        .ok_or_else(|| anyhow::anyhow!("execution has no disable_persistence effect"))
-}
-
-fn suspend_process_tree_effect(
-    execution: &EndpointResponseExecutionReport,
-) -> Result<&EndpointResponseExecutionEffect> {
-    execution
-        .effects
-        .iter()
-        .find(|effect| effect.effect_type == "suspend_process_tree")
-        .ok_or_else(|| anyhow::anyhow!("execution has no suspend_process_tree effect"))
-}
-
-fn process_tree_effect_pids(effect: &EndpointResponseExecutionEffect) -> Result<Vec<u32>> {
-    let artifact = effect
-        .artifact
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("process tree effect is missing pid artifact"))?;
-    let mut pids = Vec::new();
-    for item in artifact.split(',') {
-        let item = item.trim();
-        if item.is_empty() {
-            continue;
-        }
-        pids.push(
-            item.parse::<u32>()
-                .with_context(|| format!("parse process tree effect pid {item}"))?,
-        );
-    }
-    if pids.is_empty() {
-        return Err(anyhow::anyhow!("process tree effect contains no pids"));
-    }
-    if let Some(expected) = effect.byte_count {
-        if pids.len() as u64 != expected {
-            return Err(anyhow::anyhow!(
-                "process tree effect pid count mismatch: expected {expected}, got {}",
-                pids.len()
-            ));
-        }
-    }
-    let mut canonical_pids = pids.clone();
-    canonical_pids.sort_unstable();
-    canonical_pids.dedup();
-    if canonical_pids.len() != pids.len() {
-        return Err(anyhow::anyhow!(
-            "process tree effect contains duplicate pids"
-        ));
-    }
-    let canonical_pid_list = canonical_pids
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
-    let actual_hash = sha256(canonical_pid_list.as_bytes()).to_hex_prefixed();
-    if effect.content_hash.as_deref() != Some(actual_hash.as_str()) {
-        return Err(anyhow::anyhow!(
-            "process tree effect pid hash does not match content hash"
-        ));
-    }
-    Ok(pids)
-}
-
-fn quarantine_destination_path(
-    quarantine_root: &FsPath,
-    plan: &EndpointResponsePlan,
-    source_path: &FsPath,
-    content_hash: &str,
-) -> PathBuf {
-    let hash_fragment = content_hash
-        .trim_start_matches("0x")
-        .chars()
-        .take(16)
-        .collect::<String>();
-    let source_name = source_path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("file");
-    quarantine_root.join(format!(
-        "{}-{}-{}.quarantine",
-        safe_filename_fragment(&plan.action_id),
-        safe_filename_fragment(&hash_fragment),
-        safe_filename_fragment(source_name)
-    ))
-}
+// quarantine_file_effect, disable_persistence_effect, suspend_process_tree_effect,
+// process_tree_effect_pids moved to crate::edr::response
+// quarantine_destination_path, safe_filename_fragment moved to crate::edr::response
 
 fn persistence_disable_destination_path(
     quarantine_root: &FsPath,
@@ -11158,25 +10775,6 @@ fn persistence_disable_destination_path(
         safe_filename_fragment(&hash_fragment),
         safe_filename_fragment(source_name)
     ))
-}
-
-fn safe_filename_fragment(value: &str) -> String {
-    let fragment = value
-        .chars()
-        .take(96)
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    if fragment.is_empty() {
-        "artifact".to_string()
-    } else {
-        fragment
-    }
 }
 
 fn supported_edr_response_action(action: &EndpointDecisionAction) -> bool {
@@ -14155,50 +13753,9 @@ fn canonical_json_hash(value: &impl Serialize, label: &str) -> Result<String> {
     Ok(sha256(canonical.as_bytes()).to_hex_prefixed())
 }
 
-fn build_policy_event_replay_report(
-    policy: EndpointPolicySnapshot,
-    event_count: usize,
-    track_posture: bool,
-    event_stream_hash: String,
-    result_hash: String,
-    result: &SimulationResult,
-) -> EdrPolicyEventReplayReport {
-    let replay_id = endpoint_policy_event_replay_id(EndpointPolicyEventReplayIdInput {
-        policy_hash: policy.policy_hash.as_str(),
-        policy_epoch: policy.policy_epoch,
-        event_stream_hash: event_stream_hash.as_str(),
-        result_hash: result_hash.as_str(),
-        event_count: event_count as u64,
-        allowed_count: result.summary.allowed,
-        warn_count: result.summary.warn,
-        blocked_count: result.summary.blocked,
-        track_posture,
-    });
-    let summary = format!(
-        "Replayed {} PolicyEvent records under current endpoint policy {} epoch {}; {} allowed, {} warned, {} blocked.",
-        result.summary.total,
-        policy.policy_version,
-        policy.policy_epoch,
-        result.summary.allowed,
-        result.summary.warn,
-        result.summary.blocked
-    );
-
-    EdrPolicyEventReplayReport {
-        replay_id,
-        replayed_at: chrono::Utc::now(),
-        mode: "current_policy_event_stream_replay".to_string(),
-        policy,
-        event_count: event_count as u64,
-        allowed_count: result.summary.allowed,
-        warn_count: result.summary.warn,
-        blocked_count: result.summary.blocked,
-        track_posture,
-        event_stream_hash,
-        result_hash,
-        summary,
-    }
-}
+// build_policy_event_replay_report, build_policy_event_impact_changes,
+// build_policy_event_impact_drivers, build_policy_event_impact_report
+// moved to crate::edr::policy_events
 
 async fn analyze_policy_event_impact_under_proposed_policy(
     state: &AgentApiState,
@@ -14278,157 +13835,6 @@ async fn analyze_policy_event_impact_under_proposed_policy(
         proposed_result,
         receipt,
     })
-}
-
-fn build_policy_event_impact_changes(
-    current_result: &SimulationResult,
-    proposed_result: &SimulationResult,
-) -> (
-    EdrPolicyEventImpactSummary,
-    Vec<EdrPolicyEventImpactEntry>,
-    Vec<EdrPolicyEventImpactDriver>,
-) {
-    let mut summary = EdrPolicyEventImpactSummary {
-        total: 0,
-        changed: 0,
-        allow_to_warn: 0,
-        allow_to_block: 0,
-        warn_to_allow: 0,
-        warn_to_block: 0,
-        block_to_allow: 0,
-        block_to_warn: 0,
-    };
-    let mut changes = Vec::new();
-
-    for (current, proposed) in current_result.results.iter().zip(&proposed_result.results) {
-        summary.total = summary.total.saturating_add(1);
-        let changed = current.outcome != proposed.outcome;
-        if changed {
-            summary.changed = summary.changed.saturating_add(1);
-            match (current.outcome, proposed.outcome) {
-                ("allowed", "warn") => summary.allow_to_warn += 1,
-                ("allowed", "blocked") => summary.allow_to_block += 1,
-                ("warn", "allowed") => summary.warn_to_allow += 1,
-                ("warn", "blocked") => summary.warn_to_block += 1,
-                ("blocked", "allowed") => summary.block_to_allow += 1,
-                ("blocked", "warn") => summary.block_to_warn += 1,
-                _ => {}
-            }
-        }
-        changes.push(EdrPolicyEventImpactEntry {
-            event_id: current.event_id.clone(),
-            current_outcome: current.outcome.to_string(),
-            proposed_outcome: proposed.outcome.to_string(),
-            changed,
-            current_decision: current.decision.clone(),
-            proposed_decision: proposed.decision.clone(),
-        });
-    }
-
-    let drivers = build_policy_event_impact_drivers(&changes);
-
-    (summary, changes, drivers)
-}
-
-fn build_policy_event_impact_drivers(
-    changes: &[EdrPolicyEventImpactEntry],
-) -> Vec<EdrPolicyEventImpactDriver> {
-    let mut buckets: BTreeMap<EdrPolicyEventImpactDriverKey, (u64, Vec<String>)> = BTreeMap::new();
-    for change in changes.iter().filter(|change| change.changed) {
-        let key = EdrPolicyEventImpactDriverKey {
-            current_outcome: change.current_outcome.clone(),
-            proposed_outcome: change.proposed_outcome.clone(),
-            current_guard: change.current_decision.guard.clone(),
-            proposed_guard: change.proposed_decision.guard.clone(),
-            current_reason_code: change.current_decision.reason_code.clone(),
-            proposed_reason_code: change.proposed_decision.reason_code.clone(),
-        };
-        let (count, samples) = buckets.entry(key).or_default();
-        *count = count.saturating_add(1);
-        if samples.len() < 5 {
-            samples.push(change.event_id.clone());
-        }
-    }
-
-    let mut drivers = buckets
-        .into_iter()
-        .map(
-            |(key, (count, sample_event_ids))| EdrPolicyEventImpactDriver {
-                current_outcome: key.current_outcome,
-                proposed_outcome: key.proposed_outcome,
-                current_guard: key.current_guard,
-                proposed_guard: key.proposed_guard,
-                current_reason_code: key.current_reason_code,
-                proposed_reason_code: key.proposed_reason_code,
-                count,
-                sample_event_ids,
-            },
-        )
-        .collect::<Vec<_>>();
-    drivers.sort_by(|left, right| {
-        right
-            .count
-            .cmp(&left.count)
-            .then_with(|| left.proposed_outcome.cmp(&right.proposed_outcome))
-            .then_with(|| left.proposed_guard.cmp(&right.proposed_guard))
-            .then_with(|| left.proposed_reason_code.cmp(&right.proposed_reason_code))
-            .then_with(|| left.current_outcome.cmp(&right.current_outcome))
-    });
-    drivers
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_policy_event_impact_report(
-    current_policy: EndpointPolicySnapshot,
-    proposed_policy: EndpointPolicySnapshot,
-    track_posture: bool,
-    event_stream_hash: String,
-    current_result_hash: String,
-    proposed_result_hash: String,
-    impact_hash: String,
-    summary: &EdrPolicyEventImpactSummary,
-) -> EdrPolicyEventImpactReport {
-    let impact_id = endpoint_policy_event_impact_id(EndpointPolicyEventImpactIdInput {
-        current_policy_hash: current_policy.policy_hash.as_str(),
-        current_policy_epoch: current_policy.policy_epoch,
-        proposed_policy_hash: proposed_policy.policy_hash.as_str(),
-        proposed_policy_epoch: proposed_policy.policy_epoch,
-        event_stream_hash: event_stream_hash.as_str(),
-        current_result_hash: current_result_hash.as_str(),
-        proposed_result_hash: proposed_result_hash.as_str(),
-        impact_hash: impact_hash.as_str(),
-        event_count: summary.total,
-        changed_count: summary.changed,
-        allow_to_block_count: summary.allow_to_block,
-        track_posture,
-    });
-    let summary_text = format!(
-        "Compared {} PolicyEvent records between current policy {} epoch {} and proposed policy {} epoch {}; {} changed, {} allow-to-block.",
-        summary.total,
-        current_policy.policy_version,
-        current_policy.policy_epoch,
-        proposed_policy.policy_version,
-        proposed_policy.policy_epoch,
-        summary.changed,
-        summary.allow_to_block
-    );
-
-    EdrPolicyEventImpactReport {
-        impact_id,
-        analyzed_at: chrono::Utc::now(),
-        mode: "current_vs_proposed_policy_event_impact".to_string(),
-        current_policy,
-        proposed_policy,
-        event_count: summary.total,
-        changed_count: summary.changed,
-        allow_to_block_count: summary.allow_to_block,
-        track_posture,
-        event_stream_hash,
-        current_result_hash,
-        proposed_result_hash,
-        impact_hash,
-        summary: summary_text,
-    }
 }
 
 fn validate_policy_event_submission(
