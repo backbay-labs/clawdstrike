@@ -7,7 +7,10 @@ use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
-use crate::models::hunt::IngestHuntEventRequest;
+use crate::models::hunt::{
+    AgentSecretTouchesRequest, EndpointEvidenceArchiveDownload, EndpointEvidenceArchiveRecord,
+    EndpointEvidenceArchiveUploadRequest, IngestHuntEventRequest,
+};
 use crate::services::hunt;
 use crate::state::AppState;
 
@@ -16,6 +19,19 @@ pub fn router() -> Router<AppState> {
         .route("/hunt/events/ingest", post(ingest_event))
         .route("/hunt/search", post(search_events))
         .route("/hunt/timeline", post(timeline_events))
+        .route("/hunt/agent-secret-touches", post(agent_secret_touches))
+        .route(
+            "/hunt/evidence-bundle-archives",
+            post(upload_endpoint_evidence_archive),
+        )
+        .route(
+            "/hunt/evidence-bundle-archives/{archive_id}",
+            get(get_endpoint_evidence_archive),
+        )
+        .route(
+            "/hunt/evidence-bundle-archives/{archive_id}/download",
+            get(download_endpoint_evidence_archive),
+        )
         .route("/hunt/correlate", post(correlate))
         .route("/hunt/ioc/match", post(ioc_match))
         .route("/hunt/jobs/{id}", get(get_job))
@@ -70,6 +86,89 @@ async fn timeline_events(
     Ok(Json(
         hunt::timeline_events(&state.db, auth.tenant_id, &request).await?,
     ))
+}
+
+async fn agent_secret_touches(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Json(request): Json<AgentSecretTouchesRequest>,
+) -> Result<Json<crate::models::hunt::AgentSecretTouchesResponse>, ApiError> {
+    Ok(Json(
+        hunt::agent_secret_touches(&state.db, auth.tenant_id, &request).await?,
+    ))
+}
+
+async fn upload_endpoint_evidence_archive(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Json(request): Json<EndpointEvidenceArchiveUploadRequest>,
+) -> Result<Json<EndpointEvidenceArchiveRecord>, ApiError> {
+    if !auth.is_api_key() || !matches!(auth.role.as_str(), "owner" | "admin") {
+        hunt::record_endpoint_evidence_archive_upload_denied_audit(
+            &state.db,
+            auth.tenant_id,
+            &auth.actor_id(),
+            auth.actor_type(),
+            &auth.role,
+            &request,
+            "admin_api_key_required",
+        )
+        .await?;
+        return Err(ApiError::Forbidden);
+    }
+    let record = hunt::upload_endpoint_evidence_archive(&state.db, auth.tenant_id, request).await?;
+    hunt::record_endpoint_evidence_archive_upload_audit(
+        &state.db,
+        auth.tenant_id,
+        &auth.actor_id(),
+        auth.actor_type(),
+        &auth.role,
+        &record,
+    )
+    .await?;
+    Ok(Json(record))
+}
+
+async fn get_endpoint_evidence_archive(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Path(archive_id): Path<String>,
+) -> Result<Json<EndpointEvidenceArchiveRecord>, ApiError> {
+    Ok(Json(
+        hunt::get_endpoint_evidence_archive(&state.db, auth.tenant_id, &archive_id).await?,
+    ))
+}
+
+async fn download_endpoint_evidence_archive(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Path(archive_id): Path<String>,
+) -> Result<Json<EndpointEvidenceArchiveDownload>, ApiError> {
+    if !matches!(auth.role.as_str(), "owner" | "admin") {
+        hunt::record_endpoint_evidence_archive_download_denied_audit(
+            &state.db,
+            auth.tenant_id,
+            &auth.actor_id(),
+            auth.actor_type(),
+            &auth.role,
+            &archive_id,
+            "admin_or_owner_required",
+        )
+        .await?;
+        return Err(ApiError::Forbidden);
+    }
+    let download =
+        hunt::download_endpoint_evidence_archive(&state.db, auth.tenant_id, &archive_id).await?;
+    hunt::record_endpoint_evidence_archive_download_audit(
+        &state.db,
+        auth.tenant_id,
+        &auth.actor_id(),
+        auth.actor_type(),
+        &auth.role,
+        &download.record,
+    )
+    .await?;
+    Ok(Json(download))
 }
 
 async fn correlate(

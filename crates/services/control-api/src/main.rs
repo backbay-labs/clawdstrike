@@ -31,6 +31,7 @@ use crate::services::approval_request_consumer;
 use crate::services::approval_resolution_outbox;
 use crate::services::audit_consumer;
 use crate::services::catalog::{self as catalog_service, CatalogStore};
+use crate::services::hunt_event_consumer;
 use crate::services::metering::MeteringService;
 use crate::services::retention::RetentionService;
 use crate::services::stale_agent_detector::{self, StaleAgentConfig};
@@ -107,6 +108,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (approval_outbox_shutdown_tx, approval_outbox_shutdown_rx) =
         tokio::sync::watch::channel(false);
     let (heartbeat_shutdown_tx, heartbeat_shutdown_rx) = tokio::sync::watch::channel(false);
+    let (hunt_event_shutdown_tx, hunt_event_shutdown_rx) = tokio::sync::watch::channel(false);
 
     if config.stale_detector_enabled {
         let db = state.db.clone();
@@ -158,9 +160,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let stream_subjects = stream_subjects_for_consumer(
             &config.approval_stream_name,
             &config.approval_subject_filter,
-            config.heartbeat_consumer_enabled,
-            &config.heartbeat_stream_name,
-            &config.heartbeat_subject_filter,
+            &[
+                (
+                    config.heartbeat_consumer_enabled,
+                    config.heartbeat_stream_name.as_str(),
+                    config.heartbeat_subject_filter.as_str(),
+                ),
+                (
+                    config.hunt_event_consumer_enabled,
+                    config.hunt_event_stream_name.as_str(),
+                    config.hunt_event_subject_filter.as_str(),
+                ),
+            ],
         );
         let stream_name = config.approval_stream_name.clone();
         let consumer_name = config.approval_consumer_name.clone();
@@ -206,9 +217,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let stream_subjects = stream_subjects_for_consumer(
             &config.heartbeat_stream_name,
             &config.heartbeat_subject_filter,
-            config.approval_consumer_enabled,
-            &config.approval_stream_name,
-            &config.approval_subject_filter,
+            &[
+                (
+                    config.approval_consumer_enabled,
+                    config.approval_stream_name.as_str(),
+                    config.approval_subject_filter.as_str(),
+                ),
+                (
+                    config.hunt_event_consumer_enabled,
+                    config.hunt_event_stream_name.as_str(),
+                    config.hunt_event_subject_filter.as_str(),
+                ),
+            ],
         );
         let stream_name = config.heartbeat_stream_name.clone();
         let consumer_name = config.heartbeat_consumer_name.clone();
@@ -233,6 +253,58 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    if config.hunt_event_consumer_enabled {
+        if let Some(signing_keypair) = state.signing_keypair.clone() {
+            let nats = state.nats.clone();
+            let db = state.db.clone();
+            let subject_filter = config.hunt_event_subject_filter.clone();
+            let stream_subjects = stream_subjects_for_consumer(
+                &config.hunt_event_stream_name,
+                &config.hunt_event_subject_filter,
+                &[
+                    (
+                        config.approval_consumer_enabled,
+                        config.approval_stream_name.as_str(),
+                        config.approval_subject_filter.as_str(),
+                    ),
+                    (
+                        config.heartbeat_consumer_enabled,
+                        config.heartbeat_stream_name.as_str(),
+                        config.heartbeat_subject_filter.as_str(),
+                    ),
+                ],
+            );
+            let stream_name = config.hunt_event_stream_name.clone();
+            let consumer_name = config.hunt_event_consumer_name.clone();
+            let shutdown_rx = hunt_event_shutdown_rx.clone();
+            tokio::spawn(async move {
+                hunt_event_consumer::run(
+                    nats,
+                    db,
+                    signing_keypair,
+                    hunt_event_consumer::HuntEventConsumerConfig {
+                        subject_filter,
+                        stream_subjects,
+                        stream_name,
+                        consumer_name,
+                    },
+                    shutdown_rx,
+                )
+                .await;
+            });
+            tracing::info!(
+                subject = %config.hunt_event_subject_filter,
+                stream = %config.hunt_event_stream_name,
+                consumer = %config.hunt_event_consumer_name,
+                "Hunt-event consumer enabled"
+            );
+        } else {
+            tracing::error!(
+                "Hunt-event consumer disabled because no signing keypair is configured"
+            );
+        }
+    }
+
     let app = routes::router(state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
@@ -245,6 +317,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let approval_shutdown_tx_signal = approval_shutdown_tx.clone();
     let approval_outbox_shutdown_tx_signal = approval_outbox_shutdown_tx.clone();
     let heartbeat_shutdown_tx_signal = heartbeat_shutdown_tx.clone();
+    let hunt_event_shutdown_tx_signal = hunt_event_shutdown_tx.clone();
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             tokio::signal::ctrl_c().await.ok();
@@ -253,6 +326,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let _ = approval_shutdown_tx_signal.send(true);
             let _ = approval_outbox_shutdown_tx_signal.send(true);
             let _ = heartbeat_shutdown_tx_signal.send(true);
+            let _ = hunt_event_shutdown_tx_signal.send(true);
             tracing::info!("Received shutdown signal");
         })
         .await?;
@@ -264,13 +338,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn stream_subjects_for_consumer(
     consumer_stream_name: &str,
     consumer_subject_filter: &str,
-    sibling_consumer_enabled: bool,
-    sibling_stream_name: &str,
-    sibling_subject_filter: &str,
+    siblings: &[(bool, &str, &str)],
 ) -> Vec<String> {
     let mut subjects = vec![consumer_subject_filter.to_string()];
-    if sibling_consumer_enabled && consumer_stream_name == sibling_stream_name {
-        subjects.push(sibling_subject_filter.to_string());
+    for (sibling_enabled, sibling_stream_name, sibling_subject_filter) in siblings {
+        if *sibling_enabled && consumer_stream_name == *sibling_stream_name {
+            subjects.push((*sibling_subject_filter).to_string());
+        }
     }
     subjects.sort();
     subjects.dedup();
@@ -359,9 +433,11 @@ mod tests {
         let subjects = stream_subjects_for_consumer(
             "adaptive-ingress",
             "tenant-*.clawdstrike.approval.request.*",
-            true,
-            "adaptive-ingress",
-            "tenant-*.clawdstrike.agent.heartbeat.*",
+            &[(
+                true,
+                "adaptive-ingress",
+                "tenant-*.clawdstrike.agent.heartbeat.*",
+            )],
         );
         assert_eq!(
             subjects,
@@ -377,9 +453,11 @@ mod tests {
         let subjects = stream_subjects_for_consumer(
             "approval-ingress",
             "tenant-*.clawdstrike.approval.request.*",
-            true,
-            "heartbeat-ingress",
-            "tenant-*.clawdstrike.agent.heartbeat.*",
+            &[(
+                true,
+                "heartbeat-ingress",
+                "tenant-*.clawdstrike.agent.heartbeat.*",
+            )],
         );
         assert_eq!(
             subjects,
@@ -392,9 +470,11 @@ mod tests {
         let subjects = stream_subjects_for_consumer(
             "adaptive-ingress",
             "tenant-*.clawdstrike.approval.request.*",
-            false,
-            "adaptive-ingress",
-            "tenant-*.clawdstrike.agent.heartbeat.*",
+            &[(
+                false,
+                "adaptive-ingress",
+                "tenant-*.clawdstrike.agent.heartbeat.*",
+            )],
         );
         assert_eq!(
             subjects,

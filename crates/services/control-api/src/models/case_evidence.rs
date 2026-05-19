@@ -207,6 +207,14 @@ pub struct UpdateFleetCaseRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BulkUpdateFleetCasesRequest {
+    #[serde(default)]
+    pub case_ids: Vec<Uuid>,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AddCaseArtifactRequest {
     pub artifact_kind: String,
     pub artifact_id: String,

@@ -83,6 +83,22 @@ const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
         name: "018_runtime_unique_constraint.sql",
         sql: include_str!("../migrations/018_runtime_unique_constraint.sql"),
     },
+    EmbeddedMigration {
+        name: "019_endpoint_evidence_archives.sql",
+        sql: include_str!("../migrations/019_endpoint_evidence_archives.sql"),
+    },
+    EmbeddedMigration {
+        name: "020_case_endpoint_evidence_archive_artifacts.sql",
+        sql: include_str!("../migrations/020_case_endpoint_evidence_archive_artifacts.sql"),
+    },
+    EmbeddedMigration {
+        name: "021_policy_proposals.sql",
+        sql: include_str!("../migrations/021_policy_proposals.sql"),
+    },
+    EmbeddedMigration {
+        name: "022_policy_rule_diff_response_actions.sql",
+        sql: include_str!("../migrations/022_policy_rule_diff_response_actions.sql"),
+    },
 ];
 
 const MIGRATION_LOCK_KEY: i64 = 0x4353_4D49_4752;

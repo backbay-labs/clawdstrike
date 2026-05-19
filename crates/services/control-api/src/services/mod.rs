@@ -10,6 +10,7 @@ pub mod consumer_ack;
 pub mod delegation_graph;
 pub mod hierarchy;
 pub mod hunt;
+pub mod hunt_event_consumer;
 pub mod metering;
 pub mod policy_distribution;
 pub mod principal_resolution;

@@ -33,6 +33,10 @@ pub struct Config {
     pub heartbeat_subject_filter: String,
     pub heartbeat_stream_name: String,
     pub heartbeat_consumer_name: String,
+    pub hunt_event_consumer_enabled: bool,
+    pub hunt_event_subject_filter: String,
+    pub hunt_event_stream_name: String,
+    pub hunt_event_consumer_name: String,
     pub stale_detector_enabled: bool,
     pub stale_check_interval_secs: u64,
     pub stale_threshold_secs: i64,
@@ -147,6 +151,17 @@ impl Config {
             .unwrap_or_else(|_| default_adaptive_ingress_stream_name());
         let heartbeat_consumer_name = std::env::var("HEARTBEAT_CONSUMER_NAME")
             .unwrap_or_else(|_| "clawdstrike_agent_heartbeat_consumer".to_string());
+        let hunt_event_consumer_enabled = std::env::var("HUNT_EVENT_CONSUMER_ENABLED")
+            .ok()
+            .as_deref()
+            .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(true);
+        let hunt_event_subject_filter = std::env::var("HUNT_EVENT_SUBJECT_FILTER")
+            .unwrap_or_else(|_| default_hunt_event_subject_filter());
+        let hunt_event_stream_name = std::env::var("HUNT_EVENT_STREAM_NAME")
+            .unwrap_or_else(|_| default_adaptive_ingress_stream_name());
+        let hunt_event_consumer_name = std::env::var("HUNT_EVENT_CONSUMER_NAME")
+            .unwrap_or_else(|_| "clawdstrike_hunt_event_consumer".to_string());
         let stale_detector_enabled = std::env::var("STALE_DETECTOR_ENABLED")
             .ok()
             .as_deref()
@@ -172,6 +187,22 @@ impl Config {
             &heartbeat_subject_filter,
             &approval_stream_name,
             &heartbeat_stream_name,
+        )?;
+        validate_consumer_stream_configuration(
+            approval_consumer_enabled,
+            hunt_event_consumer_enabled,
+            &approval_subject_filter,
+            &hunt_event_subject_filter,
+            &approval_stream_name,
+            &hunt_event_stream_name,
+        )?;
+        validate_consumer_stream_configuration(
+            heartbeat_consumer_enabled,
+            hunt_event_consumer_enabled,
+            &heartbeat_subject_filter,
+            &hunt_event_subject_filter,
+            &heartbeat_stream_name,
+            &hunt_event_stream_name,
         )?;
 
         Ok(Self {
@@ -204,6 +235,10 @@ impl Config {
             heartbeat_subject_filter,
             heartbeat_stream_name,
             heartbeat_consumer_name,
+            hunt_event_consumer_enabled,
+            hunt_event_subject_filter,
+            hunt_event_stream_name,
+            hunt_event_consumer_name,
             stale_detector_enabled,
             stale_check_interval_secs,
             stale_threshold_secs,
@@ -217,6 +252,10 @@ fn default_approval_subject_filter() -> String {
 }
 
 fn default_heartbeat_subject_filter() -> String {
+    "tenant-*.>".to_string()
+}
+
+fn default_hunt_event_subject_filter() -> String {
     "tenant-*.>".to_string()
 }
 
@@ -370,8 +409,9 @@ fn token_glob_overlap(
 mod tests {
     use super::{
         default_adaptive_ingress_stream_name, default_approval_subject_filter,
-        default_heartbeat_subject_filter, subject_filters_overlap, token_patterns_overlap,
-        validate_consumer_stream_configuration, Config,
+        default_heartbeat_subject_filter, default_hunt_event_subject_filter,
+        subject_filters_overlap, token_patterns_overlap, validate_consumer_stream_configuration,
+        Config,
     };
 
     /// Serialize env-var tests so parallel threads don't clobber each other.
@@ -424,6 +464,11 @@ mod tests {
     #[test]
     fn default_heartbeat_subject_filter_is_valid() {
         assert_eq!(default_heartbeat_subject_filter(), "tenant-*.>");
+    }
+
+    #[test]
+    fn default_hunt_event_subject_filter_is_valid() {
+        assert_eq!(default_hunt_event_subject_filter(), "tenant-*.>");
     }
 
     #[test]
@@ -547,6 +592,10 @@ mod tests {
             "HEARTBEAT_SUBJECT_FILTER",
             "HEARTBEAT_STREAM_NAME",
             "HEARTBEAT_CONSUMER_NAME",
+            "HUNT_EVENT_CONSUMER_ENABLED",
+            "HUNT_EVENT_SUBJECT_FILTER",
+            "HUNT_EVENT_STREAM_NAME",
+            "HUNT_EVENT_CONSUMER_NAME",
             "STALE_DETECTOR_ENABLED",
             "STALE_CHECK_INTERVAL_SECS",
             "STALE_THRESHOLD_SECS",
@@ -575,6 +624,7 @@ mod tests {
                 assert!(!config.audit_consumer_enabled);
                 assert!(config.approval_consumer_enabled);
                 assert!(config.heartbeat_consumer_enabled);
+                assert!(config.hunt_event_consumer_enabled);
                 assert!(config.stale_detector_enabled);
                 assert_eq!(config.stale_check_interval_secs, 60);
                 assert_eq!(config.stale_threshold_secs, 120);

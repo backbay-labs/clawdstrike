@@ -581,34 +581,22 @@ async fn heartbeat(
     set_principal_liveness_state(&mut tx, principal_id, auth.tenant_id, "active").await?;
     tx.commit().await.map_err(ApiError::Database)?;
 
-    // Reconciliation path: if a tenant-level active policy exists, ensure this
-    // agent's KV bucket converges even if it missed a historical deploy.
-    match policy_distribution::fetch_active_policy_by_tenant_id(&state.db, auth.tenant_id).await {
-        Ok(Some(active_policy)) => {
-            if let Err(err) = policy_distribution::reconcile_policy_for_agent(
-                &state.nats,
-                &active_policy,
-                &req.agent_id,
-            )
-            .await
-            {
-                tracing::warn!(
-                    error = %err,
-                    tenant = %auth.slug,
-                    agent_id = %req.agent_id,
-                    "Heartbeat policy reconciliation failed"
-                );
-            }
-        }
-        Ok(None) => {}
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                tenant = %auth.slug,
-                agent_id = %req.agent_id,
-                "Failed to load active policy during heartbeat reconciliation"
-            );
-        }
+    // Reconciliation path: ensure this agent's scoped effective policy bucket
+    // converges even if it missed a historical deploy.
+    if let Err(err) = policy_distribution::reconcile_effective_policy_for_agent(
+        &state.db,
+        &state.nats,
+        auth.tenant_id,
+        &req.agent_id,
+    )
+    .await
+    {
+        tracing::warn!(
+            error = %err,
+            tenant = %auth.slug,
+            agent_id = %req.agent_id,
+            "Heartbeat policy reconciliation failed"
+        );
     }
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
@@ -774,34 +762,22 @@ async fn enroll_agent(
         }
     };
 
-    // Backfill policy KV for newly enrolled agents if a tenant-level active
-    // policy already exists.
-    match policy_distribution::fetch_active_policy_by_tenant_id(&state.db, tenant_id).await {
-        Ok(Some(active_policy)) => {
-            if let Err(err) = policy_distribution::reconcile_policy_for_agent(
-                &state.nats,
-                &active_policy,
-                &agent_id,
-            )
-            .await
-            {
-                tracing::warn!(
-                    error = %err,
-                    tenant = %slug,
-                    agent_id = %agent_id,
-                    "Enrollment policy backfill failed"
-                );
-            }
-        }
-        Ok(None) => {}
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                tenant = %slug,
-                agent_id = %agent_id,
-                "Failed to load active policy during enrollment backfill"
-            );
-        }
+    // Backfill policy KV for newly enrolled agents when an effective tenant or
+    // directory-scoped policy exists.
+    if let Err(err) = policy_distribution::reconcile_effective_policy_for_agent(
+        &state.db,
+        &state.nats,
+        tenant_id,
+        &agent_id,
+    )
+    .await
+    {
+        tracing::warn!(
+            error = %err,
+            tenant = %slug,
+            agent_id = %agent_id,
+            "Enrollment policy backfill failed"
+        );
     }
 
     // Record usage event.

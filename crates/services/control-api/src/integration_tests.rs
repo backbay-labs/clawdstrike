@@ -1,5 +1,6 @@
 #![allow(clippy::duplicate_mod, clippy::expect_used, clippy::unwrap_used)]
 
+use std::io::{Cursor, Read};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,6 +10,7 @@ use axum::http::{Method, Request, StatusCode};
 use chrono::Utc;
 use futures::StreamExt;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use sqlx::row::Row;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -147,7 +149,20 @@ async fn policies_deploy_and_enroll_backfills_policy_kv_bucket() {
         .await
         .expect("kv get should succeed")
         .expect("policy key should exist");
-    assert_eq!(payload.as_ref(), policy_yaml.as_bytes());
+    let payload_yaml: serde_yaml::Value =
+        serde_yaml::from_slice(payload.as_ref()).expect("policy payload YAML");
+    assert_eq!(
+        payload_yaml
+            .get("policy_epoch")
+            .and_then(serde_yaml::Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        payload_yaml
+            .get("version")
+            .and_then(serde_yaml::Value::as_str),
+        Some("1.0.0")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -357,7 +372,20 @@ async fn agents_heartbeat_recovers_stale_agent_and_reconciles_policy_kv() {
         .await
         .expect("kv get should succeed")
         .expect("policy key should exist");
-    assert_eq!(payload.as_ref(), policy_yaml.as_bytes());
+    let payload_yaml: serde_yaml::Value =
+        serde_yaml::from_slice(payload.as_ref()).expect("policy payload YAML");
+    assert_eq!(
+        payload_yaml
+            .get("policy_epoch")
+            .and_then(serde_yaml::Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        payload_yaml
+            .get("version")
+            .and_then(serde_yaml::Value::as_str),
+        Some("2.0.0")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -546,13 +574,14 @@ async fn agent_effective_policy_resolves_directory_attachments_in_precedence_ord
 
     let harness = setup_harness().await;
     let keypair = hush_core::Keypair::generate();
+    let agent_id = "agent-policy-int-1";
     let register_resp = request_json(
         &harness.app,
         Method::POST,
         "/api/v1/agents".to_string(),
         Some(&harness.api_key),
         Some(serde_json::json!({
-            "agent_id": "agent-policy-int-1",
+            "agent_id": agent_id,
             "name": "Policy Agent",
             "public_key": keypair.public_key().to_hex()
         })),
@@ -717,6 +746,1180 @@ async fn agent_effective_policy_resolves_directory_attachments_in_precedence_ord
     assert_eq!(compiled["policy"]["capability"], "responder");
     assert_eq!(compiled["policy"]["final"], true);
     assert!(compiled["policy"].get("keep").is_none());
+
+    let heartbeat_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents/heartbeat".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": agent_id,
+            "metadata": {
+                "source": "effective-policy-reconcile"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(heartbeat_resp.0, StatusCode::OK);
+
+    let bucket = policy_distribution::policy_sync_bucket(
+        &tenant_subject_prefix(&harness.tenant_slug),
+        agent_id,
+    );
+    let js = async_nats::jetstream::new(harness.nats.clone());
+    let store = spine::nats_transport::ensure_kv(&js, &bucket, 1)
+        .await
+        .expect("effective policy kv should exist");
+    let payload = store
+        .get(policy_distribution::POLICY_SYNC_KEY)
+        .await
+        .expect("effective policy kv get should succeed")
+        .expect("effective policy key should exist");
+    let distributed: Value =
+        serde_yaml::from_slice(payload.as_ref()).expect("distributed policy yaml parses");
+    assert_eq!(distributed["policy_epoch"], 6);
+    assert_eq!(distributed["policy"]["mode"], "swarm");
+    assert_eq!(distributed["policy"]["regions"][0], "prod");
+    assert_eq!(distributed["policy"]["capability"], "responder");
+    assert_eq!(distributed["policy"]["final"], true);
+    assert!(distributed["policy"].get("keep").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn policies_preview_compiles_effective_policy_without_deploying() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let member_key = "cs_it_policy_preview_member";
+    let viewer_key = "cs_it_policy_preview_viewer";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        member_key,
+        "policy-preview-member",
+        &["write"],
+    )
+    .await;
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        viewer_key,
+        "policy-preview-viewer",
+        &[],
+    )
+    .await;
+
+    let keypair = hush_core::Keypair::generate();
+    let agent_id = "agent-policy-preview-int-1";
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": agent_id,
+            "name": "Policy Preview Agent",
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
+
+    policy_distribution::upsert_active_policy(
+        &harness.db,
+        harness.tenant_id,
+        "policy:\n  mode: current\n",
+        Some("active-before-preview"),
+    )
+    .await
+    .expect("seed active policy");
+
+    sqlx::query::query(
+        r#"INSERT INTO policy_attachments (
+               tenant_id,
+               target_kind,
+               priority,
+               policy_yaml,
+               checksum_sha256
+           )
+           VALUES ($1, 'tenant', 10, $2, md5($2))"#,
+    )
+    .bind(harness.tenant_id)
+    .bind("policy:\n  mode: tenant-preview-overlay\n  keep: null\n")
+    .execute(&harness.db)
+    .await
+    .expect("seed tenant policy attachment");
+
+    let preview_body = serde_json::json!({
+        "policy_yaml": "policy:\n  mode: proposed\n  keep: true\npolicyEpoch: 999\n",
+        "description": "member-authored preview",
+        "agent_id": agent_id
+    });
+    let viewer_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/policies/preview".to_string(),
+        Some(viewer_key),
+        Some(preview_body.clone()),
+    )
+    .await;
+    assert_eq!(viewer_resp.0, StatusCode::FORBIDDEN);
+
+    let member_deploy_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/policies/deploy".to_string(),
+        Some(member_key),
+        Some(serde_json::json!({
+            "policy_yaml": "policy:\n  mode: unauthorized-deploy\n"
+        })),
+    )
+    .await;
+    assert_eq!(member_deploy_resp.0, StatusCode::FORBIDDEN);
+
+    let preview_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/policies/preview".to_string(),
+        Some(member_key),
+        Some(preview_body),
+    )
+    .await;
+    assert_eq!(preview_resp.0, StatusCode::OK);
+    assert_eq!(preview_resp.1["status"], "valid");
+    assert_eq!(preview_resp.1["deploy_allowed"], false);
+    assert_eq!(preview_resp.1["requires_deploy_approval"], true);
+    assert_eq!(preview_resp.1["would_deploy_version"], 2);
+
+    let distribution_yaml = preview_resp.1["distribution_policy_yaml"]
+        .as_str()
+        .expect("distribution policy yaml");
+    let distribution: Value =
+        serde_yaml::from_str(distribution_yaml).expect("distribution preview yaml parses");
+    assert_eq!(distribution["policy_epoch"], 2);
+    assert!(distribution.get("policyEpoch").is_none());
+
+    let agent_effective = &preview_resp.1["agent_effective_policy"];
+    assert_eq!(agent_effective["agent_id"], agent_id);
+    assert_eq!(agent_effective["policy_epoch"], 3);
+    assert_eq!(
+        agent_effective["source_attachments"]
+            .as_array()
+            .expect("source attachments array")
+            .len(),
+        1
+    );
+    let effective_yaml = agent_effective["compiled_policy_yaml"]
+        .as_str()
+        .expect("compiled policy yaml");
+    let effective: Value =
+        serde_yaml::from_str(effective_yaml).expect("effective preview yaml parses");
+    assert_eq!(effective["policy_epoch"], 3);
+    assert_eq!(effective["policy"]["mode"], "tenant-preview-overlay");
+    assert!(effective["policy"].get("keep").is_none());
+
+    let active =
+        policy_distribution::fetch_active_policy_by_tenant_id(&harness.db, harness.tenant_id)
+            .await
+            .expect("fetch active policy")
+            .expect("active policy still present");
+    assert_eq!(active.version, 1);
+    assert_eq!(active.description.as_deref(), Some("active-before-preview"));
+    assert!(active.policy_yaml.contains("mode: current"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn policies_proposal_requires_admin_approval_before_deploying() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let member_key = "cs_it_policy_proposal_member";
+    let viewer_key = "cs_it_policy_proposal_viewer";
+    let admin2_key = "cs_it_policy_proposal_admin2";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        member_key,
+        "policy-proposal-member",
+        &["write"],
+    )
+    .await;
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        viewer_key,
+        "policy-proposal-viewer",
+        &[],
+    )
+    .await;
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        admin2_key,
+        "policy-proposal-admin-2",
+        &["admin"],
+    )
+    .await;
+
+    let keypair = hush_core::Keypair::generate();
+    let impact_receipt_keypair = hush_core::Keypair::generate();
+    let impact_receipt_keypair_two = hush_core::Keypair::generate();
+    let agent_id = "agent-policy-proposal-int-1";
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": agent_id,
+            "name": "Policy Proposal Agent",
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
+    for (endpoint_agent_id, public_key) in [
+        (
+            "endpoint-policy-1",
+            impact_receipt_keypair.public_key().to_hex(),
+        ),
+        (
+            "endpoint-policy-2",
+            impact_receipt_keypair_two.public_key().to_hex(),
+        ),
+    ] {
+        let register_endpoint_resp = request_json(
+            &harness.app,
+            Method::POST,
+            "/api/v1/agents".to_string(),
+            Some(&harness.api_key),
+            Some(serde_json::json!({
+                "agent_id": endpoint_agent_id,
+                "name": format!("Policy Proposal Validation {endpoint_agent_id}"),
+                "public_key": public_key
+            })),
+        )
+        .await;
+        assert_eq!(register_endpoint_resp.0, StatusCode::OK);
+    }
+
+    policy_distribution::upsert_active_policy(
+        &harness.db,
+        harness.tenant_id,
+        "policy:\n  mode: current\n",
+        Some("active-before-proposal"),
+    )
+    .await
+    .expect("seed active policy");
+
+    let now = Utc::now();
+    for (
+        offset_seconds,
+        event_id,
+        verdict,
+        action_type,
+        endpoint_agent_id,
+        runtime_agent_id,
+        principal_id,
+        session_id,
+        detection_ids,
+    ) in [
+        (
+            0_i64,
+            "proposal-impact-hunt-1",
+            "allow",
+            "process",
+            "endpoint-policy-1",
+            "runtime-policy-1",
+            "principal-policy-1",
+            "session-policy-1",
+            vec!["package_script".to_string()],
+        ),
+        (
+            1_i64,
+            "proposal-impact-hunt-2",
+            "warn",
+            "tool",
+            "endpoint-policy-1",
+            "runtime-policy-2",
+            "principal-policy-2",
+            "session-policy-2",
+            vec!["agent_secret_touch".to_string()],
+        ),
+        (
+            2_i64,
+            "proposal-impact-hunt-3",
+            "deny",
+            "network",
+            "endpoint-policy-2",
+            "runtime-policy-2",
+            "principal-policy-2",
+            "session-policy-2",
+            vec!["egress_block".to_string()],
+        ),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO hunt_events (
+                   event_id,
+                   tenant_id,
+                   source,
+                   kind,
+                   timestamp,
+                   ingested_at,
+                   verdict,
+                   severity,
+                   summary,
+                   action_type,
+                   session_id,
+                   endpoint_agent_id,
+                   runtime_agent_id,
+                   principal_id,
+                   detection_ids,
+                   target_kind,
+                   target_id,
+                   target_name,
+                   envelope_hash,
+                   issuer,
+                   schema_name,
+                   signature_valid,
+                   raw_ref,
+                   attributes
+               ) VALUES (
+                   $1, $2, 'endpoint', 'policy_history', $3, $4, $5, 'medium', $6, $7,
+                   $8, $9, $10, $11, $12, 'policy_event', $1, $7, $13,
+                   'spiffe://tenant/policy-proposal-test',
+                   'clawdstrike.edr.policy_history.v1',
+                   true,
+                   $14,
+                   '{}'::jsonb
+               )"#,
+        )
+        .bind(event_id)
+        .bind(harness.tenant_id)
+        .bind(now - chrono::Duration::seconds(offset_seconds))
+        .bind(now)
+        .bind(verdict)
+        .bind(format!("policy proposal history event {event_id}"))
+        .bind(action_type)
+        .bind(session_id)
+        .bind(endpoint_agent_id)
+        .bind(runtime_agent_id)
+        .bind(principal_id)
+        .bind(detection_ids)
+        .bind(format!("hash-{event_id}"))
+        .bind(format!("hunt-envelope:{event_id}"))
+        .execute(&harness.db)
+        .await
+        .expect("seed policy proposal hunt history");
+    }
+
+    let viewer_create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/policies/proposals".to_string(),
+        Some(viewer_key),
+        Some(serde_json::json!({
+            "policy_yaml": "policy:\n  mode: viewer-proposal\n"
+        })),
+    )
+    .await;
+    assert_eq!(viewer_create_resp.0, StatusCode::FORBIDDEN);
+
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/policies/proposals".to_string(),
+        Some(member_key),
+        Some(serde_json::json!({
+            "policy_yaml": "policy:\n  mode: proposed-approved\npolicyEpoch: 99\n",
+            "description": "proposal integration"
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::OK);
+    let proposal = &create_resp.1["proposal"];
+    assert_eq!(proposal["status"], "pending");
+    assert_eq!(proposal["base_active_policy_version"], 1);
+    assert_eq!(proposal["proposed_policy_version"], 2);
+    assert_eq!(proposal["required_approvals"], 2);
+    assert_eq!(proposal["approval_count"], 0);
+    assert_eq!(proposal["approvals_remaining"], 2);
+    assert_eq!(proposal["preview"]["baseActivePolicyVersion"], 1);
+    assert_eq!(proposal["preview"]["proposedPolicyVersion"], 2);
+    assert_eq!(proposal["preview"]["distributionPolicyEpoch"], 2);
+    assert_eq!(
+        proposal["preview"]["simulationStatus"],
+        "estimated_from_fleet_history"
+    );
+    assert_eq!(
+        proposal["preview"]["fleetHistoryImpact"]["eventsSampled"],
+        3
+    );
+    assert_eq!(
+        proposal["preview"]["fleetHistoryImpact"]["candidateBreakageCount"],
+        2
+    );
+    assert_eq!(
+        proposal["preview"]["fleetHistoryImpact"]["blockingEventCount"],
+        1
+    );
+    assert_eq!(
+        proposal["preview"]["fleetHistoryImpact"]["affectedEndpointCount"],
+        2
+    );
+    let history_hash = proposal["preview"]["fleetHistoryImpact"]["historySha256"]
+        .as_str()
+        .expect("fleet history impact hash");
+    assert_eq!(history_hash.len(), 64);
+    assert_eq!(
+        proposal["preview"]["fleetRuleDiffValidation"]["status"],
+        "ready_for_endpoint_receipt_collection"
+    );
+    assert_eq!(
+        proposal["preview"]["fleetRuleDiffValidation"]["selectedEndpointCount"],
+        2
+    );
+    assert_eq!(
+        proposal["preview"]["fleetRuleDiffValidation"]["selectedEventCount"],
+        3
+    );
+    let endpoint_requests = proposal["preview"]["fleetRuleDiffValidation"]["endpointRequests"]
+        .as_array()
+        .expect("fleet validation endpoint requests");
+    assert_eq!(endpoint_requests.len(), 2);
+    assert_eq!(endpoint_requests[0]["endpointAgentId"], "endpoint-policy-1");
+    assert_eq!(endpoint_requests[0]["eventCount"], 2);
+    assert_eq!(
+        endpoint_requests[0]["request"]["path"],
+        "/api/v1/agent/edr/policy-events/impact/history"
+    );
+    assert_eq!(
+        endpoint_requests[0]["request"]["body"]["proposedPolicyYaml"],
+        "policy:\n  mode: proposed-approved\npolicyEpoch: 99\n"
+    );
+    assert_eq!(
+        endpoint_requests[0]["expectedReceipt"]["ruleId"],
+        "endpoint.policy_event_impact"
+    );
+    let plan_hash = proposal["preview"]["fleetRuleDiffValidation"]["planSha256"]
+        .as_str()
+        .expect("fleet validation plan hash");
+    assert_eq!(plan_hash.len(), 64);
+    assert_eq!(
+        proposal["preview"]["topLevelChanges"]["changed"][0],
+        "policy"
+    );
+    let proposal_id = proposal["id"]
+        .as_str()
+        .expect("proposal id missing")
+        .to_string();
+
+    let list_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/policies/proposals".to_string(),
+        Some(viewer_key),
+        None,
+    )
+    .await;
+    assert_eq!(list_resp.0, StatusCode::OK);
+    let proposals = list_resp.1.as_array().expect("proposal list");
+    assert_eq!(proposals.len(), 1);
+    assert_eq!(proposals[0]["id"], proposal_id);
+
+    let get_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/policies/proposals/{proposal_id}"),
+        Some(viewer_key),
+        None,
+    )
+    .await;
+    assert_eq!(get_resp.0, StatusCode::OK);
+    assert_eq!(get_resp.1["id"], proposal_id);
+    assert_eq!(
+        get_resp.1["preview"]["topLevelChanges"]["changed"][0],
+        "policy"
+    );
+
+    let invalid_impact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/impact"),
+        Some(member_key),
+        Some(serde_json::json!({
+            "source": "local_history",
+            "summary": "No receipt hash is attached.",
+            "changed_verdict_count": 0,
+            "blocking_change_count": 0,
+            "developer_breakage_score": 0.0,
+            "affected_identity_count": 0,
+            "affected_tool_count": 0,
+            "recommendation": "approve"
+        })),
+    )
+    .await;
+    assert_eq!(invalid_impact_resp.0, StatusCode::BAD_REQUEST);
+
+    let proposed_policy_hash = "e".repeat(64);
+    let impact_report = serde_json::json!({
+        "impactId": "policy-impact-int-1",
+        "analyzedAt": now,
+        "mode": "current_vs_proposed_policy_event_impact",
+        "currentPolicy": {
+            "policyVersion": "proposal-test-current",
+            "policyHash": "d".repeat(64),
+            "policyEpoch": 1
+        },
+        "proposedPolicy": {
+            "policyVersion": "proposal-test-proposed",
+            "policyHash": proposed_policy_hash,
+            "policyEpoch": 2
+        },
+        "eventCount": 2,
+        "changedCount": 2,
+        "allowToBlockCount": 1,
+        "trackPosture": true,
+        "eventStreamHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "currentResultHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "proposedResultHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "impactHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
+        "summary": "endpoint-policy-1 changed two verdicts"
+    });
+    let impact_report_two = serde_json::json!({
+        "impactId": "policy-impact-int-2",
+        "analyzedAt": now,
+        "mode": "current_vs_proposed_policy_event_impact",
+        "currentPolicy": {
+            "policyVersion": "proposal-test-current",
+            "policyHash": "d".repeat(64),
+            "policyEpoch": 1
+        },
+        "proposedPolicy": {
+            "policyVersion": "proposal-test-proposed",
+            "policyHash": "f".repeat(64),
+            "policyEpoch": 2
+        },
+        "eventCount": 1,
+        "changedCount": 0,
+        "allowToBlockCount": 0,
+        "trackPosture": true,
+        "eventStreamHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+        "currentResultHash": "0x6666666666666666666666666666666666666666666666666666666666666666",
+        "proposedResultHash": "0x7777777777777777777777777777777777777777777777777777777777777777",
+        "impactHash": "0x8888888888888888888888888888888888888888888888888888888888888888",
+        "summary": "endpoint-policy-2 changed no verdicts"
+    });
+    let impact_evidence_for = |impact: &Value| {
+        [
+            ("impactId", impact["impactId"].as_str().unwrap().to_string()),
+            (
+                "eventStreamHash",
+                impact["eventStreamHash"].as_str().unwrap().to_string(),
+            ),
+            (
+                "currentResultHash",
+                impact["currentResultHash"].as_str().unwrap().to_string(),
+            ),
+            (
+                "proposedResultHash",
+                impact["proposedResultHash"].as_str().unwrap().to_string(),
+            ),
+            (
+                "impactHash",
+                impact["impactHash"].as_str().unwrap().to_string(),
+            ),
+            (
+                "proposedPolicyHash",
+                impact["proposedPolicy"]["policyHash"]
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+            ),
+            (
+                "proposedPolicyEpoch",
+                impact["proposedPolicy"]["policyEpoch"]
+                    .as_u64()
+                    .unwrap()
+                    .to_string(),
+            ),
+            (
+                "eventCount",
+                impact["eventCount"].as_u64().unwrap().to_string(),
+            ),
+            (
+                "changedCount",
+                impact["changedCount"].as_u64().unwrap().to_string(),
+            ),
+            (
+                "allowToBlockCount",
+                impact["allowToBlockCount"].as_u64().unwrap().to_string(),
+            ),
+            (
+                "trackPosture",
+                impact["trackPosture"].as_bool().unwrap().to_string(),
+            ),
+        ]
+        .into_iter()
+        .map(|(key, value)| {
+            serde_json::json!({
+                "key": key,
+                "valueHash": hush_core::sha256(value.as_bytes()).to_hex_prefixed(),
+                "redactionClass": "hash_only",
+                "rawValue": null
+            })
+        })
+        .collect::<Vec<_>>()
+    };
+    let impact_evidence = impact_evidence_for(&impact_report);
+    let endpoint_decision = serde_json::json!({
+        "schemaVersion": "clawdstrike.endpoint_decision.v1",
+        "receiptFamily": "simulation",
+        "localSequence": 42,
+        "clock": {},
+        "signer": {
+            "signerIdentity": "endpoint-policy-proposal-int-1",
+            "signerPublicKey": impact_receipt_keypair.public_key().to_hex()
+        },
+        "actor": {
+            "endpointId": "endpoint-policy-1"
+        },
+        "policy": {
+            "policyVersion": "proposal-test",
+            "policyHash": "d".repeat(64),
+            "policyEpoch": 1
+        },
+        "sensorState": {},
+        "decision": {
+            "findingId": "policy-impact-int-1",
+            "ruleId": "endpoint.policy_event_impact",
+            "action": "observe",
+            "passed": true
+        },
+        "graph": {
+            "graphSliceId": "policy-impact-int-1",
+            "processNodeId": "policy_event_stream",
+            "nodeIds": ["policy_event_stream"],
+            "edgeIds": []
+        },
+        "evidence": impact_evidence
+    });
+    let impact_receipt = hush_core::Receipt::new(
+        hush_core::Hash::from_bytes([7u8; 32]),
+        hush_core::Verdict::pass(),
+    )
+    .with_id("receipt-policy-impact-1")
+    .with_metadata(serde_json::json!({
+        "endpointDecision": endpoint_decision
+    }));
+    let signed_impact_receipt =
+        hush_core::SignedReceipt::sign(impact_receipt, &impact_receipt_keypair)
+            .expect("sign policy impact receipt");
+    let signed_impact_receipt_value =
+        serde_json::to_value(&signed_impact_receipt).expect("signed receipt to json");
+    let mut endpoint_decision_two = endpoint_decision.clone();
+    endpoint_decision_two["signer"]["signerPublicKey"] =
+        serde_json::json!(impact_receipt_keypair_two.public_key().to_hex());
+    endpoint_decision_two["actor"]["endpointId"] = serde_json::json!("endpoint-policy-2");
+    endpoint_decision_two["decision"]["findingId"] = serde_json::json!("policy-impact-int-2");
+    endpoint_decision_two["graph"]["graphSliceId"] = serde_json::json!("policy-impact-int-2");
+    endpoint_decision_two["evidence"] = serde_json::json!(impact_evidence_for(&impact_report_two));
+    let impact_receipt_two = hush_core::Receipt::new(
+        hush_core::Hash::from_bytes([8u8; 32]),
+        hush_core::Verdict::pass(),
+    )
+    .with_id("receipt-policy-impact-2")
+    .with_metadata(serde_json::json!({
+        "endpointDecision": endpoint_decision_two
+    }));
+    let signed_impact_receipt_two =
+        hush_core::SignedReceipt::sign(impact_receipt_two, &impact_receipt_keypair_two)
+            .expect("sign second policy impact receipt");
+    let signed_impact_receipt_value_two =
+        serde_json::to_value(&signed_impact_receipt_two).expect("second signed receipt to json");
+    let subject_prefix = tenant_subject_prefix(&harness.tenant_slug);
+    let mut endpoint_one_validation_subscriber = harness
+        .nats
+        .subscribe(format!(
+            "{subject_prefix}.response.command.endpoint.endpoint-policy-1"
+        ))
+        .await
+        .expect("subscribe endpoint-policy-1 validation subject");
+    let mut endpoint_two_validation_subscriber = harness
+        .nats
+        .subscribe(format!(
+            "{subject_prefix}.response.command.endpoint.endpoint-policy-2"
+        ))
+        .await
+        .expect("subscribe endpoint-policy-2 validation subject");
+    harness.nats.flush().await.expect("nats flush");
+
+    let dispatch_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/fleet-rule-diff/dispatch"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(dispatch_resp.0, StatusCode::OK);
+    assert_eq!(dispatch_resp.1["requestedEndpointCount"], 2);
+    assert_eq!(dispatch_resp.1["dispatchedActionCount"], 2);
+    assert_eq!(
+        dispatch_resp.1["proposal"]["preview"]["fleetRuleDiffValidation"]["status"],
+        "dispatch_requested"
+    );
+    let validation_plan_sha256 = dispatch_resp.1["validationPlanSha256"]
+        .as_str()
+        .expect("validation plan hash")
+        .to_string();
+    let dispatches = dispatch_resp.1["dispatches"]
+        .as_array()
+        .expect("dispatch array");
+    assert_eq!(dispatches.len(), 2);
+
+    let endpoint_one_message = tokio::time::timeout(
+        Duration::from_secs(5),
+        endpoint_one_validation_subscriber.next(),
+    )
+    .await
+    .expect("endpoint-policy-1 validation publish timeout")
+    .expect("endpoint-policy-1 validation subscriber ended");
+    let endpoint_one_envelope: Value = serde_json::from_slice(&endpoint_one_message.payload)
+        .expect("endpoint-policy-1 validation payload json");
+    assert!(spine::verify_envelope(&endpoint_one_envelope)
+        .expect("endpoint-policy-1 validation envelope verifies"));
+    assert_eq!(
+        endpoint_one_envelope["fact"]["actionType"],
+        "policy_rule_diff_validation"
+    );
+    assert_eq!(
+        endpoint_one_envelope["fact"]["payload"]["request"]["path"],
+        "/api/v1/agent/edr/policy-events/impact/history"
+    );
+    assert_eq!(
+        endpoint_one_envelope["fact"]["payload"]["validationPlanSha256"],
+        validation_plan_sha256
+    );
+    let endpoint_one_action_id = endpoint_one_envelope["fact"]["actionId"]
+        .as_str()
+        .expect("endpoint-policy-1 action id")
+        .to_string();
+    let endpoint_one_ack_token = endpoint_one_envelope["fact"]["delivery"]["ackToken"]
+        .as_str()
+        .expect("endpoint-policy-1 ack token")
+        .to_string();
+
+    let endpoint_two_message = tokio::time::timeout(
+        Duration::from_secs(5),
+        endpoint_two_validation_subscriber.next(),
+    )
+    .await
+    .expect("endpoint-policy-2 validation publish timeout")
+    .expect("endpoint-policy-2 validation subscriber ended");
+    let endpoint_two_envelope: Value = serde_json::from_slice(&endpoint_two_message.payload)
+        .expect("endpoint-policy-2 validation payload json");
+    assert!(spine::verify_envelope(&endpoint_two_envelope)
+        .expect("endpoint-policy-2 validation envelope verifies"));
+    let endpoint_two_action_id = endpoint_two_envelope["fact"]["actionId"]
+        .as_str()
+        .expect("endpoint-policy-2 action id")
+        .to_string();
+    let endpoint_two_ack_token = endpoint_two_envelope["fact"]["delivery"]["ackToken"]
+        .as_str()
+        .expect("endpoint-policy-2 ack token")
+        .to_string();
+
+    for (action_id, endpoint_agent_id, ack_token, impact, receipt) in [
+        (
+            endpoint_one_action_id.clone(),
+            "endpoint-policy-1",
+            endpoint_one_ack_token,
+            impact_report.clone(),
+            signed_impact_receipt_value.clone(),
+        ),
+        (
+            endpoint_two_action_id.clone(),
+            "endpoint-policy-2",
+            endpoint_two_ack_token,
+            impact_report_two.clone(),
+            signed_impact_receipt_value_two.clone(),
+        ),
+    ] {
+        let ack_resp = request_json(
+            &harness.app,
+            Method::POST,
+            format!("/api/v1/response-actions/{action_id}/agent-acks"),
+            None,
+            Some(serde_json::json!({
+                "targetKind": "endpoint",
+                "targetId": endpoint_agent_id,
+                "ackToken": ack_token,
+                "status": "acknowledged",
+                "rawPayload": {
+                    "policyRuleDiffValidation": {
+                        "proposalId": proposal_id,
+                        "validationPlanSha256": validation_plan_sha256,
+                        "endpointAgentId": endpoint_agent_id,
+                        "impact": impact,
+                        "receipt": receipt
+                    }
+                }
+            })),
+        )
+        .await;
+        assert_eq!(ack_resp.0, StatusCode::OK);
+        assert_eq!(ack_resp.1["accepted"], true);
+    }
+
+    let collect_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/fleet-rule-diff/collect"),
+        Some(member_key),
+        Some(serde_json::json!({
+            "responseActionIds": [endpoint_one_action_id, endpoint_two_action_id]
+        })),
+    )
+    .await;
+    assert_eq!(collect_resp.0, StatusCode::OK);
+    assert_eq!(collect_resp.1["collectedReceiptCount"], 2);
+    assert_eq!(collect_resp.1["collectedEndpointCount"], 2);
+    assert_eq!(
+        collect_resp.1["proposal"]["impact"]["source"],
+        "fleet_history"
+    );
+    assert_eq!(
+        collect_resp.1["proposal"]["impact"]["changedVerdictCount"],
+        2
+    );
+    assert_eq!(
+        collect_resp.1["proposal"]["impact"]["blockingChangeCount"],
+        1
+    );
+    assert_eq!(
+        collect_resp.1["proposal"]["impact"]["simulationReceiptsVerifiedCount"],
+        2
+    );
+    assert_eq!(
+        collect_resp.1["proposal"]["impact"]["fleetRuleDiffCollection"]["collectedReceiptCount"],
+        2
+    );
+
+    let wrong_receipt_keypair = hush_core::Keypair::generate();
+    let wrong_key_impact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/impact"),
+        Some(member_key),
+        Some(serde_json::json!({
+            "source": "local_history",
+            "summary": "Signed receipt with the wrong verification key should fail.",
+            "simulation_receipt_id": "receipt-policy-impact-1",
+            "simulation_receipt": signed_impact_receipt_value,
+            "simulation_receipt_public_key": wrong_receipt_keypair.public_key().to_hex(),
+            "changed_verdict_count": 3,
+            "blocking_change_count": 1,
+            "developer_breakage_score": 12.5,
+            "affected_identity_count": 1,
+            "affected_tool_count": 2,
+            "recommendation": "observe_only"
+        })),
+    )
+    .await;
+    assert_eq!(wrong_key_impact_resp.0, StatusCode::BAD_REQUEST);
+
+    let proof_hash = "b".repeat(64);
+    let attach_impact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/impact"),
+        Some(member_key),
+        Some(serde_json::json!({
+            "source": "local_history",
+            "summary": "No production developer paths changed in the sampled window.",
+            "simulation_receipt_id": "receipt-policy-impact-1",
+            "simulation_receipt": signed_impact_receipt_value,
+            "simulation_receipt_public_key": impact_receipt_keypair.public_key().to_hex(),
+            "changed_verdict_count": 3,
+            "blocking_change_count": 1,
+            "developer_breakage_score": 12.5,
+            "affected_identity_count": 1,
+            "affected_tool_count": 2,
+            "recommendation": "observe_only",
+            "simulation_receipts": [{
+                "receipt_id": "receipt-policy-impact-2",
+                "receipt": signed_impact_receipt_value_two,
+                "public_key": impact_receipt_keypair_two.public_key().to_hex()
+            }],
+            "proof_hashes": [proof_hash]
+        })),
+    )
+    .await;
+    assert_eq!(attach_impact_resp.0, StatusCode::OK);
+    assert_eq!(attach_impact_resp.1["impact"]["schemaVersion"], 1);
+    assert_eq!(
+        attach_impact_resp.1["impact"]["recommendation"],
+        "observe_only"
+    );
+    assert_eq!(
+        attach_impact_resp.1["impact"]["simulationReceiptVerified"],
+        true
+    );
+    assert_eq!(
+        attach_impact_resp.1["impact"]["simulationReceiptRuleId"],
+        "endpoint.policy_event_impact"
+    );
+    assert_eq!(
+        attach_impact_resp.1["impact"]["simulationReceiptEndpointId"],
+        "endpoint-policy-1"
+    );
+    assert_eq!(
+        attach_impact_resp.1["impact"]["simulationReceipt"]["receipt"]["receipt_id"],
+        "receipt-policy-impact-1"
+    );
+    let computed_receipt_hash = attach_impact_resp.1["impact"]["simulationReceiptSignedSha256"]
+        .as_str()
+        .expect("computed signed receipt hash");
+    assert_eq!(computed_receipt_hash.len(), 64);
+    assert_eq!(
+        attach_impact_resp.1["impact"]["simulationReceiptSha256"],
+        computed_receipt_hash
+    );
+    assert_eq!(
+        attach_impact_resp.1["impact"]["simulationReceiptsVerifiedCount"],
+        2
+    );
+    assert_eq!(
+        attach_impact_resp.1["impact"]["simulationReceiptDistinctEndpointCount"],
+        2
+    );
+    let simulation_receipts = attach_impact_resp.1["impact"]["simulationReceipts"]
+        .as_array()
+        .expect("simulation receipts summary array");
+    assert_eq!(simulation_receipts.len(), 2);
+    assert!(simulation_receipts
+        .iter()
+        .any(|receipt| receipt["endpointId"] == "endpoint-policy-2"));
+    assert_eq!(attach_impact_resp.1["impact"]["blockingChangeCount"], 1);
+    let impact_attached_by = attach_impact_resp.1["impact_attached_by"]
+        .as_str()
+        .expect("impact attached-by actor");
+    Uuid::parse_str(impact_attached_by).expect("API-key actor id is a UUID");
+    assert!(attach_impact_resp.1["impact_attached_at"].is_string());
+
+    let get_with_impact_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/policies/proposals/{proposal_id}"),
+        Some(viewer_key),
+        None,
+    )
+    .await;
+    assert_eq!(get_with_impact_resp.0, StatusCode::OK);
+    assert_eq!(
+        get_with_impact_resp.1["impact"]["simulationReceiptId"],
+        "receipt-policy-impact-1"
+    );
+
+    let member_approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/approve-deploy"),
+        Some(member_key),
+        Some(serde_json::json!({ "note": "member should not deploy" })),
+    )
+    .await;
+    assert_eq!(member_approve_resp.0, StatusCode::FORBIDDEN);
+
+    let active_before =
+        policy_distribution::fetch_active_policy_by_tenant_id(&harness.db, harness.tenant_id)
+            .await
+            .expect("fetch active policy")
+            .expect("active policy still present");
+    assert_eq!(active_before.version, 1);
+    assert!(active_before.policy_yaml.contains("mode: current"));
+
+    let first_approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/approve-deploy"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({ "note": "first approval" })),
+    )
+    .await;
+    assert_eq!(first_approve_resp.0, StatusCode::OK);
+    assert_eq!(first_approve_resp.1["proposal"]["status"], "pending");
+    assert_eq!(first_approve_resp.1["proposal"]["approval_count"], 1);
+    assert_eq!(first_approve_resp.1["proposal"]["approvals_remaining"], 1);
+    assert_eq!(first_approve_resp.1["approvals_remaining"], 1);
+    assert!(first_approve_resp.1["deployment"].is_null());
+    assert_eq!(
+        first_approve_resp.1["proposal"]["approved_by"]
+            .as_array()
+            .expect("approved-by array")
+            .len(),
+        1
+    );
+
+    let active_after_first_approval =
+        policy_distribution::fetch_active_policy_by_tenant_id(&harness.db, harness.tenant_id)
+            .await
+            .expect("fetch active policy")
+            .expect("active policy still present after first approval");
+    assert_eq!(active_after_first_approval.version, 1);
+
+    let duplicate_approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/approve-deploy"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({ "note": "duplicate approval" })),
+    )
+    .await;
+    assert_eq!(duplicate_approve_resp.0, StatusCode::CONFLICT);
+
+    let approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/approve-deploy"),
+        Some(admin2_key),
+        Some(serde_json::json!({ "note": "approved for test" })),
+    )
+    .await;
+    assert_eq!(approve_resp.0, StatusCode::OK);
+    assert_eq!(approve_resp.1["proposal"]["status"], "deployed");
+    assert_eq!(approve_resp.1["proposal"]["deployed_policy_version"], 2);
+    assert_eq!(approve_resp.1["proposal"]["approval_count"], 2);
+    assert_eq!(approve_resp.1["proposal"]["approvals_remaining"], 0);
+    assert_eq!(approve_resp.1["approvals_remaining"], 0);
+    assert_eq!(
+        approve_resp.1["proposal"]["impact"]["recommendation"],
+        "observe_only"
+    );
+    assert_eq!(
+        approve_resp.1["proposal"]["review_note"],
+        "approved for test"
+    );
+    assert_eq!(approve_resp.1["deployment"]["agent_count"], 3);
+
+    let deployed_impact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proposal_id}/impact"),
+        Some(member_key),
+        Some(serde_json::json!({
+            "source": "manual_review",
+            "summary": "Too late to attach impact evidence.",
+            "simulation_receipt_sha256": "c".repeat(64),
+            "changed_verdict_count": 0,
+            "blocking_change_count": 0,
+            "developer_breakage_score": 0.0,
+            "affected_identity_count": 0,
+            "affected_tool_count": 0,
+            "recommendation": "approve"
+        })),
+    )
+    .await;
+    assert_eq!(deployed_impact_resp.0, StatusCode::NOT_FOUND);
+
+    let active_after =
+        policy_distribution::fetch_active_policy_by_tenant_id(&harness.db, harness.tenant_id)
+            .await
+            .expect("fetch active policy")
+            .expect("active policy should remain present");
+    assert_eq!(active_after.version, 2);
+    assert!(active_after.policy_yaml.contains("mode: proposed-approved"));
+
+    let bucket = policy_distribution::policy_sync_bucket(
+        &tenant_subject_prefix(&harness.tenant_slug),
+        agent_id,
+    );
+    let js = async_nats::jetstream::new(harness.nats.clone());
+    let store = spine::nats_transport::ensure_kv(&js, &bucket, 1)
+        .await
+        .expect("policy proposal deployment kv should exist");
+    let payload = store
+        .get(policy_distribution::POLICY_SYNC_KEY)
+        .await
+        .expect("policy proposal deployment kv get should succeed")
+        .expect("policy proposal deployment key should exist");
+    let distributed: Value =
+        serde_yaml::from_slice(payload.as_ref()).expect("distributed proposal policy yaml parses");
+    assert_eq!(distributed["policy_epoch"], 2);
+    assert_eq!(distributed["policy"]["mode"], "proposed-approved");
+    assert!(distributed.get("policyEpoch").is_none());
+
+    let self_approve_create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/policies/proposals".to_string(),
+        Some(admin2_key),
+        Some(serde_json::json!({
+            "policy_yaml": "policy:\n  mode: self-approval-blocked\n",
+            "description": "proposal self approval"
+        })),
+    )
+    .await;
+    assert_eq!(self_approve_create_resp.0, StatusCode::OK);
+    let self_approve_proposal_id = self_approve_create_resp.1["proposal"]["id"]
+        .as_str()
+        .expect("self-approval proposal id")
+        .to_string();
+    let self_approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{self_approve_proposal_id}/approve-deploy"),
+        Some(admin2_key),
+        Some(serde_json::json!({ "note": "self approval should fail" })),
+    )
+    .await;
+    assert_eq!(self_approve_resp.0, StatusCode::CONFLICT);
+
+    let reject_create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/policies/proposals".to_string(),
+        Some(member_key),
+        Some(serde_json::json!({
+            "policy_yaml": "policy:\n  mode: rejected-proposal\n",
+            "description": "proposal rejection"
+        })),
+    )
+    .await;
+    assert_eq!(reject_create_resp.0, StatusCode::OK);
+    let reject_proposal_id = reject_create_resp.1["proposal"]["id"]
+        .as_str()
+        .expect("reject proposal id")
+        .to_string();
+
+    let reject_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{reject_proposal_id}/reject"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({ "note": "reject for test" })),
+    )
+    .await;
+    assert_eq!(reject_resp.0, StatusCode::OK);
+    assert_eq!(reject_resp.1["status"], "rejected");
+    assert_eq!(reject_resp.1["review_note"], "reject for test");
+
+    let rejected_approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{reject_proposal_id}/approve-deploy"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({ "note": "should not deploy rejected proposal" })),
+    )
+    .await;
+    assert_eq!(rejected_approve_resp.0, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1542,6 +2745,10 @@ async fn create_tenant_rolls_back_when_nats_provisioning_fails() {
             heartbeat_subject_filter: "tenant-*.>".to_string(),
             heartbeat_stream_name: "heartbeat".to_string(),
             heartbeat_consumer_name: "heartbeat-consumer".to_string(),
+            hunt_event_consumer_enabled: false,
+            hunt_event_subject_filter: "tenant-*.>".to_string(),
+            hunt_event_stream_name: "hunt-events".to_string(),
+            hunt_event_consumer_name: "hunt-event-consumer".to_string(),
             stale_detector_enabled: false,
             stale_check_interval_secs: 60,
             stale_threshold_secs: 120,
@@ -1711,6 +2918,690 @@ async fn hunt_search_timeline_and_saved_hunts_round_trip() {
             .expect("saved run events")
             .len(),
         2
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_endpoint_archive_upload_and_download_round_trip() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let archive = serde_json::json!({
+        "schemaVersion": 1,
+        "bundle": {
+            "bundleId": "evidence_bundle-fleet-1",
+            "graphSliceId": "graph_slice-fleet-1",
+            "contentHash": "0xcontentfleet"
+        },
+        "artifact": {
+            "byteCount": 64
+        },
+        "graph": {
+            "nodes": {
+                "process:1": {
+                    "nodeId": "process:1",
+                    "kind": "process",
+                    "label": "python"
+                }
+            },
+            "edges": []
+        },
+        "receipts": []
+    });
+    let archive_hash = canonical_json_hash_for_test(&archive);
+    let archive_id = "evidence_bundle_archive-fleet-1";
+    let raw_ref = format!("endpoint-evidence-bundle-archive:{archive_id}:{archive_hash}");
+
+    let upload_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/evidence-bundle-archives".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "archiveId": archive_id,
+            "archiveHash": archive_hash,
+            "rawRef": raw_ref,
+            "bundleId": "evidence_bundle-fleet-1",
+            "endpointAgentId": "endpoint-agent-archive-1",
+            "eventId": "evidence-bundle-archive:endpoint-agent-archive-1:evidence_bundle_archive-fleet-1",
+            "rawArtifactApprovalId": "approval-archive-fleet-1",
+            "rawArtifactApprovalReasonHash": "0x1111111111111111",
+            "archive": archive,
+            "verification": {
+                "verified": true,
+                "archiveHashMatches": true
+            },
+            "retentionDays": 90,
+            "metadata": {
+                "source": "agent"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(upload_resp.0, StatusCode::OK);
+    assert_eq!(upload_resp.1["archiveId"], archive_id);
+    assert_eq!(upload_resp.1["archiveHash"], archive_hash);
+    assert_eq!(upload_resp.1["rawRef"], raw_ref);
+    assert_eq!(upload_resp.1["bundleId"], "evidence_bundle-fleet-1");
+    assert_eq!(
+        upload_resp.1["rawArtifactApprovalId"],
+        "approval-archive-fleet-1"
+    );
+    assert_eq!(upload_resp.1["retentionDays"], 30);
+    assert!(upload_resp.1.get("archive").is_none());
+    let upload_audit_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'endpoint_evidence_archive.raw_uploaded'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("raw archive upload should be audited");
+    let upload_audit_event_type: String = upload_audit_row
+        .try_get("event_type")
+        .expect("upload audit event_type");
+    let upload_audit_quantity: i32 = upload_audit_row
+        .try_get("quantity")
+        .expect("upload audit quantity");
+    let upload_audit_metadata: Value = upload_audit_row
+        .try_get("metadata")
+        .expect("upload audit metadata");
+    assert_eq!(
+        upload_audit_event_type,
+        "endpoint_evidence_archive.raw_uploaded"
+    );
+    assert_eq!(upload_audit_quantity, 1);
+    assert_eq!(upload_audit_metadata["archiveId"], archive_id);
+    assert_eq!(upload_audit_metadata["archiveHash"], archive_hash);
+    assert_eq!(upload_audit_metadata["rawRef"], raw_ref);
+    assert_eq!(upload_audit_metadata["bundleId"], "evidence_bundle-fleet-1");
+    assert_eq!(
+        upload_audit_metadata["rawArtifactApprovalId"],
+        "approval-archive-fleet-1"
+    );
+    assert_eq!(
+        upload_audit_metadata["rawArtifactApprovalReasonHash"],
+        "0x1111111111111111"
+    );
+    assert_eq!(upload_audit_metadata["actorType"], "service");
+    assert_eq!(upload_audit_metadata["actorRole"], "admin");
+    assert!(upload_audit_metadata.get("archive").is_none());
+
+    let get_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/hunt/evidence-bundle-archives/{archive_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(get_resp.0, StatusCode::OK);
+    assert_eq!(get_resp.1["archiveId"], archive_id);
+    assert!(get_resp.1.get("archive").is_none());
+
+    let download_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/hunt/evidence-bundle-archives/{archive_id}/download"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(download_resp.0, StatusCode::OK);
+    assert_eq!(download_resp.1["record"]["archiveId"], archive_id);
+    assert_eq!(
+        download_resp.1["archive"]["bundle"]["bundleId"],
+        "evidence_bundle-fleet-1"
+    );
+    assert_eq!(
+        canonical_json_hash_for_test(&download_resp.1["archive"]),
+        archive_hash
+    );
+    let audit_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'endpoint_evidence_archive.raw_downloaded'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("raw archive download should be audited");
+    let audit_event_type: String = audit_row.try_get("event_type").expect("audit event_type");
+    let audit_quantity: i32 = audit_row.try_get("quantity").expect("audit quantity");
+    let audit_metadata: Value = audit_row.try_get("metadata").expect("audit metadata");
+    assert_eq!(audit_event_type, "endpoint_evidence_archive.raw_downloaded");
+    assert_eq!(audit_quantity, 1);
+    assert_eq!(audit_metadata["archiveId"], archive_id);
+    assert_eq!(audit_metadata["archiveHash"], archive_hash);
+    assert_eq!(audit_metadata["rawRef"], raw_ref);
+    assert_eq!(audit_metadata["bundleId"], "evidence_bundle-fleet-1");
+    assert_eq!(audit_metadata["actorType"], "service");
+    assert_eq!(audit_metadata["actorRole"], "admin");
+    assert!(audit_metadata.get("archive").is_none());
+
+    let viewer_api_key = "cs_it_archive_viewer_key";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        viewer_api_key,
+        "archive-viewer",
+        &["viewer"],
+    )
+    .await;
+
+    let viewer_metadata_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/hunt/evidence-bundle-archives/{archive_id}"),
+        Some(viewer_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(viewer_metadata_resp.0, StatusCode::OK);
+    assert!(viewer_metadata_resp.1.get("archive").is_none());
+
+    let viewer_download_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/hunt/evidence-bundle-archives/{archive_id}/download"),
+        Some(viewer_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(viewer_download_resp.0, StatusCode::FORBIDDEN);
+
+    let member_api_key = "cs_it_archive_member_key";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        member_api_key,
+        "archive-member",
+        &["write"],
+    )
+    .await;
+
+    let member_upload_archive = serde_json::json!({
+        "schemaVersion": 1,
+        "bundle": {
+            "bundleId": "evidence_bundle-member-upload",
+            "graphSliceId": "graph_slice-member-upload",
+            "contentHash": "0xcontentmemberupload"
+        },
+        "artifact": {
+            "byteCount": 32
+        },
+        "graph": {
+            "nodes": {
+                "process:member": {
+                    "nodeId": "process:member",
+                    "kind": "process",
+                    "label": "node"
+                }
+            },
+            "edges": []
+        },
+        "receipts": []
+    });
+    let member_upload_archive_hash = canonical_json_hash_for_test(&member_upload_archive);
+    let member_upload_archive_id = "evidence_bundle_archive-member-upload";
+    let member_upload_raw_ref = format!(
+        "endpoint-evidence-bundle-archive:{member_upload_archive_id}:{member_upload_archive_hash}"
+    );
+    let member_upload_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/evidence-bundle-archives".to_string(),
+        Some(member_api_key),
+        Some(serde_json::json!({
+            "archiveId": member_upload_archive_id,
+            "archiveHash": member_upload_archive_hash,
+            "rawRef": member_upload_raw_ref,
+            "bundleId": "evidence_bundle-member-upload",
+            "endpointAgentId": "endpoint-agent-member-upload",
+            "eventId": "evidence-bundle-archive:endpoint-agent-member-upload:evidence_bundle_archive-member-upload",
+            "rawArtifactApprovalId": "approval-archive-member-upload",
+            "rawArtifactApprovalReasonHash": "0x2222222222222222",
+            "archive": member_upload_archive,
+            "verification": {
+                "verified": true,
+                "archiveHashMatches": true
+            },
+            "retentionDays": 30,
+            "metadata": {
+                "source": "agent"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(member_upload_resp.0, StatusCode::FORBIDDEN);
+    let denied_upload_audit_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'endpoint_evidence_archive.raw_upload_denied'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("denied raw archive upload should be audited");
+    let denied_upload_event_type: String = denied_upload_audit_row
+        .try_get("event_type")
+        .expect("denied upload audit event_type");
+    let denied_upload_quantity: i32 = denied_upload_audit_row
+        .try_get("quantity")
+        .expect("denied upload audit quantity");
+    let denied_upload_metadata: Value = denied_upload_audit_row
+        .try_get("metadata")
+        .expect("denied upload audit metadata");
+    assert_eq!(
+        denied_upload_event_type,
+        "endpoint_evidence_archive.raw_upload_denied"
+    );
+    assert_eq!(denied_upload_quantity, 1);
+    assert_eq!(
+        denied_upload_metadata["archiveId"],
+        member_upload_archive_id
+    );
+    assert_eq!(
+        denied_upload_metadata["archiveHash"],
+        member_upload_archive_hash
+    );
+    assert_eq!(denied_upload_metadata["rawRef"], member_upload_raw_ref);
+    assert_eq!(
+        denied_upload_metadata["rawArtifactApprovalId"],
+        "approval-archive-member-upload"
+    );
+    assert_eq!(
+        denied_upload_metadata["bundleId"],
+        "evidence_bundle-member-upload"
+    );
+    assert_eq!(denied_upload_metadata["actorType"], "service");
+    assert_eq!(denied_upload_metadata["actorRole"], "member");
+    assert_eq!(
+        denied_upload_metadata["deniedReason"],
+        "admin_api_key_required"
+    );
+    assert!(denied_upload_metadata.get("archive").is_none());
+
+    let member_metadata_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/hunt/evidence-bundle-archives/{archive_id}"),
+        Some(member_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(member_metadata_resp.0, StatusCode::OK);
+    assert!(member_metadata_resp.1.get("archive").is_none());
+
+    let member_download_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/hunt/evidence-bundle-archives/{archive_id}/download"),
+        Some(member_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(member_download_resp.0, StatusCode::FORBIDDEN);
+    let denied_download_audit_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'endpoint_evidence_archive.raw_download_denied'
+             AND metadata->>'actorRole' = 'member'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("denied raw archive download should be audited");
+    let denied_download_event_type: String = denied_download_audit_row
+        .try_get("event_type")
+        .expect("denied download audit event_type");
+    let denied_download_quantity: i32 = denied_download_audit_row
+        .try_get("quantity")
+        .expect("denied download audit quantity");
+    let denied_download_metadata: Value = denied_download_audit_row
+        .try_get("metadata")
+        .expect("denied download audit metadata");
+    assert_eq!(
+        denied_download_event_type,
+        "endpoint_evidence_archive.raw_download_denied"
+    );
+    assert_eq!(denied_download_quantity, 1);
+    assert_eq!(denied_download_metadata["archiveId"], archive_id);
+    assert_eq!(denied_download_metadata["actorType"], "service");
+    assert_eq!(denied_download_metadata["actorRole"], "member");
+    assert_eq!(
+        denied_download_metadata["deniedReason"],
+        "admin_or_owner_required"
+    );
+    assert!(denied_download_metadata.get("archive").is_none());
+
+    let export_from = (Utc::now() - chrono::Duration::minutes(10))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let export_to = (Utc::now() + chrono::Duration::minutes(10))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let csv_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/api/v1/compliance/export?from={export_from}&to={export_to}&format=csv"
+        ))
+        .header("x-api-key", &harness.api_key)
+        .body(Body::empty())
+        .expect("build CSV compliance export request");
+    let csv_response = harness
+        .app
+        .clone()
+        .oneshot(csv_request)
+        .await
+        .expect("CSV compliance export request");
+    let csv_status = csv_response.status();
+    let csv_bytes = to_bytes(csv_response.into_body(), 2 * 1024 * 1024)
+        .await
+        .expect("read CSV compliance export body");
+    assert_eq!(csv_status, StatusCode::OK);
+    let csv_body = String::from_utf8(csv_bytes.to_vec()).expect("CSV export utf8");
+    assert!(csv_body
+        .lines()
+        .next()
+        .expect("CSV header")
+        .contains("metadata"));
+    assert!(csv_body.contains("endpoint_evidence_archive.raw_upload_denied"));
+    assert!(csv_body.contains("endpoint_evidence_archive.raw_download_denied"));
+    assert!(csv_body.contains("admin_api_key_required"));
+    assert!(csv_body.contains("admin_or_owner_required"));
+    assert!(csv_body.contains(member_upload_archive_id));
+    assert!(!csv_body.contains("\"archive\""));
+
+    let cef_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/api/v1/compliance/export?from={export_from}&to={export_to}&format=cef"
+        ))
+        .header("x-api-key", &harness.api_key)
+        .body(Body::empty())
+        .expect("build CEF compliance export request");
+    let cef_response = harness
+        .app
+        .clone()
+        .oneshot(cef_request)
+        .await
+        .expect("CEF compliance export request");
+    let cef_status = cef_response.status();
+    let cef_bytes = to_bytes(cef_response.into_body(), 2 * 1024 * 1024)
+        .await
+        .expect("read CEF compliance export body");
+    assert_eq!(cef_status, StatusCode::OK);
+    let cef_body = String::from_utf8(cef_bytes.to_vec()).expect("CEF export utf8");
+    assert!(cef_body.contains("endpoint_evidence_archive.raw_upload_denied"));
+    assert!(cef_body.contains("endpoint_evidence_archive.raw_download_denied"));
+    assert!(cef_body.contains("admin_api_key_required"));
+    assert!(cef_body.contains("admin_or_owner_required"));
+    assert!(cef_body.contains(member_upload_archive_id));
+    assert!(!cef_body.contains("\"archive\""));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_agent_secret_touches_returns_fleet_grouped_secret_access() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    for event in [
+        serde_json::json!({
+            "eventId": "hunt-secret-touch-1",
+            "tenantId": harness.tenant_id.to_string(),
+            "source": "receipt",
+            "kind": "guard_decision",
+            "occurredAt": "2026-03-06T12:00:00Z",
+            "ingestedAt": "2026-03-06T12:00:01Z",
+            "severity": "high",
+            "verdict": "warn",
+            "summary": "AI agent accessed developer API token",
+            "actionType": "secret_access",
+            "principal": {
+                "principalId": "principal-secret-1",
+                "endpointAgentId": "endpoint-secret-1",
+                "runtimeAgentId": "runtime-openai",
+                "principalType": "agent"
+            },
+            "sessionId": "session-secret-1",
+            "detectionIds": ["agent_secret_touch"],
+            "target": {
+                "kind": "credential",
+                "id": "credential:openai",
+                "name": "OPENAI_API_KEY"
+            },
+            "evidence": {
+                "rawRef": "hunt-envelope:hunt-secret-touch-1",
+                "envelopeHash": "hash-secret-touch-1",
+                "schemaName": "clawdstrike.sdr.fact.receipt.v1"
+            },
+            "attributes": {
+                "credentialKind": "api_token",
+                "toolName": "codex"
+            }
+        }),
+        serde_json::json!({
+            "eventId": "hunt-secret-touch-2",
+            "tenantId": harness.tenant_id.to_string(),
+            "source": "receipt",
+            "kind": "guard_decision",
+            "occurredAt": "2026-03-06T12:05:00Z",
+            "ingestedAt": "2026-03-06T12:05:01Z",
+            "severity": "critical",
+            "verdict": "warn",
+            "summary": "AI agent read SSH key",
+            "actionType": "secret_access",
+            "principal": {
+                "principalId": "principal-secret-2",
+                "endpointAgentId": "endpoint-secret-2",
+                "runtimeAgentId": "runtime-claude",
+                "principalType": "agent"
+            },
+            "sessionId": "session-secret-2",
+            "detectionIds": ["developer_credential_access"],
+            "target": {
+                "kind": "credential",
+                "id": "credential:ssh",
+                "name": "id_rsa"
+            },
+            "evidence": {
+                "rawRef": "hunt-envelope:hunt-secret-touch-2",
+                "envelopeHash": "hash-secret-touch-2",
+                "schemaName": "clawdstrike.sdr.fact.receipt.v1"
+            },
+            "attributes": {
+                "credentialKind": "ssh_key",
+                "toolName": "claude-code"
+            }
+        }),
+        serde_json::json!({
+            "eventId": "hunt-secret-noise-1",
+            "tenantId": harness.tenant_id.to_string(),
+            "source": "tetragon",
+            "kind": "process_exec",
+            "occurredAt": "2026-03-06T12:06:00Z",
+            "ingestedAt": "2026-03-06T12:06:01Z",
+            "severity": "low",
+            "verdict": "allow",
+            "summary": "ordinary process execution",
+            "actionType": "process",
+            "principal": {
+                "principalId": "principal-noise-1",
+                "endpointAgentId": "endpoint-noise-1",
+                "runtimeAgentId": "runtime-noise",
+                "principalType": "agent"
+            },
+            "sessionId": "session-noise-1",
+            "target": {
+                "kind": "process",
+                "id": "1003",
+                "name": "curl"
+            },
+            "evidence": {
+                "rawRef": "hunt-envelope:hunt-secret-noise-1",
+                "envelopeHash": "hash-secret-noise-1",
+                "schemaName": "clawdstrike.sdr.fact.tetragon_event.v1"
+            },
+            "attributes": {
+                "process": "/usr/bin/curl"
+            }
+        }),
+    ] {
+        let response = request_json(
+            &harness.app,
+            Method::POST,
+            "/api/v1/hunt/events/ingest".to_string(),
+            Some(&harness.api_key),
+            Some(signed_hunt_ingest_request(&harness, event)),
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::OK);
+    }
+
+    let response = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/agent-secret-touches".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "since": "2026-03-06T12:00:00Z",
+            "until": "2026-03-06T12:10:00Z",
+            "limit": 10
+        })),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::OK);
+    assert_eq!(response.1["secretTouchCount"], 2);
+    assert_eq!(response.1["endpointCount"], 2);
+    assert_eq!(response.1["runtimeAgentCount"], 2);
+    assert_eq!(response.1["events"][0]["eventId"], "hunt-secret-touch-2");
+    assert_eq!(response.1["events"][1]["eventId"], "hunt-secret-touch-1");
+    assert_eq!(response.1["endpoints"][0]["groupKey"], "endpoint-secret-2");
+    assert_eq!(response.1["endpoints"][1]["groupKey"], "endpoint-secret-1");
+
+    let filtered_response = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/agent-secret-touches".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agentId": "runtime-openai",
+            "credentialKind": "api_token",
+            "limit": 10
+        })),
+    )
+    .await;
+    assert_eq!(filtered_response.0, StatusCode::OK);
+    assert_eq!(filtered_response.1["secretTouchCount"], 1);
+    assert_eq!(
+        filtered_response.1["endpoints"][0]["credentialKinds"][0],
+        "api_token"
+    );
+    assert_eq!(
+        filtered_response.1["events"][0]["eventId"],
+        "hunt-secret-touch-1"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_event_consumer_persists_endpoint_published_secret_touch() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let agent_keypair = hush_core::Keypair::generate();
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": "endpoint-stream-1",
+            "name": "Endpoint Stream 1",
+            "public_key": agent_keypair.public_key().to_hex(),
+            "role": "coder",
+            "trust_level": "high"
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
+
+    let event = serde_json::json!({
+        "eventId": "hunt-nats-secret-touch-1",
+        "tenantId": harness.tenant_id.to_string(),
+        "source": "receipt",
+        "kind": "guard_decision",
+        "occurredAt": "2026-03-06T12:15:00Z",
+        "ingestedAt": "2026-03-06T12:15:01Z",
+        "severity": "high",
+        "verdict": "warn",
+        "summary": "AI agent touched browser cookie",
+        "actionType": "secret_access",
+        "sessionId": "session-nats-secret-1",
+        "detectionIds": ["agent_secret_touch"],
+        "target": {
+            "kind": "credential",
+            "id": "credential:browser-cookie",
+            "name": "browser cookie"
+        },
+        "evidence": {
+            "rawRef": "endpoint-receipt:hunt-nats-secret-touch-1",
+            "schemaName": "clawdstrike.edr.agent_secret_touch.v1"
+        },
+        "attributes": {
+            "credentialKind": "browser_cookie",
+            "toolName": "browser-automation"
+        }
+    });
+    let payload = serde_json::to_vec(&event).expect("serialize hunt event");
+    let stored = crate::services::hunt_event_consumer::process_hunt_event_payload(
+        &harness.db,
+        harness.signing_keypair.as_ref(),
+        "tenant-acme-int.clawdstrike.hunt.events.endpoint-stream-1",
+        &payload,
+    )
+    .await
+    .expect("process hunt event payload");
+
+    assert_eq!(stored.event_id, "hunt-nats-secret-touch-1");
+    assert_eq!(
+        stored.endpoint_agent_id.as_deref(),
+        Some("endpoint-stream-1")
+    );
+    assert_eq!(stored.signature_valid, Some(true));
+    assert_eq!(
+        stored.schema_name.as_deref(),
+        Some("clawdstrike.edr.agent_secret_touch.v1")
+    );
+
+    let query_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/agent-secret-touches".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "endpointAgentId": "endpoint-stream-1",
+            "credentialKind": "browser_cookie"
+        })),
+    )
+    .await;
+    assert_eq!(query_resp.0, StatusCode::OK);
+    assert_eq!(query_resp.1["secretTouchCount"], 1);
+    assert_eq!(
+        query_resp.1["events"][0]["eventId"],
+        "hunt-nats-secret-touch-1"
     );
 }
 
@@ -2969,6 +4860,184 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn case_list_filters_by_query_status_and_severity() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+
+    for payload in [
+        serde_json::json!({
+            "title": "Endpoint archive case",
+            "summary": "Retained archive investigation",
+            "severity": "high",
+            "status": "open",
+            "tags": ["endpoint-evidence"]
+        }),
+        serde_json::json!({
+            "title": "Closed phishing investigation",
+            "summary": "Browser download credential theft",
+            "severity": "low",
+            "status": "closed",
+            "tags": ["phishing"]
+        }),
+        serde_json::json!({
+            "title": "Closed high impact investigation",
+            "summary": "Credential theft",
+            "severity": "high",
+            "status": "closed",
+            "tags": ["phishing"]
+        }),
+    ] {
+        let case_resp = request_json(
+            &harness.app,
+            Method::POST,
+            "/api/v1/cases".to_string(),
+            Some(&harness.api_key),
+            Some(payload),
+        )
+        .await;
+        assert_eq!(case_resp.0, StatusCode::OK);
+    }
+
+    let filtered_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/cases?q=phishing&status=closed&severity=low".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(filtered_resp.0, StatusCode::OK);
+    let cases = filtered_resp.1.as_array().expect("case list");
+    assert_eq!(cases.len(), 1);
+    assert_eq!(cases[0]["title"], "Closed phishing investigation");
+    assert_eq!(cases[0]["status"], "closed");
+    assert_eq!(cases[0]["severity"], "low");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn case_bulk_status_transition_updates_selected_cases_and_timeline() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let mut case_ids = Vec::new();
+
+    for payload in [
+        serde_json::json!({
+            "title": "Bulk transition primary",
+            "summary": "selected for bulk closure",
+            "severity": "high",
+            "status": "open",
+            "tags": ["bulk-lifecycle"]
+        }),
+        serde_json::json!({
+            "title": "Bulk transition secondary",
+            "summary": "also selected for bulk closure",
+            "severity": "medium",
+            "status": "in_progress",
+            "tags": ["bulk-lifecycle"]
+        }),
+        serde_json::json!({
+            "title": "Bulk transition untouched",
+            "summary": "must remain open",
+            "severity": "low",
+            "status": "open",
+            "tags": ["bulk-lifecycle"]
+        }),
+    ] {
+        let case_resp = request_json(
+            &harness.app,
+            Method::POST,
+            "/api/v1/cases".to_string(),
+            Some(&harness.api_key),
+            Some(payload),
+        )
+        .await;
+        assert_eq!(case_resp.0, StatusCode::OK);
+        case_ids.push(
+            case_resp.1["id"]
+                .as_str()
+                .expect("created case id")
+                .to_string(),
+        );
+    }
+
+    let bulk_request = Request::builder()
+        .method(Method::PATCH)
+        .uri("/api/v1/cases/bulk")
+        .header("content-type", "application/json")
+        .header("x-api-key", &harness.api_key)
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "caseIds": [case_ids[0], case_ids[1]],
+                "status": "closed"
+            }))
+            .expect("serialize bulk body"),
+        ))
+        .expect("build bulk request");
+    let bulk_response = harness
+        .app
+        .clone()
+        .oneshot(bulk_request)
+        .await
+        .expect("bulk route request");
+    let bulk_status = bulk_response.status();
+    let bulk_bytes = to_bytes(bulk_response.into_body(), 2 * 1024 * 1024)
+        .await
+        .expect("read bulk response body");
+    assert_eq!(bulk_status, StatusCode::OK);
+    let bulk_body = serde_json::from_slice::<Value>(&bulk_bytes).expect("bulk response json");
+    let updated = bulk_body.as_array().expect("updated cases");
+    assert_eq!(updated.len(), 2);
+    assert!(updated.iter().all(|case| case["status"] == "closed"));
+
+    let closed_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/cases?status=closed&q=bulk-lifecycle".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(closed_resp.0, StatusCode::OK);
+    assert_eq!(closed_resp.1.as_array().expect("closed cases").len(), 2);
+
+    let untouched_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/cases/{}", case_ids[2]),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(untouched_resp.0, StatusCode::OK);
+    assert_eq!(untouched_resp.1["case"]["status"], "open");
+
+    let timeline_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/cases/{}/timeline", case_ids[0]),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(timeline_resp.0, StatusCode::OK);
+    let timeline = timeline_resp.1.as_array().expect("case timeline");
+    assert!(timeline.iter().any(|event| {
+        event["eventKind"] == "status_changed"
+            && event["payload"]["previousStatus"] == "open"
+            && event["payload"]["status"] == "closed"
+            && event["payload"]["bulk"] == true
+    }));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn case_artifacts_require_verified_references_and_mark_annotations_untrusted() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -3014,6 +5083,24 @@ async fn case_artifacts_require_verified_references_and_mark_annotations_untrust
     .await;
     assert_eq!(missing_envelope_resp.0, StatusCode::NOT_FOUND);
 
+    let missing_archive_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/artifacts", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "artifactKind": "endpoint_evidence_archive",
+            "artifactId": "missing-archive",
+            "summary": "spoofed archive",
+            "metadata": {
+                "artifactClass": "verified_reference",
+                "sourceTable": "endpoint_evidence_archives"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(missing_archive_resp.0, StatusCode::NOT_FOUND);
+
     let bundle_export_resp = request_json(
         &harness.app,
         Method::POST,
@@ -3028,6 +5115,77 @@ async fn case_artifacts_require_verified_references_and_mark_annotations_untrust
     )
     .await;
     assert_eq!(bundle_export_resp.0, StatusCode::BAD_REQUEST);
+
+    let archive = serde_json::json!({
+        "schemaVersion": 1,
+        "bundle": {
+            "bundleId": "evidence_bundle-case-1",
+            "graphSliceId": "graph_slice-case-1",
+            "contentHash": "0xcontentcase"
+        },
+        "artifact": {
+            "byteCount": 96
+        },
+        "graph": {
+            "nodes": {
+                "process:case": {
+                    "nodeId": "process:case",
+                    "kind": "process",
+                    "label": "python"
+                }
+            },
+            "edges": []
+        },
+        "receipts": []
+    });
+    let archive_hash = canonical_json_hash_for_test(&archive);
+    let archive_id = "evidence_bundle_archive-case-1";
+    let archive_raw_ref = format!("endpoint-evidence-bundle-archive:{archive_id}:{archive_hash}");
+    let upload_archive_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/evidence-bundle-archives".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "archiveId": archive_id,
+            "archiveHash": archive_hash,
+            "rawRef": archive_raw_ref,
+            "bundleId": "evidence_bundle-case-1",
+            "endpointAgentId": &fixture.agent_id,
+            "eventId": format!("evidence-bundle-archive:{}:{archive_id}", &fixture.agent_id),
+            "rawArtifactApprovalId": "approval-archive-case-1",
+            "rawArtifactApprovalReasonHash": "0x3333333333333333",
+            "archive": archive,
+            "verification": {
+                "verified": true,
+                "archiveHashMatches": true
+            },
+            "retentionDays": 30,
+            "metadata": {
+                "source": "agent"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(upload_archive_resp.0, StatusCode::OK);
+
+    let archive_artifact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/artifacts", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "artifactKind": "endpoint_evidence_archive",
+            "artifactId": archive_id,
+            "summary": "spoofed archive summary",
+            "metadata": {
+                "artifactClass": "operator_annotation",
+                "sourceTable": "spoofed"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(archive_artifact_resp.0, StatusCode::OK);
 
     let response_action_artifact_resp = request_json(
         &harness.app,
@@ -3100,6 +5258,44 @@ async fn case_artifacts_require_verified_references_and_mark_annotations_untrust
     );
     assert_eq!(response_action_artifact["metadata"]["status"], "queued");
 
+    let archive_artifact = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact["artifactKind"] == "endpoint_evidence_archive"
+                && artifact["artifactId"] == archive_id
+        })
+        .expect("endpoint_evidence_archive artifact");
+    assert_eq!(
+        archive_artifact["summary"],
+        "endpoint evidence archive evidence_bundle-case-1"
+    );
+    assert_eq!(
+        archive_artifact["metadata"]["artifactClass"],
+        "verified_reference"
+    );
+    assert_eq!(
+        archive_artifact["metadata"]["sourceTable"],
+        "endpoint_evidence_archives"
+    );
+    assert_eq!(
+        archive_artifact["metadata"]["sourceFamily"],
+        "endpoint_evidence_archive"
+    );
+    assert_eq!(archive_artifact["metadata"]["rawRef"], archive_raw_ref);
+    assert_eq!(archive_artifact["metadata"]["archiveHash"], archive_hash);
+    assert_eq!(
+        archive_artifact["metadata"]["endpointAgentId"],
+        fixture.agent_id
+    );
+    assert_eq!(
+        archive_artifact["metadata"]["verification"]["verified"],
+        true
+    );
+    assert_eq!(
+        archive_artifact["metadata"]["archiveMetadata"]["source"],
+        "agent"
+    );
+
     let note_artifact = artifacts
         .iter()
         .find(|artifact| artifact["artifactKind"] == "note")
@@ -3109,6 +5305,490 @@ async fn case_artifacts_require_verified_references_and_mark_annotations_untrust
         "operator_annotation"
     );
     assert_eq!(note_artifact["metadata"]["message"], "manual analyst note");
+
+    let member_api_key = "cs_it_case_archive_member_key";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        member_api_key,
+        "case-archive-member",
+        &["write"],
+    )
+    .await;
+    let denied_archive_download_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/hunt/evidence-bundle-archives/{archive_id}/download"),
+        Some(member_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(denied_archive_download_resp.0, StatusCode::FORBIDDEN);
+
+    let case_bundle_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/evidence/export", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "includeRawEnvelopes": true
+        })),
+    )
+    .await;
+    assert_eq!(case_bundle_resp.0, StatusCode::OK);
+    assert_eq!(
+        case_bundle_resp.1["artifactCounts"]["endpoint_evidence_archive"],
+        1
+    );
+    assert_eq!(case_bundle_resp.1["artifactCounts"]["audit_event"], 2);
+    let case_bundle_export_id = case_bundle_resp.1["exportId"]
+        .as_str()
+        .expect("case bundle export id");
+    let bundle_exported_audit_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'case_evidence_bundle.exported'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("bundle export should be audited");
+    let bundle_exported_metadata: Value = bundle_exported_audit_row
+        .try_get("metadata")
+        .expect("bundle export audit metadata");
+    assert_eq!(
+        bundle_exported_audit_row
+            .try_get::<String, _>("event_type")
+            .expect("bundle export event type"),
+        "case_evidence_bundle.exported"
+    );
+    assert_eq!(
+        bundle_exported_audit_row
+            .try_get::<i32, _>("quantity")
+            .expect("bundle export quantity"),
+        1
+    );
+    assert_eq!(bundle_exported_metadata["exportId"], case_bundle_export_id);
+    assert_eq!(
+        bundle_exported_metadata["caseId"],
+        fixture.case_id.to_string()
+    );
+    assert_eq!(
+        bundle_exported_metadata["artifactCounts"]["endpoint_evidence_archive"],
+        1
+    );
+    assert_eq!(bundle_exported_metadata["artifactCounts"]["audit_event"], 2);
+    assert_eq!(bundle_exported_metadata["actorType"], "service");
+    assert_eq!(bundle_exported_metadata["actorRole"], "admin");
+    assert!(bundle_exported_metadata["sha256"].as_str().is_some());
+    assert!(bundle_exported_metadata["sizeBytes"].as_i64().is_some());
+    assert!(bundle_exported_metadata.get("bundle").is_none());
+
+    let admin_bundle_metadata_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/evidence-bundles/{case_bundle_export_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(admin_bundle_metadata_resp.0, StatusCode::OK);
+    assert_eq!(
+        admin_bundle_metadata_resp.1["exportId"],
+        case_bundle_export_id
+    );
+    let bundle_metadata_access_audit_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'case_evidence_bundle.metadata_accessed'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("bundle metadata access should be audited");
+    let bundle_metadata_access: Value = bundle_metadata_access_audit_row
+        .try_get("metadata")
+        .expect("bundle metadata access audit metadata");
+    assert_eq!(
+        bundle_metadata_access_audit_row
+            .try_get::<String, _>("event_type")
+            .expect("bundle metadata access event type"),
+        "case_evidence_bundle.metadata_accessed"
+    );
+    assert_eq!(
+        bundle_metadata_access_audit_row
+            .try_get::<i32, _>("quantity")
+            .expect("bundle metadata access quantity"),
+        1
+    );
+    assert_eq!(bundle_metadata_access["exportId"], case_bundle_export_id);
+    assert_eq!(
+        bundle_metadata_access["caseId"],
+        fixture.case_id.to_string()
+    );
+    assert_eq!(bundle_metadata_access["actorType"], "service");
+    assert_eq!(bundle_metadata_access["actorRole"], "admin");
+    assert!(bundle_metadata_access["sha256"].as_str().is_some());
+    assert!(bundle_metadata_access["sizeBytes"].as_i64().is_some());
+    assert!(bundle_metadata_access.get("bundle").is_none());
+
+    let viewer_api_key = "cs_it_case_bundle_viewer_key";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        viewer_api_key,
+        "case-bundle-viewer",
+        &["viewer"],
+    )
+    .await;
+    let viewer_create_bundle_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/evidence/export", fixture.case_id),
+        Some(viewer_api_key),
+        Some(serde_json::json!({
+            "includeRawEnvelopes": true
+        })),
+    )
+    .await;
+    assert_eq!(viewer_create_bundle_resp.0, StatusCode::FORBIDDEN);
+    let denied_bundle_export_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'case_evidence_bundle.export_denied'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("denied bundle export should be audited");
+    let denied_bundle_export: Value = denied_bundle_export_row
+        .try_get("metadata")
+        .expect("denied bundle export audit metadata");
+    assert_eq!(
+        denied_bundle_export_row
+            .try_get::<String, _>("event_type")
+            .expect("denied bundle export event type"),
+        "case_evidence_bundle.export_denied"
+    );
+    assert_eq!(
+        denied_bundle_export_row
+            .try_get::<i32, _>("quantity")
+            .expect("denied bundle export quantity"),
+        1
+    );
+    assert_eq!(denied_bundle_export["caseId"], fixture.case_id.to_string());
+    assert_eq!(denied_bundle_export["actorType"], "service");
+    assert_eq!(denied_bundle_export["actorRole"], "viewer");
+    assert_eq!(denied_bundle_export["deniedReason"], "non_viewer_required");
+    assert!(denied_bundle_export.get("bundle").is_none());
+
+    let viewer_bundle_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/evidence-bundles/{case_bundle_export_id}"),
+        Some(viewer_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(viewer_bundle_resp.0, StatusCode::FORBIDDEN);
+
+    let viewer_download_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/api/v1/evidence-bundles/{case_bundle_export_id}/download"
+        ))
+        .header("x-api-key", viewer_api_key)
+        .body(Body::empty())
+        .expect("build viewer bundle download request");
+    let viewer_download_response = harness
+        .app
+        .clone()
+        .oneshot(viewer_download_request)
+        .await
+        .expect("viewer bundle download request");
+    assert_eq!(viewer_download_response.status(), StatusCode::FORBIDDEN);
+    let denied_bundle_metadata_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'case_evidence_bundle.metadata_access_denied'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("denied bundle metadata access should be audited");
+    let denied_bundle_metadata: Value = denied_bundle_metadata_row
+        .try_get("metadata")
+        .expect("denied bundle metadata audit metadata");
+    assert_eq!(
+        denied_bundle_metadata_row
+            .try_get::<String, _>("event_type")
+            .expect("denied bundle metadata event type"),
+        "case_evidence_bundle.metadata_access_denied"
+    );
+    assert_eq!(
+        denied_bundle_metadata_row
+            .try_get::<i32, _>("quantity")
+            .expect("denied bundle metadata quantity"),
+        1
+    );
+    assert_eq!(denied_bundle_metadata["exportId"], case_bundle_export_id);
+    assert_eq!(denied_bundle_metadata["actorType"], "service");
+    assert_eq!(denied_bundle_metadata["actorRole"], "viewer");
+    assert_eq!(
+        denied_bundle_metadata["deniedReason"],
+        "non_viewer_required"
+    );
+    assert!(denied_bundle_metadata.get("bundle").is_none());
+
+    let denied_bundle_download_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'case_evidence_bundle.download_denied'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("denied bundle download should be audited");
+    let denied_bundle_download: Value = denied_bundle_download_row
+        .try_get("metadata")
+        .expect("denied bundle download audit metadata");
+    assert_eq!(
+        denied_bundle_download_row
+            .try_get::<String, _>("event_type")
+            .expect("denied bundle download event type"),
+        "case_evidence_bundle.download_denied"
+    );
+    assert_eq!(
+        denied_bundle_download_row
+            .try_get::<i32, _>("quantity")
+            .expect("denied bundle download quantity"),
+        1
+    );
+    assert_eq!(denied_bundle_download["exportId"], case_bundle_export_id);
+    assert_eq!(denied_bundle_download["actorType"], "service");
+    assert_eq!(denied_bundle_download["actorRole"], "viewer");
+    assert_eq!(
+        denied_bundle_download["deniedReason"],
+        "non_viewer_required"
+    );
+    assert!(denied_bundle_download.get("bundle").is_none());
+
+    let admin_download_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/api/v1/evidence-bundles/{case_bundle_export_id}/download"
+        ))
+        .header("x-api-key", &harness.api_key)
+        .body(Body::empty())
+        .expect("build admin bundle download request");
+    let admin_download_response = harness
+        .app
+        .clone()
+        .oneshot(admin_download_request)
+        .await
+        .expect("admin bundle download request");
+    assert_eq!(admin_download_response.status(), StatusCode::OK);
+    let admin_bundle_bytes = to_bytes(admin_download_response.into_body(), 4 * 1024 * 1024)
+        .await
+        .expect("read admin bundle body");
+    let bundle_download_audit_row = sqlx::query::query(
+        r#"SELECT event_type, quantity, metadata
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND event_type = 'case_evidence_bundle.downloaded'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("bundle download should be audited");
+    let bundle_download_metadata: Value = bundle_download_audit_row
+        .try_get("metadata")
+        .expect("bundle download audit metadata");
+    assert_eq!(
+        bundle_download_audit_row
+            .try_get::<String, _>("event_type")
+            .expect("bundle download event type"),
+        "case_evidence_bundle.downloaded"
+    );
+    assert_eq!(
+        bundle_download_audit_row
+            .try_get::<i32, _>("quantity")
+            .expect("bundle download quantity"),
+        1
+    );
+    assert_eq!(bundle_download_metadata["exportId"], case_bundle_export_id);
+    assert_eq!(
+        bundle_download_metadata["caseId"],
+        fixture.case_id.to_string()
+    );
+    assert_eq!(bundle_download_metadata["actorType"], "service");
+    assert_eq!(bundle_download_metadata["actorRole"], "admin");
+    assert!(bundle_download_metadata["sha256"].as_str().is_some());
+    assert!(bundle_download_metadata["sizeBytes"].as_i64().is_some());
+    assert!(bundle_download_metadata.get("bundle").is_none());
+    let audit_events_jsonl = zip_entry_text(&admin_bundle_bytes, "audit-events.jsonl");
+    let audit_events = audit_events_jsonl
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("audit event json line"))
+        .collect::<Vec<_>>();
+    assert_eq!(audit_events.len(), 2);
+    assert!(audit_events.iter().any(|event| event["eventType"]
+        == "endpoint_evidence_archive.raw_uploaded"
+        && event["metadata"]["archiveId"] == archive_id
+        && event["metadata"].get("archive").is_none()));
+    assert!(audit_events.iter().any(|event| event["eventType"]
+        == "endpoint_evidence_archive.raw_download_denied"
+        && event["metadata"]["archiveId"] == archive_id
+        && event["metadata"]["deniedReason"] == "admin_or_owner_required"
+        && event["metadata"].get("archive").is_none()));
+
+    let manifest_json = zip_entry_text(&admin_bundle_bytes, "manifest.json");
+    let manifest: Value = serde_json::from_str(&manifest_json).expect("bundle manifest json");
+    assert_eq!(manifest["metadata"]["artifactCounts"]["audit_event"], 2);
+
+    let follow_up_bundle_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/evidence/export", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "includeRawEnvelopes": true
+        })),
+    )
+    .await;
+    assert_eq!(follow_up_bundle_resp.0, StatusCode::OK);
+    assert_eq!(follow_up_bundle_resp.1["artifactCounts"]["audit_event"], 8);
+    let follow_up_export_id = follow_up_bundle_resp.1["exportId"]
+        .as_str()
+        .expect("follow-up case bundle export id");
+    let follow_up_download_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/api/v1/evidence-bundles/{follow_up_export_id}/download"
+        ))
+        .header("x-api-key", &harness.api_key)
+        .body(Body::empty())
+        .expect("build follow-up bundle download request");
+    let follow_up_download_response = harness
+        .app
+        .clone()
+        .oneshot(follow_up_download_request)
+        .await
+        .expect("follow-up bundle download request");
+    assert_eq!(follow_up_download_response.status(), StatusCode::OK);
+    let follow_up_bundle_bytes = to_bytes(follow_up_download_response.into_body(), 4 * 1024 * 1024)
+        .await
+        .expect("read follow-up bundle body");
+    let follow_up_audit_events_jsonl =
+        zip_entry_text(&follow_up_bundle_bytes, "audit-events.jsonl");
+    let follow_up_audit_events = follow_up_audit_events_jsonl
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("follow-up audit event json line"))
+        .collect::<Vec<_>>();
+    assert_eq!(follow_up_audit_events.len(), 8);
+    for expected_type in [
+        "endpoint_evidence_archive.raw_uploaded",
+        "endpoint_evidence_archive.raw_download_denied",
+        "case_evidence_bundle.exported",
+        "case_evidence_bundle.metadata_accessed",
+        "case_evidence_bundle.export_denied",
+        "case_evidence_bundle.metadata_access_denied",
+        "case_evidence_bundle.download_denied",
+        "case_evidence_bundle.downloaded",
+    ] {
+        assert!(
+            follow_up_audit_events
+                .iter()
+                .any(|event| event["eventType"] == expected_type),
+            "follow-up bundle should contain {expected_type}"
+        );
+    }
+    assert!(follow_up_audit_events.iter().all(|event| event["metadata"]
+        .as_object()
+        .expect("audit event metadata object")
+        .get("bundle")
+        .is_none()));
+
+    let export_from = (Utc::now() - chrono::Duration::minutes(10))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let export_to = (Utc::now() + chrono::Duration::minutes(10))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let csv_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/api/v1/compliance/export?from={export_from}&to={export_to}&format=csv"
+        ))
+        .header("x-api-key", &harness.api_key)
+        .body(Body::empty())
+        .expect("build case bundle CSV compliance export request");
+    let csv_response = harness
+        .app
+        .clone()
+        .oneshot(csv_request)
+        .await
+        .expect("case bundle CSV compliance export request");
+    let csv_status = csv_response.status();
+    let csv_bytes = to_bytes(csv_response.into_body(), 2 * 1024 * 1024)
+        .await
+        .expect("read case bundle CSV compliance export body");
+    assert_eq!(csv_status, StatusCode::OK);
+    let csv_body = String::from_utf8(csv_bytes.to_vec()).expect("case bundle CSV export utf8");
+    for expected_type in [
+        "case_evidence_bundle.exported",
+        "case_evidence_bundle.metadata_accessed",
+        "case_evidence_bundle.export_denied",
+        "case_evidence_bundle.metadata_access_denied",
+        "case_evidence_bundle.download_denied",
+        "case_evidence_bundle.downloaded",
+    ] {
+        assert!(
+            csv_body.contains(expected_type),
+            "CSV compliance export should contain {expected_type}"
+        );
+    }
+    assert!(csv_body.contains(case_bundle_export_id));
+    assert!(!csv_body.contains("\"bundle\""));
+
+    let cef_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/api/v1/compliance/export?from={export_from}&to={export_to}&format=cef"
+        ))
+        .header("x-api-key", &harness.api_key)
+        .body(Body::empty())
+        .expect("build case bundle CEF compliance export request");
+    let cef_response = harness
+        .app
+        .clone()
+        .oneshot(cef_request)
+        .await
+        .expect("case bundle CEF compliance export request");
+    let cef_status = cef_response.status();
+    let cef_bytes = to_bytes(cef_response.into_body(), 2 * 1024 * 1024)
+        .await
+        .expect("read case bundle CEF compliance export body");
+    assert_eq!(cef_status, StatusCode::OK);
+    let cef_body = String::from_utf8(cef_bytes.to_vec()).expect("case bundle CEF export utf8");
+    for expected_type in [
+        "case_evidence_bundle.exported",
+        "case_evidence_bundle.metadata_accessed",
+        "case_evidence_bundle.export_denied",
+        "case_evidence_bundle.metadata_access_denied",
+        "case_evidence_bundle.download_denied",
+        "case_evidence_bundle.downloaded",
+    ] {
+        assert!(
+            cef_body.contains(expected_type),
+            "CEF compliance export should contain {expected_type}"
+        );
+    }
+    assert!(cef_body.contains(case_bundle_export_id));
+    assert!(!cef_body.contains("\"bundle\""));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -4249,6 +6929,67 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
     assert_eq!(
         second_ack.1["error"],
         "delivery acknowledgement has already been recorded"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let (action_id, ack_token) = seed_ack_enabled_response_action(
+        &harness.db,
+        harness.tenant_id,
+        "published",
+        "published",
+        None,
+        Some(chrono::Utc::now() + chrono::Duration::minutes(10)),
+    )
+    .await;
+
+    let ack_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/agent-acks"),
+        None,
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "acknowledged",
+            "ackToken": &ack_token,
+            "message": "endpoint execution receipt accepted",
+            "resultingState": "collect_evidence:succeeded",
+            "rawPayload": {
+                "source": "clawdstrike-agent",
+                "localReceiptHash": "0xagentreceipt"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(ack_resp.0, StatusCode::OK);
+    assert_eq!(ack_resp.1["accepted"], true);
+    assert_eq!(ack_resp.1["actionId"], action_id.to_string());
+    assert_eq!(ack_resp.1["targetKind"], "endpoint");
+    assert_eq!(ack_resp.1["targetId"], "endpoint-1");
+    assert_eq!(ack_resp.1["status"], "acknowledged");
+
+    let detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/response-actions/{action_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(detail_resp.0, StatusCode::OK);
+    assert_eq!(detail_resp.1["action"]["status"], "acknowledged");
+    assert_eq!(detail_resp.1["deliveries"][0]["status"], "acknowledged");
+    assert_eq!(
+        detail_resp.1["acknowledgements"][0]["raw_payload"]["localReceiptHash"],
+        "0xagentreceipt"
     );
 }
 
@@ -5882,6 +8623,10 @@ async fn setup_harness() -> Harness {
         heartbeat_subject_filter: "tenant-*.>".to_string(),
         heartbeat_stream_name: "heartbeat".to_string(),
         heartbeat_consumer_name: "heartbeat-consumer".to_string(),
+        hunt_event_consumer_enabled: false,
+        hunt_event_subject_filter: "tenant-*.>".to_string(),
+        hunt_event_stream_name: "hunt-events".to_string(),
+        hunt_event_consumer_name: "hunt-event-consumer".to_string(),
         stale_detector_enabled: false,
         stale_check_interval_secs: 60,
         stale_threshold_secs: 120,
@@ -6069,6 +8814,13 @@ fn signed_hunt_ingest_request_without_canonical_evidence(harness: &Harness, even
         "event": event,
         "rawEnvelope": envelope,
     })
+}
+
+fn canonical_json_hash_for_test(value: &Value) -> String {
+    let canonical = hush_core::canonicalize_json(value).expect("canonicalize JSON");
+    let mut hasher = Sha256::new();
+    hasher.update(canonical.as_bytes());
+    format!("0x{}", hex::encode(hasher.finalize()))
 }
 
 async fn seed_hunt_events(harness: &Harness) {
@@ -7175,6 +9927,17 @@ fn docker_available() -> bool {
         .unwrap_or(false)
 }
 
+fn zip_entry_text(bytes: &[u8], path: &str) -> String {
+    let reader = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader).expect("open evidence bundle zip");
+    let mut entry = archive.by_name(path).expect("evidence bundle zip entry");
+    let mut text = String::new();
+    entry
+        .read_to_string(&mut text)
+        .expect("read evidence bundle zip entry");
+    text
+}
+
 fn is_retryable_docker_run_error(stderr: &str) -> bool {
     let normalized = stderr.to_lowercase();
     [
@@ -7439,6 +10202,10 @@ async fn register_agent_rollback_clears_endpoint_hierarchy_link_on_provision_fai
             heartbeat_subject_filter: "tenant-*.>".to_string(),
             heartbeat_stream_name: "heartbeat".to_string(),
             heartbeat_consumer_name: "heartbeat-consumer".to_string(),
+            hunt_event_consumer_enabled: false,
+            hunt_event_subject_filter: "tenant-*.>".to_string(),
+            hunt_event_stream_name: "hunt-events".to_string(),
+            hunt_event_consumer_name: "hunt-event-consumer".to_string(),
             stale_detector_enabled: false,
             stale_check_interval_secs: 60,
             stale_threshold_secs: 120,

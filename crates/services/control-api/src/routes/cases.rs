@@ -1,11 +1,12 @@
 use axum::body::{Body, Bytes};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::header;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::IntoResponse;
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use futures::stream;
+use serde::Deserialize;
 use serde_json::Value;
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
@@ -14,15 +15,15 @@ use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
 #[cfg(test)]
 use crate::integration_tests::case_evidence::{
-    AddCaseArtifactRequest, CreateFleetCaseRequest, ExportEvidenceBundleRequest,
-    UpdateFleetCaseRequest,
+    AddCaseArtifactRequest, BulkUpdateFleetCasesRequest, CreateFleetCaseRequest,
+    ExportEvidenceBundleRequest, UpdateFleetCaseRequest,
 };
 #[cfg(test)]
 use crate::integration_tests::case_evidence_service as case_evidence;
 #[cfg(not(test))]
 use crate::models::case_evidence::{
-    AddCaseArtifactRequest, CreateFleetCaseRequest, ExportEvidenceBundleRequest,
-    UpdateFleetCaseRequest,
+    AddCaseArtifactRequest, BulkUpdateFleetCasesRequest, CreateFleetCaseRequest,
+    ExportEvidenceBundleRequest, UpdateFleetCaseRequest,
 };
 #[cfg(not(test))]
 use crate::services::case_evidence;
@@ -35,6 +36,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/cases", get(list_cases))
         .route("/cases", post(create_case))
+        .route("/cases/bulk", patch(bulk_update_cases))
         .route("/cases/{id}", get(get_case))
         .route("/cases/{id}", patch(update_case))
         .route("/cases/{id}/artifacts", post(add_artifact))
@@ -47,11 +49,30 @@ pub fn router() -> Router<AppState> {
         )
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListCasesQuery {
+    #[serde(alias = "query")]
+    q: Option<String>,
+    status: Option<String>,
+    severity: Option<String>,
+}
+
 async fn list_cases(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
+    Query(query): Query<ListCasesQuery>,
 ) -> Result<Json<Vec<crate_case::FleetCase>>, ApiError> {
-    let cases = case_evidence::list_cases(&state.db, auth.tenant_id).await?;
+    let cases = case_evidence::list_cases(
+        &state.db,
+        auth.tenant_id,
+        case_evidence::ListCasesFilter {
+            query: query.q,
+            status: query.status,
+            severity: query.severity,
+        },
+    )
+    .await?;
     Ok(Json(cases))
 }
 
@@ -91,6 +112,21 @@ async fn update_case(
     let actor_id = auth.actor_id();
     let case = case_evidence::update_case(&state.db, auth.tenant_id, id, &actor_id, req).await?;
     Ok(Json(case))
+}
+
+async fn bulk_update_cases(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Json(req): Json<BulkUpdateFleetCasesRequest>,
+) -> Result<Json<Vec<crate_case::FleetCase>>, ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
+
+    let actor_id = auth.actor_id();
+    let cases =
+        case_evidence::bulk_update_case_status(&state.db, auth.tenant_id, &actor_id, req).await?;
+    Ok(Json(cases))
 }
 
 async fn add_artifact(
@@ -144,6 +180,16 @@ async fn export_evidence_bundle(
     Json(req): Json<ExportEvidenceBundleRequest>,
 ) -> Result<Json<crate_case::FleetEvidenceBundle>, ApiError> {
     if auth.role == "viewer" {
+        case_evidence::record_bundle_export_denied_audit(
+            &state.db,
+            auth.tenant_id,
+            &auth.actor_id(),
+            auth.actor_type(),
+            &auth.role,
+            id,
+            "non_viewer_required",
+        )
+        .await?;
         return Err(ApiError::Forbidden);
     }
     let signer = state.signing_keypair.as_deref().ok_or_else(|| {
@@ -160,6 +206,15 @@ async fn export_evidence_bundle(
         signer,
     )
     .await?;
+    case_evidence::record_bundle_export_audit(
+        &state.db,
+        auth.tenant_id,
+        &actor_id,
+        auth.actor_type(),
+        &auth.role,
+        &bundle,
+    )
+    .await?;
     Ok(Json(bundle))
 }
 
@@ -168,7 +223,29 @@ async fn get_bundle(
     auth: AuthenticatedTenant,
     Path(export_id): Path<String>,
 ) -> Result<Json<crate_case::FleetEvidenceBundle>, ApiError> {
+    if auth.role == "viewer" {
+        case_evidence::record_bundle_metadata_access_denied_audit(
+            &state.db,
+            auth.tenant_id,
+            &auth.actor_id(),
+            auth.actor_type(),
+            &auth.role,
+            &export_id,
+            "non_viewer_required",
+        )
+        .await?;
+        return Err(ApiError::Forbidden);
+    }
     let bundle = case_evidence::get_bundle(&state.db, auth.tenant_id, &export_id).await?;
+    case_evidence::record_bundle_metadata_access_audit(
+        &state.db,
+        auth.tenant_id,
+        &auth.actor_id(),
+        auth.actor_type(),
+        &auth.role,
+        &export_id,
+    )
+    .await?;
     Ok(Json(bundle))
 }
 
@@ -177,10 +254,32 @@ async fn download_bundle(
     auth: AuthenticatedTenant,
     Path(export_id): Path<String>,
 ) -> Result<axum::response::Response, ApiError> {
+    if auth.role == "viewer" {
+        case_evidence::record_bundle_download_denied_audit(
+            &state.db,
+            auth.tenant_id,
+            &auth.actor_id(),
+            auth.actor_type(),
+            &auth.role,
+            &export_id,
+            "non_viewer_required",
+        )
+        .await?;
+        return Err(ApiError::Forbidden);
+    }
     let path = case_evidence::bundle_download_path(&state.db, auth.tenant_id, &export_id).await?;
     let file = tokio::fs::File::open(&path)
         .await
         .map_err(|err| ApiError::Internal(err.to_string()))?;
+    case_evidence::record_bundle_download_audit(
+        &state.db,
+        auth.tenant_id,
+        &auth.actor_id(),
+        auth.actor_type(),
+        &auth.role,
+        &export_id,
+    )
+    .await?;
     let stream = stream::try_unfold(file, |mut file| async move {
         let mut buffer = vec![0_u8; 64 * 1024];
         let read = file.read(&mut buffer).await?;

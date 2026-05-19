@@ -443,3 +443,106 @@ fn response_action_case_link_migration_adds_case_fk() {
         "015 migration must not rely on composite ON DELETE SET NULL"
     );
 }
+
+#[test]
+fn endpoint_evidence_archive_migration_adds_remote_archive_store() {
+    let sql = fs::read_to_string(migration_path("019_endpoint_evidence_archives.sql"))
+        .expect("failed to read 019 migration");
+
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS endpoint_evidence_archives"),
+        "019 migration must create endpoint_evidence_archives"
+    );
+    assert!(
+        sql.contains("PRIMARY KEY (tenant_id, archive_id)"),
+        "019 migration must scope archive identity by tenant"
+    );
+    assert!(
+        sql.contains("UNIQUE (tenant_id, raw_ref)")
+            && sql.contains("UNIQUE (tenant_id, archive_hash)"),
+        "019 migration must deduplicate archive uploads by tenant rawRef and hash"
+    );
+    assert!(
+        sql.contains("expires_at TIMESTAMPTZ NOT NULL")
+            && sql.contains("retention_days INTEGER NOT NULL"),
+        "019 migration must persist explicit archive retention metadata"
+    );
+    assert!(
+        sql.contains("archive JSONB NOT NULL") && sql.contains("verification JSONB NOT NULL"),
+        "019 migration must retain the raw archive JSON and verification block"
+    );
+}
+
+#[test]
+fn case_archive_artifact_migration_allows_endpoint_evidence_archive_refs() {
+    let sql = fs::read_to_string(migration_path(
+        "020_case_endpoint_evidence_archive_artifacts.sql",
+    ))
+    .expect("failed to read 020 migration");
+
+    assert!(
+        sql.contains("ALTER TABLE fleet_case_artifacts"),
+        "020 migration must update fleet_case_artifacts"
+    );
+    assert!(
+        sql.contains("DROP CONSTRAINT"),
+        "020 migration must replace the previous artifact_kind check constraint"
+    );
+    assert!(
+        sql.contains("'endpoint_evidence_archive'"),
+        "020 migration must allow endpoint evidence archive case artifact references"
+    );
+}
+
+#[test]
+fn policy_proposals_migration_adds_review_schema() {
+    let sql = fs::read_to_string(migration_path("021_policy_proposals.sql"))
+        .expect("failed to read 021 migration");
+
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS policy_proposals"),
+        "021 migration must create policy_proposals"
+    );
+    assert!(
+        sql.contains("status IN ('pending', 'rejected', 'deployed')"),
+        "021 migration must constrain proposal lifecycle states"
+    );
+    assert!(
+        sql.contains("base_active_policy_version BIGINT")
+            && sql.contains("proposed_policy_version BIGINT"),
+        "021 migration must capture active-policy version review context"
+    );
+    assert!(
+        sql.contains("preview JSONB NOT NULL"),
+        "021 migration must retain generated proposal preview evidence"
+    );
+    assert!(
+        sql.contains("required_approvals INTEGER NOT NULL DEFAULT 2")
+            && sql.contains("approved_by TEXT[]")
+            && sql.contains("policy_proposals_approval_threshold_check"),
+        "021 migration must require and track multi-approver policy proposal review"
+    );
+    assert!(
+        sql.contains("impact JSONB") && sql.contains("policy_proposals_impact_check"),
+        "021 migration must retain hash-bound proposal impact evidence with attachment metadata"
+    );
+    assert!(
+        sql.contains("idx_policy_proposals_tenant_status_created"),
+        "021 migration must index tenant status review queues"
+    );
+}
+
+#[test]
+fn policy_rule_diff_response_action_migration_extends_action_types() {
+    let sql = fs::read_to_string(migration_path("022_policy_rule_diff_response_actions.sql"))
+        .expect("failed to read 022 migration");
+
+    assert!(
+        sql.contains("DROP CONSTRAINT IF EXISTS response_actions_action_type_check"),
+        "022 migration must replace the response action type constraint"
+    );
+    assert!(
+        sql.contains("'policy_rule_diff_validation'"),
+        "022 migration must allow policy rule-diff validation response actions"
+    );
+}

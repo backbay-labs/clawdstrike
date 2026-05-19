@@ -19,6 +19,25 @@ use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
 
 const ACK_DEADLINE_MINUTES: i64 = 10;
+const ACTION_TYPE_MAX_BYTES: usize = 64;
+const TARGET_KIND_MAX_BYTES: usize = 64;
+const ACTION_TARGET_ID_MAX_BYTES: usize = 256;
+const ACTION_REASON_MAX_BYTES: usize = 2048;
+const ACTION_PAYLOAD_MAX_BYTES: usize = 65_536;
+const ACK_STATUS_MAX_BYTES: usize = 64;
+const ACK_TARGET_ID_MAX_BYTES: usize = 256;
+const ACK_TOKEN_MAX_BYTES: usize = 1024;
+const ACK_MESSAGE_MAX_BYTES: usize = 2048;
+const ACK_RESULTING_STATE_MAX_BYTES: usize = 256;
+const ACK_RAW_PAYLOAD_MAX_BYTES: usize = 65_536;
+const ACK_OBSERVED_AT_FUTURE_SKEW_SECONDS: i64 = 300;
+const ACK_OBSERVED_AT_MAX_AGE_SECONDS: i64 = 3600;
+const RESPONSE_TARGET_KIND_ALLOWLIST: &str =
+    "endpoint, runtime, session, principal, grant, swarm, project";
+const RESPONSE_ACTION_TYPE_ALLOWLIST: &str = "transition_posture, request_policy_reload, \
+terminate_session, kill_switch, quarantine_principal, revoke_grant, revoke_principal, \
+policy_rule_diff_validation";
+const ACK_STATUS_ALLOWLIST: &str = "acknowledged, rejected, failed, expired";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -28,6 +47,10 @@ pub fn router() -> Router<AppState> {
         .route("/response-actions/{id}/cancel", post(cancel_action))
         .route("/response-actions/{id}/retry", post(retry_action))
         .route("/response-actions/{id}/acks", post(record_ack))
+}
+
+pub fn public_ack_router() -> Router<AppState> {
+    Router::new().route("/response-actions/{id}/agent-acks", post(record_agent_ack))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +79,7 @@ impl ResponseTargetKind {
     }
 
     fn from_str(value: &str) -> Result<Self, ApiError> {
+        validate_control_discriminator_len("target.kind", value.trim(), TARGET_KIND_MAX_BYTES)?;
         match value {
             "endpoint" => Ok(Self::Endpoint),
             "runtime" => Ok(Self::Runtime),
@@ -64,8 +88,8 @@ impl ResponseTargetKind {
             "grant" => Ok(Self::Grant),
             "swarm" => Ok(Self::Swarm),
             "project" => Ok(Self::Project),
-            other => Err(ApiError::BadRequest(format!(
-                "unsupported target kind '{other}'"
+            _ => Err(ApiError::BadRequest(format!(
+                "unsupported target kind; allowed values: {RESPONSE_TARGET_KIND_ALLOWLIST}"
             ))),
         }
     }
@@ -81,6 +105,7 @@ pub enum ResponseActionType {
     QuarantinePrincipal,
     RevokeGrant,
     RevokePrincipal,
+    PolicyRuleDiffValidation,
 }
 
 impl ResponseActionType {
@@ -93,10 +118,12 @@ impl ResponseActionType {
             Self::QuarantinePrincipal => "quarantine_principal",
             Self::RevokeGrant => "revoke_grant",
             Self::RevokePrincipal => "revoke_principal",
+            Self::PolicyRuleDiffValidation => "policy_rule_diff_validation",
         }
     }
 
     fn from_str(value: &str) -> Result<Self, ApiError> {
+        validate_control_discriminator_len("action_type", value.trim(), ACTION_TYPE_MAX_BYTES)?;
         match value {
             "transition_posture" => Ok(Self::TransitionPosture),
             "request_policy_reload" => Ok(Self::RequestPolicyReload),
@@ -105,8 +132,9 @@ impl ResponseActionType {
             "quarantine_principal" => Ok(Self::QuarantinePrincipal),
             "revoke_grant" => Ok(Self::RevokeGrant),
             "revoke_principal" => Ok(Self::RevokePrincipal),
-            other => Err(ApiError::BadRequest(format!(
-                "unsupported action type '{other}'"
+            "policy_rule_diff_validation" => Ok(Self::PolicyRuleDiffValidation),
+            _ => Err(ApiError::BadRequest(format!(
+                "unsupported action type; allowed values: {RESPONSE_ACTION_TYPE_ALLOWLIST}"
             ))),
         }
     }
@@ -276,6 +304,7 @@ pub struct ResponseActionDetail {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateResponseActionRequest {
     pub action_type: String,
     pub target: ResponseTargetInput,
@@ -289,6 +318,7 @@ pub struct CreateResponseActionRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResponseTargetInput {
     pub kind: String,
     pub id: String,
@@ -296,6 +326,7 @@ pub struct ResponseTargetInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct RecordResponseAckRequest {
     pub target_kind: String,
     pub target_id: String,
@@ -305,6 +336,17 @@ pub struct RecordResponseAckRequest {
     pub message: Option<String>,
     pub resulting_state: Option<String>,
     pub raw_payload: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordAgentAckResponse {
+    pub accepted: bool,
+    pub action_id: Uuid,
+    pub target_kind: String,
+    pub target_id: String,
+    pub status: String,
+    pub observed_at: DateTime<Utc>,
 }
 
 struct ValidatedCreateAction {
@@ -371,6 +413,29 @@ async fn create_action(
     tx.commit().await.map_err(ApiError::Database)?;
 
     Ok(Json(action))
+}
+
+pub async fn create_and_publish_internal_action(
+    state: &AppState,
+    auth: &AuthenticatedTenant,
+    input: CreateResponseActionRequest,
+) -> Result<ResponseActionDetail, ApiError> {
+    ensure_write_access(auth)?;
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let draft = prepare_create_action(&mut tx, auth, input).await?;
+    let action = insert_action(&mut tx, auth, draft).await?;
+    link_action_to_source_detection(
+        &mut tx,
+        auth.tenant_id,
+        action.id,
+        action.source_detection_id,
+    )
+    .await?;
+    tx.commit().await.map_err(ApiError::Database)?;
+
+    publish_action(state, &auth.slug, auth.tenant_id, action.id, false)
+        .await
+        .map(|Json(detail)| detail)
 }
 
 async fn list_actions(
@@ -496,6 +561,37 @@ async fn record_ack(
     get_action(State(state), auth, Path(id)).await
 }
 
+async fn record_agent_ack(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<RecordResponseAckRequest>,
+) -> Result<Json<RecordAgentAckResponse>, ApiError> {
+    let ack = parse_ack_submission(input)?;
+
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let tenant_id = load_ack_action_tenant_id(&mut tx, id).await?;
+    let context = match load_ack_context(&mut tx, tenant_id, id, &ack).await? {
+        Some(context) => context,
+        None => {
+            tx.commit().await.map_err(ApiError::Database)?;
+            return Err(ApiError::Conflict(
+                "acknowledgement window has expired".to_string(),
+            ));
+        }
+    };
+    persist_ack_submission(&mut tx, &context, &ack).await?;
+    tx.commit().await.map_err(ApiError::Database)?;
+
+    Ok(Json(RecordAgentAckResponse {
+        accepted: true,
+        action_id: id,
+        target_kind: ack.target_kind.as_str().to_string(),
+        target_id: ack.target_id,
+        status: ack.ack_status.to_string(),
+        observed_at: ack.observed_at,
+    }))
+}
+
 async fn publish_action(
     state: &AppState,
     tenant_slug: &str,
@@ -568,6 +664,19 @@ async fn prepare_create_action(
     })
 }
 
+async fn load_ack_action_tenant_id(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    action_id: Uuid,
+) -> Result<Uuid, ApiError> {
+    let row = sqlx::query::query("SELECT tenant_id FROM response_actions WHERE id = $1")
+        .bind(action_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::NotFound)?;
+    row.try_get("tenant_id").map_err(ApiError::Database)
+}
+
 async fn insert_action(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
     auth: &AuthenticatedTenant,
@@ -621,13 +730,28 @@ fn parse_ack_submission(input: RecordResponseAckRequest) -> Result<AckSubmission
     if target_id.is_empty() {
         return Err(ApiError::BadRequest("target_id is required".to_string()));
     }
+    validate_ack_field_len("target_id", target_id, ACK_TARGET_ID_MAX_BYTES)?;
 
     let ack_token = input.ack_token.trim();
     if ack_token.is_empty() {
         return Err(ApiError::BadRequest("ack_token is required".to_string()));
     }
+    validate_ack_field_len("ack_token", ack_token, ACK_TOKEN_MAX_BYTES)?;
 
-    let observed_at = input.observed_at.unwrap_or_else(Utc::now);
+    if let Some(message) = input.message.as_deref() {
+        validate_ack_field_len("message", message, ACK_MESSAGE_MAX_BYTES)?;
+    }
+    if let Some(resulting_state) = input.resulting_state.as_deref() {
+        validate_ack_field_len(
+            "resulting_state",
+            resulting_state,
+            ACK_RESULTING_STATE_MAX_BYTES,
+        )?;
+    }
+
+    let now = Utc::now();
+    let observed_at = input.observed_at.unwrap_or(now);
+    validate_ack_observed_at(observed_at, now)?;
     let raw_payload = input.raw_payload.unwrap_or_else(|| {
         json!({
             "status": ack_status,
@@ -635,6 +759,7 @@ fn parse_ack_submission(input: RecordResponseAckRequest) -> Result<AckSubmission
             "resulting_state": input.resulting_state.clone(),
         })
     });
+    validate_ack_raw_payload(&raw_payload)?;
 
     Ok(AckSubmission {
         target_kind,
@@ -646,6 +771,44 @@ fn parse_ack_submission(input: RecordResponseAckRequest) -> Result<AckSubmission
         resulting_state: input.resulting_state,
         raw_payload,
     })
+}
+
+fn validate_ack_field_len(field: &str, value: &str, max_len: usize) -> Result<(), ApiError> {
+    if value.len() > max_len {
+        return Err(ApiError::BadRequest(format!(
+            "acknowledgement {field} must be at most {max_len} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_ack_raw_payload(value: &Value) -> Result<(), ApiError> {
+    let serialized = serde_json::to_vec(value).map_err(|err| {
+        ApiError::BadRequest(format!("acknowledgement raw_payload is invalid: {err}"))
+    })?;
+    if serialized.len() > ACK_RAW_PAYLOAD_MAX_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "acknowledgement raw_payload must be at most {ACK_RAW_PAYLOAD_MAX_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_ack_observed_at(
+    observed_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<(), ApiError> {
+    if observed_at > now + Duration::seconds(ACK_OBSERVED_AT_FUTURE_SKEW_SECONDS) {
+        return Err(ApiError::BadRequest(format!(
+            "acknowledgement observed_at must not be more than {ACK_OBSERVED_AT_FUTURE_SKEW_SECONDS} seconds in the future"
+        )));
+    }
+    if observed_at < now - Duration::seconds(ACK_OBSERVED_AT_MAX_AGE_SECONDS) {
+        return Err(ApiError::BadRequest(format!(
+            "acknowledgement observed_at must be within the last {ACK_OBSERVED_AT_MAX_AGE_SECONDS} seconds"
+        )));
+    }
+    Ok(())
 }
 
 async fn load_ack_context(
@@ -1157,12 +1320,22 @@ fn validate_create_request(
     target_kind: &ResponseTargetKind,
     require_acknowledgement: bool,
 ) -> Result<(), ApiError> {
-    if input.reason.trim().is_empty() {
+    let reason = input.reason.trim();
+    if reason.is_empty() {
         return Err(ApiError::BadRequest("reason is required".to_string()));
     }
-    if input.target.id.trim().is_empty() {
+    validate_response_action_field_len("reason", reason, ACTION_REASON_MAX_BYTES)?;
+
+    let target_id = input.target.id.trim();
+    if target_id.is_empty() {
         return Err(ApiError::BadRequest("target.id is required".to_string()));
     }
+    validate_response_action_field_len("target.id", target_id, ACTION_TARGET_ID_MAX_BYTES)?;
+
+    if let Some(payload) = input.payload.as_ref() {
+        validate_response_action_payload(payload)?;
+    }
+
     if let Some(expires_at) = input.expires_at {
         if expires_at <= Utc::now() {
             return Err(ApiError::BadRequest(
@@ -1177,7 +1350,9 @@ fn validate_create_request(
             "transition_posture actions require payload.toState or payload.posture".to_string(),
         ));
     }
-    if require_acknowledgement {
+    if require_acknowledgement
+        && !matches!(action_type, ResponseActionType::PolicyRuleDiffValidation)
+    {
         return Err(ApiError::BadRequest(
             "response acknowledgements are not supported for the current executor set".to_string(),
         ));
@@ -1187,6 +1362,7 @@ fn validate_create_request(
         (ResponseActionType::TransitionPosture, ResponseTargetKind::Endpoint)
         | (ResponseActionType::RequestPolicyReload, ResponseTargetKind::Endpoint)
         | (ResponseActionType::KillSwitch, ResponseTargetKind::Endpoint)
+        | (ResponseActionType::PolicyRuleDiffValidation, ResponseTargetKind::Endpoint)
         | (ResponseActionType::QuarantinePrincipal, ResponseTargetKind::Principal)
         | (ResponseActionType::RevokeGrant, ResponseTargetKind::Grant)
         | (ResponseActionType::RevokePrincipal, ResponseTargetKind::Principal) => Ok(()),
@@ -1195,6 +1371,44 @@ fn validate_create_request(
             input.action_type, input.target.kind
         ))),
     }
+}
+
+fn validate_response_action_field_len(
+    field: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), ApiError> {
+    if value.len() > max_len {
+        return Err(ApiError::BadRequest(format!(
+            "response-action {field} must be at most {max_len} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_response_action_payload(value: &Value) -> Result<(), ApiError> {
+    let serialized = serde_json::to_vec(value).map_err(|err| {
+        ApiError::BadRequest(format!("response-action payload is invalid: {err}"))
+    })?;
+    if serialized.len() > ACTION_PAYLOAD_MAX_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "response-action payload must be at most {ACTION_PAYLOAD_MAX_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_control_discriminator_len(
+    field: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), ApiError> {
+    if value.len() > max_len {
+        return Err(ApiError::BadRequest(format!(
+            "control {field} must be at most {max_len} bytes"
+        )));
+    }
+    Ok(())
 }
 
 async fn resolve_action_target_id(
@@ -1332,13 +1546,15 @@ async fn validate_action_links(
 }
 
 fn normalize_ack_status(status: &str) -> Result<&'static str, ApiError> {
-    match status.trim() {
+    let status = status.trim();
+    validate_control_discriminator_len("status", status, ACK_STATUS_MAX_BYTES)?;
+    match status {
         "acknowledged" => Ok("acknowledged"),
         "rejected" => Ok("rejected"),
         "failed" => Ok("failed"),
         "expired" => Ok("expired"),
-        other => Err(ApiError::BadRequest(format!(
-            "unsupported ack status '{other}'"
+        _ => Err(ApiError::BadRequest(format!(
+            "unsupported ack status; allowed values: {ACK_STATUS_ALLOWLIST}"
         ))),
     }
 }
@@ -2005,6 +2221,286 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn create_validation_rejects_oversized_request_fields() {
+        let oversized_target = match validate_create_request(
+            &CreateResponseActionRequest {
+                action_type: "request_policy_reload".to_string(),
+                target: ResponseTargetInput {
+                    kind: "endpoint".to_string(),
+                    id: "e".repeat(257),
+                },
+                reason: "reload".to_string(),
+                expires_at: None,
+                case_id: None,
+                source_detection_id: None,
+                source_approval_id: None,
+                require_acknowledgement: Some(false),
+                payload: None,
+            },
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            false,
+        ) {
+            Ok(_) => panic!("oversized response-action target id was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_target, ApiError::BadRequest(_)));
+
+        let oversized_reason = match validate_create_request(
+            &CreateResponseActionRequest {
+                action_type: "request_policy_reload".to_string(),
+                target: ResponseTargetInput {
+                    kind: "endpoint".to_string(),
+                    id: "agent-1".to_string(),
+                },
+                reason: "r".repeat(2049),
+                expires_at: None,
+                case_id: None,
+                source_detection_id: None,
+                source_approval_id: None,
+                require_acknowledgement: Some(false),
+                payload: None,
+            },
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            false,
+        ) {
+            Ok(_) => panic!("oversized response-action reason was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_reason, ApiError::BadRequest(_)));
+
+        let oversized_payload = match validate_create_request(
+            &CreateResponseActionRequest {
+                action_type: "request_policy_reload".to_string(),
+                target: ResponseTargetInput {
+                    kind: "endpoint".to_string(),
+                    id: "agent-1".to_string(),
+                },
+                reason: "reload".to_string(),
+                expires_at: None,
+                case_id: None,
+                source_detection_id: None,
+                source_approval_id: None,
+                require_acknowledgement: Some(false),
+                payload: Some(json!({
+                    "blob": "p".repeat(65_536)
+                })),
+            },
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            false,
+        ) {
+            Ok(_) => panic!("oversized response-action payload was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_payload, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn control_discriminator_errors_do_not_echo_oversized_values() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let oversized_action_type = "a".repeat(2048);
+        let action_message =
+            bad_request_message(ResponseActionType::from_str(&oversized_action_type).unwrap_err());
+        assert!(!action_message.contains(&oversized_action_type));
+        assert!(action_message.len() < 256);
+
+        let oversized_target_kind = "t".repeat(2048);
+        let target_message =
+            bad_request_message(ResponseTargetKind::from_str(&oversized_target_kind).unwrap_err());
+        assert!(!target_message.contains(&oversized_target_kind));
+        assert!(target_message.len() < 256);
+
+        let oversized_ack_status = "s".repeat(2048);
+        let status_message =
+            bad_request_message(normalize_ack_status(&oversized_ack_status).unwrap_err());
+        assert!(!status_message.contains(&oversized_ack_status));
+        assert!(status_message.len() < 256);
+    }
+
+    #[test]
+    fn control_discriminators_reject_oversized_values_with_length_errors() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let action_message =
+            bad_request_message(ResponseActionType::from_str(&"a".repeat(65)).unwrap_err());
+        assert!(action_message.contains("action_type"));
+        assert!(action_message.contains("at most"));
+
+        let target_message =
+            bad_request_message(ResponseTargetKind::from_str(&"t".repeat(65)).unwrap_err());
+        assert!(target_message.contains("target.kind"));
+        assert!(target_message.contains("at most"));
+
+        let status_message =
+            bad_request_message(normalize_ack_status(&"s".repeat(65)).unwrap_err());
+        assert!(status_message.contains("status"));
+        assert!(status_message.contains("at most"));
+    }
+
+    #[test]
+    fn response_action_requests_reject_unknown_fields() {
+        let create_err = serde_json::from_value::<CreateResponseActionRequest>(json!({
+            "actionType": "request_policy_reload",
+            "target": {
+                "kind": "endpoint",
+                "id": "agent-1"
+            },
+            "reason": "reload",
+            "dryRun": true
+        }))
+        .expect_err("unknown create request field should be rejected");
+        assert!(create_err.to_string().contains("unknown field"));
+
+        let target_err = serde_json::from_value::<CreateResponseActionRequest>(json!({
+            "actionType": "request_policy_reload",
+            "target": {
+                "kind": "endpoint",
+                "id": "agent-1",
+                "displayName": "Endpoint One"
+            },
+            "reason": "reload"
+        }))
+        .expect_err("unknown target field should be rejected");
+        assert!(target_err.to_string().contains("unknown field"));
+
+        let ack_err = serde_json::from_value::<RecordResponseAckRequest>(json!({
+            "targetKind": "endpoint",
+            "targetId": "agent-1",
+            "ackToken": "ack-token",
+            "status": "acknowledged",
+            "receiptHash": "abc123"
+        }))
+        .expect_err("unknown acknowledgement field should be rejected");
+        assert!(ack_err.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn parse_ack_submission_rejects_untrusted_observed_at() {
+        let future_observed_at = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: Some(Utc::now() + Duration::minutes(6)),
+            message: None,
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("future acknowledgement observed_at was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(future_observed_at, ApiError::BadRequest(_)));
+
+        let stale_observed_at = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: Some(Utc::now() - Duration::hours(2)),
+            message: None,
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("stale acknowledgement observed_at was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(stale_observed_at, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn parse_ack_submission_rejects_oversized_ack_fields() {
+        let oversized_target = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "e".repeat(257),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("oversized acknowledgement target id was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_target, ApiError::BadRequest(_)));
+
+        let oversized_token = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "t".repeat(1025),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("oversized acknowledgement token was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_token, ApiError::BadRequest(_)));
+
+        let oversized_message = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: Some("m".repeat(2049)),
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("oversized acknowledgement message was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_message, ApiError::BadRequest(_)));
+
+        let oversized_resulting_state = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: Some("s".repeat(257)),
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("oversized acknowledgement resulting state was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_resulting_state, ApiError::BadRequest(_)));
+
+        let oversized_raw_payload = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: Some(json!({
+                "blob": "r".repeat(65_536)
+            })),
+        }) {
+            Ok(_) => panic!("oversized acknowledgement raw payload was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_raw_payload, ApiError::BadRequest(_)));
     }
 
     #[test]
