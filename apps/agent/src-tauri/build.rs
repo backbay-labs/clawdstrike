@@ -155,7 +155,9 @@ mod tests {
     #[test]
     fn detects_release_placeholders_with_internal_underscores() {
         assert!(contains_release_placeholder("__TEAM_ID__"));
-        assert!(contains_release_placeholder("<string>__EXTENSION_BUNDLE_ID__</string>"));
+        assert!(contains_release_placeholder(
+            "<string>__EXTENSION_BUNDLE_ID__</string>"
+        ));
         assert!(contains_release_placeholder("__PROFILE_123__"));
     }
 

@@ -13,17 +13,25 @@ use tokio::process::Command;
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 
-use super::host::MacosHostService;
+use super::host::{
+    MacosHostService, MacosNetworkExtensionReloadError, MacosNetworkExtensionReloadResult,
+};
 use super::status::{
     CombinedSystemExtensionStatus, EvidenceArtifact, MdmProfileState, ProviderAttestationState,
-    ProviderRuntimeState, ProviderStatus, SystemExtensionActivationState, SystemExtensionApproval,
-    SystemExtensionInstallState,
+    ProviderReloadObservation, ProviderRuntimeState, ProviderStatus,
+    SystemExtensionActivationState, SystemExtensionApproval, SystemExtensionInstallState,
 };
 
 const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(60);
 const STATUS_TOOL_TIMEOUT: Duration = Duration::from_secs(10);
 const ENDPOINT_SECURITY_TOOL_ENV: &str = "CLAWDSTRIKE_ENDPOINT_SECURITY_STATUS_TOOL";
+const ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_ENV: &str =
+    "CLAWDSTRIKE_ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_PATH";
 const NETWORK_EXTENSION_TOOL_ENV: &str = "CLAWDSTRIKE_NETWORK_EXTENSION_STATUS_TOOL";
+const NETWORK_EXTENSION_EGRESS_POLICY_ENV: &str =
+    "CLAWDSTRIKE_NETWORK_EXTENSION_EGRESS_POLICY_PATH";
+const NETWORK_EXTENSION_RUNTIME_SNAPSHOT_ENV: &str =
+    "CLAWDSTRIKE_NETWORK_EXTENSION_RUNTIME_SNAPSHOT_PATH";
 const ENDPOINT_SECURITY_TOOL_NAME: &str = "endpoint-security-status-tool";
 const NETWORK_EXTENSION_TOOL_NAME: &str = "network-extension-status-tool";
 
@@ -42,7 +50,14 @@ enum ToolInvocation {
 impl ToolInvocation {
     fn command(&self) -> Command {
         match self {
-            Self::Direct { program, args } => {
+            Self::Direct { args, .. } => self.command_with_args(args),
+            Self::SwiftRun { .. } => self.command_with_args(&[OsString::from("live")]),
+        }
+    }
+
+    fn command_with_args(&self, args: &[OsString]) -> Command {
+        match self {
+            Self::Direct { program, .. } => {
                 let mut command = Command::new(program);
                 command.args(args);
                 command
@@ -57,7 +72,7 @@ impl ToolInvocation {
                     .arg("--package-path")
                     .arg(package_path)
                     .arg(executable)
-                    .arg("live");
+                    .args(args);
                 command
             }
         }
@@ -65,11 +80,35 @@ impl ToolInvocation {
 
     fn display_name(&self) -> String {
         match self {
-            Self::Direct { program, .. } => program.display().to_string(),
+            Self::Direct { args, .. } => self.display_name_with_args(args),
+            Self::SwiftRun { .. } => self.display_name_with_args(&[OsString::from("live")]),
+        }
+    }
+
+    fn display_name_with_args(&self, args: &[OsString]) -> String {
+        let rendered_args = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(" ");
+        match self {
+            Self::Direct { program, .. } => {
+                if rendered_args.is_empty() {
+                    program.display().to_string()
+                } else {
+                    format!("{} {rendered_args}", program.display())
+                }
+            }
             Self::SwiftRun {
                 package_path,
                 executable,
-            } => format!("swift run --package-path {} {}", package_path.display(), executable),
+            } => format!(
+                "swift run --package-path {} {}{}{}",
+                package_path.display(),
+                executable,
+                if rendered_args.is_empty() { "" } else { " " },
+                rendered_args
+            ),
         }
     }
 }
@@ -110,7 +149,34 @@ struct NetworkExtensionStatusSample {
     #[serde(default)]
     policy_epoch: Option<u64>,
     #[serde(default)]
+    policy_synced: Option<bool>,
+    #[serde(default)]
+    enforcement_ready: Option<bool>,
+    #[serde(default)]
     last_error: Option<String>,
+    #[serde(default)]
+    last_reload_observation: Option<ProviderReloadObservation>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NetworkExtensionReloadToolResponse {
+    request_id: String,
+    command: String,
+    policy_snapshot_path: String,
+    generation: u64,
+    saved: bool,
+}
+
+struct ProviderStatusEnrichment {
+    provider_state: Option<ProviderAttestationState>,
+    counters: BTreeMap<String, u64>,
+    evidence_paths: Vec<EvidenceArtifact>,
+    policy_epoch: Option<u64>,
+    policy_synced: Option<bool>,
+    enforcement_ready: Option<bool>,
+    last_error: Option<String>,
+    last_reload_observation: Option<ProviderReloadObservation>,
 }
 
 pub fn start_status_collector<R: Runtime + 'static>(
@@ -118,10 +184,18 @@ pub fn start_status_collector<R: Runtime + 'static>(
     macos_host: Arc<MacosHostService>,
     mut shutdown: broadcast::Receiver<()>,
 ) {
-    let endpoint_tool =
-        resolve_status_tool(&app, ENDPOINT_SECURITY_TOOL_ENV, "macos/system-extension/endpoint-security", ENDPOINT_SECURITY_TOOL_NAME);
-    let network_tool =
-        resolve_status_tool(&app, NETWORK_EXTENSION_TOOL_ENV, "macos/system-extension/network-extension", NETWORK_EXTENSION_TOOL_NAME);
+    let endpoint_tool = resolve_status_tool(
+        &app,
+        ENDPOINT_SECURITY_TOOL_ENV,
+        "macos/system-extension/endpoint-security",
+        ENDPOINT_SECURITY_TOOL_NAME,
+    );
+    let network_tool = resolve_status_tool(
+        &app,
+        NETWORK_EXTENSION_TOOL_ENV,
+        "macos/system-extension/network-extension",
+        NETWORK_EXTENSION_TOOL_NAME,
+    );
 
     if endpoint_tool.is_none() {
         tracing::warn!(
@@ -134,15 +208,45 @@ pub fn start_status_collector<R: Runtime + 'static>(
         );
     }
 
+    let (refresh_tx, mut refresh_rx) =
+        tokio::sync::mpsc::channel::<super::host::MacosHostRefreshRequest>(4);
+    let (network_reload_tx, mut network_reload_rx) =
+        tokio::sync::mpsc::channel::<super::host::MacosNetworkExtensionReloadRequest>(4);
     tokio::spawn(async move {
         macos_host.reset_unknown_state().await;
+        macos_host.install_refresh_channel(refresh_tx).await;
+        macos_host
+            .install_network_extension_reload_channel(network_reload_tx)
+            .await;
 
         loop {
-            let combined = collect_combined_status(endpoint_tool.as_ref(), network_tool.as_ref()).await;
+            let combined =
+                collect_combined_status(endpoint_tool.as_ref(), network_tool.as_ref()).await;
             macos_host.replace_status(combined).await;
 
             tokio::select! {
                 _ = shutdown.recv() => break,
+                request = refresh_rx.recv() => {
+                    let Some(reply_tx) = request else {
+                        break;
+                    };
+                    let combined =
+                        collect_combined_status(endpoint_tool.as_ref(), network_tool.as_ref()).await;
+                    macos_host.replace_status(combined.clone()).await;
+                    let _ = reply_tx.send(combined);
+                }
+                request = network_reload_rx.recv() => {
+                    let Some(request) = request else {
+                        break;
+                    };
+                    let result = request_network_extension_reload(
+                        network_tool.as_ref(),
+                        &request.policy_snapshot_path,
+                        request.generation,
+                    )
+                    .await;
+                    let _ = request.reply_tx.send(result);
+                }
                 _ = tokio::time::sleep(STATUS_POLL_INTERVAL) => {}
             }
         }
@@ -199,21 +303,97 @@ where
     }
 }
 
+async fn request_network_extension_reload(
+    tool: Option<&ToolInvocation>,
+    policy_snapshot_path: &Path,
+    generation: u64,
+) -> Result<MacosNetworkExtensionReloadResult, MacosNetworkExtensionReloadError> {
+    let tool = tool.ok_or(MacosNetworkExtensionReloadError::Unavailable)?;
+    let args = network_extension_reload_args(policy_snapshot_path, generation);
+    let stdout = match timeout(STATUS_TOOL_TIMEOUT, execute_tool_with_args(tool, &args)).await {
+        Ok(Ok(stdout)) => stdout,
+        Ok(Err(error)) => {
+            return Err(MacosNetworkExtensionReloadError::HelperFailed(
+                error.to_string(),
+            ));
+        }
+        Err(_) => return Err(MacosNetworkExtensionReloadError::TimedOut),
+    };
+    parse_network_extension_reload_response(&stdout, generation)
+}
+
+fn network_extension_reload_args(policy_snapshot_path: &Path, generation: u64) -> [OsString; 3] {
+    [
+        OsString::from("request-reload"),
+        policy_snapshot_path.as_os_str().to_os_string(),
+        OsString::from(generation.to_string()),
+    ]
+}
+
+fn parse_network_extension_reload_response(
+    stdout: &[u8],
+    expected_generation: u64,
+) -> Result<MacosNetworkExtensionReloadResult, MacosNetworkExtensionReloadError> {
+    let response = serde_json::from_slice::<NetworkExtensionReloadToolResponse>(stdout)
+        .map_err(|error| MacosNetworkExtensionReloadError::InvalidResponse(error.to_string()))?;
+    if response.command != "reload_policy" {
+        return Err(MacosNetworkExtensionReloadError::InvalidResponse(format!(
+            "unexpected command {}",
+            response.command
+        )));
+    }
+    if response.generation != expected_generation {
+        return Err(MacosNetworkExtensionReloadError::InvalidResponse(format!(
+            "generation mismatch: requested {expected_generation}, helper returned {}",
+            response.generation
+        )));
+    }
+
+    Ok(MacosNetworkExtensionReloadResult {
+        requested: true,
+        saved: response.saved,
+        request_id: response.request_id,
+        policy_snapshot_path: response.policy_snapshot_path,
+        generation: response.generation,
+    })
+}
+
 async fn execute_tool(tool: &ToolInvocation) -> Result<Vec<u8>> {
-    let mut command = tool.command();
+    let command = tool.command();
+    execute_tool_command(command, tool.display_name()).await
+}
+
+async fn execute_tool_with_args(tool: &ToolInvocation, args: &[OsString]) -> Result<Vec<u8>> {
+    let command = tool.command_with_args(args);
+    execute_tool_command(command, tool.display_name_with_args(args)).await
+}
+
+async fn execute_tool_command(mut command: Command, display_name: String) -> Result<Vec<u8>> {
     command.kill_on_drop(true);
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
+    command.env(
+        ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_ENV,
+        default_endpoint_security_runtime_snapshot_path(),
+    );
+    command.env(
+        NETWORK_EXTENSION_EGRESS_POLICY_ENV,
+        default_network_extension_egress_policy_path(),
+    );
+    command.env(
+        NETWORK_EXTENSION_RUNTIME_SNAPSHOT_ENV,
+        default_network_extension_runtime_snapshot_path(),
+    );
 
     let output = command
         .output()
         .await
-        .with_context(|| format!("spawn {}", tool.display_name()))?;
+        .with_context(|| format!("spawn {display_name}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(anyhow!(
             "{} exited with status {}{}",
-            tool.display_name(),
+            display_name,
             output.status,
             if stderr.is_empty() {
                 String::new()
@@ -238,9 +418,10 @@ fn merge_samples(
         _ => SystemExtensionInstallState::Unknown,
     };
     let approval = match (endpoint_sample.as_ref(), network_sample.as_ref()) {
-        (Some(endpoint_sample), Some(network_sample)) => {
-            merge_approval_state(endpoint_sample.host_status.approval, network_sample.approval)
-        }
+        (Some(endpoint_sample), Some(network_sample)) => merge_approval_state(
+            endpoint_sample.host_status.approval,
+            network_sample.approval,
+        ),
         _ => SystemExtensionApproval::Unknown,
     };
 
@@ -272,11 +453,16 @@ fn endpoint_provider_status(sample: EndpointSecurityStatusSample) -> ProviderSta
     let mut status = sample.host_status.endpoint_security;
     enrich_provider_status(
         &mut status,
-        sample.provider_state,
-        sample.counters,
-        sample.evidence_paths,
-        sample.policy_epoch,
-        sample.last_error,
+        ProviderStatusEnrichment {
+            provider_state: sample.provider_state,
+            counters: sample.counters,
+            evidence_paths: sample.evidence_paths,
+            policy_epoch: sample.policy_epoch,
+            policy_synced: None,
+            enforcement_ready: None,
+            last_error: sample.last_error,
+            last_reload_observation: None,
+        },
     );
     status
 }
@@ -285,33 +471,52 @@ fn network_provider_status(sample: NetworkExtensionStatusSample) -> ProviderStat
     let mut status = sample.host_status;
     enrich_provider_status(
         &mut status,
-        sample.provider_state,
-        sample.counters,
-        sample.evidence_paths,
-        sample.policy_epoch,
-        sample.last_error,
+        ProviderStatusEnrichment {
+            provider_state: sample.provider_state,
+            counters: sample.counters,
+            evidence_paths: sample.evidence_paths,
+            policy_epoch: sample.policy_epoch,
+            policy_synced: sample.policy_synced,
+            enforcement_ready: sample.enforcement_ready,
+            last_error: sample.last_error,
+            last_reload_observation: sample.last_reload_observation,
+        },
     );
     status
 }
 
-fn enrich_provider_status(
-    status: &mut ProviderStatus,
-    provider_state: Option<ProviderAttestationState>,
-    counters: BTreeMap<String, u64>,
-    evidence_paths: Vec<EvidenceArtifact>,
-    policy_epoch: Option<u64>,
-    last_error: Option<String>,
-) {
-    if let Some(provider_state) = provider_state {
+fn enrich_provider_status(status: &mut ProviderStatus, enrichment: ProviderStatusEnrichment) {
+    if let Some(provider_state) = enrichment.provider_state {
         if status.last_healthy_timestamp.is_none() {
             status.last_healthy_timestamp = provider_state.last_healthy_timestamp.clone();
         }
         status.provider_state = Some(provider_state);
     }
-    status.counters = counters;
-    status.evidence_paths = evidence_paths;
-    status.policy_epoch = policy_epoch;
-    status.last_error = last_error;
+    status.counters = enrichment.counters;
+    status.evidence_paths = enrichment.evidence_paths;
+    status.policy_epoch = enrichment.policy_epoch;
+    status.policy_synced = enrichment.policy_synced;
+    status.enforcement_ready = enrichment.enforcement_ready;
+    status.last_error = enrichment.last_error;
+    status.last_reload_observation = enrichment.last_reload_observation;
+}
+
+fn default_endpoint_security_runtime_snapshot_path() -> PathBuf {
+    crate::settings::get_config_dir()
+        .join("edr")
+        .join("endpoint-security-runtime.json")
+}
+
+fn default_network_extension_egress_policy_path() -> PathBuf {
+    crate::settings::get_config_dir()
+        .join("edr")
+        .join("network-extension-egress-policy.json")
+}
+
+fn default_network_extension_runtime_snapshot_path() -> PathBuf {
+    crate::settings::get_config_dir()
+        .join("edr")
+        .join("network-extension-egress-policy.json.provider-runtime.json")
 }
 
 fn derive_activation_state(
@@ -354,7 +559,9 @@ fn merge_install_state(
 ) -> SystemExtensionInstallState {
     match (current, candidate) {
         (SystemExtensionInstallState::NotInstalled, _)
-        | (_, SystemExtensionInstallState::NotInstalled) => SystemExtensionInstallState::NotInstalled,
+        | (_, SystemExtensionInstallState::NotInstalled) => {
+            SystemExtensionInstallState::NotInstalled
+        }
         (SystemExtensionInstallState::Installed, SystemExtensionInstallState::Installed) => {
             SystemExtensionInstallState::Installed
         }
@@ -439,7 +646,10 @@ fn resolve_resource_package_path<R: Runtime>(
         .filter(|path| path.exists())
 }
 
-fn resolve_direct_built_tool(package_path: &Path, executable: &'static str) -> Option<ToolInvocation> {
+fn resolve_direct_built_tool(
+    package_path: &Path,
+    executable: &'static str,
+) -> Option<ToolInvocation> {
     for profile in ["release", "debug"] {
         let candidate = package_path.join(".build").join(profile).join(executable);
         if candidate.is_file() {
@@ -470,7 +680,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
             .as_millis();
-        std::env::temp_dir().join(format!("clawdstrike-{name}-{millis}-{}", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "clawdstrike-{name}-{millis}-{}",
+            std::process::id()
+        ))
     }
 
     fn write_script(name: &str, body: &str) -> PathBuf {
@@ -512,16 +725,16 @@ mod tests {
             counters: BTreeMap::new(),
             evidence_paths: Vec::new(),
             policy_epoch: None,
+            policy_synced: None,
+            enforcement_ready: None,
             last_error: None,
+            last_reload_observation: None,
         }
     }
 
     #[tokio::test]
     async fn invalid_helper_json_resets_provider_to_unknown() {
-        let script = write_script(
-            "invalid-json",
-            "#!/bin/sh\nprintf 'not-json'\n",
-        );
+        let script = write_script("invalid-json", "#!/bin/sh\nprintf 'not-json'\n");
         let result = run_json_tool::<EndpointSecurityStatusSample>(&ToolInvocation::Direct {
             program: script.clone(),
             args: vec![OsString::from("live")],
@@ -534,27 +747,112 @@ mod tests {
 
     #[tokio::test]
     async fn timing_out_helper_resets_provider_to_unknown() {
-        let script = write_script(
-            "slow-helper",
-            "#!/bin/sh\nsleep 30\n",
-        );
-        let timeout_result =
-            timeout(Duration::from_millis(100), execute_tool(&ToolInvocation::Direct {
+        let script = write_script("slow-helper", "#!/bin/sh\nsleep 30\n");
+        let timeout_result = timeout(
+            Duration::from_millis(100),
+            execute_tool(&ToolInvocation::Direct {
                 program: script.clone(),
                 args: vec![OsString::from("live")],
-            }))
-            .await;
+            }),
+        )
+        .await;
         let _ = fs::remove_file(script);
 
-        assert!(timeout_result.is_err(), "helper should time out in the test harness");
+        assert!(
+            timeout_result.is_err(),
+            "helper should time out in the test harness"
+        );
+    }
+
+    #[test]
+    fn network_extension_reload_args_forward_policy_path_and_generation() {
+        let args =
+            network_extension_reload_args(Path::new("/tmp/clawdstrike-network-policy.json"), 5150);
+
+        assert_eq!(args[0], OsString::from("request-reload"));
+        assert_eq!(
+            args[1],
+            OsString::from("/tmp/clawdstrike-network-policy.json")
+        );
+        assert_eq!(args[2], OsString::from("5150"));
+    }
+
+    #[test]
+    fn network_extension_reload_response_parser_validates_command_and_generation() {
+        let result = parse_network_extension_reload_response(
+            br#"{"requestId":"reload-test","command":"reload_policy","policySnapshotPath":"/tmp/clawdstrike-network-policy.json","generation":5150,"saved":true}"#,
+            5150,
+        )
+        .expect("valid reload helper response should parse");
+
+        assert_eq!(
+            result,
+            MacosNetworkExtensionReloadResult {
+                requested: true,
+                saved: true,
+                request_id: "reload-test".to_string(),
+                policy_snapshot_path: "/tmp/clawdstrike-network-policy.json".to_string(),
+                generation: 5150,
+            }
+        );
+
+        assert_eq!(
+            parse_network_extension_reload_response(
+                br#"{"requestId":"reload-test","command":"other","policySnapshotPath":"/tmp/clawdstrike-network-policy.json","generation":5150,"saved":true}"#,
+                5150,
+            ),
+            Err(MacosNetworkExtensionReloadError::InvalidResponse(
+                "unexpected command other".to_string()
+            ))
+        );
+        assert_eq!(
+            parse_network_extension_reload_response(
+                br#"{"requestId":"reload-test","command":"reload_policy","policySnapshotPath":"/tmp/clawdstrike-network-policy.json","generation":5151,"saved":true}"#,
+                5150,
+            ),
+            Err(MacosNetworkExtensionReloadError::InvalidResponse(
+                "generation mismatch: requested 5150, helper returned 5151".to_string()
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_passes_provider_runtime_snapshot_paths() {
+        let script = write_script(
+            "network-env",
+            r#"#!/bin/sh
+printf '%s
+%s
+%s
+' "$CLAWDSTRIKE_ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_PATH" "$CLAWDSTRIKE_NETWORK_EXTENSION_EGRESS_POLICY_PATH" "$CLAWDSTRIKE_NETWORK_EXTENSION_RUNTIME_SNAPSHOT_PATH"
+"#,
+        );
+        let stdout = execute_tool(&ToolInvocation::Direct {
+            program: script.clone(),
+            args: vec![OsString::from("live")],
+        })
+        .await
+        .unwrap_or_else(|err| panic!("env helper should succeed: {err}"));
+        let _ = fs::remove_file(script);
+        let rendered = String::from_utf8(stdout).expect("helper stdout should be utf8");
+
+        assert!(
+            rendered.contains("endpoint-security-runtime.json\n"),
+            "endpoint security runtime snapshot env path should be passed to the helper: {rendered}"
+        );
+        assert!(
+            rendered.contains("network-extension-egress-policy.json\n"),
+            "egress policy env path should be passed to the helper: {rendered}"
+        );
+        assert!(
+            rendered.contains("network-extension-egress-policy.json.provider-runtime.json\n"),
+            "network extension runtime snapshot env path should be passed to the helper: {rendered}"
+        );
     }
 
     #[test]
     fn merge_samples_preserves_valid_provider_status_and_marks_missing_sample_unknown() {
-        let combined = merge_samples(
-            Some(endpoint_sample(ProviderRuntimeState::Active)),
-            None,
-        );
+        let combined = merge_samples(Some(endpoint_sample(ProviderRuntimeState::Active)), None);
 
         assert_eq!(combined.install_state, SystemExtensionInstallState::Unknown);
         assert_eq!(combined.approval, SystemExtensionApproval::Unknown);
@@ -575,7 +873,10 @@ mod tests {
             Some(network_sample(ProviderRuntimeState::Active)),
         );
 
-        assert_eq!(combined.install_state, SystemExtensionInstallState::Installed);
+        assert_eq!(
+            combined.install_state,
+            SystemExtensionInstallState::Installed
+        );
         assert_eq!(combined.approval, SystemExtensionApproval::Approved);
         assert_eq!(
             combined.endpoint_security,
@@ -625,10 +926,7 @@ mod tests {
         );
         assert_eq!(combined.endpoint_security.policy_epoch, Some(42));
         assert_eq!(
-            combined
-                .endpoint_security
-                .counters
-                .get("auth_open_allowed"),
+            combined.endpoint_security.counters.get("auth_open_allowed"),
             Some(&7)
         );
         assert_eq!(
@@ -643,6 +941,39 @@ mod tests {
                 .as_ref()
                 .map(|state| state.provider.as_str()),
             Some("endpoint_security")
+        );
+    }
+
+    #[test]
+    fn merge_samples_preserves_network_extension_policy_readout() {
+        let mut network = network_sample(ProviderRuntimeState::Unknown);
+        network.policy_synced = Some(true);
+        network.enforcement_ready = Some(true);
+        network
+            .counters
+            .insert("remediation_requests".to_string(), 2);
+
+        let combined = merge_samples(
+            Some(endpoint_sample(ProviderRuntimeState::Active)),
+            Some(network),
+        );
+
+        assert_eq!(combined.network_extension.policy_synced, Some(true));
+        assert_eq!(combined.network_extension.enforcement_ready, Some(true));
+        assert_eq!(
+            combined
+                .network_extension
+                .counters
+                .get("remediation_requests"),
+            Some(&2)
+        );
+        assert_eq!(
+            combined.network_extension.runtime,
+            ProviderRuntimeState::Unknown
+        );
+        assert_eq!(
+            combined.activation_state,
+            SystemExtensionActivationState::Pending
         );
     }
 

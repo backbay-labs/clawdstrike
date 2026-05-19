@@ -50,7 +50,9 @@ pub enum ProviderRuntimeState {
     Unknown,
     Inactive,
     Active,
-    Degraded { reason: String },
+    Degraded {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,6 +111,18 @@ pub struct EvidenceArtifact {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProviderReloadObservation {
+    pub request_id: Option<String>,
+    pub command: Option<String>,
+    pub policy_snapshot_path: Option<String>,
+    pub generation: Option<u64>,
+    pub accepted: Option<bool>,
+    pub reloaded: Option<bool>,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProviderStatus {
@@ -116,8 +130,14 @@ pub struct ProviderStatus {
     pub provider_state: Option<ProviderAttestationState>,
     pub counters: BTreeMap<String, u64>,
     pub policy_epoch: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_synced: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enforcement_ready: Option<bool>,
     pub last_healthy_timestamp: Option<String>,
     pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_reload_observation: Option<ProviderReloadObservation>,
     pub evidence_paths: Vec<EvidenceArtifact>,
 }
 
@@ -134,8 +154,11 @@ impl ProviderStatus {
             provider_state: None,
             counters: BTreeMap::new(),
             policy_epoch: None,
+            policy_synced: None,
+            enforcement_ready: None,
             last_healthy_timestamp: None,
             last_error: None,
+            last_reload_observation: None,
             evidence_paths: Vec::new(),
         }
     }
@@ -241,8 +264,9 @@ mod tests {
                 last_error: Some("provider handshake stalled".to_string()),
                 evidence_paths: vec![EvidenceArtifact {
                     kind: "activation".to_string(),
-                    path: "fixtures/macos/network-extension/content-filter-provider-unavailable.json"
-                        .to_string(),
+                    path:
+                        "fixtures/macos/network-extension/content-filter-provider-unavailable.json"
+                            .to_string(),
                     detail: "provider failed to activate".to_string(),
                 }],
                 ..ProviderStatus::unknown()
@@ -296,20 +320,21 @@ mod tests {
 
     #[test]
     fn legacy_status_without_new_fields_still_deserializes() {
-        let parsed_result: Result<CombinedSystemExtensionStatus, _> = serde_json::from_value(json!({
-            "install_state": "installed",
-            "approval": "approved",
-            "endpoint_security": {
-                "runtime": {
-                    "state": "active"
+        let parsed_result: Result<CombinedSystemExtensionStatus, _> =
+            serde_json::from_value(json!({
+                "install_state": "installed",
+                "approval": "approved",
+                "endpoint_security": {
+                    "runtime": {
+                        "state": "active"
+                    }
+                },
+                "network_extension": {
+                    "runtime": {
+                        "state": "unknown"
+                    }
                 }
-            },
-            "network_extension": {
-                "runtime": {
-                    "state": "unknown"
-                }
-            }
-        }));
+            }));
         let parsed = match parsed_result {
             Ok(parsed) => parsed,
             Err(error) => panic!("legacy status should deserialize: {error}"),
