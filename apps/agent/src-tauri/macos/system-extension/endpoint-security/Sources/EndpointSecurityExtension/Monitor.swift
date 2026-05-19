@@ -559,12 +559,12 @@ public struct URLSessionEndpointSecurityAgentEventTransport: EndpointSecurityAge
 }
 
 public struct EndpointSecurityAgentEventEncoder {
-    private let iso8601Formatter: ISO8601DateFormatter
+    public init() {}
 
-    public init() {
+    private static func iso8601String(from date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.iso8601Formatter = formatter
+        return formatter.string(from: date)
     }
 
     public func authorizationOpenRequest(
@@ -587,7 +587,7 @@ public struct EndpointSecurityAgentEventEncoder {
         let delivered = EndpointSecurityAgentEvent(
             eventId: context.eventId,
             kind: event.eventType,
-            observedAt: event.observedAt.map { iso8601Formatter.string(from: $0) },
+            observedAt: event.observedAt.map(Self.iso8601String),
             hostId: context.hostId,
             userId: context.userId,
             sessionId: context.sessionId,
@@ -617,7 +617,7 @@ public struct EndpointSecurityAgentEventEncoder {
         ]
         let delivered = EndpointSecurityAgentEvent(
             kind: "event_loss",
-            observedAt: iso8601Formatter.string(from: observedAt),
+            observedAt: Self.iso8601String(from: observedAt),
             process: EndpointSecurityAgentProcess(
                 image: "macos.endpoint_security",
                 commandLine: "endpoint_security event_loss"
@@ -1016,11 +1016,11 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         guard let activeClient = client else {
             return
         }
-        client = nil
         let result = es_delete_client(activeClient)
         guard result == ES_RETURN_SUCCESS else {
             throw EndpointSecurityRuntimeClientError.deletionFailed(endpointSecurityReturnName(result))
         }
+        client = nil
     }
 
     private func handleAuthorizationMessage(
@@ -1093,7 +1093,6 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
     }
 
     private func recordClientCreationFailure(_ result: es_new_client_result_t) {
-        monitor.setInstallState(.installed)
         monitor.setProviderActive(
             false,
             evidencePath: "endpoint-security-runtime",
@@ -1101,6 +1100,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         )
         switch result {
         case ES_NEW_CLIENT_RESULT_ERR_NOT_PERMITTED:
+            monitor.setInstallState(.installed)
             monitor.setApproval(.approved)
             monitor.setFullDiskAccessGranted(
                 false,
@@ -1108,6 +1108,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
                 detail: "EndpointSecurity client creation failed because Full Disk Access is missing."
             )
         case ES_NEW_CLIENT_RESULT_ERR_NOT_ENTITLED, ES_NEW_CLIENT_RESULT_ERR_NOT_PRIVILEGED:
+            monitor.setInstallState(.installed)
             monitor.setApproval(
                 .approvalBlocked,
                 evidencePath: "endpoint-security-runtime",

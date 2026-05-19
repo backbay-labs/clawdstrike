@@ -186,6 +186,41 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(metadata["dogfoodMarker"] as? String, "clawdstrike-es-dogfood-test")
     }
 
+    func testAuthorizationPublisherEncoderFormatsConcurrentObservedAtValues() async throws {
+        let encoder = EndpointSecurityAgentEventEncoder()
+
+        try await withThrowingTaskGroup(of: String.self) { group in
+            for index in 0..<128 {
+                group.addTask {
+                    let event = AuthorizationEvent(
+                        path: "/tmp/clawdstrike-es-dogfood-test-\(index).txt",
+                        decision: .allow,
+                        latencyMs: 1,
+                        deadlineMs: 200,
+                        notifyObserved: true,
+                        observedAt: Date(timeIntervalSince1970: 1_778_824_800 + Double(index) / 1_000)
+                    )
+                    let context = EndpointSecurityAgentEventContext(
+                        eventId: "es-auth-open-\(index)",
+                        process: EndpointSecurityAgentProcess(image: "/bin/cat")
+                    )
+                    let request = try encoder.authorizationOpenRequest(event: event, context: context)
+                    guard let observedAt = request.events.first?.observedAt else {
+                        throw NSError(domain: "EndpointSecurityExtensionTests", code: 1)
+                    }
+                    return observedAt
+                }
+            }
+
+            var observedAtValues = Set<String>()
+            for try await observedAt in group {
+                XCTAssertTrue(observedAt.hasSuffix("Z"))
+                observedAtValues.insert(observedAt)
+            }
+            XCTAssertEqual(observedAtValues.count, 128)
+        }
+    }
+
     func testAuthorizationPublisherRejectsEventsThatCannotReachAgentContract() throws {
         let event = AuthorizationEvent(
             path: "   ",

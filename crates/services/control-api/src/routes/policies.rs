@@ -297,9 +297,14 @@ async fn deploy_policy(
     )
     .await
     .map_err(ApiError::Database)?;
-    let deployment =
-        distribute_active_policy_to_fleet(&state, auth.tenant_id, &auth.slug, &active_policy)
-            .await?;
+    let deployment = distribute_active_policy_to_fleet(
+        &state,
+        auth.tenant_id,
+        &auth.slug,
+        &active_policy,
+        Uuid::new_v4(),
+    )
+    .await?;
 
     tracing::info!(
         deployment_id = %deployment.deployment_id,
@@ -1238,17 +1243,20 @@ async fn approve_policy_proposal(
 ) -> Result<Json<ApprovePolicyProposalResponse>, ApiError> {
     ensure_policy_deployer(&auth)?;
 
-    let proposal = fetch_policy_proposal_row(&state, auth.tenant_id, id)
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let proposal = fetch_policy_proposal_row_for_update(&mut tx, auth.tenant_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     if proposal.status != "pending" {
         return Err(ApiError::NotFound);
     }
 
-    let current_active =
-        policy_distribution::fetch_active_policy_by_tenant_id(&state.db, auth.tenant_id)
-            .await
-            .map_err(ApiError::Database)?;
+    let current_active = policy_distribution::fetch_active_policy_by_tenant_id_with_executor(
+        &mut *tx,
+        auth.tenant_id,
+    )
+    .await
+    .map_err(ApiError::Database)?;
     let current_version = current_active
         .as_ref()
         .map(|policy| policy.version)
@@ -1301,7 +1309,7 @@ async fn approve_policy_proposal(
         .bind(id)
         .bind(&approved_by)
         .bind(&approval_notes)
-        .fetch_optional(&state.db)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(ApiError::Database)?
         .ok_or_else(|| {
@@ -1310,6 +1318,7 @@ async fn approve_policy_proposal(
                 proposal.id
             ))
         })?;
+        tx.commit().await.map_err(ApiError::Database)?;
 
         return Ok(Json(ApprovePolicyProposalResponse {
             proposal: proposal_response_from_row(row, &auth.slug)?,
@@ -1318,17 +1327,15 @@ async fn approve_policy_proposal(
         }));
     }
 
-    let active_policy = policy_distribution::upsert_active_policy(
-        &state.db,
+    let active_policy = policy_distribution::upsert_active_policy_with_executor(
+        &mut *tx,
         auth.tenant_id,
         &proposal.policy_yaml,
         proposal.description.as_deref(),
     )
     .await
     .map_err(ApiError::Database)?;
-    let deployment =
-        distribute_active_policy_to_fleet(&state, auth.tenant_id, &auth.slug, &active_policy)
-            .await?;
+    let deployment_id = Uuid::new_v4();
 
     let row = sqlx::query::query(
         r#"UPDATE policy_proposals
@@ -1352,10 +1359,10 @@ async fn approve_policy_proposal(
     .bind(&reviewed_by)
     .bind(req.note.as_deref())
     .bind(active_policy.version)
-    .bind(deployment.deployment_id)
+    .bind(deployment_id)
     .bind(&approved_by)
     .bind(&approval_notes)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or_else(|| {
@@ -1364,6 +1371,15 @@ async fn approve_policy_proposal(
             proposal.id
         ))
     })?;
+    tx.commit().await.map_err(ApiError::Database)?;
+    let deployment = distribute_active_policy_to_fleet(
+        &state,
+        auth.tenant_id,
+        &auth.slug,
+        &active_policy,
+        deployment_id,
+    )
+    .await?;
 
     Ok(Json(ApprovePolicyProposalResponse {
         proposal: proposal_response_from_row(row, &auth.slug)?,
@@ -1409,6 +1425,7 @@ async fn distribute_active_policy_to_fleet(
     tenant_id: Uuid,
     tenant_slug: &str,
     active_policy: &policy_distribution::ActiveTenantPolicy,
+    deployment_id: Uuid,
 ) -> Result<PolicyDeploymentOutcome, ApiError> {
     // Enumerate all non-revoked agents (active + inactive lifecycle states).
     // This avoids only targeting currently-active agents during deploy.
@@ -1472,7 +1489,7 @@ async fn distribute_active_policy_to_fleet(
     }
 
     Ok(PolicyDeploymentOutcome {
-        deployment_id: Uuid::new_v4(),
+        deployment_id,
         nats_subject: subject,
         agent_count,
         kv_write_failures,
@@ -1493,6 +1510,29 @@ async fn fetch_policy_proposal_row(
     .bind(tenant_id)
     .bind(id)
     .fetch_optional(&state.db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    row.map(policy_proposal_from_row)
+        .transpose()
+        .map_err(ApiError::Database)
+}
+
+async fn fetch_policy_proposal_row_for_update(
+    tx: &mut sqlx::transaction::Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    id: Uuid,
+) -> Result<Option<PolicyProposalRow>, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT *
+           FROM policy_proposals
+           WHERE tenant_id = $1
+             AND id = $2
+           FOR UPDATE"#,
+    )
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(ApiError::Database)?;
 

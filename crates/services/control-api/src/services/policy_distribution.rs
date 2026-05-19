@@ -7,7 +7,9 @@
 
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
+use sqlx::executor::Executor;
 use sqlx::row::Row;
+use sqlx_postgres::Postgres;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -102,6 +104,18 @@ pub async fn upsert_active_policy(
     policy_yaml: &str,
     description: Option<&str>,
 ) -> Result<ActiveTenantPolicy, sqlx::error::Error> {
+    upsert_active_policy_with_executor(db, tenant_id, policy_yaml, description).await
+}
+
+pub async fn upsert_active_policy_with_executor<'e, E>(
+    executor: E,
+    tenant_id: Uuid,
+    policy_yaml: &str,
+    description: Option<&str>,
+) -> Result<ActiveTenantPolicy, sqlx::error::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
     let checksum = checksum_sha256_hex(policy_yaml);
     let row = sqlx::query::query(
         r#"WITH upsert AS (
@@ -136,7 +150,7 @@ pub async fn upsert_active_policy(
     .bind(policy_yaml)
     .bind(checksum)
     .bind(description)
-    .fetch_one(db)
+    .fetch_one(executor)
     .await?;
 
     row_to_active_policy(row)
@@ -146,6 +160,16 @@ pub async fn fetch_active_policy_by_tenant_id(
     db: &PgPool,
     tenant_id: Uuid,
 ) -> Result<Option<ActiveTenantPolicy>, sqlx::error::Error> {
+    fetch_active_policy_by_tenant_id_with_executor(db, tenant_id).await
+}
+
+pub async fn fetch_active_policy_by_tenant_id_with_executor<'e, E>(
+    executor: E,
+    tenant_id: Uuid,
+) -> Result<Option<ActiveTenantPolicy>, sqlx::error::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
     let row = sqlx::query::query(
         r#"SELECT p.tenant_id,
                   t.slug AS tenant_slug,
@@ -160,7 +184,7 @@ pub async fn fetch_active_policy_by_tenant_id(
            WHERE p.tenant_id = $1"#,
     )
     .bind(tenant_id)
-    .fetch_optional(db)
+    .fetch_optional(executor)
     .await?;
 
     row.map(row_to_active_policy).transpose()
