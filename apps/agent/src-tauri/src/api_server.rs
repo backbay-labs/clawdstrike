@@ -90,6 +90,7 @@ use tower_http::services::{ServeDir, ServeFile};
 
 pub(crate) use crate::edr::conversion::*;
 pub(crate) use crate::edr::dto::*;
+pub(crate) use crate::edr::handlers::*;
 pub(crate) use crate::edr::policy_events::*;
 pub(crate) use crate::edr::queries::*;
 pub(crate) use crate::edr::response::*;
@@ -101,49 +102,49 @@ const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
 const POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(20);
 const AGENT_API_MAX_BODY_BYTES: usize = 256 * 1024;
 const BROKER_MUTATION_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
-const EDR_MAX_OBSERVATIONS_PER_REQUEST: usize = 10_000;
-const EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST: usize = 1_000;
+pub(crate) const EDR_MAX_OBSERVATIONS_PER_REQUEST: usize = 10_000;
+pub(crate) const EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST: usize = 1_000;
 pub(crate) const EDR_MAX_STORED_FINDINGS: usize = 10_000;
 pub(crate) const EDR_MAX_CONTROL_ACK_POSTBACK_RETRIES: usize = 1_000;
 pub(crate) const EDR_MAX_CONTROL_ARCHIVE_UPLOAD_RETRIES: usize = 1_000;
 pub(crate) const EDR_MAX_CONTROL_RECEIPT_UPLOAD_RETRIES: usize = 1_000;
 pub(crate) const EDR_MAX_FLEET_HUNT_EVENT_OUTBOX: usize = 1_000;
-const EDR_CONTROL_ACK_RETRY_INITIAL_BACKOFF_SECONDS: i64 = 30;
-const EDR_CONTROL_ACK_RETRY_MAX_BACKOFF_SECONDS: i64 = 300;
-const EDR_CONTROL_ACK_RETRY_DRAIN_INTERVAL: Duration = Duration::from_secs(30);
-const EDR_CONTROL_ACK_RETRY_BACKGROUND_LIMIT: usize = 25;
-const EDR_CONTROL_RECEIPT_UPLOAD_BACKGROUND_LIMIT: usize = 25;
-const EDR_CONTROL_RECEIPT_UPLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
-const EDR_CONTROL_ACK_STATUS_ALLOWLIST: &str =
+pub(crate) const EDR_CONTROL_ACK_RETRY_INITIAL_BACKOFF_SECONDS: i64 = 30;
+pub(crate) const EDR_CONTROL_ACK_RETRY_MAX_BACKOFF_SECONDS: i64 = 300;
+pub(crate) const EDR_CONTROL_ACK_RETRY_DRAIN_INTERVAL: Duration = Duration::from_secs(30);
+pub(crate) const EDR_CONTROL_ACK_RETRY_BACKGROUND_LIMIT: usize = 25;
+pub(crate) const EDR_CONTROL_RECEIPT_UPLOAD_BACKGROUND_LIMIT: usize = 25;
+pub(crate) const EDR_CONTROL_RECEIPT_UPLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const EDR_CONTROL_ACK_STATUS_ALLOWLIST: &str =
     "acknowledged, rejected, failed, expired, rolled_back";
-const EDR_CONTROL_ACK_TARGET_KIND_ALLOWLIST: &str =
+pub(crate) const EDR_CONTROL_ACK_TARGET_KIND_ALLOWLIST: &str =
     "endpoint, runtime, session, principal, grant, swarm, project";
-const EDR_MAX_CAUSAL_SUBGRAPH_DEPTH: usize = 64;
-const EDR_DEFAULT_RECEIPT_QUERY_LIMIT: usize = 100;
-const EDR_MAX_RECEIPT_QUERY_LIMIT: usize = 1_000;
-const EDR_DEFAULT_RESPONSE_TTL_SECONDS: u64 = 600;
-const EDR_MAX_RESPONSE_TTL_SECONDS: u64 = 3_600;
-const EDR_MAX_RESPONSE_REASON_BYTES: usize = 1024;
-const EDR_MAX_RESPONSE_ACTOR_FIELD_BYTES: usize = 256;
-const EDR_MAX_RAW_ARTIFACT_APPROVAL_ID_BYTES: usize = 128;
-const EDR_MAX_RAW_ARTIFACT_APPROVAL_REASON_BYTES: usize = 1024;
-const EDR_DEFAULT_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 100;
-const EDR_MAX_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 1_000;
+pub(crate) const EDR_MAX_CAUSAL_SUBGRAPH_DEPTH: usize = 64;
+pub(crate) const EDR_DEFAULT_RECEIPT_QUERY_LIMIT: usize = 100;
+pub(crate) const EDR_MAX_RECEIPT_QUERY_LIMIT: usize = 1_000;
+pub(crate) const EDR_DEFAULT_RESPONSE_TTL_SECONDS: u64 = 600;
+pub(crate) const EDR_MAX_RESPONSE_TTL_SECONDS: u64 = 3_600;
+pub(crate) const EDR_MAX_RESPONSE_REASON_BYTES: usize = 1024;
+pub(crate) const EDR_MAX_RESPONSE_ACTOR_FIELD_BYTES: usize = 256;
+pub(crate) const EDR_MAX_RAW_ARTIFACT_APPROVAL_ID_BYTES: usize = 128;
+pub(crate) const EDR_MAX_RAW_ARTIFACT_APPROVAL_REASON_BYTES: usize = 1024;
+pub(crate) const EDR_DEFAULT_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 100;
+pub(crate) const EDR_MAX_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 1_000;
 pub(crate) const EDR_NETWORK_EXTENSION_EGRESS_POLICY_SCHEMA_VERSION: u32 = 1;
 pub(crate) const EDR_POLICY_DELTA_SCHEMA_VERSION: &str = "clawdstrike.endpoint_policy_delta.v1";
-const EDR_DEFAULT_POLICY_EVENT_IMPACT_CAUSAL_DEPTH: usize = 3;
-const EDR_MAX_POLICY_EVENT_IMPACT_CONTEXTS: usize = 16;
-const EDR_MAX_POLICY_EVENT_IMPACT_CHAINS_PER_CONTEXT: usize = 8;
-const EDR_MAX_POLICY_EVENT_IMPACT_CHAIN_DRIVER_SAMPLES: usize = 5;
-const EDR_MAX_POLICY_EVENT_IMPACT_PROMOTION_SUGGESTIONS: usize = 16;
-const EDR_MAX_POLICY_EVENT_IMPACT_BREAKAGE_DRIVERS: usize = 8;
-const EDR_MAX_POLICY_EVENT_IMPACT_VALIDATION_WINDOW_SECONDS: u64 = 86_400;
-const EDR_MAX_AUTO_FLEET_AGENT_SECRET_TOUCHES_PER_BATCH: usize = 100;
-const EDR_MAX_AUTO_FLEET_HUNT_EVENT_OUTBOX_RETRIES_PER_BATCH: usize = 100;
-const EDR_FLEET_AGENT_SECRET_TOUCH_SYNC_INTERVAL: Duration = Duration::from_secs(60);
-const EDR_DEFAULT_PROVIDER_ACK_TIMEOUT_MS: u64 = 750;
-const EDR_MAX_PROVIDER_ACK_TIMEOUT_MS: u64 = 5_000;
-const EDR_PROVIDER_ACK_POLL_INTERVAL: Duration = Duration::from_millis(50);
+pub(crate) const EDR_DEFAULT_POLICY_EVENT_IMPACT_CAUSAL_DEPTH: usize = 3;
+pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_CONTEXTS: usize = 16;
+pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_CHAINS_PER_CONTEXT: usize = 8;
+pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_CHAIN_DRIVER_SAMPLES: usize = 5;
+pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_PROMOTION_SUGGESTIONS: usize = 16;
+pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_BREAKAGE_DRIVERS: usize = 8;
+pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_VALIDATION_WINDOW_SECONDS: u64 = 86_400;
+pub(crate) const EDR_MAX_AUTO_FLEET_AGENT_SECRET_TOUCHES_PER_BATCH: usize = 100;
+pub(crate) const EDR_MAX_AUTO_FLEET_HUNT_EVENT_OUTBOX_RETRIES_PER_BATCH: usize = 100;
+pub(crate) const EDR_FLEET_AGENT_SECRET_TOUCH_SYNC_INTERVAL: Duration = Duration::from_secs(60);
+pub(crate) const EDR_DEFAULT_PROVIDER_ACK_TIMEOUT_MS: u64 = 750;
+pub(crate) const EDR_MAX_PROVIDER_ACK_TIMEOUT_MS: u64 = 5_000;
+pub(crate) const EDR_PROVIDER_ACK_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const APPROVAL_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 const APPROVAL_RATE_LIMIT_BURST_WINDOW: Duration = Duration::from_secs(1);
 const APPROVAL_RATE_LIMIT_PER_MINUTE: usize = 30;
@@ -206,45 +207,45 @@ pub struct AgentApiServerDeps {
 }
 
 #[derive(Clone)]
-struct AgentApiState {
-    settings: Arc<RwLock<Settings>>,
-    daemon_manager: Arc<DaemonManager>,
-    session_manager: Arc<SessionManager>,
-    approval_queue: Arc<ApprovalQueue>,
-    audit_queue: Arc<AuditQueue>,
-    macos_host: Arc<MacosHostService>,
-    openclaw: OpenClawManager,
-    updater: Arc<HushdUpdater>,
-    fleet_hunt_publisher: Option<Arc<dyn FleetHuntEventPublisher>>,
-    auth_token: Arc<StdRwLock<String>>,
-    previous_auth_token: Arc<StdMutex<Option<PreviousAuthToken>>>,
-    token_grace_minutes: Arc<StdRwLock<u32>>,
-    http_client: reqwest::Client,
-    policy_version_cache: Arc<RwLock<PolicyVersionCache>>,
-    approval_rate_limiter: Arc<Mutex<ApprovalSubmissionLimiter>>,
-    ui_bootstrap_start_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    ui_bootstrap_verify_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    policy_check_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    integration_test_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    openclaw_request_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    ui_bootstrap_sessions: Arc<Mutex<HashMap<String, UiBootstrapSession>>>,
-    edr_flight_recorder: Arc<Mutex<EndpointFlightRecorder>>,
-    edr_receipt_ledger: Arc<Mutex<EndpointReceiptLedger>>,
-    edr_honey_registry: Arc<Mutex<EndpointHoneyRegistry>>,
-    edr_evidence_bundle_store: Arc<Mutex<EndpointEvidenceBundleStore>>,
-    edr_response_execution_ledger: Arc<Mutex<EndpointResponseExecutionLedger>>,
-    edr_response_acknowledgement_ledger: Arc<Mutex<EndpointResponseAcknowledgementLedger>>,
-    edr_control_ack_postback_retry_ledger: Arc<Mutex<EndpointControlAckPostbackRetryLedger>>,
-    edr_control_archive_upload_retry_ledger: Arc<Mutex<EndpointControlArchiveUploadRetryLedger>>,
-    edr_control_receipt_upload_retry_ledger: Arc<Mutex<EndpointControlReceiptUploadRetryLedger>>,
-    edr_fleet_hunt_event_outbox: Arc<Mutex<EndpointFleetHuntEventOutbox>>,
-    edr_egress_restriction_ledger: Arc<Mutex<EndpointEgressRestrictionLedger>>,
-    edr_staged_detection_ledger: Arc<Mutex<EndpointStagedDetectionLedger>>,
-    edr_policy_delta_store: Arc<Mutex<EndpointPolicyDeltaStore>>,
-    edr_network_extension_egress_policy_path: Arc<PathBuf>,
-    edr_quarantine_root: Arc<PathBuf>,
-    edr_recent_findings: Arc<Mutex<VecDeque<DetectionFinding>>>,
-    edr_auto_published_agent_secret_touch_keys: Arc<Mutex<BTreeSet<String>>>,
+pub(crate) struct AgentApiState {
+    pub(crate) settings: Arc<RwLock<Settings>>,
+    pub(crate) daemon_manager: Arc<DaemonManager>,
+    pub(crate) session_manager: Arc<SessionManager>,
+    pub(crate) approval_queue: Arc<ApprovalQueue>,
+    pub(crate) audit_queue: Arc<AuditQueue>,
+    pub(crate) macos_host: Arc<MacosHostService>,
+    pub(crate) openclaw: OpenClawManager,
+    pub(crate) updater: Arc<HushdUpdater>,
+    pub(crate) fleet_hunt_publisher: Option<Arc<dyn FleetHuntEventPublisher>>,
+    pub(crate) auth_token: Arc<StdRwLock<String>>,
+    pub(crate) previous_auth_token: Arc<StdMutex<Option<PreviousAuthToken>>>,
+    pub(crate) token_grace_minutes: Arc<StdRwLock<u32>>,
+    pub(crate) http_client: reqwest::Client,
+    pub(crate) policy_version_cache: Arc<RwLock<PolicyVersionCache>>,
+    pub(crate) approval_rate_limiter: Arc<Mutex<ApprovalSubmissionLimiter>>,
+    pub(crate) ui_bootstrap_start_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    pub(crate) ui_bootstrap_verify_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    pub(crate) policy_check_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    pub(crate) integration_test_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    pub(crate) openclaw_request_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    pub(crate) ui_bootstrap_sessions: Arc<Mutex<HashMap<String, UiBootstrapSession>>>,
+    pub(crate) edr_flight_recorder: Arc<Mutex<EndpointFlightRecorder>>,
+    pub(crate) edr_receipt_ledger: Arc<Mutex<EndpointReceiptLedger>>,
+    pub(crate) edr_honey_registry: Arc<Mutex<EndpointHoneyRegistry>>,
+    pub(crate) edr_evidence_bundle_store: Arc<Mutex<EndpointEvidenceBundleStore>>,
+    pub(crate) edr_response_execution_ledger: Arc<Mutex<EndpointResponseExecutionLedger>>,
+    pub(crate) edr_response_acknowledgement_ledger: Arc<Mutex<EndpointResponseAcknowledgementLedger>>,
+    pub(crate) edr_control_ack_postback_retry_ledger: Arc<Mutex<EndpointControlAckPostbackRetryLedger>>,
+    pub(crate) edr_control_archive_upload_retry_ledger: Arc<Mutex<EndpointControlArchiveUploadRetryLedger>>,
+    pub(crate) edr_control_receipt_upload_retry_ledger: Arc<Mutex<EndpointControlReceiptUploadRetryLedger>>,
+    pub(crate) edr_fleet_hunt_event_outbox: Arc<Mutex<EndpointFleetHuntEventOutbox>>,
+    pub(crate) edr_egress_restriction_ledger: Arc<Mutex<EndpointEgressRestrictionLedger>>,
+    pub(crate) edr_staged_detection_ledger: Arc<Mutex<EndpointStagedDetectionLedger>>,
+    pub(crate) edr_policy_delta_store: Arc<Mutex<EndpointPolicyDeltaStore>>,
+    pub(crate) edr_network_extension_egress_policy_path: Arc<PathBuf>,
+    pub(crate) edr_quarantine_root: Arc<PathBuf>,
+    pub(crate) edr_recent_findings: Arc<Mutex<VecDeque<DetectionFinding>>>,
+    pub(crate) edr_auto_published_agent_secret_touch_keys: Arc<Mutex<BTreeSet<String>>>,
 }
 
 pub type FleetHuntEventPublishFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
@@ -266,7 +267,7 @@ impl FleetHuntEventPublisher for TelemetryPublisher {
 }
 
 #[derive(Debug, Default)]
-struct PolicyVersionCache {
+pub(crate) struct PolicyVersionCache {
     value: Option<String>,
     last_refresh_at: Option<std::time::Instant>,
     refresh_in_flight: bool,
@@ -316,13 +317,13 @@ impl PolicyVersionCache {
 }
 
 #[derive(Debug, Default)]
-struct ApprovalSubmissionLimiter {
+pub(crate) struct ApprovalSubmissionLimiter {
     minute_events: VecDeque<Instant>,
     burst_events: VecDeque<Instant>,
 }
 
 #[derive(Debug, Clone)]
-struct UiBootstrapSession {
+pub(crate) struct UiBootstrapSession {
     code_normalized: String,
     next_path: String,
     created_at: Instant,
@@ -331,13 +332,13 @@ struct UiBootstrapSession {
 }
 
 #[derive(Debug, Clone)]
-struct PreviousAuthToken {
+pub(crate) struct PreviousAuthToken {
     token: String,
     expires_at: Instant,
 }
 
 #[derive(Debug, Default)]
-struct RouteRateLimiter {
+pub(crate) struct RouteRateLimiter {
     events: VecDeque<Instant>,
 }
 
@@ -1898,7 +1899,7 @@ async fn cached_policy_version_for_health(state: &Arc<AgentApiState>) -> Option<
 }
 
 #[derive(Debug, Serialize)]
-struct AgentHealthResponse {
+pub(crate) struct AgentHealthResponse {
     status: &'static str,
     daemon: DaemonStatus,
     session: crate::session::SessionState,
@@ -2382,7 +2383,7 @@ struct AgentPolicyCheckResponse {
 
 
 
-async fn response_execution_record_with_attribution(
+pub(crate) async fn response_execution_record_with_attribution(
     state: &AgentApiState,
     execution: EndpointResponseExecutionReport,
 ) -> Result<EdrResponseExecutionRecord, (StatusCode, String)> {
@@ -2392,7 +2393,7 @@ async fn response_execution_record_with_attribution(
         .ok_or_else(|| internal_error(anyhow::anyhow!("missing response execution record")))
 }
 
-async fn response_execution_records_with_attribution(
+pub(crate) async fn response_execution_records_with_attribution(
     state: &AgentApiState,
     executions: Vec<EndpointResponseExecutionReport>,
 ) -> Result<Vec<EdrResponseExecutionRecord>, (StatusCode, String)> {
@@ -2493,8 +2494,8 @@ pub(crate) struct ControlStoreReceiptRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ControlBatchStoreReceiptsRequest {
-    receipts: Vec<ControlStoreReceiptRequest>,
+pub(crate) struct ControlBatchStoreReceiptsRequest {
+    pub(crate) receipts: Vec<ControlStoreReceiptRequest>,
 }
 
 
@@ -3292,7 +3293,7 @@ async fn update_integrations_settings(
     }))
 }
 
-fn truncate_delivery_error(message: &str) -> String {
+pub(crate) fn truncate_delivery_error(message: &str) -> String {
     const MAX_LEN: usize = 240;
     if message.chars().count() <= MAX_LEN {
         return message.to_string();
@@ -3527,539 +3528,6 @@ async fn agent_policy_check(
     }))
 }
 
-async fn agent_edr_findings(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrFindingsInput>,
-) -> Result<Json<EdrFindingsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let observations = redact_endpoint_observations(&input.observations);
-    let evaluated = evaluate_record_and_receipt_edr_observations(
-        &state,
-        &input.observations,
-        &observations,
-        input.honey_artifacts,
-    )
-    .await?;
-
-    Ok(Json(EdrFindingsResponse {
-        observation_count: observations.len(),
-        finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
-        findings: evaluated.findings,
-        receipts: evaluated.receipts,
-    }))
-}
-
-async fn agent_edr_developer_activity(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrDeveloperActivityInput>,
-) -> Result<Json<EdrDeveloperActivityResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    validate_edr_request_sizes(input.activities.len(), input.honey_artifacts.len())?;
-    let observations = input
-        .activities
-        .iter()
-        .enumerate()
-        .map(|(index, activity)| developer_activity_observation(activity, index))
-        .collect::<Result<Vec<_>, _>>()?;
-    let recorded_observations = redact_endpoint_observations(&observations);
-    let evaluated = evaluate_record_and_receipt_edr_observations(
-        &state,
-        &observations,
-        &recorded_observations,
-        input.honey_artifacts,
-    )
-    .await?;
-
-    Ok(Json(EdrDeveloperActivityResponse {
-        activity_count: input.activities.len(),
-        observation_count: recorded_observations.len(),
-        finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
-        observations: recorded_observations,
-        findings: evaluated.findings,
-        receipts: evaluated.receipts,
-    }))
-}
-
-async fn agent_edr_package_manager_events(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPackageManagerEventsInput>,
-) -> Result<Json<EdrPackageManagerEventsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    validate_edr_request_sizes(input.events.len(), input.honey_artifacts.len())?;
-    let observations = input
-        .events
-        .iter()
-        .enumerate()
-        .map(|(index, event)| package_manager_event_observation(event, index))
-        .collect::<Result<Vec<_>, _>>()?;
-    let recorded_observations = redact_endpoint_observations(&observations);
-    let evaluated = evaluate_record_and_receipt_edr_observations(
-        &state,
-        &observations,
-        &recorded_observations,
-        input.honey_artifacts,
-    )
-    .await?;
-
-    Ok(Json(EdrPackageManagerEventsResponse {
-        event_count: input.events.len(),
-        observation_count: recorded_observations.len(),
-        finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
-        observations: recorded_observations,
-        findings: evaluated.findings,
-        receipts: evaluated.receipts,
-    }))
-}
-
-async fn agent_edr_endpoint_security_events(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrEndpointSecurityEventsInput>,
-) -> Result<Json<EdrEndpointSecurityEventsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    validate_edr_request_sizes(input.events.len(), input.honey_artifacts.len())?;
-    let observations = input
-        .events
-        .iter()
-        .enumerate()
-        .map(|(index, event)| endpoint_security_event_observation(event, index))
-        .collect::<Result<Vec<_>, _>>()?;
-    let recorded_observations = redact_endpoint_observations(&observations);
-    let evaluated = evaluate_record_and_receipt_edr_observations(
-        &state,
-        &observations,
-        &recorded_observations,
-        input.honey_artifacts,
-    )
-    .await?;
-    let observation_receipts = emit_edr_provider_observation_receipts(
-        &state,
-        &recorded_observations,
-        "endpoint_security_observation",
-    )
-    .await
-    .map_err(internal_error)?;
-    let policy_decision_receipts = emit_edr_provider_policy_decision_receipts(
-        &state,
-        &recorded_observations,
-        "endpoint_security_policy_decision",
-    )
-    .await
-    .map_err(internal_error)?;
-    let degraded_provider_receipts = if let Some(sensor_state) =
-        endpoint_security_event_loss_sensor_state(&input.events)
-    {
-        let settings = state.settings.read().await.clone();
-        let policy = endpoint_policy_snapshot_from_settings(&settings).map_err(internal_error)?;
-        emit_edr_provider_degradation_receipts(state.as_ref(), policy, sensor_state)
-            .await
-            .map_err(internal_error)?
-    } else {
-        Vec::new()
-    };
-    let receipt_count = evaluated.receipts.len()
-        + observation_receipts.len()
-        + policy_decision_receipts.len()
-        + degraded_provider_receipts.len();
-
-    Ok(Json(EdrEndpointSecurityEventsResponse {
-        event_count: input.events.len(),
-        observation_count: recorded_observations.len(),
-        finding_count: evaluated.findings.len(),
-        receipt_count,
-        observations: recorded_observations,
-        findings: evaluated.findings,
-        receipts: evaluated.receipts,
-        observation_receipts,
-        policy_decision_receipts,
-        degraded_provider_receipts,
-    }))
-}
-
-async fn agent_edr_network_extension_events(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrNetworkExtensionEventsInput>,
-) -> Result<Json<EdrNetworkExtensionEventsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    validate_edr_request_sizes(
-        input.events.len().saturating_mul(2),
-        input.honey_artifacts.len(),
-    )?;
-    let observations = input
-        .events
-        .iter()
-        .enumerate()
-        .map(|(index, event)| network_extension_event_observations(event, index))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let recorded_observations = redact_endpoint_observations(&observations);
-    let evaluated = evaluate_record_and_receipt_edr_observations(
-        &state,
-        &observations,
-        &recorded_observations,
-        input.honey_artifacts,
-    )
-    .await?;
-    let observation_receipts = emit_edr_provider_observation_receipts(
-        &state,
-        &recorded_observations,
-        "network_extension_observation",
-    )
-    .await
-    .map_err(internal_error)?;
-    let policy_decision_receipts = emit_edr_provider_policy_decision_receipts(
-        &state,
-        &recorded_observations,
-        "network_extension_policy_decision",
-    )
-    .await
-    .map_err(internal_error)?;
-    let receipt_count =
-        evaluated.receipts.len() + observation_receipts.len() + policy_decision_receipts.len();
-
-    Ok(Json(EdrNetworkExtensionEventsResponse {
-        event_count: input.events.len(),
-        observation_count: recorded_observations.len(),
-        finding_count: evaluated.findings.len(),
-        receipt_count,
-        observations: recorded_observations,
-        findings: evaluated.findings,
-        receipts: evaluated.receipts,
-        observation_receipts,
-        policy_decision_receipts,
-    }))
-}
-
-async fn agent_edr_policy_events(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPolicyEventsInput>,
-) -> Result<Json<EdrPolicyEventsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    validate_edr_request_sizes(input.events.len(), input.honey_artifacts.len())?;
-    for event in &input.events {
-        validate_policy_event_submission(event, None)?;
-    }
-
-    let observations = input
-        .events
-        .iter()
-        .map(EndpointObservation::from_policy_event)
-        .collect::<Vec<_>>();
-    let observations = redact_endpoint_observations(&observations);
-    let evaluated = evaluate_record_and_receipt_edr_observations(
-        &state,
-        &observations,
-        &observations,
-        input.honey_artifacts,
-    )
-    .await?;
-
-    Ok(Json(EdrPolicyEventsResponse {
-        policy_event_count: input.events.len(),
-        observation_count: observations.len(),
-        finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
-        observations,
-        findings: evaluated.findings,
-        receipts: evaluated.receipts,
-    }))
-}
-
-async fn agent_edr_policy_events_jsonl(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    body: String,
-) -> Result<Json<EdrPolicyEventsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let events = parse_policy_event_jsonl(&body)?;
-    validate_edr_request_sizes(events.len(), 0)?;
-
-    let observations = events
-        .iter()
-        .map(EndpointObservation::from_policy_event)
-        .collect::<Vec<_>>();
-    let observations = redact_endpoint_observations(&observations);
-    let evaluated = evaluate_record_and_receipt_edr_observations(
-        &state,
-        &observations,
-        &observations,
-        Vec::new(),
-    )
-    .await?;
-
-    Ok(Json(EdrPolicyEventsResponse {
-        policy_event_count: events.len(),
-        observation_count: observations.len(),
-        finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
-        observations,
-        findings: evaluated.findings,
-        receipts: evaluated.receipts,
-    }))
-}
-
-async fn agent_edr_policy_events_replay(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPolicyEventReplayInput>,
-) -> Result<Json<EdrPolicyEventReplayResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    replay_policy_events_under_current_policy(
-        &state,
-        input.events,
-        input.track_posture.unwrap_or(false),
-    )
-    .await
-    .map(Json)
-}
-
-async fn agent_edr_policy_events_replay_jsonl(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    body: String,
-) -> Result<Json<EdrPolicyEventReplayResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let events = parse_policy_event_jsonl(&body)?;
-    replay_policy_events_under_current_policy(&state, events, false)
-        .await
-        .map(Json)
-}
-
-async fn agent_edr_policy_events_replay_history(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPolicyEventHistoryReplayInput>,
-) -> Result<Json<EdrPolicyEventHistoryReplayResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let track_posture = input.track_posture.unwrap_or(false);
-    let selection = select_policy_event_history_from_flight_recorder(&state, input).await?;
-    let replay =
-        replay_policy_events_under_current_policy(&state, selection.events, track_posture).await?;
-
-    Ok(Json(EdrPolicyEventHistoryReplayResponse {
-        history: selection.report,
-        replay: replay.replay,
-        result: replay.result,
-        receipt: replay.receipt,
-    }))
-}
-
-async fn agent_edr_policy_events_impact(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPolicyEventImpactInput>,
-) -> Result<Json<EdrPolicyEventImpactResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    analyze_policy_event_impact_under_proposed_policy(
-        &state,
-        input.events,
-        input.proposed_policy_yaml,
-        input.track_posture.unwrap_or(false),
-    )
-    .await
-    .map(Json)
-}
-
-async fn agent_edr_policy_events_impact_history(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPolicyEventHistoryImpactInput>,
-) -> Result<Json<EdrPolicyEventHistoryImpactResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let causal_context_depth = bounded_graph_depth(
-        "causalContextDepth",
-        input
-            .causal_context_depth
-            .or(Some(EDR_DEFAULT_POLICY_EVENT_IMPACT_CAUSAL_DEPTH)),
-    )?;
-    let validation_window_seconds =
-        normalize_policy_event_history_validation_window_seconds(input.validation_window_seconds)?;
-    let selector = input.replay_selector_input();
-    let track_posture = input.track_posture.unwrap_or(false);
-    let selection = select_policy_event_history_from_flight_recorder(&state, selector).await?;
-    let impact = analyze_policy_event_impact_under_proposed_policy(
-        &state,
-        selection.events.clone(),
-        input.proposed_policy_yaml,
-        track_posture,
-    )
-    .await?;
-    let graph = state.edr_flight_recorder.lock().await.graph().clone();
-    let cross_window_impact = validation_window_seconds.map(|window_seconds| {
-        build_policy_event_history_cross_window_impact(&selection, &impact.changes, window_seconds)
-    });
-    let promotion_stage = cross_window_impact
-        .as_ref()
-        .map(|impact| impact.recommended_stage.as_str());
-    let cross_window_hashes = cross_window_impact.as_ref().map(|impact| {
-        (
-            impact.impact_hash.as_str(),
-            impact.recommendation_hash.as_str(),
-        )
-    });
-    let mut causal_impact = build_policy_event_history_causal_impact(
-        &selection,
-        &impact.changes,
-        &graph,
-        causal_context_depth,
-        promotion_stage,
-        cross_window_hashes,
-    );
-    if let Some((receipt_root_node_id, receipt_graph)) = causal_impact_receipt_graph(&causal_impact)
-    {
-        causal_impact.receipt = Some(
-            emit_edr_graph_slice_receipt(
-                &state,
-                &receipt_root_node_id,
-                "policy_event_history_impact",
-                &receipt_graph,
-            )
-            .await
-            .map_err(internal_error)?,
-        );
-    }
-
-    Ok(Json(EdrPolicyEventHistoryImpactResponse {
-        history: selection.report,
-        causal_impact,
-        cross_window_impact,
-        impact: impact.impact,
-        summary: impact.summary,
-        drivers: impact.drivers,
-        changes: impact.changes,
-        current_result: impact.current_result,
-        proposed_result: impact.proposed_result,
-        receipt: impact.receipt,
-    }))
-}
-
-async fn agent_edr_privacy_report(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPrivacyReportInput>,
-) -> Result<Json<EdrPrivacyReportResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    validate_edr_request_sizes(input.observations.len(), 0)?;
-    let raw_artifact_approval = validate_raw_artifact_approval(&input)?;
-    let requested_privacy_mode = input.privacy_mode.unwrap_or_default();
-    let settings = state.settings.read().await.clone();
-    let privacy_policy = edr_privacy_policy_decision(
-        &settings,
-        requested_privacy_mode,
-        raw_artifact_approval.as_ref(),
-    )
-    .map_err(internal_error)?;
-    let report = EndpointTelemetryPrivacyReport::from_observations_with_raw_artifact_approval(
-        &input.observations,
-        privacy_policy.effective_privacy_mode.clone(),
-        privacy_policy.raw_artifact_approval_id.as_deref(),
-        privacy_policy.raw_artifact_approval_reason_hash.as_deref(),
-    );
-    let receipt = emit_edr_telemetry_privacy_receipt(&state, &report)
-        .await
-        .map_err(internal_error)?;
-
-    Ok(Json(EdrPrivacyReportResponse {
-        report,
-        privacy_policy,
-        receipt,
-    }))
-}
-
-async fn agent_edr_finding_groups(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Query(query): Query<EdrFindingGroupsQuery>,
-) -> Result<Json<EdrFindingGroupsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", query.limit, 50, EDR_MAX_STORED_FINDINGS)?;
-    let max_depth = bounded_graph_depth("maxDepth", query.max_depth)?;
-    let findings = state
-        .edr_recent_findings
-        .lock()
-        .await
-        .iter()
-        .cloned()
-        .collect::<Vec<_>>();
-    let graph = state.edr_flight_recorder.lock().await.graph().clone();
-    let pending = build_finding_groups(&graph, &findings, max_depth);
-    let mut groups = Vec::new();
-
-    for group in pending.into_iter().take(limit) {
-        let group_graph = graph_slice_for_node_ids(&graph, &group.node_ids);
-        if group_graph.nodes.is_empty() {
-            continue;
-        }
-        let receipt = emit_edr_graph_slice_receipt(
-            &state,
-            &group.root_node_id,
-            "finding_group",
-            &group_graph,
-        )
-        .await
-        .map_err(internal_error)?;
-        let mut rule_ids = group
-            .findings
-            .iter()
-            .map(|finding| finding.rule_id.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let mut finding_ids = group
-            .findings
-            .iter()
-            .map(|finding| finding.finding_id.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        rule_ids.sort();
-        finding_ids.sort();
-        let mut group_id_parts = vec![group.root_node_id.as_str()];
-        group_id_parts.extend(finding_ids.iter().map(String::as_str));
-        let group_id = local_stable_id("finding_group", group_id_parts);
-        let affected_identities = affected_identities_for_causal_impact(&group_graph);
-        let affected_identity_count = affected_identities.count();
-        let affected_tools = affected_tools_for_causal_impact(&group_graph);
-        let affected_tool_count = affected_tools.len();
-        groups.push(EdrFindingGroup {
-            group_id,
-            root_node_id: group.root_node_id,
-            root_label: group.root_label,
-            finding_count: group.findings.len(),
-            node_count: group_graph.nodes.len(),
-            edge_count: group_graph.edges.len(),
-            rule_ids,
-            finding_ids,
-            findings: group.findings,
-            affected_identity_count,
-            affected_tool_count,
-            affected_identities,
-            affected_tools,
-            graph: group_graph,
-            receipt,
-        });
-    }
-
-    let finding_count = groups.iter().map(|group| group.finding_count).sum();
-    Ok(Json(EdrFindingGroupsResponse {
-        group_count: groups.len(),
-        finding_count,
-        groups,
-    }))
-}
-
-// build_finding_groups and helpers moved to crate::edr::queries::finding_groups
-
 pub(crate) fn local_stable_id<'a>(prefix: &str, parts: impl IntoIterator<Item = &'a str>) -> String {
     let mut material = String::from(prefix);
     for part in parts {
@@ -4075,288 +3543,13 @@ pub(crate) fn local_stable_id<'a>(prefix: &str, parts: impl IntoIterator<Item = 
     format!("{prefix}-{fragment}")
 }
 
-async fn agent_edr_causal_graph(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrCausalGraphInput>,
-) -> Result<Json<EdrCausalGraphResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    validate_edr_request_sizes(input.observations.len(), 0)?;
-
-    let graph = if input.observations.is_empty() {
-        state.edr_flight_recorder.lock().await.graph().clone()
-    } else {
-        let observations = redact_endpoint_observations(&input.observations);
-        let mut recorder = CausalGraphRecorder::new();
-        for observation in &observations {
-            recorder.record_observation(observation);
-        }
-        recorder.into_graph()
-    };
-
-    Ok(Json(EdrCausalGraphResponse {
-        observation_count: input.observations.len(),
-        node_count: graph.nodes.len(),
-        edge_count: graph.edges.len(),
-        graph,
-    }))
-}
-
-async fn agent_edr_causal_subgraph(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrCausalSubgraphInput>,
-) -> Result<Json<EdrCausalSubgraphResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let root_node_id = resolve_causal_subgraph_root(&input)?;
-    let max_depth = bounded_graph_depth("maxDepth", input.max_depth)?;
-
-    let graph = state.edr_flight_recorder.lock().await.graph().clone();
-    let subgraph = graph
-        .causal_subgraph_from(root_node_id.as_str(), max_depth)
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                format!("causal graph root not found: {root_node_id}"),
-            )
-        })?;
-    let receipt = emit_edr_graph_slice_receipt(&state, &root_node_id, "causal_subgraph", &subgraph)
-        .await
-        .map_err(internal_error)?;
-    let affected_identities = affected_identities_for_causal_impact(&subgraph);
-    let affected_identity_count = affected_identities.count();
-    let affected_tools = affected_tools_for_causal_impact(&subgraph);
-    let affected_tool_count = affected_tools.len();
-
-    Ok(Json(EdrCausalSubgraphResponse {
-        root_node_id,
-        max_depth,
-        node_count: subgraph.nodes.len(),
-        edge_count: subgraph.edges.len(),
-        affected_identity_count,
-        affected_tool_count,
-        affected_identities,
-        affected_tools,
-        graph: subgraph,
-        receipt,
-    }))
-}
-
-fn resolve_causal_subgraph_root(
+pub(crate) fn resolve_causal_subgraph_root(
     input: &EdrCausalSubgraphInput,
 ) -> Result<String, (StatusCode, String)> {
     resolve_graph_root_from_selector(input.root_node_id.as_deref(), input.process.as_ref())
 }
 
-async fn agent_edr_causal_context(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrCausalContextInput>,
-) -> Result<Json<EdrCausalContextResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let root_node_id =
-        resolve_graph_root_from_selector(input.root_node_id.as_deref(), input.process.as_ref())?;
-    let upstream_depth = bounded_graph_depth("upstreamDepth", input.upstream_depth)?;
-    let downstream_depth = bounded_graph_depth("downstreamDepth", input.downstream_depth)?;
-
-    let (graph, durable_graph_edge_index) = {
-        let recorder = state.edr_flight_recorder.lock().await;
-        let graph = recorder.graph().clone();
-        let durable_graph_edge_index = recorder.read_graph_edge_index().ok();
-        (graph, durable_graph_edge_index)
-    };
-    let durable_graph_edge_index = durable_graph_edge_index
-        .as_ref()
-        .map(|(path, entries)| (path.as_path(), entries.as_slice()));
-    let (context_expansion_strategy, edge_index_source, edge_index_path, edge_index_count, context) =
-        if let Some((edge_index_path, edge_entries)) = durable_graph_edge_index {
-            let context = causal_context_around_with_edge_index(
-                &graph,
-                root_node_id.as_str(),
-                upstream_depth,
-                downstream_depth,
-                edge_entries,
-            )
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("causal graph root not found: {root_node_id}"),
-                )
-            })?;
-            (
-                "durable_graph_edge_sidecar_adjacency".to_string(),
-                "durable_graph_edge_sidecar".to_string(),
-                Some(edge_index_path.to_path_buf()),
-                edge_entries.len(),
-                context,
-            )
-        } else {
-            let context = graph
-                .causal_context_around(root_node_id.as_str(), upstream_depth, downstream_depth)
-                .ok_or_else(|| {
-                    (
-                        StatusCode::NOT_FOUND,
-                        format!("causal graph root not found: {root_node_id}"),
-                    )
-                })?;
-            (
-                "in_memory_graph_scan".to_string(),
-                "in_memory_graph".to_string(),
-                None,
-                graph.edges.len(),
-                context,
-            )
-        };
-    let receipt = emit_edr_graph_slice_receipt(&state, &root_node_id, "causal_context", &context)
-        .await
-        .map_err(internal_error)?;
-    let affected_identities = affected_identities_for_causal_impact(&context);
-    let affected_identity_count = affected_identities.count();
-    let affected_tools = affected_tools_for_causal_impact(&context);
-    let affected_tool_count = affected_tools.len();
-
-    Ok(Json(EdrCausalContextResponse {
-        root_node_id,
-        upstream_depth,
-        downstream_depth,
-        context_expansion_strategy,
-        edge_index_source,
-        edge_index_path,
-        edge_index_count,
-        node_count: context.nodes.len(),
-        edge_count: context.edges.len(),
-        affected_identity_count,
-        affected_tool_count,
-        affected_identities,
-        affected_tools,
-        graph: context,
-        receipt,
-    }))
-}
-
-async fn agent_edr_graph_search(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrGraphSearchInput>,
-) -> Result<Json<EdrGraphSearchResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    validate_graph_search_input(&input)?;
-    let upstream_depth = bounded_graph_depth("upstreamDepth", input.upstream_depth)?;
-    let downstream_depth = bounded_graph_depth("downstreamDepth", input.downstream_depth)?;
-    let limit = bounded_request_limit("limit", input.limit, 50, EDR_MAX_STORED_FINDINGS)?;
-
-    let (graph, durable_graph_index, durable_graph_edge_index) = {
-        let recorder = state.edr_flight_recorder.lock().await;
-        let graph = recorder.graph().clone();
-        let durable_graph_index = recorder.read_graph_node_index().ok();
-        let durable_graph_edge_index = recorder.read_graph_edge_index().ok();
-        (graph, durable_graph_index, durable_graph_edge_index)
-    };
-    let durable_graph_index = durable_graph_index
-        .as_ref()
-        .map(|(path, entries)| (path.as_path(), entries.as_slice()));
-    let durable_graph_edge_index = durable_graph_edge_index
-        .as_ref()
-        .map(|(path, entries)| (path.as_path(), entries.as_slice()));
-    let (pending_matches, total_match_count, query_plan) = build_graph_search_matches(
-        &graph,
-        durable_graph_index,
-        durable_graph_edge_index,
-        &input,
-        upstream_depth,
-        downstream_depth,
-        limit,
-    );
-    let mut matches = Vec::with_capacity(pending_matches.len());
-    for pending in pending_matches {
-        let receipt = emit_edr_graph_slice_receipt(
-            &state,
-            &pending.root_node_id,
-            "graph_search",
-            &pending.graph,
-        )
-        .await
-        .map_err(internal_error)?;
-        let affected_identities = affected_identities_for_causal_impact(&pending.graph);
-        let affected_identity_count = affected_identities.count();
-        let affected_tools = affected_tools_for_causal_impact(&pending.graph);
-        let affected_tool_count = affected_tools.len();
-        matches.push(EdrGraphSearchMatch {
-            root_node_id: pending.root_node_id,
-            root_label: pending.root_label,
-            root_kind: pending.root_kind,
-            node_count: pending.graph.nodes.len(),
-            edge_count: pending.graph.edges.len(),
-            affected_identity_count,
-            affected_tool_count,
-            affected_identities,
-            affected_tools,
-            graph: pending.graph,
-            receipt,
-        });
-    }
-
-    Ok(Json(EdrGraphSearchResponse {
-        match_count: matches.len(),
-        total_match_count,
-        upstream_depth,
-        downstream_depth,
-        query_plan,
-        matches,
-    }))
-}
-
-// validate_graph_search_input, build_graph_search_matches and helpers moved to crate::edr::queries::graph_search
-
-async fn agent_edr_graph_slice_export(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrGraphSliceExportInput>,
-) -> Result<Json<EdrGraphSliceExportResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let root_node_id =
-        resolve_graph_root_from_selector(input.root_node_id.as_deref(), input.process.as_ref())?;
-    let slice_kind = graph_slice_export_kind(input.slice_kind.as_deref())?;
-    let graph = state.edr_flight_recorder.lock().await.graph().clone();
-    let exported_graph = graph_slice_for_export(&graph, &root_node_id, &slice_kind, &input)?;
-    let bundle = evidence_bundle_for_graph_slice(
-        &root_node_id,
-        &slice_kind,
-        input.reason.as_deref(),
-        &exported_graph,
-    )
-    .map_err(internal_error)?;
-    let stored = state
-        .edr_evidence_bundle_store
-        .lock()
-        .await
-        .store(&bundle, &exported_graph)
-        .map_err(internal_error)?;
-    let receipt = emit_edr_graph_slice_receipt(&state, &root_node_id, &slice_kind, &exported_graph)
-        .await
-        .map_err(internal_error)?;
-    let affected_identities = affected_identities_for_causal_impact(&exported_graph);
-    let affected_identity_count = affected_identities.count();
-    let affected_tools = affected_tools_for_causal_impact(&exported_graph);
-    let affected_tool_count = affected_tools.len();
-
-    Ok(Json(EdrGraphSliceExportResponse {
-        root_node_id,
-        slice_kind,
-        node_count: exported_graph.nodes.len(),
-        edge_count: exported_graph.edges.len(),
-        affected_identity_count,
-        affected_tool_count,
-        affected_identities,
-        affected_tools,
-        graph: exported_graph,
-        bundle,
-        artifact: EdrEvidenceBundleArtifact::from_stored(&stored),
-        receipt,
-    }))
-}
-
-fn graph_slice_export_kind(value: Option<&str>) -> Result<String, (StatusCode, String)> {
+pub(crate) fn graph_slice_export_kind(value: Option<&str>) -> Result<String, (StatusCode, String)> {
     let kind = non_empty(value).unwrap_or("causal_subgraph");
     match kind {
         "causal_subgraph" | "causal_context" => Ok(kind.to_string()),
@@ -4367,7 +3560,7 @@ fn graph_slice_export_kind(value: Option<&str>) -> Result<String, (StatusCode, S
     }
 }
 
-fn graph_slice_for_export(
+pub(crate) fn graph_slice_for_export(
     graph: &CausalGraph,
     root_node_id: &str,
     slice_kind: &str,
@@ -4404,7 +3597,7 @@ fn graph_slice_for_export(
     }
 }
 
-fn evidence_bundle_for_graph_slice(
+pub(crate) fn evidence_bundle_for_graph_slice(
     root_node_id: &str,
     slice_kind: &str,
     reason: Option<&str>,
@@ -4439,18 +3632,7 @@ fn evidence_bundle_for_graph_slice(
     })
 }
 
-async fn agent_edr_agent_secret_touches(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrAgentSecretTouchesInput>,
-) -> Result<Json<EdrAgentSecretTouchesResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    collect_agent_secret_touches(state.as_ref(), input)
-        .await
-        .map(Json)
-}
-
-async fn collect_agent_secret_touches(
+pub(crate) async fn collect_agent_secret_touches(
     state: &AgentApiState,
     input: EdrAgentSecretTouchesInput,
 ) -> Result<EdrAgentSecretTouchesResponse, (StatusCode, String)> {
@@ -4554,36 +3736,19 @@ where
     })
 }
 
-async fn agent_edr_agent_secret_touches_fleet_publish(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrAgentSecretTouchesInput>,
-) -> Result<Json<EdrAgentSecretTouchesFleetPublishResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let publish_context = fleet_hunt_publish_context(state.as_ref()).await?;
-    let response = collect_agent_secret_touches(state.as_ref(), input).await?;
-    let events = publish_agent_secret_touches_to_fleet(&publish_context, &response.touches).await?;
-
-    Ok(Json(EdrAgentSecretTouchesFleetPublishResponse {
-        touch_count: response.touch_count,
-        published_count: events.len(),
-        events,
-    }))
-}
-
-struct FleetHuntPublishContext {
+pub(crate) struct FleetHuntPublishContext {
     publisher: Arc<dyn FleetHuntEventPublisher>,
     tenant_id: String,
     endpoint_agent_id: String,
 }
 
-struct FleetHuntEventIdentity {
-    publisher: Option<Arc<dyn FleetHuntEventPublisher>>,
-    tenant_id: String,
-    endpoint_agent_id: String,
+pub(crate) struct FleetHuntEventIdentity {
+    pub(crate) publisher: Option<Arc<dyn FleetHuntEventPublisher>>,
+    pub(crate) tenant_id: String,
+    pub(crate) endpoint_agent_id: String,
 }
 
-async fn fleet_hunt_publish_context(
+pub(crate) async fn fleet_hunt_publish_context(
     state: &AgentApiState,
 ) -> Result<FleetHuntPublishContext, (StatusCode, String)> {
     let publisher = state
@@ -4616,7 +3781,7 @@ async fn fleet_hunt_publish_context(
     })
 }
 
-async fn fleet_hunt_event_identity(
+pub(crate) async fn fleet_hunt_event_identity(
     state: &AgentApiState,
 ) -> Result<FleetHuntEventIdentity, (StatusCode, String)> {
     let publisher = state.fleet_hunt_publisher.as_ref().cloned();
@@ -4651,7 +3816,7 @@ async fn fleet_hunt_event_identity(
     })
 }
 
-async fn enqueue_fleet_hunt_event_outbox(
+pub(crate) async fn enqueue_fleet_hunt_event_outbox(
     state: &AgentApiState,
     event: serde_json::Value,
     error: Option<&str>,
@@ -4703,7 +3868,7 @@ async fn enqueue_fleet_hunt_event_outbox(
     Ok((outbox_id, next_attempt_at))
 }
 
-struct FleetHuntEventRetryAttemptOutcome {
+pub(crate) struct FleetHuntEventRetryAttemptOutcome {
     delivered: bool,
     error_hash: Option<String>,
 }
@@ -4738,7 +3903,7 @@ async fn send_fleet_hunt_event_outbox_retry(
     }
 }
 
-async fn drain_fleet_hunt_event_outbox(
+pub(crate) async fn drain_fleet_hunt_event_outbox(
     state: &AgentApiState,
     publisher: Arc<dyn FleetHuntEventPublisher>,
     limit: usize,
@@ -4851,7 +4016,7 @@ async fn drain_due_fleet_hunt_event_outbox_best_effort(
     }
 }
 
-async fn publish_agent_secret_touches_to_fleet(
+pub(crate) async fn publish_agent_secret_touches_to_fleet(
     context: &FleetHuntPublishContext,
     touches: &[EdrAgentSecretTouch],
 ) -> Result<Vec<EdrPublishedHuntEvent>, (StatusCode, String)> {
@@ -5215,7 +4380,7 @@ fn fleet_hunt_event_for_agent_secret_touch(
     })
 }
 
-fn fleet_hunt_event_for_evidence_bundle_archive(
+pub(crate) fn fleet_hunt_event_for_evidence_bundle_archive(
     archive_id: &str,
     archive_hash: &str,
     archive: &EdrEvidenceBundleArchive,
@@ -5296,7 +4461,7 @@ fn fleet_hunt_event_for_evidence_bundle_archive(
     })
 }
 
-fn evidence_bundle_archive_raw_ref(archive_id: &str, archive_hash: &str) -> String {
+pub(crate) fn evidence_bundle_archive_raw_ref(archive_id: &str, archive_hash: &str) -> String {
     format!("endpoint-evidence-bundle-archive:{archive_id}:{archive_hash}")
 }
 
@@ -5387,7 +4552,7 @@ fn graph_root_process_selector(input: &EdrGraphRootProcessSelectorInput) -> Endp
     }
 }
 
-fn resolve_graph_root_from_selector(
+pub(crate) fn resolve_graph_root_from_selector(
     root_node_id: Option<&str>,
     process: Option<&EdrGraphRootProcessSelectorInput>,
 ) -> Result<String, (StatusCode, String)> {
@@ -5395,7 +4560,7 @@ fn resolve_graph_root_from_selector(
     resolve_graph_root(root_node_id, process.as_ref())
 }
 
-fn bounded_graph_depth(field: &str, depth: Option<usize>) -> Result<usize, (StatusCode, String)> {
+pub(crate) fn bounded_graph_depth(field: &str, depth: Option<usize>) -> Result<usize, (StatusCode, String)> {
     let depth = depth.unwrap_or(EDR_MAX_CAUSAL_SUBGRAPH_DEPTH);
     if depth <= EDR_MAX_CAUSAL_SUBGRAPH_DEPTH {
         return Ok(depth);
@@ -5406,7 +4571,7 @@ fn bounded_graph_depth(field: &str, depth: Option<usize>) -> Result<usize, (Stat
     ))
 }
 
-fn bounded_request_limit(
+pub(crate) fn bounded_request_limit(
     field: &str,
     limit: Option<usize>,
     default: usize,
@@ -5422,7 +4587,7 @@ fn bounded_request_limit(
     ))
 }
 
-fn bounded_provider_timeout_ms(
+pub(crate) fn bounded_provider_timeout_ms(
     field: &str,
     timeout_ms: Option<u64>,
 ) -> Result<u64, (StatusCode, String)> {
@@ -5549,167 +4714,7 @@ fn normalize_ota_channel_setting(value: &str) -> Result<String, (StatusCode, Str
     }
 }
 
-async fn agent_edr_policy_simulation(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPolicySimulationInput>,
-) -> Result<Json<EdrPolicySimulationResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let action = input.action.unwrap_or(EndpointDecisionAction::Block);
-    if !supported_edr_simulation_action(&action) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "unsupported endpoint policy simulation action: {}",
-                action.as_str()
-            ),
-        ));
-    }
-
-    let root_node_id =
-        resolve_graph_root_from_selector(input.root_node_id.as_deref(), input.process.as_ref())?;
-    let max_depth = bounded_graph_depth("maxDepth", input.max_depth)?;
-    let rule_id = input
-        .rule_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("endpoint.policy_simulation.block")
-        .to_string();
-    let description = input
-        .description
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string);
-
-    let graph = state.edr_flight_recorder.lock().await.graph().clone();
-    let subgraph = edr_policy_simulation_graph_slice(&graph, root_node_id.as_str(), max_depth)
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                format!("policy simulation target not found in causal graph: {root_node_id}"),
-            )
-        })?;
-    let simulation = EndpointPolicySimulationReport::for_rule(
-        EndpointPolicySimulationRule {
-            rule_id,
-            action,
-            description,
-        },
-        &root_node_id,
-        &subgraph,
-    );
-    let receipt = emit_edr_simulation_receipt(&state, &simulation, &subgraph)
-        .await
-        .map_err(internal_error)?;
-
-    Ok(Json(EdrPolicySimulationResponse {
-        simulation,
-        graph: subgraph,
-        receipt,
-    }))
-}
-
-async fn agent_edr_policy_replay(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPolicyReplayInput>,
-) -> Result<Json<EdrPolicyReplayResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let root_node_id =
-        resolve_graph_root_from_selector(input.root_node_id.as_deref(), input.process.as_ref())?;
-    let max_depth = bounded_graph_depth("maxDepth", input.max_depth)?;
-    let (graph, flight_recorder_observation_count) = {
-        let recorder = state.edr_flight_recorder.lock().await;
-        (recorder.graph().clone(), recorder.observation_count())
-    };
-    let subgraph = edr_policy_simulation_graph_slice(&graph, root_node_id.as_str(), max_depth)
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                format!("policy replay target not found in causal graph: {root_node_id}"),
-            )
-        })?;
-    let root_node = subgraph.nodes.get(&root_node_id).ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            format!("policy replay root not found in graph slice: {root_node_id}"),
-        )
-    })?;
-    let action = input
-        .action
-        .unwrap_or_else(|| default_detection_candidate_action(root_node));
-    if !supported_edr_simulation_action(&action) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "unsupported endpoint policy replay action: {}",
-                action.as_str()
-            ),
-        ));
-    }
-
-    let settings = state.settings.read().await.clone();
-    let policy = endpoint_policy_snapshot_from_settings(&settings).map_err(internal_error)?;
-    let rule_id = input
-        .rule_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| policy_replay_rule_id(&policy, root_node, &action));
-    let description = input
-        .description
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| policy_replay_description(&policy, root_node, &action));
-    let simulation = EndpointPolicySimulationReport::for_rule(
-        EndpointPolicySimulationRule {
-            rule_id,
-            action: action.clone(),
-            description: Some(description),
-        },
-        &root_node_id,
-        &subgraph,
-    );
-    let receipt = emit_edr_simulation_receipt_with_policy(
-        &state,
-        &settings,
-        policy.clone(),
-        &simulation,
-        &subgraph,
-    )
-    .await
-    .map_err(internal_error)?;
-    let replay = build_policy_replay_report(
-        policy,
-        root_node,
-        flight_recorder_observation_count,
-        &simulation,
-        &subgraph,
-    );
-
-    Ok(Json(EdrPolicyReplayResponse {
-        replay,
-        simulation,
-        graph: subgraph,
-        receipt,
-    }))
-}
-
-async fn agent_edr_detection_candidate(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrDetectionCandidateInput>,
-) -> Result<Json<EdrDetectionCandidateResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    build_edr_detection_candidate(&state, input).await.map(Json)
-}
-
-async fn build_edr_detection_candidate(
+pub(crate) async fn build_edr_detection_candidate(
     state: &AgentApiState,
     input: EdrDetectionCandidateInput,
 ) -> Result<EdrDetectionCandidateResponse, (StatusCode, String)> {
@@ -5781,7 +4786,7 @@ async fn build_edr_detection_candidate(
     })
 }
 
-fn policy_replay_rule_id(
+pub(crate) fn policy_replay_rule_id(
     policy: &EndpointPolicySnapshot,
     node: &CausalNode,
     action: &EndpointDecisionAction,
@@ -5795,7 +4800,7 @@ fn policy_replay_rule_id(
     )
 }
 
-fn policy_replay_description(
+pub(crate) fn policy_replay_description(
     policy: &EndpointPolicySnapshot,
     node: &CausalNode,
     action: &EndpointDecisionAction,
@@ -5810,7 +4815,7 @@ fn policy_replay_description(
     )
 }
 
-fn edr_policy_simulation_graph_slice(
+pub(crate) fn edr_policy_simulation_graph_slice(
     graph: &CausalGraph,
     root_node_id: &str,
     max_depth: usize,
@@ -5820,7 +4825,7 @@ fn edr_policy_simulation_graph_slice(
         .or_else(|| graph.causal_subgraph_from(root_node_id, max_depth))
 }
 
-fn build_policy_replay_report(
+pub(crate) fn build_policy_replay_report(
     policy: EndpointPolicySnapshot,
     root_node: &CausalNode,
     flight_recorder_observation_count: usize,
@@ -5877,93 +4882,7 @@ fn build_policy_replay_report(
     }
 }
 
-async fn agent_edr_stage_detection(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrStageDetectionInput>,
-) -> Result<Json<EdrStageDetectionResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let candidate_response = build_edr_detection_candidate(&state, input.candidate_input()).await?;
-    let stage = input
-        .stage
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(candidate_response.recommended_stage.as_str());
-    validate_detection_stage(stage, &candidate_response.stage_plan)?;
-    let staged_by = input
-        .staged_by
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("local-agent");
-    if staged_by.len() > 256 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "staged_by must be at most 256 bytes".to_string(),
-        ));
-    }
-    let note = input
-        .note
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string);
-    if note.as_deref().is_some_and(|value| value.len() > 2048) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "staged detection note must be at most 2048 bytes".to_string(),
-        ));
-    }
-    let cross_window_impact_hash =
-        normalize_staged_detection_hash("crossWindowImpactHash", input.cross_window_impact_hash)?;
-    let cross_window_recommendation_hash = normalize_staged_detection_hash(
-        "crossWindowRecommendationHash",
-        input.cross_window_recommendation_hash,
-    )?;
-
-    let settings = state.settings.read().await.clone();
-    let policy = endpoint_policy_snapshot_from_settings(&settings).map_err(internal_error)?;
-    let staged_at = chrono::Utc::now();
-    let staged_at_text = staged_at.to_rfc3339();
-    let staged_detection_id = local_stable_id(
-        "staged_detection",
-        [
-            candidate_response.candidate.rule_id.as_str(),
-            candidate_response.candidate.graph_slice_id.as_str(),
-            stage,
-            staged_at_text.as_str(),
-        ],
-    );
-    let record = EdrStagedDetectionRecord {
-        staged_detection_id,
-        staged_at,
-        staged_by: staged_by.to_string(),
-        stage: stage.to_string(),
-        cross_window_impact_hash,
-        cross_window_recommendation_hash,
-        note,
-        policy,
-        candidate: candidate_response.candidate,
-        recommended_stage: candidate_response.recommended_stage,
-        stage_plan: candidate_response.stage_plan,
-        simulation: candidate_response.simulation,
-        simulation_receipt: candidate_response.receipt,
-    };
-    let path = {
-        let mut ledger = state.edr_staged_detection_ledger.lock().await;
-        ledger.append(&record).map_err(internal_error)?;
-        ledger.path().map(|path| path.display().to_string())
-    };
-
-    Ok(Json(EdrStageDetectionResponse {
-        path,
-        record,
-        graph: candidate_response.graph,
-    }))
-}
-
-fn normalize_staged_detection_hash(
+pub(crate) fn normalize_staged_detection_hash(
     field: &str,
     value: Option<String>,
 ) -> Result<Option<String>, (StatusCode, String)> {
@@ -5989,416 +4908,17 @@ fn normalize_staged_detection_hash(
     Ok(Some(value.to_ascii_lowercase()))
 }
 
-async fn agent_edr_staged_detections(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Query(query): Query<EdrStagedDetectionsQuery>,
-) -> Result<Json<EdrStagedDetectionsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", query.limit, 50, EDR_MAX_STORED_FINDINGS)?;
-    let stage = query_value(&query.stage).map(ToString::to_string);
-    let rule_id = query_value(&query.rule_id).map(ToString::to_string);
-    let ledger = state.edr_staged_detection_ledger.lock().await;
-    let path = ledger.path().map(|path| path.display().to_string());
-    let staged_detections = ledger
-        .read_recent(limit, stage.as_deref(), rule_id.as_deref())
-        .map_err(internal_error)?;
-    Ok(Json(EdrStagedDetectionsResponse {
-        path,
-        count: staged_detections.len(),
-        staged_detections,
-    }))
+pub(crate) struct PolicyDeltaApplyEnforcementProofInput<'a> {
+    pub(crate) settings: &'a Settings,
+    pub(crate) local_policy: EndpointPolicySnapshot,
+    pub(crate) cross_window_impact_hash: Option<&'a str>,
+    pub(crate) cross_window_recommendation_hash: Option<&'a str>,
+    pub(crate) daemon_policy_reload_requested: bool,
+    pub(crate) daemon_restart_requested: bool,
+    pub(crate) provider_ack_timeout_ms: u64,
 }
 
-async fn agent_edr_policy_delta(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrPolicyDeltaInput>,
-) -> Result<Json<EdrPolicyDeltaResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let generated_by = input
-        .generated_by
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("local-agent");
-    if generated_by.len() > 256 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "generated_by must be at most 256 bytes".to_string(),
-        ));
-    }
-    let note = input
-        .note
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string);
-    if note.as_deref().is_some_and(|value| value.len() > 2048) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "policy delta note must be at most 2048 bytes".to_string(),
-        ));
-    }
-
-    let staged_detection_id = query_value(&input.staged_detection_id).map(ToString::to_string);
-    let rule_id = query_value(&input.rule_id).map(ToString::to_string);
-    let stage = query_value(&input.stage).map(ToString::to_string);
-    let staged = {
-        let ledger = state.edr_staged_detection_ledger.lock().await;
-        let records = ledger.all().map_err(internal_error)?;
-        select_staged_detection_for_policy_delta(
-            records,
-            staged_detection_id.as_deref(),
-            rule_id.as_deref(),
-            stage.as_deref(),
-        )?
-    };
-    let stage_entry = staged_detection_stage_entry(&staged)?;
-    let settings = state.settings.read().await.clone();
-    let endpoint_id = endpoint_id_for_settings(&settings);
-    let generated_at = chrono::Utc::now();
-    let generated_at_text = generated_at.to_rfc3339();
-    let source_affected_identity_context =
-        policy_delta_source_context_evidence_value(&staged.simulation.affected_identities);
-    let source_affected_tool_context =
-        policy_delta_source_context_evidence_value(&staged.simulation.affected_tools);
-    let policy_delta_id = endpoint_policy_delta_id(EndpointPolicyDeltaIdInput {
-        endpoint_id: endpoint_id.as_str(),
-        rule_id: staged.candidate.rule_id.as_str(),
-        action: &stage_entry.action,
-        staged_detection_id: staged.staged_detection_id.as_str(),
-        stage: staged.stage.as_str(),
-        generated_at: generated_at_text.as_str(),
-        simulation_id: staged.simulation.simulation_id.as_str(),
-        graph_slice_id: staged.candidate.graph_slice_id.as_str(),
-        root_node_id: staged.candidate.root_node_id.as_str(),
-        source_affected_identity_context: source_affected_identity_context.as_str(),
-        source_affected_tool_context: source_affected_tool_context.as_str(),
-    });
-    let artifact = build_edr_policy_delta_artifact(
-        &staged,
-        stage_entry,
-        policy_delta_id,
-        generated_at,
-        generated_by,
-        note,
-    )?;
-    let artifact_hash = policy_delta_artifact_hash(&artifact).map_err(internal_error)?;
-    let sensor_state = endpoint_sensor_state_from_macos_host(&state.macos_host.snapshot().await);
-    let receipt = {
-        let mut ledger = state.edr_receipt_ledger.lock().await;
-        ledger
-            .sign_policy_delta_receipt(
-                &settings,
-                staged.policy.clone(),
-                sensor_state,
-                EdrPolicyDeltaReceiptSigningInput {
-                    artifact: &artifact,
-                    artifact_hash: &artifact_hash,
-                    operation: "generated",
-                    previous_policy_hash: None,
-                    new_policy_hash: None,
-                    backup_path: None,
-                },
-            )
-            .map_err(internal_error)?
-    };
-    let mut record = EdrPolicyDeltaRecord {
-        policy_delta_id: artifact.policy_delta_id.clone(),
-        generated_at: artifact.generated_at,
-        generated_by: artifact.generated_by.clone(),
-        rule_id: artifact.candidate.rule_id.clone(),
-        stage: artifact.rollout.stage.clone(),
-        action: artifact.rollout.action.clone(),
-        artifact_hash,
-        artifact_path: None,
-        artifact,
-        receipt,
-    };
-    let path = {
-        let mut store = state.edr_policy_delta_store.lock().await;
-        store.append(&mut record).map_err(internal_error)?;
-        store.path().map(|path| path.display().to_string())
-    };
-
-    Ok(Json(EdrPolicyDeltaResponse { path, record }))
-}
-
-async fn agent_edr_policy_deltas(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Query(query): Query<EdrPolicyDeltasQuery>,
-) -> Result<Json<EdrPolicyDeltasResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", query.limit, 50, EDR_MAX_STORED_FINDINGS)?;
-    let stage = query_value(&query.stage).map(ToString::to_string);
-    let rule_id = query_value(&query.rule_id).map(ToString::to_string);
-    let store = state.edr_policy_delta_store.lock().await;
-    let path = store.path().map(|path| path.display().to_string());
-    let policy_deltas = store
-        .read_recent(limit, stage.as_deref(), rule_id.as_deref())
-        .map_err(internal_error)?;
-    Ok(Json(EdrPolicyDeltasResponse {
-        path,
-        count: policy_deltas.len(),
-        policy_deltas,
-    }))
-}
-
-async fn agent_edr_policy_delta_apply(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(policy_delta_id): Path<String>,
-    Json(input): Json<EdrPolicyDeltaApplyInput>,
-) -> Result<Json<EdrPolicyDeltaApplyResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let policy_delta_id = policy_delta_id.trim();
-    if policy_delta_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "policy delta id must not be empty".to_string(),
-        ));
-    }
-    let dry_run = input.dry_run.unwrap_or(true);
-    let allow_base_policy_drift = input.allow_base_policy_drift.unwrap_or(false);
-    let reload_daemon_policy = input.reload_daemon_policy.unwrap_or(!dry_run);
-    let restart_daemon = input.restart_daemon.unwrap_or(false);
-    let verify_protection_state = input.verify_protection_state.unwrap_or(!dry_run);
-    let provider_ack_timeout_ms = if dry_run || !verify_protection_state {
-        0
-    } else {
-        bounded_provider_timeout_ms("providerAckTimeoutMs", input.provider_ack_timeout_ms)?
-    };
-    if dry_run && input.reload_daemon_policy.unwrap_or(false) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "reloadDaemonPolicy cannot be true for dryRun".to_string(),
-        ));
-    }
-    if dry_run && restart_daemon {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "restartDaemon cannot be true for dryRun".to_string(),
-        ));
-    }
-    if dry_run && input.verify_protection_state.unwrap_or(false) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "verifyProtectionState cannot be true for dryRun".to_string(),
-        ));
-    }
-    if dry_run && input.provider_ack_timeout_ms.unwrap_or(0) > 0 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "providerAckTimeoutMs cannot be set for dryRun".to_string(),
-        ));
-    }
-    let applied_by = input
-        .applied_by
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("local-agent");
-    if applied_by.len() > 256 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "applied_by must be at most 256 bytes".to_string(),
-        ));
-    }
-    let note = input
-        .note
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string);
-    if note.as_deref().is_some_and(|value| value.len() > 2048) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "policy delta apply note must be at most 2048 bytes".to_string(),
-        ));
-    }
-
-    let policy_delta = {
-        let store = state.edr_policy_delta_store.lock().await;
-        store
-            .read_by_id(policy_delta_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("policy delta not found: {policy_delta_id}"),
-                )
-            })?
-    };
-    let settings = state.settings.read().await.clone();
-    let policy_path = settings.policy_path.clone();
-    let current_bytes = fs::read(&policy_path).map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("read local policy {}: {err}", policy_path.display()),
-        )
-    })?;
-    let previous_snapshot =
-        endpoint_policy_snapshot_from_policy_bytes(&current_bytes, &policy_path)
-            .map_err(internal_error)?;
-    let expected_base_policy_hash = policy_delta.artifact.target_policy.base_policy_hash.clone();
-    if previous_snapshot.policy_hash != expected_base_policy_hash && !allow_base_policy_drift {
-        return Err((
-            StatusCode::CONFLICT,
-            format!(
-                "policy delta base hash mismatch: expected {}, current {}",
-                expected_base_policy_hash, previous_snapshot.policy_hash
-            ),
-        ));
-    }
-
-    let new_bytes =
-        apply_policy_delta_patch_to_policy(&current_bytes, &policy_delta.artifact.policy_patch)
-            .map_err(internal_error)?;
-    let new_snapshot = endpoint_policy_snapshot_from_policy_bytes(&new_bytes, &policy_path)
-        .map_err(internal_error)?;
-    if new_snapshot.policy_epoch <= previous_snapshot.policy_epoch {
-        return Err((
-            StatusCode::CONFLICT,
-            format!(
-                "policy delta target epoch {} is not newer than current policy epoch {}",
-                new_snapshot.policy_epoch, previous_snapshot.policy_epoch
-            ),
-        ));
-    }
-    let applied_at = chrono::Utc::now();
-    let backup_path = if dry_run {
-        None
-    } else {
-        let backup_path = policy_delta_backup_path(&policy_path, policy_delta_id, applied_at);
-        if let Some(parent) = backup_path.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("create policy backup directory {}: {err}", parent.display()),
-                )
-            })?;
-        }
-        fs::copy(&policy_path, &backup_path).map_err(|err| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "backup local policy {} to {}: {err}",
-                    policy_path.display(),
-                    backup_path.display()
-                ),
-            )
-        })?;
-        crate::security::fs::write_private_atomic(
-            &policy_path,
-            &new_bytes,
-            "endpoint policy delta applied policy",
-        )
-        .map_err(internal_error)?;
-        Some(backup_path.display().to_string())
-    };
-
-    let receipt = if dry_run {
-        None
-    } else {
-        let sensor_state =
-            endpoint_sensor_state_from_macos_host(&state.macos_host.snapshot().await);
-        let mut ledger = state.edr_receipt_ledger.lock().await;
-        Some(
-            ledger
-                .sign_policy_delta_receipt(
-                    &settings,
-                    new_snapshot.clone(),
-                    sensor_state,
-                    EdrPolicyDeltaReceiptSigningInput {
-                        artifact: &policy_delta.artifact,
-                        artifact_hash: &policy_delta.artifact_hash,
-                        operation: "applied",
-                        previous_policy_hash: Some(previous_snapshot.policy_hash.as_str()),
-                        new_policy_hash: Some(new_snapshot.policy_hash.as_str()),
-                        backup_path: backup_path.as_deref(),
-                    },
-                )
-                .map_err(internal_error)?,
-        )
-    };
-    let post_apply_enforcement =
-        if !dry_run && (verify_protection_state || reload_daemon_policy || restart_daemon) {
-            Some(
-                build_policy_delta_apply_enforcement_proof(
-                    &state,
-                    PolicyDeltaApplyEnforcementProofInput {
-                        settings: &settings,
-                        local_policy: new_snapshot.clone(),
-                        cross_window_impact_hash: policy_delta
-                            .artifact
-                            .rollout
-                            .cross_window_impact_hash
-                            .as_deref(),
-                        cross_window_recommendation_hash: policy_delta
-                            .artifact
-                            .rollout
-                            .cross_window_recommendation_hash
-                            .as_deref(),
-                        daemon_policy_reload_requested: reload_daemon_policy,
-                        daemon_restart_requested: restart_daemon,
-                        provider_ack_timeout_ms,
-                    },
-                )
-                .await
-                .map_err(internal_error)?,
-            )
-        } else {
-            None
-        };
-
-    let record = EdrPolicyDeltaApplyRecord {
-        policy_delta_id: policy_delta.policy_delta_id.clone(),
-        applied_at,
-        applied_by: applied_by.to_string(),
-        note,
-        dry_run,
-        applied: !dry_run,
-        allow_base_policy_drift,
-        cross_window_impact_hash: policy_delta
-            .artifact
-            .rollout
-            .cross_window_impact_hash
-            .clone(),
-        cross_window_recommendation_hash: policy_delta
-            .artifact
-            .rollout
-            .cross_window_recommendation_hash
-            .clone(),
-        policy_path: policy_path.display().to_string(),
-        backup_path,
-        expected_base_policy_hash,
-        previous_policy_hash: previous_snapshot.policy_hash,
-        new_policy_hash: new_snapshot.policy_hash,
-        previous_policy_epoch: previous_snapshot.policy_epoch,
-        new_policy_epoch: new_snapshot.policy_epoch,
-    };
-
-    Ok(Json(EdrPolicyDeltaApplyResponse {
-        record,
-        policy_delta,
-        receipt,
-        post_apply_enforcement,
-    }))
-}
-
-struct PolicyDeltaApplyEnforcementProofInput<'a> {
-    settings: &'a Settings,
-    local_policy: EndpointPolicySnapshot,
-    cross_window_impact_hash: Option<&'a str>,
-    cross_window_recommendation_hash: Option<&'a str>,
-    daemon_policy_reload_requested: bool,
-    daemon_restart_requested: bool,
-    provider_ack_timeout_ms: u64,
-}
-
-async fn build_policy_delta_apply_enforcement_proof(
+pub(crate) async fn build_policy_delta_apply_enforcement_proof(
     state: &Arc<AgentApiState>,
     input: PolicyDeltaApplyEnforcementProofInput<'_>,
 ) -> Result<EdrPolicyDeltaApplyEnforcementProof> {
@@ -6498,7 +5018,7 @@ async fn build_policy_delta_apply_enforcement_proof(
     })
 }
 
-async fn refresh_macos_provider_status(
+pub(crate) async fn refresh_macos_provider_status(
     state: &Arc<AgentApiState>,
     timeout_ms: u64,
 ) -> EdrProviderStatusRefreshResult {
@@ -6769,7 +5289,7 @@ fn network_extension_response_not_ready_reasons(provider: &ProviderStatus) -> Ve
     reasons
 }
 
-fn network_extension_egress_policy_proof_enforcement_ready(
+pub(crate) fn network_extension_egress_policy_proof_enforcement_ready(
     snapshot_decodable: bool,
     provider: &ProviderStatus,
 ) -> bool {
@@ -6793,7 +5313,7 @@ async fn ensure_network_extension_ready_for_restrict_egress(
     ))
 }
 
-struct PolicyDeltaApplyEnforcementEvidenceInput<'a> {
+pub(crate) struct PolicyDeltaApplyEnforcementEvidenceInput<'a> {
     local_policy: &'a EndpointPolicySnapshot,
     daemon_policy_reload: &'a EdrDaemonPolicyReloadResult,
     network_extension_policy_reload: &'a NetworkExtensionReloadRequestProof,
@@ -7104,200 +5624,7 @@ async fn request_daemon_policy_reload(
     }
 }
 
-async fn agent_edr_network_extension_egress_policy_proof(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrNetworkExtensionEgressPolicyProofInput>,
-) -> Result<Json<EdrNetworkExtensionEgressPolicyProofResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let refresh_providers = input.refresh_providers.unwrap_or(true);
-    let provider_refresh_timeout_ms = if refresh_providers {
-        bounded_provider_timeout_ms(
-            "providerRefreshTimeoutMs",
-            input.provider_refresh_timeout_ms,
-        )?
-    } else {
-        0
-    };
-    let path = state.edr_network_extension_egress_policy_path.as_ref();
-    let now = chrono::Utc::now();
-    let (
-        snapshot_present,
-        snapshot_decodable,
-        snapshot_hash,
-        generated_at,
-        restriction_count,
-        active_restriction_count,
-        expired_restriction_count,
-        read_error,
-    ) = match fs::read(path) {
-        Ok(bytes) => {
-            let snapshot_hash = Some(sha256(&bytes).to_hex_prefixed());
-            match serde_json::from_slice::<NetworkExtensionEgressPolicySnapshot>(&bytes) {
-                Ok(snapshot) => {
-                    let restriction_count = snapshot.restrictions.len();
-                    let active_restriction_count = snapshot
-                        .restrictions
-                        .iter()
-                        .filter(|restriction| restriction.active && restriction.expires_at > now)
-                        .count();
-                    let expired_restriction_count =
-                        restriction_count.saturating_sub(active_restriction_count);
-                    (
-                        true,
-                        true,
-                        snapshot_hash,
-                        Some(snapshot.generated_at),
-                        restriction_count,
-                        active_restriction_count,
-                        expired_restriction_count,
-                        None,
-                    )
-                }
-                Err(err) => (
-                    true,
-                    false,
-                    snapshot_hash,
-                    None,
-                    0,
-                    0,
-                    0,
-                    Some(format!("decode network extension egress policy: {err}")),
-                ),
-            }
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => (
-            false,
-            false,
-            None,
-            None,
-            0,
-            0,
-            0,
-            Some("network extension egress policy snapshot not found".to_string()),
-        ),
-        Err(err) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "read network extension egress policy {}: {err}",
-                    path.display()
-                ),
-            ));
-        }
-    };
-
-    let provider_status_refresh =
-        refresh_macos_provider_status(&state, provider_refresh_timeout_ms).await;
-    let macos_host = state.macos_host.snapshot().await;
-    let network_extension_provider = macos_host.network_extension.clone();
-    let sensor_state = endpoint_sensor_state_from_macos_host(&macos_host);
-    let settings = state.settings.read().await.clone();
-    let local_policy = endpoint_policy_snapshot_from_settings(&settings).map_err(internal_error)?;
-    let flow_counters = network_extension_flow_counter_summary(&network_extension_provider);
-    let enforcement_ready = network_extension_egress_policy_proof_enforcement_ready(
-        snapshot_decodable,
-        &network_extension_provider,
-    );
-    let provider_reload_delivery = network_extension_reload_delivery_for_execution(
-        state.as_ref(),
-        input.execution_id.as_deref(),
-        &network_extension_provider,
-    )
-    .await?;
-    let live_enforcement_proof =
-        network_extension_live_enforcement_proof(NetworkExtensionLiveEnforcementProofInput {
-            snapshot_present,
-            snapshot_decodable,
-            active_restriction_count,
-            enforcement_ready,
-            flow_counters: &flow_counters,
-            execution_id_provided: input
-                .execution_id
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty()),
-            provider_reload_delivery: provider_reload_delivery.as_ref(),
-        });
-    let proof_input = NetworkExtensionEgressPolicyProofEvidenceInput {
-        provider_policy_path: path,
-        snapshot_present,
-        snapshot_decodable,
-        snapshot_hash: snapshot_hash.as_deref(),
-        generated_at: generated_at.as_ref(),
-        restriction_count,
-        active_restriction_count,
-        expired_restriction_count,
-        enforcement_ready,
-        live_enforcement_proven: live_enforcement_proof.proven,
-        live_enforcement_proof_reasons: &live_enforcement_proof.reasons,
-        flow_counter_observed: flow_counters.flow_counter_observed,
-        provider: &network_extension_provider,
-        provider_status_refresh: &provider_status_refresh,
-        provider_reload_delivery: provider_reload_delivery.as_ref(),
-    };
-    let proof_evidence = network_extension_egress_policy_proof_evidence(proof_input);
-    let receipt = emit_edr_sensor_state_receipt_with_evidence(
-        state.as_ref(),
-        local_policy.clone(),
-        sensor_state.clone(),
-        "network extension egress policy proof",
-        &proof_evidence,
-    )
-    .await
-    .map_err(internal_error)?;
-    let degraded_provider_receipts =
-        emit_edr_provider_degradation_receipts(state.as_ref(), local_policy, sensor_state.clone())
-            .await
-            .map_err(internal_error)?;
-    let provider_reload_observation = network_extension_provider.last_reload_observation.clone();
-
-    Ok(Json(EdrNetworkExtensionEgressPolicyProofResponse {
-        provider_policy_path: path.display().to_string(),
-        snapshot_present,
-        snapshot_decodable,
-        snapshot_hash,
-        generated_at,
-        restriction_count,
-        active_restriction_count,
-        expired_restriction_count,
-        enforcement_ready,
-        live_enforcement_proven: live_enforcement_proof.proven,
-        live_enforcement_proof_reasons: live_enforcement_proof.reasons,
-        flow_counter_observed: flow_counters.flow_counter_observed,
-        observed_flow_count: flow_counters.observed_flow_count,
-        blocked_flow_count: flow_counters.blocked_flow_count,
-        remediation_request_count: flow_counters.remediation_request_count,
-        dropped_verdict_count: flow_counters.dropped_verdict_count,
-        provider_reload_observed: provider_reload_observation.is_some(),
-        provider_reload_request_id: provider_reload_observation
-            .as_ref()
-            .and_then(|observation| observation.request_id.clone()),
-        provider_reload_generation: provider_reload_observation
-            .as_ref()
-            .and_then(|observation| observation.generation),
-        provider_reload_policy_snapshot_path: provider_reload_observation
-            .as_ref()
-            .and_then(|observation| observation.policy_snapshot_path.clone()),
-        provider_reload_accepted: provider_reload_observation
-            .as_ref()
-            .and_then(|observation| observation.accepted),
-        provider_reload_reloaded: provider_reload_observation
-            .as_ref()
-            .and_then(|observation| observation.reloaded),
-        provider_reload_error: provider_reload_observation
-            .as_ref()
-            .and_then(|observation| observation.error.clone()),
-        provider_reload_delivery,
-        read_error,
-        provider_status_refresh,
-        network_extension_provider,
-        sensor_state,
-        receipt,
-        degraded_provider_receipts,
-    }))
-}
-
-fn select_staged_detection_for_policy_delta(
+pub(crate) fn select_staged_detection_for_policy_delta(
     records: Vec<EdrStagedDetectionRecord>,
     staged_detection_id: Option<&str>,
     rule_id: Option<&str>,
@@ -7325,7 +5652,7 @@ fn select_staged_detection_for_policy_delta(
         })
 }
 
-fn staged_detection_stage_entry(
+pub(crate) fn staged_detection_stage_entry(
     record: &EdrStagedDetectionRecord,
 ) -> Result<&EdrDetectionCandidateStage, (StatusCode, String)> {
     record
@@ -7348,7 +5675,7 @@ fn staged_detection_stage_entry(
 // validate_policy_delta_stage_action, conventional_policy_guard_patch, merge_json_values
 // moved to crate::edr::policy_events
 
-fn policy_delta_artifact_hash(artifact: &EdrPolicyDeltaArtifact) -> Result<String> {
+pub(crate) fn policy_delta_artifact_hash(artifact: &EdrPolicyDeltaArtifact) -> Result<String> {
     let value = serde_json::to_value(artifact)
         .with_context(|| format!("serialize policy delta {}", artifact.policy_delta_id))?;
     let canonical = canonicalize_json(&value)
@@ -7363,7 +5690,7 @@ pub(crate) fn policy_delta_source_context_evidence_value<T: Serialize>(value: &T
         .unwrap_or_else(|| "null".to_string())
 }
 
-fn apply_policy_delta_patch_to_policy(current_bytes: &[u8], patch: &Value) -> Result<Vec<u8>> {
+pub(crate) fn apply_policy_delta_patch_to_policy(current_bytes: &[u8], patch: &Value) -> Result<Vec<u8>> {
     let current_yaml: serde_yaml::Value =
         serde_yaml::from_slice(current_bytes).context("parse current policy yaml")?;
     let mut current_json =
@@ -7403,7 +5730,7 @@ fn merge_policy_patch_values(target: &mut Value, source: Value) {
     }
 }
 
-fn policy_delta_backup_path(
+pub(crate) fn policy_delta_backup_path(
     policy_path: &FsPath,
     policy_delta_id: &str,
     applied_at: chrono::DateTime<chrono::Utc>,
@@ -7424,7 +5751,7 @@ fn policy_delta_backup_path(
     ))
 }
 
-fn validate_detection_stage(
+pub(crate) fn validate_detection_stage(
     stage: &str,
     stage_plan: &[EdrDetectionCandidateStage],
 ) -> Result<(), (StatusCode, String)> {
@@ -7448,7 +5775,7 @@ fn detection_stage_names(stage_plan: &[EdrDetectionCandidateStage]) -> String {
         .join(", ")
 }
 
-fn default_detection_candidate_action(
+pub(crate) fn default_detection_candidate_action(
     node: &clawdstrike_policy_event::edr::CausalNode,
 ) -> EndpointDecisionAction {
     match node.kind {
@@ -7599,7 +5926,7 @@ fn rule_id_fragment(value: &str) -> String {
     }
 }
 
-fn supported_edr_simulation_action(action: &EndpointDecisionAction) -> bool {
+pub(crate) fn supported_edr_simulation_action(action: &EndpointDecisionAction) -> bool {
     matches!(
         action,
         EndpointDecisionAction::Block
@@ -7612,7 +5939,7 @@ fn supported_edr_simulation_action(action: &EndpointDecisionAction) -> bool {
     )
 }
 
-fn validate_response_action_actor(
+pub(crate) fn validate_response_action_actor(
     actor: Option<&EdrResponseActionActorInput>,
 ) -> Result<(), (StatusCode, String)> {
     let Some(actor) = actor else {
@@ -7642,7 +5969,7 @@ fn response_action_actor_identity_present(actor: &EdrResponseActionActorInput) -
     .any(|value| non_empty(value).is_some())
 }
 
-fn validate_response_action_actor_fields(
+pub(crate) fn validate_response_action_actor_fields(
     actor: Option<&EdrResponseActionActorInput>,
 ) -> Result<(), (StatusCode, String)> {
     let Some(actor) = actor else {
@@ -7671,7 +5998,7 @@ fn validate_response_action_actor_fields(
     Ok(())
 }
 
-fn validate_response_action_ttl_seconds(
+pub(crate) fn validate_response_action_ttl_seconds(
     ttl_seconds: Option<u64>,
 ) -> Result<u64, (StatusCode, String)> {
     let ttl_seconds = ttl_seconds.unwrap_or(EDR_DEFAULT_RESPONSE_TTL_SECONDS);
@@ -7684,7 +6011,7 @@ fn validate_response_action_ttl_seconds(
     ))
 }
 
-fn validate_response_reason(
+pub(crate) fn validate_response_reason(
     field: &str,
     reason: Option<&str>,
     default_reason: &'static str,
@@ -7702,7 +6029,7 @@ fn validate_response_reason(
     ))
 }
 
-fn default_response_action_reason(action: &EndpointDecisionAction, dry_run: bool) -> &'static str {
+pub(crate) fn default_response_action_reason(action: &EndpointDecisionAction, dry_run: bool) -> &'static str {
     if dry_run {
         return "endpoint response dry run";
     }
@@ -7718,182 +6045,7 @@ fn default_response_action_reason(action: &EndpointDecisionAction, dry_run: bool
     }
 }
 
-async fn agent_edr_response_action(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrResponseActionInput>,
-) -> Result<Json<EdrResponseActionResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let dry_run = input.dry_run.unwrap_or(true);
-    if !dry_run
-        && !matches!(
-            input.action,
-            EndpointDecisionAction::CollectEvidence
-                | EndpointDecisionAction::RestrictEgress
-                | EndpointDecisionAction::QuarantineFile
-                | EndpointDecisionAction::DisablePersistence
-                | EndpointDecisionAction::RevokeGrant
-                | EndpointDecisionAction::SuspendProcessTree
-        )
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "only collect_evidence, restrict_egress, quarantine_file, disable_persistence, revoke_grant, and suspend_process_tree can execute locally in this safe response-engine slice"
-                .to_string(),
-        ));
-    }
-    if !supported_edr_response_action(&input.action) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "unsupported endpoint response action for dry-run executor: {}",
-                input.action.as_str()
-            ),
-        ));
-    }
-    validate_response_action_actor_fields(input.actor.as_ref())?;
-    if !dry_run {
-        validate_response_action_actor(input.actor.as_ref())?;
-    }
-
-    let root_node_id =
-        resolve_graph_root_from_selector(input.root_node_id.as_deref(), input.process.as_ref())?;
-    let ttl_seconds = validate_response_action_ttl_seconds(input.ttl_seconds)?;
-    let reason = validate_response_reason(
-        "response action",
-        input.reason.as_deref(),
-        default_response_action_reason(&input.action, dry_run),
-    )?;
-
-    let graph = state.edr_flight_recorder.lock().await.graph().clone();
-    let subgraph = graph
-        .causal_subgraph_from(root_node_id.as_str(), EDR_MAX_CAUSAL_SUBGRAPH_DEPTH)
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                format!("response action target not found in causal graph: {root_node_id}"),
-            )
-        })?;
-    let actor = {
-        let settings = state.settings.read().await.clone();
-        let session_state = state.session_manager.state().await;
-        endpoint_response_actor_from_action_input(
-            &settings,
-            &session_state,
-            "agent-api",
-            input.actor.as_ref(),
-        )
-    };
-    let plan = if dry_run {
-        EndpointResponsePlan::dry_run(
-            input.action.clone(),
-            root_node_id,
-            &subgraph,
-            ttl_seconds,
-            reason.clone(),
-        )
-    } else {
-        match input.action {
-            EndpointDecisionAction::CollectEvidence => {
-                EndpointResponsePlan::collect_evidence_execution(
-                    root_node_id,
-                    &subgraph,
-                    ttl_seconds,
-                    reason.clone(),
-                )
-            }
-            EndpointDecisionAction::RestrictEgress => {
-                EndpointResponsePlan::restrict_egress_execution(
-                    root_node_id,
-                    &subgraph,
-                    ttl_seconds,
-                    reason.clone(),
-                )
-            }
-            EndpointDecisionAction::QuarantineFile => {
-                EndpointResponsePlan::quarantine_file_execution(
-                    root_node_id,
-                    &subgraph,
-                    ttl_seconds,
-                    reason.clone(),
-                )
-            }
-            EndpointDecisionAction::DisablePersistence => {
-                EndpointResponsePlan::disable_persistence_execution(
-                    root_node_id,
-                    &subgraph,
-                    ttl_seconds,
-                    reason.clone(),
-                )
-            }
-            EndpointDecisionAction::RevokeGrant => EndpointResponsePlan::revoke_grant_execution(
-                root_node_id,
-                &subgraph,
-                ttl_seconds,
-                reason.clone(),
-            ),
-            EndpointDecisionAction::SuspendProcessTree => {
-                EndpointResponsePlan::suspend_process_tree_execution(
-                    root_node_id,
-                    &subgraph,
-                    ttl_seconds,
-                    reason.clone(),
-                )
-            }
-            _ => unreachable!("non-dry-run response action was validated above"),
-        }
-    };
-    let receipt = emit_edr_response_receipt(&state, actor.clone(), &plan, &subgraph)
-        .await
-        .map_err(internal_error)?;
-    let (execution, evidence_bundle_artifact, execution_receipt, evidence_bundle_receipt) =
-        if dry_run {
-            (None, None, None, None)
-        } else {
-            let (execution, stored_bundle, receipt, bundle_receipt) =
-                match execute_edr_response_action(&state, &plan, &subgraph, actor.clone()).await {
-                    Ok(result) => result,
-                    Err((status, message)) => {
-                        let message = sanitize_response_execution_failure(&message);
-                        let failure = record_failed_edr_response_execution(
-                            &state,
-                            &plan,
-                            &subgraph,
-                            actor,
-                            message.as_str(),
-                        )
-                        .await;
-                        return Err(response_action_failure_error(status, message, failure));
-                    }
-                };
-            (
-                Some(execution),
-                Some(EdrEvidenceBundleArtifact::from_stored(&stored_bundle)),
-                Some(receipt),
-                Some(bundle_receipt),
-            )
-        };
-    let affected_identities = affected_identities_for_causal_impact(&subgraph);
-    let affected_identity_count = affected_identities.count();
-    let affected_tools = affected_tools_for_causal_impact(&subgraph);
-    let affected_tool_count = affected_tools.len();
-
-    Ok(Json(EdrResponseActionResponse {
-        plan,
-        graph: subgraph,
-        affected_identity_count,
-        affected_tool_count,
-        affected_identities,
-        affected_tools,
-        receipt,
-        execution,
-        evidence_bundle_artifact,
-        execution_receipt,
-        evidence_bundle_receipt,
-    }))
-}
-
-async fn execute_edr_response_action(
+pub(crate) async fn execute_edr_response_action(
     state: &AgentApiState,
     plan: &EndpointResponsePlan,
     graph: &CausalGraph,
@@ -7936,7 +6088,7 @@ async fn execute_edr_response_action(
     }
 }
 
-async fn record_failed_edr_response_execution(
+pub(crate) async fn record_failed_edr_response_execution(
     state: &AgentApiState,
     plan: &EndpointResponsePlan,
     graph: &CausalGraph,
@@ -7952,7 +6104,7 @@ async fn record_failed_edr_response_execution(
     Ok((execution.execution_id, receipt.receipt.receipt_id.clone()))
 }
 
-fn response_action_failure_error(
+pub(crate) fn response_action_failure_error(
     status: StatusCode,
     message: String,
     failure_record: Result<(String, Option<String>), String>,
@@ -7974,7 +6126,7 @@ fn response_action_failure_error(
     }
 }
 
-fn sanitize_response_execution_failure(message: &str) -> String {
+pub(crate) fn sanitize_response_execution_failure(message: &str) -> String {
     let redacted = redact_developer_activity_command_line(message.trim());
     truncate_delivery_error(&redact_response_failure_secret_like_fragments(&redacted))
 }
@@ -8387,7 +6539,7 @@ async fn execute_suspend_process_tree_response(
     persist_edr_response_execution(state, execution, graph, actor).await
 }
 
-async fn execute_restrict_egress_rollback(
+pub(crate) async fn execute_restrict_egress_rollback(
     state: &AgentApiState,
     execution: &EndpointResponseExecutionReport,
     reason: &str,
@@ -8405,7 +6557,7 @@ async fn execute_restrict_egress_rollback(
     Ok(rollback)
 }
 
-fn response_execution_expires_with_rollback(action: &EndpointDecisionAction) -> bool {
+pub(crate) fn response_execution_expires_with_rollback(action: &EndpointDecisionAction) -> bool {
     matches!(
         action,
         &EndpointDecisionAction::RestrictEgress
@@ -8415,7 +6567,7 @@ fn response_execution_expires_with_rollback(action: &EndpointDecisionAction) -> 
     )
 }
 
-async fn execute_response_expiration_rollback(
+pub(crate) async fn execute_response_expiration_rollback(
     state: &AgentApiState,
     execution: &EndpointResponseExecutionReport,
 ) -> Result<EndpointResponseRollbackReport, (StatusCode, String)> {
@@ -8443,7 +6595,7 @@ async fn execute_response_expiration_rollback(
     }
 }
 
-fn execute_quarantine_file_rollback(
+pub(crate) fn execute_quarantine_file_rollback(
     state: &AgentApiState,
     execution: &EndpointResponseExecutionReport,
     reason: &str,
@@ -8530,7 +6682,7 @@ fn execute_quarantine_file_rollback(
     Ok(rollback)
 }
 
-fn execute_disable_persistence_rollback(
+pub(crate) fn execute_disable_persistence_rollback(
     state: &AgentApiState,
     execution: &EndpointResponseExecutionReport,
     reason: &str,
@@ -8627,7 +6779,7 @@ fn execute_disable_persistence_rollback(
     Ok(rollback)
 }
 
-fn execute_suspend_process_tree_rollback(
+pub(crate) fn execute_suspend_process_tree_rollback(
     execution: &EndpointResponseExecutionReport,
     reason: &str,
 ) -> Result<EndpointResponseRollbackReport, (StatusCode, String)> {
@@ -8735,7 +6887,7 @@ async fn append_and_receipt_edr_response_execution(
     Ok((receipt, bundle_receipt))
 }
 
-async fn append_edr_response_acknowledgement(
+pub(crate) async fn append_edr_response_acknowledgement(
     state: &AgentApiState,
     acknowledgement: &EndpointResponseAcknowledgementReport,
 ) -> Result<Option<String>, (StatusCode, String)> {
@@ -8763,7 +6915,7 @@ async fn append_edr_egress_restrictions(
     sync_edr_network_extension_egress_policy(state, now).await
 }
 
-async fn deactivate_expired_egress_restrictions(
+pub(crate) async fn deactivate_expired_egress_restrictions(
     state: &AgentApiState,
     expired: &[EndpointResponseExecutionReport],
     now: chrono::DateTime<chrono::Utc>,
@@ -8776,7 +6928,7 @@ async fn deactivate_expired_egress_restrictions(
     Ok(())
 }
 
-async fn deactivate_egress_restrictions_if_active(
+pub(crate) async fn deactivate_egress_restrictions_if_active(
     state: &AgentApiState,
     action_id: &str,
     now: chrono::DateTime<chrono::Utc>,
@@ -9134,7 +7286,7 @@ fn browser_extension_manifest_target_path(path: PathBuf) -> PathBuf {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum RevokeGrantTarget {
+pub(crate) enum RevokeGrantTarget {
     LocalApiAuthToken,
     BrokerCapability { capability_id: String },
     LocalIntegrationSecret { secret: LocalIntegrationSecretKind },
@@ -9142,7 +7294,7 @@ enum RevokeGrantTarget {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-struct BrokerCapabilityRevokeReport {
+pub(crate) struct BrokerCapabilityRevokeReport {
     capability_id: String,
     revoked: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -9151,7 +7303,7 @@ struct BrokerCapabilityRevokeReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-struct BrokerProviderTokenRevocationReport {
+pub(crate) struct BrokerProviderTokenRevocationReport {
     provider: String,
     secret_ref_id: String,
     attempted: bool,
@@ -9169,7 +7321,7 @@ struct BrokerProviderTokenRevocationReport {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum LocalIntegrationSecretKind {
+pub(crate) enum LocalIntegrationSecretKind {
     #[serde(rename = "siem.api_key")]
     SiemApiKey,
     #[serde(rename = "webhooks.secret")]
@@ -9187,7 +7339,7 @@ impl LocalIntegrationSecretKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct LocalIntegrationSecretRevokeReport {
+pub(crate) struct LocalIntegrationSecretRevokeReport {
     secret: LocalIntegrationSecretKind,
     previous_secret_hash: String,
     integration_disabled: bool,
@@ -10777,7 +8929,7 @@ fn persistence_disable_destination_path(
     ))
 }
 
-fn supported_edr_response_action(action: &EndpointDecisionAction) -> bool {
+pub(crate) fn supported_edr_response_action(action: &EndpointDecisionAction) -> bool {
     matches!(
         action,
         EndpointDecisionAction::RestrictEgress
@@ -10792,7 +8944,7 @@ fn supported_edr_response_action(action: &EndpointDecisionAction) -> bool {
 
 // endpoint_security_event_* helpers moved to crate::edr::conversion::endpoint_security
 
-fn network_extension_event_observations(
+pub(crate) fn network_extension_event_observations(
     event: &EdrNetworkExtensionFlowEvent,
     index: usize,
 ) -> Result<Vec<EndpointObservation>, (StatusCode, String)> {
@@ -11001,7 +9153,7 @@ fn bad_network_extension_event_request(
     )
 }
 
-fn package_manager_event_observation(
+pub(crate) fn package_manager_event_observation(
     event: &EdrPackageManagerEvent,
     index: usize,
 ) -> Result<EndpointObservation, (StatusCode, String)> {
@@ -11108,7 +9260,7 @@ fn required_package_manager_event_string(
     })
 }
 
-fn developer_activity_observation(
+pub(crate) fn developer_activity_observation(
     activity: &EdrDeveloperActivity,
     index: usize,
 ) -> Result<EndpointObservation, (StatusCode, String)> {
@@ -11456,12 +9608,12 @@ pub(crate) fn redact_developer_activity_args(args: &[String]) -> Vec<String> {
     redacted
 }
 
-struct RedactedAuthorizationHeader {
+pub(crate) struct RedactedAuthorizationHeader {
     redacted: String,
     consumes_next_token: bool,
 }
 
-struct RedactedSensitiveAssignment {
+pub(crate) struct RedactedSensitiveAssignment {
     redacted: String,
     consumes_next_token: bool,
 }
@@ -12034,7 +10186,7 @@ fn redact_developer_activity_metadata(
     redact_endpoint_observation_metadata(metadata)
 }
 
-fn redact_endpoint_observations(observations: &[EndpointObservation]) -> Vec<EndpointObservation> {
+pub(crate) fn redact_endpoint_observations(observations: &[EndpointObservation]) -> Vec<EndpointObservation> {
     observations
         .iter()
         .map(redact_endpoint_observation)
@@ -12361,7 +10513,7 @@ fn bad_activity_request(activity: &EdrDeveloperActivity, message: &str) -> (Stat
     )
 }
 
-async fn evaluate_record_and_receipt_edr_observations(
+pub(crate) async fn evaluate_record_and_receipt_edr_observations(
     state: &AgentApiState,
     detection_observations: &[EndpointObservation],
     recorded_observations: &[EndpointObservation],
@@ -12423,7 +10575,7 @@ fn is_local_only_honey_marker_finding(finding: &DetectionFinding) -> bool {
             .any(|item| item.key == "matchType" && item.value == "marker")
 }
 
-fn parse_policy_event_jsonl(body: &str) -> Result<Vec<PolicyEvent>, (StatusCode, String)> {
+pub(crate) fn parse_policy_event_jsonl(body: &str) -> Result<Vec<PolicyEvent>, (StatusCode, String)> {
     let mut events = Vec::new();
     for (line_index, line) in body.lines().enumerate() {
         let line_number = line_index + 1;
@@ -12444,7 +10596,7 @@ fn parse_policy_event_jsonl(body: &str) -> Result<Vec<PolicyEvent>, (StatusCode,
     Ok(events)
 }
 
-async fn select_policy_event_history_from_flight_recorder(
+pub(crate) async fn select_policy_event_history_from_flight_recorder(
     state: &AgentApiState,
     input: EdrPolicyEventHistoryReplayInput,
 ) -> Result<EdrPolicyEventHistorySelection, (StatusCode, String)> {
@@ -12665,7 +10817,7 @@ fn normalize_history_process_filters(
     })
 }
 
-fn normalize_policy_event_history_validation_window_seconds(
+pub(crate) fn normalize_policy_event_history_validation_window_seconds(
     value: Option<u64>,
 ) -> Result<Option<u64>, (StatusCode, String)> {
     let Some(window_seconds) = value else {
@@ -12783,7 +10935,7 @@ fn normalize_history_identity_filter(
     Ok(Some(value.to_string()))
 }
 
-fn build_policy_event_history_cross_window_impact(
+pub(crate) fn build_policy_event_history_cross_window_impact(
     selection: &EdrPolicyEventHistorySelection,
     changes: &[EdrPolicyEventImpactEntry],
     window_seconds: u64,
@@ -12897,7 +11049,7 @@ fn build_policy_event_history_cross_window_impact(
     }
 }
 
-fn cross_window_impact_hash(
+pub(crate) fn cross_window_impact_hash(
     window_seconds: u64,
     total_event_count: u64,
     total_changed_count: u64,
@@ -12922,7 +11074,7 @@ fn cross_window_impact_hash(
     sha256(material.as_bytes()).to_hex_prefixed()
 }
 
-fn cross_window_recommendation_hash(
+pub(crate) fn cross_window_recommendation_hash(
     repeatability: &str,
     recommended_stage: &str,
     promotion_ready: bool,
@@ -12982,7 +11134,7 @@ fn cross_window_impact_recommendation(
     )
 }
 
-fn build_policy_event_history_causal_impact(
+pub(crate) fn build_policy_event_history_causal_impact(
     selection: &EdrPolicyEventHistorySelection,
     changes: &[EdrPolicyEventImpactEntry],
     graph: &CausalGraph,
@@ -13599,7 +11751,7 @@ fn causal_path_node_ids(graph: &CausalGraph, from: &str, to: &str) -> Option<Vec
     None
 }
 
-fn causal_impact_receipt_graph(
+pub(crate) fn causal_impact_receipt_graph(
     impact: &EdrPolicyEventHistoryCausalImpact,
 ) -> Option<(String, CausalGraph)> {
     let root_node_id = impact.contexts.first()?.root_node_id.clone();
@@ -13661,7 +11813,7 @@ fn causal_edge_kind_name(kind: &CausalEdgeKind) -> &'static str {
     }
 }
 
-async fn replay_policy_events_under_current_policy(
+pub(crate) async fn replay_policy_events_under_current_policy(
     state: &AgentApiState,
     events: Vec<PolicyEvent>,
     track_posture: bool,
@@ -13747,7 +11899,7 @@ fn remove_yaml_policy_epoch_metadata(value: &mut serde_yaml::Value) {
     }
 }
 
-fn canonical_json_hash(value: &impl Serialize, label: &str) -> Result<String> {
+pub(crate) fn canonical_json_hash(value: &impl Serialize, label: &str) -> Result<String> {
     let value = serde_json::to_value(value).with_context(|| format!("serialize {label}"))?;
     let canonical = canonicalize_json(&value).with_context(|| format!("canonicalize {label}"))?;
     Ok(sha256(canonical.as_bytes()).to_hex_prefixed())
@@ -13757,7 +11909,7 @@ fn canonical_json_hash(value: &impl Serialize, label: &str) -> Result<String> {
 // build_policy_event_impact_drivers, build_policy_event_impact_report
 // moved to crate::edr::policy_events
 
-async fn analyze_policy_event_impact_under_proposed_policy(
+pub(crate) async fn analyze_policy_event_impact_under_proposed_policy(
     state: &AgentApiState,
     events: Vec<PolicyEvent>,
     proposed_policy_yaml: String,
@@ -13837,7 +11989,7 @@ async fn analyze_policy_event_impact_under_proposed_policy(
     })
 }
 
-fn validate_policy_event_submission(
+pub(crate) fn validate_policy_event_submission(
     event: &PolicyEvent,
     jsonl_line: Option<usize>,
 ) -> Result<(), (StatusCode, String)> {
@@ -13863,566 +12015,14 @@ async fn record_edr_observations(
     Ok(())
 }
 
-async fn agent_edr_flight_recorder(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-) -> Result<Json<EdrFlightRecorderResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let recorder = state.edr_flight_recorder.lock().await;
-    let graph = recorder.graph();
-    Ok(Json(EdrFlightRecorderResponse {
-        path: recorder.path().map(|path| path.display().to_string()),
-        observation_count: recorder.observation_count(),
-        node_count: graph.nodes.len(),
-        edge_count: graph.edges.len(),
-    }))
-}
-
-async fn agent_edr_flight_recorder_compact(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrFlightRecorderCompactionInput>,
-) -> Result<Json<EdrFlightRecorderCompactionResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    if input.max_observations.is_none() && input.min_age_seconds.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "max_observations or min_age_seconds must be provided".to_string(),
-        ));
-    }
-    let dry_run = input.dry_run.unwrap_or(true);
-    let min_age_seconds = input.min_age_seconds.unwrap_or(0);
-    let now = chrono::Utc::now();
-
-    let receipt_protected_observation_ids = {
-        let graph = state.edr_flight_recorder.lock().await.graph().clone();
-        let ledger = state.edr_receipt_ledger.lock().await;
-        let receipts = ledger.all().map_err(internal_error)?;
-        protected_observation_ids_for_receipts(&receipts, &graph)
-    };
-
-    let mut recorder = state.edr_flight_recorder.lock().await;
-    let path = recorder.path().map(|path| path.display().to_string());
-    if path.is_none() {
-        return Err((
-            StatusCode::CONFLICT,
-            "flight recorder compaction requires a durable backing path".to_string(),
-        ));
-    }
-    let report = recorder
-        .compact(
-            input.max_observations,
-            min_age_seconds,
-            &receipt_protected_observation_ids,
-            dry_run,
-            now,
-        )
-        .map_err(internal_error)?;
-    let graph = recorder.graph();
-
-    Ok(Json(EdrFlightRecorderCompactionResponse {
-        path,
-        dry_run,
-        max_observations: input.max_observations,
-        min_age_seconds,
-        observation_count: report.observation_count,
-        candidate_count: report.records.len(),
-        removed_count: report
-            .records
-            .iter()
-            .filter(|record| record.removed)
-            .count(),
-        retained_count: report.retained_count,
-        protected_count: report.protected_count,
-        node_count: graph.nodes.len(),
-        edge_count: graph.edges.len(),
-        records: report.records,
-    }))
-}
-
-async fn agent_edr_protection_state(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-) -> Result<Json<EdrProtectionStateResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let settings = state.settings.read().await.clone();
-    let policy = endpoint_policy_snapshot_from_settings(&settings).map_err(internal_error)?;
-    let macos_host_transition = state.macos_host.snapshot_transition().await;
-    let sensor_state = endpoint_sensor_state_from_macos_host(&macos_host_transition.current);
-    let provider_recoveries =
-        endpoint_provider_recoveries(macos_host_transition.previous.as_ref(), &sensor_state);
-    let recovery_evidence = provider_recovery_receipt_evidence(&provider_recoveries);
-    let receipt = if recovery_evidence.is_empty() {
-        emit_edr_sensor_state_receipt(
-            &state,
-            policy.clone(),
-            sensor_state.clone(),
-            "local protection state query",
-        )
-        .await
-    } else {
-        emit_edr_sensor_state_receipt_with_evidence(
-            &state,
-            policy.clone(),
-            sensor_state.clone(),
-            "local protection state query",
-            &recovery_evidence,
-        )
-        .await
-    }
-    .map_err(internal_error)?;
-    let degraded_provider_receipts =
-        emit_edr_provider_degradation_receipts(&state, policy.clone(), sensor_state.clone())
-            .await
-            .map_err(internal_error)?;
-
-    Ok(Json(EdrProtectionStateResponse {
-        policy,
-        sensor_state,
-        receipt,
-        degraded_provider_receipts,
-        provider_recoveries,
-    }))
-}
-
-async fn agent_edr_receipts(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Query(query): Query<EdrReceiptQuery>,
-) -> Result<Json<EdrReceiptsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit(
-        "limit",
-        query.limit,
-        EDR_DEFAULT_RECEIPT_QUERY_LIMIT,
-        EDR_MAX_RECEIPT_QUERY_LIMIT,
-    )?;
-    let family = query
-        .family
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let filter = EdrReceiptFilter {
-        receipt_id: query_value(&query.receipt_id),
-        family,
-        action: query_value(&query.action),
-        finding_id: query_value(&query.finding_id),
-        rule_id: query_value(&query.rule_id),
-        graph_slice_id: query_value(&query.graph_slice_id),
-        root_node_id: query_value(&query.root_node_id),
-        execution_id: query_value(&query.execution_id),
-        status: query_value(&query.status),
-        actor_endpoint_id: query_value(&query.actor_endpoint_id),
-        actor_user_id: query_value(&query.actor_user_id),
-        actor_session_id: query_value(&query.actor_session_id),
-        actor_agent_id: query_value(&query.actor_agent_id),
-        actor_workload_id: query_value(&query.actor_workload_id),
-        actor_approval_id: query_value(&query.actor_approval_id),
-        local_sequence: query.local_sequence,
-    };
-    let ledger = state.edr_receipt_ledger.lock().await;
-    let path = ledger.path().map(|path| path.display().to_string());
-    let receipts = ledger.read_recent(limit, filter).map_err(internal_error)?;
-
-    Ok(Json(EdrReceiptsResponse {
-        path,
-        receipt_count: receipts.len(),
-        receipts,
-    }))
-}
-
-async fn agent_edr_receipts_upload(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrReceiptUploadInput>,
-) -> Result<Json<EdrReceiptUploadResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit(
-        "limit",
-        input.limit,
-        EDR_DEFAULT_RECEIPT_QUERY_LIMIT,
-        EDR_MAX_RECEIPT_QUERY_LIMIT,
-    )?;
-    let family = input
-        .family
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let filter = EdrReceiptFilter {
-        receipt_id: query_value(&input.receipt_id),
-        family,
-        action: query_value(&input.action),
-        finding_id: query_value(&input.finding_id),
-        rule_id: query_value(&input.rule_id),
-        graph_slice_id: query_value(&input.graph_slice_id),
-        root_node_id: query_value(&input.root_node_id),
-        execution_id: query_value(&input.execution_id),
-        status: query_value(&input.status),
-        actor_endpoint_id: query_value(&input.actor_endpoint_id),
-        actor_user_id: query_value(&input.actor_user_id),
-        actor_session_id: query_value(&input.actor_session_id),
-        actor_agent_id: query_value(&input.actor_agent_id),
-        actor_workload_id: query_value(&input.actor_workload_id),
-        actor_approval_id: query_value(&input.actor_approval_id),
-        local_sequence: input.local_sequence,
-    };
-    let (path, receipts) = {
-        let ledger = state.edr_receipt_ledger.lock().await;
-        let path = ledger.path().map(|path| path.display().to_string());
-        let receipts = ledger.read_recent(limit, filter).map_err(internal_error)?;
-        (path, receipts)
-    };
-    let dry_run = input.dry_run.unwrap_or(true);
-    let mut control_receipts = Vec::with_capacity(receipts.len());
-    let mut records = Vec::with_capacity(receipts.len());
-    for receipt in &receipts {
-        let control_receipt = control_store_receipt_from_endpoint_receipt(receipt)
-            .map_err(|message| (StatusCode::CONFLICT, message))?;
-        records.push(EdrReceiptUploadRecord {
-            receipt_id: receipt.receipt.receipt_id.clone(),
-            timestamp: control_receipt.timestamp.clone(),
-            family: receipt_family(receipt).map(ToString::to_string),
-            verdict: control_receipt.verdict.clone(),
-            guard: control_receipt.guard.clone(),
-            policy_name: control_receipt.policy_name.clone(),
-            local_sequence: receipt_local_sequence(receipt),
-        });
-        control_receipts.push(control_receipt);
-    }
-
-    let settings = state.settings.read().await.clone();
-    let control_api_url = non_empty(settings.control_api.url.as_deref()).map(ToString::to_string);
-    if control_receipts.is_empty() {
-        return Ok(Json(EdrReceiptUploadResponse {
-            path,
-            dry_run,
-            control_api_url,
-            selected_count: 0,
-            attempted: false,
-            accepted: true,
-            uploaded_count: 0,
-            http_status: None,
-            response_hash: None,
-            error_hash: None,
-            skipped_reason: Some("no receipts matched upload filter".to_string()),
-            records,
-        }));
-    }
-    if dry_run {
-        return Ok(Json(EdrReceiptUploadResponse {
-            path,
-            dry_run,
-            control_api_url,
-            selected_count: control_receipts.len(),
-            attempted: false,
-            accepted: false,
-            uploaded_count: 0,
-            http_status: None,
-            response_hash: None,
-            error_hash: None,
-            skipped_reason: Some("dry run".to_string()),
-            records,
-        }));
-    }
-    if !settings.control_api.enabled {
-        return Err((
-            StatusCode::CONFLICT,
-            "control API is not enabled for endpoint receipt upload".to_string(),
-        ));
-    }
-    let Some(control_api_url) = control_api_url else {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "control API URL is not configured for endpoint receipt upload".to_string(),
-        ));
-    };
-    let Some(api_key) = non_empty(settings.control_api.api_key.as_deref()).map(ToString::to_string)
-    else {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "control API key is not configured for endpoint receipt upload".to_string(),
-        ));
-    };
-    let url = control_api_receipt_batch_upload_url(&control_api_url)?;
-    let selected_count = control_receipts.len();
-    let payload = ControlBatchStoreReceiptsRequest {
-        receipts: control_receipts,
-    };
-    let response = state
-        .http_client
-        .post(url)
-        .header("x-api-key", api_key)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|err| {
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("endpoint receipt upload failed: {err}"),
-            )
-        })?;
-    let status =
-        StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let bytes = response.bytes().await.map_err(|err| {
-        (
-            StatusCode::BAD_GATEWAY,
-            format!("endpoint receipt upload response body read failed: {err}"),
-        )
-    })?;
-    let response_hash = Some(sha256(&bytes).to_hex_prefixed());
-    let response_value: serde_json::Value =
-        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
-    let uploaded_count = if status.is_success() {
-        response_value
-            .get("count")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0) as usize
-    } else {
-        0
-    };
-    let error_hash = if status.is_success() {
-        None
-    } else {
-        response_hash.clone()
-    };
-
-    Ok(Json(EdrReceiptUploadResponse {
-        path,
-        dry_run,
-        control_api_url: Some(control_api_url),
-        selected_count,
-        attempted: true,
-        accepted: status.is_success(),
-        uploaded_count,
-        http_status: Some(status.as_u16()),
-        response_hash,
-        error_hash,
-        skipped_reason: None,
-        records,
-    }))
-}
-
-async fn agent_edr_receipts_compact(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrReceiptCompactionInput>,
-) -> Result<Json<EdrReceiptCompactionResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    if input.max_receipts.is_none() && input.min_age_seconds.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "max_receipts or min_age_seconds must be provided".to_string(),
-        ));
-    }
-    let dry_run = input.dry_run.unwrap_or(true);
-    let min_age_seconds = input.min_age_seconds.unwrap_or(0);
-    let now = chrono::Utc::now();
-    let mut ledger = state.edr_receipt_ledger.lock().await;
-    let path = ledger.path().map(|path| path.display().to_string());
-    let report = ledger
-        .compact(input.max_receipts, min_age_seconds, dry_run, now)
-        .map_err(internal_error)?;
-
-    Ok(Json(EdrReceiptCompactionResponse {
-        path,
-        dry_run,
-        max_receipts: input.max_receipts,
-        min_age_seconds,
-        receipt_count: report.receipt_count,
-        candidate_count: report.records.len(),
-        removed_count: report
-            .records
-            .iter()
-            .filter(|record| record.removed)
-            .count(),
-        retained_count: report.retained_count,
-        records: report.records,
-    }))
-}
-
-fn query_value(value: &Option<String>) -> Option<&str> {
+pub(crate) fn query_value(value: &Option<String>) -> Option<&str> {
     value
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
 }
 
-async fn agent_edr_evidence_bundle(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(bundle_id): Path<String>,
-) -> Result<Json<EdrEvidenceBundleResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let bundle_id = bundle_id.trim();
-    if bundle_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "evidence bundle id must not be empty".to_string(),
-        ));
-    }
-
-    let mut store = state.edr_evidence_bundle_store.lock().await;
-    let stored = store
-        .load(bundle_id)
-        .map_err(internal_error)?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                format!("evidence bundle not found: {bundle_id}"),
-            )
-        })?;
-
-    Ok(Json(EdrEvidenceBundleResponse {
-        bundle: stored.bundle,
-        path: stored.path,
-        byte_count: stored.byte_count,
-        graph: stored.graph,
-    }))
-}
-
-async fn agent_edr_evidence_bundle_fleet_publish(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(bundle_id): Path<String>,
-    Query(input): Query<EdrRawArtifactApprovalInput>,
-) -> Result<(StatusCode, Json<EdrEvidenceBundleFleetPublishResponse>), (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let raw_artifact_approval = validate_raw_artifact_approval_fields(
-        input.raw_artifact_approval_id.as_deref(),
-        input.raw_artifact_approval_reason.as_deref(),
-    )?;
-    let publish_identity = fleet_hunt_event_identity(state.as_ref()).await?;
-    let archive_response = evidence_bundle_archive_response(state.as_ref(), &bundle_id).await?;
-    if !archive_response.verification.verified {
-        return Err((
-            StatusCode::CONFLICT,
-            "evidence bundle archive verification failed; refusing fleet publish".to_string(),
-        ));
-    }
-
-    let event = fleet_hunt_event_for_evidence_bundle_archive(
-        &archive_response.archive_id,
-        &archive_response.archive_hash,
-        &archive_response.archive,
-        &archive_response.verification,
-        &publish_identity.tenant_id,
-        &publish_identity.endpoint_agent_id,
-    );
-    let event_id = event
-        .get("eventId")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("unknown")
-        .to_string();
-    let raw_ref = event
-        .get("evidence")
-        .and_then(|evidence| evidence.get("rawRef"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("unknown")
-        .to_string();
-    let control_upload = post_control_endpoint_evidence_archive(
-        state.as_ref(),
-        &archive_response,
-        &publish_identity.endpoint_agent_id,
-        &event_id,
-        &raw_ref,
-        "fleet_publish",
-        raw_artifact_approval.as_ref(),
-    )
-    .await?;
-    let payload = serde_json::to_vec(&event).map_err(|err| {
-        internal_error(anyhow::anyhow!(
-            "serialize evidence bundle archive hunt event: {err}"
-        ))
-    })?;
-    if let Some(publisher) = publish_identity.publisher {
-        match publisher.publish_hunt_event(&payload).await {
-            Ok(()) => {
-                return Ok((
-                    StatusCode::OK,
-                    Json(EdrEvidenceBundleFleetPublishResponse {
-                        bundle_id: archive_response.archive.bundle.bundle_id,
-                        archive_id: archive_response.archive_id,
-                        archive_hash: archive_response.archive_hash,
-                        published: true,
-                        queued: false,
-                        control_upload,
-                        outbox_id: None,
-                        next_retry_at: None,
-                        event_id,
-                        raw_ref,
-                    }),
-                ));
-            }
-            Err(err) => {
-                let error = truncate_delivery_error(&err.to_string());
-                let (outbox_id, next_retry_at) =
-                    enqueue_fleet_hunt_event_outbox(state.as_ref(), event, Some(error.as_str()))
-                        .await?;
-                return Ok((
-                    StatusCode::ACCEPTED,
-                    Json(EdrEvidenceBundleFleetPublishResponse {
-                        bundle_id: archive_response.archive.bundle.bundle_id,
-                        archive_id: archive_response.archive_id,
-                        archive_hash: archive_response.archive_hash,
-                        published: false,
-                        queued: true,
-                        control_upload,
-                        outbox_id: Some(outbox_id),
-                        next_retry_at: Some(next_retry_at),
-                        event_id,
-                        raw_ref,
-                    }),
-                ));
-            }
-        }
-    }
-
-    let (outbox_id, next_retry_at) = enqueue_fleet_hunt_event_outbox(
-        state.as_ref(),
-        event,
-        Some("fleet hunt publisher is unavailable because NATS is not connected"),
-    )
-    .await?;
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(EdrEvidenceBundleFleetPublishResponse {
-            bundle_id: archive_response.archive.bundle.bundle_id,
-            archive_id: archive_response.archive_id,
-            archive_hash: archive_response.archive_hash,
-            published: false,
-            queued: true,
-            control_upload,
-            outbox_id: Some(outbox_id),
-            next_retry_at: Some(next_retry_at),
-            event_id,
-            raw_ref,
-        }),
-    ))
-}
-
-async fn agent_edr_fleet_hunt_events_retry(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrFleetHuntEventRetryInput>,
-) -> Result<Json<EdrFleetHuntEventRetryResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", input.limit, 25, 100)?;
-    let publisher = state
-        .fleet_hunt_publisher
-        .as_ref()
-        .cloned()
-        .ok_or_else(|| {
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "fleet hunt publisher is unavailable because NATS is not connected".to_string(),
-            )
-        })?;
-    drain_fleet_hunt_event_outbox(state.as_ref(), publisher, limit, input.force)
-        .await
-        .map(Json)
-}
-
-async fn evidence_bundle_archive_response(
+pub(crate) async fn evidence_bundle_archive_response(
     state: &AgentApiState,
     bundle_id: &str,
 ) -> Result<EdrEvidenceBundleArchiveResponse, (StatusCode, String)> {
@@ -14475,147 +12075,7 @@ async fn evidence_bundle_archive_response(
     })
 }
 
-async fn agent_edr_evidence_bundle_archive(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(bundle_id): Path<String>,
-) -> Result<Json<EdrEvidenceBundleArchiveResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let archive = evidence_bundle_archive_response(state.as_ref(), &bundle_id).await?;
-
-    Ok(Json(archive))
-}
-
-async fn agent_edr_evidence_bundle_archive_verify(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrEvidenceBundleArchiveVerifyInput>,
-) -> Result<Json<EdrEvidenceBundleArchiveVerifyResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let expected_archive_hash = input.archive_hash.trim().to_string();
-    if expected_archive_hash.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "archiveHash must not be empty".to_string(),
-        ));
-    }
-
-    let archive_hash = canonical_json_hash(&input.archive, "endpoint evidence bundle archive")
-        .map_err(internal_error)?;
-    let archive_hash_matches = archive_hash == expected_archive_hash;
-    let expected_archive_id = local_stable_id(
-        "evidence_bundle_archive",
-        [
-            input.archive.bundle.bundle_id.as_str(),
-            input.archive.bundle.content_hash.as_str(),
-            archive_hash.as_str(),
-        ],
-    );
-    let archive_id_matches = input
-        .archive_id
-        .as_deref()
-        .map_or(true, |archive_id| archive_id == expected_archive_id);
-    let receipt_count_matches = input.receipt_count.map_or(true, |receipt_count| {
-        receipt_count == input.archive.receipts.len()
-    });
-    let trusted_signer_public_key = input
-        .trusted_signer_public_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string);
-    if input.trusted_signer_public_key.is_some() && trusted_signer_public_key.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "trustedSignerPublicKey must not be empty".to_string(),
-        ));
-    }
-    if let Some(trusted_signer_public_key) = trusted_signer_public_key.as_deref() {
-        hush_core::PublicKey::from_hex(trusted_signer_public_key).map_err(|err| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("trustedSignerPublicKey must be a valid public key: {err}"),
-            )
-        })?;
-    }
-    let signer_trust_matches = trusted_signer_public_key
-        .as_deref()
-        .map_or(true, |trusted| {
-            !input.archive.receipts.is_empty()
-                && input.archive.receipts.iter().all(|receipt| {
-                    receipt_endpoint_decision_str(receipt, &["signer", "signerPublicKey"])
-                        == Some(trusted)
-                })
-        });
-    let verification =
-        evidence_bundle_archive_verification(&input.archive).map_err(internal_error)?;
-    let verification_matches = input
-        .verification
-        .as_ref()
-        .map_or(true, |supplied| supplied == &verification);
-    let newest_receipt_timestamp = archive_newest_receipt_timestamp(&input.archive);
-    let generated_at_covers_receipts = input.generated_at.map_or(true, |generated_at| {
-        newest_receipt_timestamp.is_some_and(|newest| generated_at >= newest)
-    });
-    let verified = archive_hash_matches
-        && archive_id_matches
-        && receipt_count_matches
-        && verification_matches
-        && generated_at_covers_receipts
-        && signer_trust_matches
-        && verification.verified;
-
-    Ok(Json(EdrEvidenceBundleArchiveVerifyResponse {
-        verified,
-        expected_archive_id,
-        archive_id_matches,
-        expected_archive_hash,
-        archive_hash,
-        archive_hash_matches,
-        receipt_count_matches,
-        verification_matches,
-        generated_at_covers_receipts,
-        newest_receipt_timestamp,
-        trusted_signer_public_key,
-        signer_trust_matches,
-        verification,
-    }))
-}
-
-async fn agent_edr_evidence_bundles(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Query(query): Query<EdrEvidenceBundleQuery>,
-) -> Result<Json<EdrEvidenceBundlesResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", query.limit, 100, EDR_MAX_STORED_FINDINGS)?;
-    let now = chrono::Utc::now();
-    let protected_bundle_ids = active_response_evidence_bundle_ids(&state, now).await?;
-    let (root, bundles) = {
-        let mut store = state.edr_evidence_bundle_store.lock().await;
-        let root = store.root_path().map(|path| path.display().to_string());
-        let bundles = store.list().map_err(internal_error)?;
-        (root, bundles)
-    };
-    let protected_count = bundles
-        .iter()
-        .filter(|stored| protected_bundle_ids.contains(&stored.bundle.bundle_id))
-        .count();
-    let records = bundles
-        .into_iter()
-        .take(limit)
-        .map(|stored| evidence_bundle_record(stored, now, &protected_bundle_ids))
-        .collect::<Vec<_>>();
-
-    Ok(Json(EdrEvidenceBundlesResponse {
-        root,
-        bundle_count: records.len(),
-        protected_count,
-        bundles: records,
-    }))
-}
-
-fn archive_newest_receipt_timestamp(
+pub(crate) fn archive_newest_receipt_timestamp(
     archive: &EdrEvidenceBundleArchive,
 ) -> Option<chrono::DateTime<chrono::Utc>> {
     archive
@@ -14630,92 +12090,7 @@ fn archive_newest_receipt_timestamp(
         .and_then(|timestamps| timestamps.into_iter().max())
 }
 
-async fn agent_edr_evidence_bundles_compact(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrEvidenceBundleCompactionInput>,
-) -> Result<Json<EdrEvidenceBundleCompactionResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    if input.max_bundles.is_none() && input.min_age_seconds.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "max_bundles or min_age_seconds must be provided".to_string(),
-        ));
-    }
-    let dry_run = input.dry_run.unwrap_or(true);
-    let min_age_seconds = input.min_age_seconds.unwrap_or(0);
-    let now = chrono::Utc::now();
-    let protected_bundle_ids = active_response_evidence_bundle_ids(&state, now).await?;
-    let (root, bundles) = {
-        let mut store = state.edr_evidence_bundle_store.lock().await;
-        let root = store.root_path().map(|path| path.display().to_string());
-        let bundles = store.list().map_err(internal_error)?;
-        (root, bundles)
-    };
-    let bundle_count = bundles.len();
-    let protected_count = bundles
-        .iter()
-        .filter(|stored| protected_bundle_ids.contains(&stored.bundle.bundle_id))
-        .count();
-    let mut records = Vec::new();
-    for (index, stored) in bundles.iter().enumerate() {
-        let age_seconds = evidence_bundle_age_seconds(stored, now);
-        let protected = protected_bundle_ids.contains(&stored.bundle.bundle_id);
-        let beyond_limit = input
-            .max_bundles
-            .is_some_and(|max_bundles| index >= max_bundles);
-        let old_enough = age_seconds >= min_age_seconds;
-        if protected || !beyond_limit && input.max_bundles.is_some() || !old_enough {
-            continue;
-        }
-        let reason = if beyond_limit {
-            format!(
-                "bundle exceeds max_bundles {} and is at least {min_age_seconds}s old",
-                input.max_bundles.unwrap_or_default()
-            )
-        } else {
-            format!("bundle is at least {min_age_seconds}s old")
-        };
-        records.push(EdrEvidenceBundleCompactionRecord {
-            bundle_id: stored.bundle.bundle_id.clone(),
-            graph_slice_id: stored.bundle.graph_slice_id.clone(),
-            path: stored.path.clone(),
-            byte_count: stored.byte_count,
-            age_seconds,
-            protected_by_active_response: protected,
-            removed: false,
-            reason,
-        });
-    }
-
-    if !dry_run {
-        let mut store = state.edr_evidence_bundle_store.lock().await;
-        for record in &mut records {
-            if store
-                .remove(&record.bundle_id)
-                .map_err(internal_error)?
-                .is_some()
-            {
-                record.removed = true;
-            }
-        }
-    }
-    let removed_count = records.iter().filter(|record| record.removed).count();
-
-    Ok(Json(EdrEvidenceBundleCompactionResponse {
-        root,
-        dry_run,
-        max_bundles: input.max_bundles,
-        min_age_seconds,
-        bundle_count,
-        candidate_count: records.len(),
-        removed_count,
-        protected_count,
-        records,
-    }))
-}
-
-async fn active_response_evidence_bundle_ids(
+pub(crate) async fn active_response_evidence_bundle_ids(
     state: &AgentApiState,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<BTreeSet<String>, (StatusCode, String)> {
@@ -14725,7 +12100,7 @@ async fn active_response_evidence_bundle_ids(
         .map_err(internal_error)
 }
 
-async fn evidence_bundle_archive_receipts(
+pub(crate) async fn evidence_bundle_archive_receipts(
     state: &AgentApiState,
     stored: &StoredEndpointEvidenceBundle,
 ) -> Result<Vec<SignedReceipt>, (StatusCode, String)> {
@@ -14770,7 +12145,7 @@ async fn evidence_bundle_archive_receipts(
     Ok(receipts)
 }
 
-fn evidence_bundle_archive_verification(
+pub(crate) fn evidence_bundle_archive_verification(
     archive: &EdrEvidenceBundleArchive,
 ) -> Result<EdrEvidenceBundleArchiveVerification> {
     let graph_value =
@@ -15541,7 +12916,7 @@ fn required_archive_receipt_families(bundle_id: &str) -> Option<Vec<&'static str
     }
 }
 
-fn evidence_bundle_record(
+pub(crate) fn evidence_bundle_record(
     stored: StoredEndpointEvidenceBundle,
     now: chrono::DateTime<chrono::Utc>,
     protected_bundle_ids: &BTreeSet<String>,
@@ -15556,590 +12931,13 @@ fn evidence_bundle_record(
     }
 }
 
-fn evidence_bundle_age_seconds(
+pub(crate) fn evidence_bundle_age_seconds(
     stored: &StoredEndpointEvidenceBundle,
     now: chrono::DateTime<chrono::Utc>,
 ) -> u64 {
     now.signed_duration_since(stored.bundle.created_at)
         .num_seconds()
         .max(0) as u64
-}
-
-async fn agent_edr_response_executions(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Query(query): Query<EdrResponseExecutionQuery>,
-) -> Result<Json<EdrResponseExecutionsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit(
-        "limit",
-        query.limit,
-        EDR_DEFAULT_RESPONSE_EXECUTION_QUERY_LIMIT,
-        EDR_MAX_RESPONSE_EXECUTION_QUERY_LIMIT,
-    )?;
-    let (path, executions) = {
-        let ledger = state.edr_response_execution_ledger.lock().await;
-        let path = ledger.path().map(|path| path.display().to_string());
-        let executions = ledger.read_recent(limit).map_err(internal_error)?;
-        (path, executions)
-    };
-    let executions =
-        response_execution_records_with_attribution(state.as_ref(), executions).await?;
-    Ok(Json(EdrResponseExecutionsResponse {
-        path,
-        execution_count: executions.len(),
-        executions,
-    }))
-}
-
-async fn agent_edr_response_execution(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(execution_id): Path<String>,
-) -> Result<Json<EdrResponseExecutionResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let execution_id = execution_id.trim();
-    if execution_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "response execution id must not be empty".to_string(),
-        ));
-    }
-
-    let (path, execution) = {
-        let ledger = state.edr_response_execution_ledger.lock().await;
-        let path = ledger.path().map(|path| path.display().to_string());
-        let execution = ledger
-            .get(execution_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("response execution not found: {execution_id}"),
-                )
-            })?;
-        (path, execution)
-    };
-    let execution = response_execution_record_with_attribution(state.as_ref(), execution).await?;
-
-    Ok(Json(EdrResponseExecutionResponse { path, execution }))
-}
-
-async fn agent_edr_response_execution_proof(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(execution_id): Path<String>,
-) -> Result<Json<EdrResponseExecutionProofResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let execution_id = execution_id.trim();
-    if execution_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "response execution id must not be empty".to_string(),
-        ));
-    }
-
-    let (execution_path, execution) = {
-        let ledger = state.edr_response_execution_ledger.lock().await;
-        let path = ledger.path().map(|path| path.display().to_string());
-        let execution = ledger
-            .get(execution_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("response execution not found: {execution_id}"),
-                )
-            })?;
-        (path, execution)
-    };
-
-    let (
-        receipt_path,
-        request_receipt,
-        execution_receipt,
-        evidence_bundle_receipt,
-        transition_receipts,
-        rollback_receipts,
-        acknowledgement_receipts,
-    ) = {
-        let ledger = state.edr_receipt_ledger.lock().await;
-        let path = ledger.path().map(|path| path.display().to_string());
-        let request_receipt = latest_required_receipt(
-            &ledger,
-            "response_request",
-            execution.action_id.as_str(),
-            "response request receipt",
-        )?;
-        let execution_receipt = latest_required_receipt(
-            &ledger,
-            "response_execution",
-            execution.execution_id.as_str(),
-            "response execution receipt",
-        )
-        .or_else(|err| {
-            if err.0 == StatusCode::NOT_FOUND {
-                latest_required_receipt_by_execution_id(
-                    &ledger,
-                    "response_execution",
-                    execution.execution_id.as_str(),
-                    "response execution receipt",
-                )
-            } else {
-                Err(err)
-            }
-        })?;
-        let evidence_bundle_receipt = latest_required_receipt(
-            &ledger,
-            "evidence_bundle_manifest",
-            execution.evidence_bundle.bundle_id.as_str(),
-            "evidence bundle manifest receipt",
-        )?;
-        let lifecycle_receipts = response_execution_lifecycle_receipts(&ledger, &execution)?;
-        verify_response_execution_proof_actor_continuity(
-            &execution,
-            &request_receipt,
-            &execution_receipt,
-            &lifecycle_receipts.transition_receipts,
-        )?;
-        verify_response_execution_proof_contract(
-            &execution,
-            &request_receipt,
-            &execution_receipt,
-            &evidence_bundle_receipt,
-            &lifecycle_receipts.transition_receipts,
-            &lifecycle_receipts.rollback_receipts,
-            &lifecycle_receipts.acknowledgement_receipts,
-        )?;
-        (
-            path,
-            request_receipt,
-            execution_receipt,
-            evidence_bundle_receipt,
-            lifecycle_receipts.transition_receipts,
-            lifecycle_receipts.rollback_receipts,
-            lifecycle_receipts.acknowledgement_receipts,
-        )
-    };
-    let graph = receipt_endpoint_decision_graph(&execution_receipt).map_err(internal_error)?;
-    let provider_state =
-        receipt_endpoint_decision_sensor_state(&execution_receipt).map_err(internal_error)?;
-    let (evidence_bundle_artifact, affected_identities, affected_tools) = {
-        let mut store = state.edr_evidence_bundle_store.lock().await;
-        let stored = store
-            .load(&execution.evidence_bundle.bundle_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!(
-                        "evidence bundle for response execution proof not found: {}",
-                        execution.evidence_bundle.bundle_id
-                    ),
-                )
-            })?;
-        verify_response_execution_proof_evidence_bundle(&execution, &stored)?;
-        let affected_identities = affected_identities_for_causal_impact(&stored.graph);
-        let affected_tools = affected_tools_for_causal_impact(&stored.graph);
-        (
-            EdrEvidenceBundleArtifact::from_stored(&stored),
-            affected_identities,
-            affected_tools,
-        )
-    };
-    let affected_identity_count = affected_identities.count();
-    let affected_tool_count = affected_tools.len();
-
-    Ok(Json(EdrResponseExecutionProofResponse {
-        execution_path,
-        receipt_path,
-        execution: EdrResponseExecutionRecord::from_execution(execution),
-        graph,
-        affected_identity_count,
-        affected_tool_count,
-        affected_identities,
-        affected_tools,
-        provider_state,
-        evidence_bundle_artifact,
-        request_receipt,
-        execution_receipt,
-        evidence_bundle_receipt,
-        transition_receipts,
-        rollback_receipts,
-        acknowledgement_receipts,
-    }))
-}
-
-async fn agent_edr_response_execution_expire(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-) -> Result<Json<EdrResponseExecutionExpireResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let now = chrono::Utc::now();
-    let (path, pending) = {
-        let ledger = state.edr_response_execution_ledger.lock().await;
-        let path = ledger.path().map(|path| path.display().to_string());
-        let pending = ledger
-            .pending_expiring_executions(now)
-            .map_err(internal_error)?;
-        (path, pending)
-    };
-
-    let mut graphs = HashMap::with_capacity(pending.len());
-    for execution in &pending {
-        let graph = {
-            let mut store = state.edr_evidence_bundle_store.lock().await;
-            store
-                .load(&execution.evidence_bundle.bundle_id)
-                .map_err(internal_error)?
-                .ok_or_else(|| {
-                    (
-                        StatusCode::NOT_FOUND,
-                        format!(
-                            "evidence bundle for expired response execution not found: {}",
-                            execution.evidence_bundle.bundle_id
-                        ),
-                    )
-                })?
-                .graph
-        };
-        graphs.insert(execution.evidence_bundle.bundle_id.clone(), graph);
-    }
-
-    let mut rollbacks = Vec::new();
-    let mut rollback_receipts = Vec::new();
-    for execution in pending
-        .iter()
-        .filter(|execution| response_execution_expires_with_rollback(&execution.action))
-    {
-        let graph = graphs
-            .get(&execution.evidence_bundle.bundle_id)
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!(
-                        "evidence bundle for expired response execution not found: {}",
-                        execution.evidence_bundle.bundle_id
-                    ),
-                )
-            })?;
-        let rollback = execute_response_expiration_rollback(&state, execution)
-            .await
-            .map_err(|(status, err)| {
-                (
-                    status,
-                    format!(
-                        "failed to roll back expired response execution {}: {err}",
-                        execution.execution_id
-                    ),
-                )
-            })?;
-        let receipt = emit_edr_response_rollback_receipt(&state, &rollback, graph)
-            .await
-            .map_err(internal_error)?;
-        rollbacks.push(rollback);
-        rollback_receipts.push(receipt);
-    }
-
-    let expired = {
-        let mut ledger = state.edr_response_execution_ledger.lock().await;
-        ledger.expire_due(now).map_err(internal_error)?
-    };
-    deactivate_expired_egress_restrictions(&state, &expired, now).await?;
-
-    let mut records = Vec::with_capacity(expired.len());
-    let mut receipts = Vec::with_capacity(expired.len());
-    for execution in expired {
-        let graph = graphs
-            .get(&execution.evidence_bundle.bundle_id)
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!(
-                        "evidence bundle for expired response execution not found: {}",
-                        execution.evidence_bundle.bundle_id
-                    ),
-                )
-            })?;
-        let receipt = emit_edr_response_execution_receipt(
-            &state,
-            &execution,
-            graph,
-            execution.actor.clone(),
-            &[],
-        )
-        .await
-        .map_err(internal_error)?;
-        receipts.push(receipt);
-        records.push(EdrResponseExecutionRecord::from_execution(execution));
-    }
-
-    Ok(Json(EdrResponseExecutionExpireResponse {
-        path,
-        expired_count: records.len(),
-        executions: records,
-        receipts,
-        rollback_count: rollbacks.len(),
-        rollbacks,
-        rollback_receipts,
-    }))
-}
-
-async fn agent_edr_response_execution_cancel(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(execution_id): Path<String>,
-    Json(input): Json<EdrResponseExecutionCancelInput>,
-) -> Result<Json<EdrResponseExecutionCancelResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let execution_id = execution_id.trim();
-    if execution_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "response execution id must not be empty".to_string(),
-        ));
-    }
-    let reason = validate_response_reason(
-        "response execution cancel",
-        input.reason.as_deref(),
-        "local response execution cancelled",
-    )?;
-
-    let now = chrono::Utc::now();
-    let (path, execution) = {
-        let ledger = state.edr_response_execution_ledger.lock().await;
-        let path = ledger.path().map(|path| path.display().to_string());
-        let execution = ledger
-            .get(execution_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("response execution not found: {execution_id}"),
-                )
-            })?;
-        (path, execution)
-    };
-    if !matches!(
-        execution.action,
-        EndpointDecisionAction::CollectEvidence | EndpointDecisionAction::RestrictEgress
-    ) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "response execution {execution_id} cannot be cancelled safely; use rollback for rollback-capable local side-effect actions"
-            ),
-        ));
-    }
-    if !matches!(
-        execution.status,
-        EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
-    ) {
-        return Err((
-            StatusCode::CONFLICT,
-            format!(
-                "response execution {execution_id} cannot be cancelled from status {}",
-                execution.status.as_str()
-            ),
-        ));
-    }
-    if now > execution.expires_at() {
-        return Err((
-            StatusCode::CONFLICT,
-            format!("response execution {execution_id} TTL already expired"),
-        ));
-    }
-
-    let graph = {
-        let mut store = state.edr_evidence_bundle_store.lock().await;
-        store
-            .load(&execution.evidence_bundle.bundle_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!(
-                        "evidence bundle for response execution not found: {}",
-                        execution.evidence_bundle.bundle_id
-                    ),
-                )
-            })?
-            .graph
-    };
-
-    let cancelled = {
-        let mut ledger = state.edr_response_execution_ledger.lock().await;
-        ledger
-            .cancel(&execution, &reason, now)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::CONFLICT,
-                    format!("response execution {execution_id} already has a terminal transition"),
-                )
-            })?
-    };
-    if cancelled.action == EndpointDecisionAction::RestrictEgress {
-        deactivate_egress_restrictions_if_active(&state, &cancelled.action_id, now).await?;
-    }
-    let receipt = emit_edr_response_execution_receipt(
-        &state,
-        &cancelled,
-        &graph,
-        cancelled.actor.clone(),
-        &[],
-    )
-    .await
-    .map_err(internal_error)?;
-
-    Ok(Json(EdrResponseExecutionCancelResponse {
-        path,
-        execution: EdrResponseExecutionRecord::from_execution(cancelled),
-        receipt,
-    }))
-}
-
-async fn agent_edr_response_execution_rollback(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(execution_id): Path<String>,
-    Json(input): Json<EdrResponseExecutionRollbackInput>,
-) -> Result<Json<EdrResponseExecutionRollbackResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let execution_id = execution_id.trim();
-    if execution_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "response execution id must not be empty".to_string(),
-        ));
-    }
-    let reason = validate_response_reason(
-        "response execution rollback",
-        input.reason.as_deref(),
-        "local response execution rollback",
-    )?;
-
-    let (path, execution) = {
-        let ledger = state.edr_response_execution_ledger.lock().await;
-        let path = ledger.path().map(|path| path.display().to_string());
-        let execution = ledger
-            .get(execution_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("response execution not found: {execution_id}"),
-                )
-            })?;
-        (path, execution)
-    };
-    if !matches!(
-        execution.action,
-        EndpointDecisionAction::RestrictEgress
-            | EndpointDecisionAction::QuarantineFile
-            | EndpointDecisionAction::DisablePersistence
-            | EndpointDecisionAction::SuspendProcessTree
-    ) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "response execution {execution_id} is not a rollback-capable restrict_egress, quarantine_file, disable_persistence, or suspend_process_tree execution"
-            ),
-        ));
-    }
-    if execution.status != EndpointResponseExecutionStatus::Succeeded {
-        return Err((
-            StatusCode::CONFLICT,
-            format!(
-                "response execution {execution_id} cannot be rolled back from status {}",
-                execution.status.as_str()
-            ),
-        ));
-    }
-    {
-        let ledger = state.edr_response_execution_ledger.lock().await;
-        if ledger
-            .has_terminal_transition_for(&execution)
-            .map_err(internal_error)?
-        {
-            return Err((
-                StatusCode::CONFLICT,
-                format!("response execution {execution_id} already has a terminal transition"),
-            ));
-        }
-    }
-
-    let graph = {
-        let mut store = state.edr_evidence_bundle_store.lock().await;
-        store
-            .load(&execution.evidence_bundle.bundle_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!(
-                        "evidence bundle for response execution not found: {}",
-                        execution.evidence_bundle.bundle_id
-                    ),
-                )
-            })?
-            .graph
-    };
-
-    let rollback = match execution.action {
-        EndpointDecisionAction::RestrictEgress => {
-            execute_restrict_egress_rollback(&state, &execution, &reason).await
-        }
-        EndpointDecisionAction::QuarantineFile => {
-            execute_quarantine_file_rollback(&state, &execution, &reason)
-        }
-        EndpointDecisionAction::DisablePersistence => {
-            execute_disable_persistence_rollback(&state, &execution, &reason)
-        }
-        EndpointDecisionAction::SuspendProcessTree => {
-            execute_suspend_process_tree_rollback(&execution, &reason)
-        }
-        _ => unreachable!("rollback-capable action was validated above"),
-    }
-    .map_err(|(status, err)| {
-        (
-            status,
-            format!("failed to roll back response execution {execution_id}: {err}"),
-        )
-    })?;
-    let receipt = emit_edr_response_rollback_receipt(&state, &rollback, &graph)
-        .await
-        .map_err(internal_error)?;
-    let rollback_transition = {
-        let mut ledger = state.edr_response_execution_ledger.lock().await;
-        ledger
-            .roll_back(&execution, &reason, rollback.completed_at)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::CONFLICT,
-                    format!("response execution {execution_id} already has a terminal transition"),
-                )
-            })?
-    };
-    let transition_receipt = emit_edr_response_execution_receipt(
-        &state,
-        &rollback_transition,
-        &graph,
-        rollback_transition.actor.clone(),
-        &[],
-    )
-    .await
-    .map_err(internal_error)?;
-
-    Ok(Json(EdrResponseExecutionRollbackResponse {
-        path,
-        execution: EdrResponseExecutionRecord::from_execution(execution),
-        rollback_transition: EdrResponseExecutionRecord::from_execution(rollback_transition),
-        rollback,
-        receipt,
-        transition_receipt,
-    }))
 }
 
 fn required_control_ack_field(
@@ -16229,7 +13027,7 @@ fn normalize_control_ack_target_kind(target_kind: &str) -> Result<String, (Statu
     }
 }
 
-fn endpoint_response_control_correlation(
+pub(crate) fn endpoint_response_control_correlation(
     input: Option<&EdrResponseControlAcknowledgementInput>,
     execution: &EndpointResponseExecutionReport,
 ) -> Result<Option<EndpointResponseControlCorrelation>, (StatusCode, String)> {
@@ -16368,7 +13166,7 @@ fn control_api_endpoint_archive_upload_url(
     Ok(format!("{trimmed}/api/v1/hunt/evidence-bundle-archives"))
 }
 
-fn control_api_receipt_batch_upload_url(
+pub(crate) fn control_api_receipt_batch_upload_url(
     control_api_url: &str,
 ) -> Result<String, (StatusCode, String)> {
     let trimmed = control_api_url.trim().trim_end_matches('/');
@@ -16412,7 +13210,7 @@ fn control_api_receipt_batch_upload_url(
     Ok(format!("{trimmed}/api/v1/receipts/batch"))
 }
 
-struct ControlReceiptUploadAttemptFailure {
+pub(crate) struct ControlReceiptUploadAttemptFailure {
     http_status: Option<u16>,
     response_hash: Option<String>,
     error_hash: Option<String>,
@@ -16484,7 +13282,7 @@ async fn resolve_control_receipt_upload_api_key(
     }
 }
 
-struct ControlReceiptUploadRetryAttemptOutcome {
+pub(crate) struct ControlReceiptUploadRetryAttemptOutcome {
     accepted: bool,
     http_status: Option<u16>,
     response_hash: Option<String>,
@@ -16720,7 +13518,7 @@ fn skipped_control_endpoint_archive_upload_report(
     }
 }
 
-struct ControlArchiveUploadAttemptFailure {
+pub(crate) struct ControlArchiveUploadAttemptFailure {
     http_status: Option<u16>,
     response_hash: Option<String>,
     error_hash: Option<String>,
@@ -16800,7 +13598,7 @@ async fn enqueue_control_archive_upload_retry(
     Ok((retry_id, next_attempt_at))
 }
 
-async fn post_control_endpoint_evidence_archive(
+pub(crate) async fn post_control_endpoint_evidence_archive(
     state: &AgentApiState,
     archive_response: &EdrEvidenceBundleArchiveResponse,
     endpoint_agent_id: &str,
@@ -16986,14 +13784,14 @@ async fn resolve_control_archive_upload_retry_api_key(
     }
 }
 
-struct ControlArchiveUploadRetryAttemptOutcome {
-    accepted: bool,
-    http_status: Option<u16>,
-    response_hash: Option<String>,
-    error_hash: Option<String>,
+pub(crate) struct ControlArchiveUploadRetryAttemptOutcome {
+    pub(crate) accepted: bool,
+    pub(crate) http_status: Option<u16>,
+    pub(crate) response_hash: Option<String>,
+    pub(crate) error_hash: Option<String>,
 }
 
-async fn send_control_archive_upload_retry(
+pub(crate) async fn send_control_archive_upload_retry(
     state: &AgentApiState,
     retry: &EndpointControlArchiveUploadRetry,
 ) -> ControlArchiveUploadRetryAttemptOutcome {
@@ -17087,7 +13885,7 @@ impl ControlResponseAckPostbackRoute {
     }
 }
 
-struct ControlResponseAckPostbackConfig {
+pub(crate) struct ControlResponseAckPostbackConfig {
     control_api_url: String,
     api_key: Option<String>,
     route: ControlResponseAckPostbackRoute,
@@ -17153,7 +13951,7 @@ pub(crate) fn control_ack_retry_backoff_seconds(attempt_count: u32) -> i64 {
         .min(EDR_CONTROL_ACK_RETRY_MAX_BACKOFF_SECONDS)
 }
 
-struct ControlAckPostbackPayloadInput<'a> {
+pub(crate) struct ControlAckPostbackPayloadInput<'a> {
     target_kind: &'a str,
     target_id: &'a str,
     ack_token: &'a str,
@@ -17177,7 +13975,7 @@ fn control_ack_postback_payload(input: ControlAckPostbackPayloadInput<'_>) -> se
     })
 }
 
-struct ControlAckPostbackRetryEnqueueInput<'a> {
+pub(crate) struct ControlAckPostbackRetryEnqueueInput<'a> {
     postback_config: &'a ControlResponseAckPostbackConfig,
     response_action_id: &'a str,
     ack_token: &'a str,
@@ -17295,13 +14093,13 @@ impl ControlAckPostbackRetrySink {
     }
 }
 
-struct ControlAckPostbackAttemptFailure {
+pub(crate) struct ControlAckPostbackAttemptFailure {
     http_status: Option<u16>,
     response_hash: Option<String>,
     error_hash: Option<String>,
 }
 
-struct ControlAckPostbackRetryAttemptOutcome {
+pub(crate) struct ControlAckPostbackRetryAttemptOutcome {
     route: ControlResponseAckPostbackRoute,
     accepted: bool,
     http_status: Option<u16>,
@@ -17405,7 +14203,7 @@ async fn send_control_ack_postback_retry(
     }
 }
 
-async fn post_control_response_acknowledgement(
+pub(crate) async fn post_control_response_acknowledgement(
     state: &AgentApiState,
     input: &EdrResponseControlAcknowledgementInput,
     acknowledgement: &EndpointResponseAcknowledgementReport,
@@ -17541,131 +14339,12 @@ async fn post_control_response_acknowledgement(
     }))
 }
 
-async fn agent_edr_response_execution_acknowledge(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Path(execution_id): Path<String>,
-    Json(input): Json<EdrResponseExecutionAcknowledgeInput>,
-) -> Result<Json<EdrResponseExecutionAcknowledgeResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let execution_id = execution_id.trim();
-    if execution_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "response execution id must not be empty".to_string(),
-        ));
-    }
-    let acknowledged_by = input
-        .acknowledged_by
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("local-agent");
-    if acknowledged_by.len() > 256 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "response acknowledgement actor must be at most 256 bytes".to_string(),
-        ));
-    }
-    let note = input
-        .note
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string);
-    if note.as_deref().is_some_and(|value| value.len() > 2048) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "response acknowledgement note must be at most 2048 bytes".to_string(),
-        ));
-    }
-
-    let execution = {
-        let ledger = state.edr_response_execution_ledger.lock().await;
-        ledger
-            .get(execution_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("response execution not found: {execution_id}"),
-                )
-            })?
-    };
-    let graph = {
-        let mut store = state.edr_evidence_bundle_store.lock().await;
-        store
-            .load(&execution.evidence_bundle.bundle_id)
-            .map_err(internal_error)?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!(
-                        "evidence bundle for response execution not found: {}",
-                        execution.evidence_bundle.bundle_id
-                    ),
-                )
-            })?
-            .graph
-    };
-    let control_correlation =
-        endpoint_response_control_correlation(input.control.as_ref(), &execution)?;
-    let acknowledgement = EndpointResponseAcknowledgementReport::from_execution(
-        &execution,
-        acknowledged_by,
-        note,
-        chrono::Utc::now(),
-    )
-    .with_control_correlation(control_correlation);
-    let path = append_edr_response_acknowledgement(&state, &acknowledgement).await?;
-    let receipt = emit_edr_response_acknowledgement_receipt(&state, &acknowledgement, &graph)
-        .await
-        .map_err(internal_error)?;
-    let control_postback = match input.control.as_ref() {
-        Some(control) => {
-            post_control_response_acknowledgement(&state, control, &acknowledgement, &receipt)
-                .await?
-        }
-        None => None,
-    };
-
-    Ok(Json(EdrResponseExecutionAcknowledgeResponse {
-        path,
-        execution: EdrResponseExecutionRecord::from_execution(execution),
-        acknowledgement,
-        receipt,
-        control_postback,
-    }))
-}
-
-async fn agent_edr_response_acknowledgements(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Query(query): Query<EdrResponseAcknowledgementQuery>,
-) -> Result<Json<EdrResponseAcknowledgementsResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", query.limit, 50, EDR_MAX_STORED_FINDINGS)?;
-    let ledger = state.edr_response_acknowledgement_ledger.lock().await;
-    let path = ledger.path().map(|path| path.display().to_string());
-    let acknowledgements = ledger
-        .read_recent(limit)
-        .map_err(internal_error)?
-        .into_iter()
-        .map(EdrResponseAcknowledgementRecord::from_acknowledgement)
-        .collect::<Vec<_>>();
-    Ok(Json(EdrResponseAcknowledgementsResponse {
-        path,
-        count: acknowledgements.len(),
-        acknowledgements,
-    }))
-}
-
-async fn local_endpoint_agent_id(state: &AgentApiState) -> String {
+pub(crate) async fn local_endpoint_agent_id(state: &AgentApiState) -> String {
     let mut settings = state.settings.write().await;
     resolve_effective_endpoint_agent_id(&mut settings, None)
 }
 
-async fn control_archive_backfill_bundle_ids(
+pub(crate) async fn control_archive_backfill_bundle_ids(
     state: &AgentApiState,
     input: &EdrControlArchiveUploadBackfillInput,
     limit: usize,
@@ -17690,187 +14369,7 @@ async fn control_archive_backfill_bundle_ids(
         .collect())
 }
 
-async fn agent_edr_control_archive_uploads_backfill(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrControlArchiveUploadBackfillInput>,
-) -> Result<Json<EdrControlArchiveUploadBackfillResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let raw_artifact_approval = validate_raw_artifact_approval_fields(
-        input.raw_artifact_approval_id.as_deref(),
-        input.raw_artifact_approval_reason.as_deref(),
-    )?;
-    let limit = bounded_request_limit("limit", input.limit, 25, 100)?;
-    let bundle_ids = control_archive_backfill_bundle_ids(&state, &input, limit).await?;
-    let endpoint_agent_id = local_endpoint_agent_id(&state).await;
-
-    let mut records = Vec::new();
-    let mut attempted = 0usize;
-    let mut delivered = 0usize;
-    let mut failed = 0usize;
-    let mut skipped = 0usize;
-    for bundle_id in bundle_ids {
-        let archive_response = evidence_bundle_archive_response(&state, &bundle_id).await?;
-        if !archive_response.verification.verified {
-            return Err((
-                StatusCode::CONFLICT,
-                format!(
-                    "evidence bundle archive verification failed for {}; refusing Control API backfill",
-                    archive_response.archive.bundle.bundle_id
-                ),
-            ));
-        }
-        let raw_ref = evidence_bundle_archive_raw_ref(
-            &archive_response.archive_id,
-            &archive_response.archive_hash,
-        );
-        let event_id = format!(
-            "evidence-bundle-archive-backfill:{}:{}",
-            endpoint_agent_id, archive_response.archive_id
-        );
-        let control_upload = post_control_endpoint_evidence_archive(
-            &state,
-            &archive_response,
-            &endpoint_agent_id,
-            &event_id,
-            &raw_ref,
-            "local_backfill",
-            raw_artifact_approval.as_ref(),
-        )
-        .await?;
-        match control_upload.as_ref() {
-            Some(report) if report.attempted && report.accepted => {
-                attempted += 1;
-                delivered += 1;
-            }
-            Some(report) if report.attempted => {
-                attempted += 1;
-                failed += 1;
-            }
-            Some(_) | None => {
-                skipped += 1;
-            }
-        }
-        records.push(EdrControlArchiveUploadBackfillRecord {
-            bundle_id: archive_response.archive.bundle.bundle_id,
-            archive_id: archive_response.archive_id,
-            archive_hash: archive_response.archive_hash,
-            raw_ref,
-            control_upload,
-        });
-    }
-
-    Ok(Json(EdrControlArchiveUploadBackfillResponse {
-        attempted,
-        delivered,
-        failed,
-        skipped,
-        records,
-    }))
-}
-
-async fn agent_edr_control_archive_uploads_retry(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrControlArchiveUploadRetryInput>,
-) -> Result<Json<EdrControlArchiveUploadRetryResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", input.limit, 25, 100)?;
-    let now = chrono::Utc::now();
-    let (path, pending_before, due) = {
-        let ledger = state.edr_control_archive_upload_retry_ledger.lock().await;
-        (
-            ledger.path().map(|path| path.display().to_string()),
-            ledger.pending_count(),
-            ledger.due(now, limit, input.force),
-        )
-    };
-
-    let mut attempts = Vec::new();
-    let mut delivered = 0usize;
-    let mut failed = 0usize;
-    for retry in due {
-        let outcome = send_control_archive_upload_retry(&state, &retry).await;
-        let attempted_count = retry.attempt_count.saturating_add(1);
-        if outcome.accepted {
-            delivered += 1;
-            let mut ledger = state.edr_control_archive_upload_retry_ledger.lock().await;
-            ledger
-                .mark_delivered(&retry.retry_id)
-                .map_err(internal_error)?;
-            attempts.push(EdrControlArchiveUploadRetryAttemptRecord {
-                retry_id: retry.retry_id,
-                archive_id: retry.archive_id,
-                archive_hash: retry.archive_hash,
-                raw_ref: retry.raw_ref,
-                bundle_id: retry.bundle_id,
-                control_api_url: retry.control_api_url,
-                delivered: true,
-                attempt_count: attempted_count,
-                next_attempt_at: None,
-                http_status: outcome.http_status,
-                response_hash: outcome.response_hash,
-                error_hash: outcome.error_hash,
-            });
-        } else {
-            failed += 1;
-            let mut ledger = state.edr_control_archive_upload_retry_ledger.lock().await;
-            let updated = ledger
-                .mark_failed(
-                    &retry.retry_id,
-                    chrono::Utc::now(),
-                    outcome.http_status,
-                    outcome.response_hash.clone(),
-                    outcome.error_hash.clone(),
-                )
-                .map_err(internal_error)?
-                .unwrap_or_else(|| retry.clone());
-            attempts.push(EdrControlArchiveUploadRetryAttemptRecord {
-                retry_id: retry.retry_id,
-                archive_id: retry.archive_id,
-                archive_hash: retry.archive_hash,
-                raw_ref: retry.raw_ref,
-                bundle_id: retry.bundle_id,
-                control_api_url: retry.control_api_url,
-                delivered: false,
-                attempt_count: updated.attempt_count,
-                next_attempt_at: Some(updated.next_attempt_at),
-                http_status: outcome.http_status,
-                response_hash: outcome.response_hash,
-                error_hash: outcome.error_hash,
-            });
-        }
-    }
-
-    let pending = state
-        .edr_control_archive_upload_retry_ledger
-        .lock()
-        .await
-        .pending_count();
-    Ok(Json(EdrControlArchiveUploadRetryResponse {
-        path,
-        attempted: attempts.len(),
-        delivered,
-        failed,
-        skipped: pending_before.saturating_sub(attempts.len()),
-        pending,
-        attempts,
-    }))
-}
-
-async fn agent_edr_control_receipt_uploads_retry(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrControlReceiptUploadRetryInput>,
-) -> Result<Json<EdrControlReceiptUploadRetryResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", input.limit, 25, 100)?;
-    drain_control_receipt_upload_retries(&state, limit, input.force)
-        .await
-        .map(Json)
-}
-
-async fn drain_control_receipt_upload_retries(
+pub(crate) async fn drain_control_receipt_upload_retries(
     state: &Arc<AgentApiState>,
     limit: usize,
     force: bool,
@@ -17954,19 +14453,7 @@ async fn drain_control_receipt_upload_retries(
     })
 }
 
-async fn agent_edr_control_ack_postbacks_retry(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrControlAckPostbackRetryInput>,
-) -> Result<Json<EdrControlAckPostbackRetryResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let limit = bounded_request_limit("limit", input.limit, 25, 100)?;
-    drain_control_ack_postback_retries(&state, limit, input.force)
-        .await
-        .map(Json)
-}
-
-async fn drain_control_ack_postback_retries(
+pub(crate) async fn drain_control_ack_postback_retries(
     state: &Arc<AgentApiState>,
     limit: usize,
     force: bool,
@@ -18056,7 +14543,7 @@ pub(crate) use crate::edr::ledger::{
     DeceptionCleanupReceiptSigningInput, DeceptionRotationReceiptSigningInput,
 };
 
-async fn emit_edr_detection_receipts(
+pub(crate) async fn emit_edr_detection_receipts(
     state: &AgentApiState,
     observations: &[EndpointObservation],
     findings: &[DetectionFinding],
@@ -18083,7 +14570,7 @@ async fn emit_edr_detection_receipts(
     Ok(receipts)
 }
 
-async fn emit_edr_provider_observation_receipts(
+pub(crate) async fn emit_edr_provider_observation_receipts(
     state: &AgentApiState,
     observations: &[EndpointObservation],
     upload_path: &str,
@@ -18110,7 +14597,7 @@ fn graph_for_observations(observations: &[EndpointObservation]) -> CausalGraph {
     recorder.into_graph()
 }
 
-async fn emit_edr_sensor_state_receipt(
+pub(crate) async fn emit_edr_sensor_state_receipt(
     state: &AgentApiState,
     policy: EndpointPolicySnapshot,
     sensor_state: EndpointSensorState,
@@ -18129,7 +14616,7 @@ async fn emit_edr_sensor_state_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_sensor_state_receipt_with_evidence(
+pub(crate) async fn emit_edr_sensor_state_receipt_with_evidence(
     state: &AgentApiState,
     policy: EndpointPolicySnapshot,
     sensor_state: EndpointSensorState,
@@ -18155,7 +14642,7 @@ async fn emit_edr_sensor_state_receipt_with_evidence(
     Ok(receipt)
 }
 
-async fn emit_edr_telemetry_privacy_receipt(
+pub(crate) async fn emit_edr_telemetry_privacy_receipt(
     state: &AgentApiState,
     report: &EndpointTelemetryPrivacyReport,
 ) -> Result<SignedReceipt> {
@@ -18174,7 +14661,7 @@ async fn emit_edr_telemetry_privacy_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_provider_degradation_receipts(
+pub(crate) async fn emit_edr_provider_degradation_receipts(
     state: &AgentApiState,
     policy: EndpointPolicySnapshot,
     sensor_state: EndpointSensorState,
@@ -18230,7 +14717,7 @@ async fn emit_edr_policy_decision_receipt(
     Ok(receipt)
 }
 
-struct ProviderPolicyDecisionReceiptCandidate {
+pub(crate) struct ProviderPolicyDecisionReceiptCandidate {
     actor: EndpointDecisionActor,
     sensor_state: EndpointSensorState,
     action_type: String,
@@ -18238,7 +14725,7 @@ struct ProviderPolicyDecisionReceiptCandidate {
     decision: PolicyCheckOutput,
 }
 
-async fn emit_edr_provider_policy_decision_receipts(
+pub(crate) async fn emit_edr_provider_policy_decision_receipts(
     state: &AgentApiState,
     observations: &[EndpointObservation],
     upload_path: &str,
@@ -18394,7 +14881,7 @@ fn observation_metadata_string(observation: &EndpointObservation, key: &str) -> 
         .and_then(|value| trimmed_owned(Some(value)))
 }
 
-async fn emit_edr_graph_slice_receipt(
+pub(crate) async fn emit_edr_graph_slice_receipt(
     state: &AgentApiState,
     root_node_id: &str,
     slice_kind: &str,
@@ -18422,7 +14909,7 @@ async fn emit_edr_graph_slice_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_simulation_receipt(
+pub(crate) async fn emit_edr_simulation_receipt(
     state: &AgentApiState,
     simulation: &EndpointPolicySimulationReport,
     graph: &CausalGraph,
@@ -18432,7 +14919,7 @@ async fn emit_edr_simulation_receipt(
     emit_edr_simulation_receipt_with_policy(state, &settings, policy, simulation, graph).await
 }
 
-async fn emit_edr_simulation_receipt_with_policy(
+pub(crate) async fn emit_edr_simulation_receipt_with_policy(
     state: &AgentApiState,
     settings: &Settings,
     policy: EndpointPolicySnapshot,
@@ -18449,7 +14936,7 @@ async fn emit_edr_simulation_receipt_with_policy(
     Ok(receipt)
 }
 
-async fn emit_edr_policy_event_replay_receipt(
+pub(crate) async fn emit_edr_policy_event_replay_receipt(
     state: &AgentApiState,
     settings: &Settings,
     replay: &EdrPolicyEventReplayReport,
@@ -18469,7 +14956,7 @@ async fn emit_edr_policy_event_replay_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_policy_event_impact_receipt(
+pub(crate) async fn emit_edr_policy_event_impact_receipt(
     state: &AgentApiState,
     settings: &Settings,
     impact: &EdrPolicyEventImpactReport,
@@ -18489,7 +14976,7 @@ async fn emit_edr_policy_event_impact_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_deception_materialization_receipt(
+pub(crate) async fn emit_edr_deception_materialization_receipt(
     state: &AgentApiState,
     plan: &DeceptionPlan,
     report: &DeceptionMaterializationReport,
@@ -18517,7 +15004,7 @@ async fn emit_edr_deception_materialization_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_deception_cleanup_receipt(
+pub(crate) async fn emit_edr_deception_cleanup_receipt(
     state: &AgentApiState,
     plan: &DeceptionPlan,
     report: &DeceptionCleanupReport,
@@ -18547,7 +15034,7 @@ async fn emit_edr_deception_cleanup_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_deception_rotation_receipt(
+pub(crate) async fn emit_edr_deception_rotation_receipt(
     state: &AgentApiState,
     old_plan: &DeceptionPlan,
     new_plan: &DeceptionPlan,
@@ -18575,7 +15062,7 @@ async fn emit_edr_deception_rotation_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_response_receipt(
+pub(crate) async fn emit_edr_response_receipt(
     state: &AgentApiState,
     actor: EndpointDecisionActor,
     plan: &EndpointResponsePlan,
@@ -18597,7 +15084,7 @@ async fn emit_edr_response_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_response_execution_receipt(
+pub(crate) async fn emit_edr_response_execution_receipt(
     state: &AgentApiState,
     execution: &EndpointResponseExecutionReport,
     graph: &CausalGraph,
@@ -18640,7 +15127,7 @@ async fn emit_edr_response_execution_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_response_rollback_receipt(
+pub(crate) async fn emit_edr_response_rollback_receipt(
     state: &AgentApiState,
     rollback: &EndpointResponseRollbackReport,
     graph: &CausalGraph,
@@ -18669,7 +15156,7 @@ async fn emit_edr_response_rollback_receipt(
     Ok(receipt)
 }
 
-async fn emit_edr_response_acknowledgement_receipt(
+pub(crate) async fn emit_edr_response_acknowledgement_receipt(
     state: &AgentApiState,
     acknowledgement: &EndpointResponseAcknowledgementReport,
     graph: &CausalGraph,
@@ -18877,7 +15364,7 @@ fn receipt_evidence_hash_value<'a>(receipt: &'a SignedReceipt, key: &str) -> Opt
         })
 }
 
-fn verify_response_execution_proof_contract(
+pub(crate) fn verify_response_execution_proof_contract(
     execution: &EndpointResponseExecutionReport,
     request_receipt: &SignedReceipt,
     execution_receipt: &SignedReceipt,
@@ -19021,7 +15508,7 @@ fn verify_response_execution_proof_contract(
     Ok(())
 }
 
-fn verify_response_execution_proof_evidence_bundle(
+pub(crate) fn verify_response_execution_proof_evidence_bundle(
     execution: &EndpointResponseExecutionReport,
     stored: &StoredEndpointEvidenceBundle,
 ) -> Result<(), (StatusCode, String)> {
@@ -19082,7 +15569,7 @@ fn verify_response_execution_proof_evidence_bundle(
 }
 
 #[derive(Clone, Copy)]
-enum ResponseExecutionProofReceiptKind {
+pub(crate) enum ResponseExecutionProofReceiptKind {
     Primary,
     TerminalTransition,
 }
@@ -19439,7 +15926,7 @@ fn require_proof_receipt_evidence_hash(
     ))
 }
 
-fn verify_response_execution_proof_actor_continuity(
+pub(crate) fn verify_response_execution_proof_actor_continuity(
     execution: &EndpointResponseExecutionReport,
     request_receipt: &SignedReceipt,
     execution_receipt: &SignedReceipt,
@@ -19512,13 +15999,13 @@ fn verify_response_execution_proof_receipt_actor(
     Ok(())
 }
 
-struct ResponseExecutionLifecycleReceipts {
-    transition_receipts: Vec<SignedReceipt>,
-    rollback_receipts: Vec<SignedReceipt>,
-    acknowledgement_receipts: Vec<SignedReceipt>,
+pub(crate) struct ResponseExecutionLifecycleReceipts {
+    pub(crate) transition_receipts: Vec<SignedReceipt>,
+    pub(crate) rollback_receipts: Vec<SignedReceipt>,
+    pub(crate) acknowledgement_receipts: Vec<SignedReceipt>,
 }
 
-fn response_execution_lifecycle_receipts(
+pub(crate) fn response_execution_lifecycle_receipts(
     ledger: &EndpointReceiptLedger,
     execution: &EndpointResponseExecutionReport,
 ) -> Result<ResponseExecutionLifecycleReceipts, (StatusCode, String)> {
@@ -19611,7 +16098,7 @@ fn endpoint_receipt_proof_order(left: &SignedReceipt, right: &SignedReceipt) -> 
         .then_with(|| left.receipt.receipt_id.cmp(&right.receipt.receipt_id))
 }
 
-fn latest_required_receipt(
+pub(crate) fn latest_required_receipt(
     ledger: &EndpointReceiptLedger,
     family: &str,
     finding_id: &str,
@@ -19646,7 +16133,7 @@ fn latest_required_receipt(
     Ok(receipt)
 }
 
-fn latest_required_receipt_by_execution_id(
+pub(crate) fn latest_required_receipt_by_execution_id(
     ledger: &EndpointReceiptLedger,
     family: &str,
     execution_id: &str,
@@ -19743,7 +16230,7 @@ fn verify_endpoint_receipt_signature(
     Ok(())
 }
 
-fn control_store_receipt_from_endpoint_receipt(
+pub(crate) fn control_store_receipt_from_endpoint_receipt(
     receipt: &SignedReceipt,
 ) -> Result<ControlStoreReceiptRequest, String> {
     let public_key = receipt_endpoint_decision_str(receipt, &["signer", "signerPublicKey"])
@@ -19860,17 +16347,17 @@ pub(crate) fn receipt_local_sequence(receipt: &SignedReceipt) -> Option<u64> {
         .as_u64()
 }
 
-fn receipt_family(receipt: &SignedReceipt) -> Option<&str> {
+pub(crate) fn receipt_family(receipt: &SignedReceipt) -> Option<&str> {
     receipt_endpoint_decision_str(receipt, &["receiptFamily"])
 }
 
-fn receipt_endpoint_decision_graph(receipt: &SignedReceipt) -> Result<EndpointGraphReference> {
+pub(crate) fn receipt_endpoint_decision_graph(receipt: &SignedReceipt) -> Result<EndpointGraphReference> {
     let graph = receipt_endpoint_decision_value(receipt, &["graph"])
         .ok_or_else(|| anyhow::anyhow!("endpoint receipt is missing graph reference"))?;
     serde_json::from_value(graph.clone()).context("decode endpoint receipt graph reference")
 }
 
-fn receipt_endpoint_decision_sensor_state(receipt: &SignedReceipt) -> Result<EndpointSensorState> {
+pub(crate) fn receipt_endpoint_decision_sensor_state(receipt: &SignedReceipt) -> Result<EndpointSensorState> {
     let sensor_state = receipt_endpoint_decision_value(receipt, &["sensorState"])
         .ok_or_else(|| anyhow::anyhow!("endpoint receipt is missing sensor state"))?;
     serde_json::from_value(sensor_state.clone()).context("decode endpoint receipt sensor state")
@@ -19888,7 +16375,7 @@ fn receipt_endpoint_decision_actor(receipt: &SignedReceipt) -> Result<EndpointDe
     serde_json::from_value(actor.clone()).context("decode endpoint receipt actor")
 }
 
-fn receipt_endpoint_decision_str<'a>(receipt: &'a SignedReceipt, path: &[&str]) -> Option<&'a str> {
+pub(crate) fn receipt_endpoint_decision_str<'a>(receipt: &'a SignedReceipt, path: &[&str]) -> Option<&'a str> {
     receipt_endpoint_decision_value(receipt, path)?.as_str()
 }
 
@@ -19903,7 +16390,7 @@ fn receipt_endpoint_decision_value<'a>(
     Some(value)
 }
 
-fn protected_observation_ids_for_receipts(
+pub(crate) fn protected_observation_ids_for_receipts(
     receipts: &[SignedReceipt],
     graph: &CausalGraph,
 ) -> BTreeSet<String> {
@@ -20026,7 +16513,7 @@ const EDR_POLICY_EPOCH_YAML_PATHS: &[&[&str]] = &[
     &["bundle", "policyEpoch"],
 ];
 
-fn edr_privacy_policy_decision(
+pub(crate) fn edr_privacy_policy_decision(
     settings: &Settings,
     requested_privacy_mode: EndpointTelemetryPrivacyMode,
     raw_artifact_approval: Option<&EdrRawArtifactApproval>,
@@ -20073,7 +16560,7 @@ fn edr_privacy_policy_decision(
     })
 }
 
-fn validate_raw_artifact_approval(
+pub(crate) fn validate_raw_artifact_approval(
     input: &EdrPrivacyReportInput,
 ) -> Result<Option<EdrRawArtifactApproval>, (StatusCode, String)> {
     validate_raw_artifact_approval_fields(
@@ -20082,7 +16569,7 @@ fn validate_raw_artifact_approval(
     )
 }
 
-fn validate_raw_artifact_approval_fields(
+pub(crate) fn validate_raw_artifact_approval_fields(
     approval_id: Option<&str>,
     approval_reason: Option<&str>,
 ) -> Result<Option<EdrRawArtifactApproval>, (StatusCode, String)> {
@@ -20176,7 +16663,7 @@ fn yaml_bool_value(value: &serde_yaml::Value) -> Option<bool> {
     }
 }
 
-fn endpoint_policy_snapshot_from_settings(settings: &Settings) -> Result<EndpointPolicySnapshot> {
+pub(crate) fn endpoint_policy_snapshot_from_settings(settings: &Settings) -> Result<EndpointPolicySnapshot> {
     let bytes = fs::read(&settings.policy_path).with_context(|| {
         format!(
             "read local policy for endpoint receipt {}",
@@ -20186,7 +16673,7 @@ fn endpoint_policy_snapshot_from_settings(settings: &Settings) -> Result<Endpoin
     endpoint_policy_snapshot_from_policy_bytes(&bytes, &settings.policy_path)
 }
 
-fn endpoint_policy_snapshot_from_policy_bytes(
+pub(crate) fn endpoint_policy_snapshot_from_policy_bytes(
     bytes: &[u8],
     policy_path: &FsPath,
 ) -> Result<EndpointPolicySnapshot> {
@@ -20292,7 +16779,7 @@ fn endpoint_response_actor_from_session(
     }
 }
 
-fn endpoint_response_actor_from_action_input(
+pub(crate) fn endpoint_response_actor_from_action_input(
     settings: &Settings,
     session_state: &SessionState,
     agent_id: &str,
@@ -20330,7 +16817,7 @@ fn endpoint_response_actor_from_action_input(
     actor
 }
 
-fn endpoint_sensor_state_from_macos_host(
+pub(crate) fn endpoint_sensor_state_from_macos_host(
     status: &CombinedSystemExtensionStatus,
 ) -> EndpointSensorState {
     EndpointSensorState {
@@ -20364,7 +16851,7 @@ fn endpoint_sensor_state_from_macos_host(
     }
 }
 
-fn endpoint_provider_recoveries(
+pub(crate) fn endpoint_provider_recoveries(
     previous_status: Option<&CombinedSystemExtensionStatus>,
     current_sensor_state: &EndpointSensorState,
 ) -> Vec<EdrProviderRecovery> {
@@ -20408,7 +16895,7 @@ fn endpoint_provider_recoveries(
     recoveries
 }
 
-fn provider_recovery_receipt_evidence(
+pub(crate) fn provider_recovery_receipt_evidence(
     recoveries: &[EdrProviderRecovery],
 ) -> Vec<EndpointReceiptEvidence> {
     if recoveries.is_empty() {
@@ -20544,12 +17031,12 @@ fn network_extension_response_execution_evidence(
     evidence
 }
 
-struct NetworkExtensionFlowCounterSummary {
-    flow_counter_observed: bool,
-    observed_flow_count: u64,
-    blocked_flow_count: u64,
-    remediation_request_count: u64,
-    dropped_verdict_count: u64,
+pub(crate) struct NetworkExtensionFlowCounterSummary {
+    pub(crate) flow_counter_observed: bool,
+    pub(crate) observed_flow_count: u64,
+    pub(crate) blocked_flow_count: u64,
+    pub(crate) remediation_request_count: u64,
+    pub(crate) dropped_verdict_count: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -20563,7 +17050,7 @@ pub(crate) struct NetworkExtensionReloadRequestProof {
     pub(crate) error: Option<String>,
 }
 
-fn network_extension_flow_counter_summary(
+pub(crate) fn network_extension_flow_counter_summary(
     provider: &ProviderStatus,
 ) -> NetworkExtensionFlowCounterSummary {
     let observed_flow_count = provider_counter(provider, &["flows_observed"]);
@@ -20579,22 +17066,22 @@ fn network_extension_flow_counter_summary(
     }
 }
 
-struct NetworkExtensionLiveEnforcementProof {
-    proven: bool,
-    reasons: Vec<String>,
+pub(crate) struct NetworkExtensionLiveEnforcementProof {
+    pub(crate) proven: bool,
+    pub(crate) reasons: Vec<String>,
 }
 
-struct NetworkExtensionLiveEnforcementProofInput<'a> {
-    snapshot_present: bool,
-    snapshot_decodable: bool,
-    active_restriction_count: usize,
-    enforcement_ready: bool,
-    flow_counters: &'a NetworkExtensionFlowCounterSummary,
-    execution_id_provided: bool,
-    provider_reload_delivery: Option<&'a EdrNetworkExtensionReloadDeliveryProof>,
+pub(crate) struct NetworkExtensionLiveEnforcementProofInput<'a> {
+    pub(crate) snapshot_present: bool,
+    pub(crate) snapshot_decodable: bool,
+    pub(crate) active_restriction_count: usize,
+    pub(crate) enforcement_ready: bool,
+    pub(crate) flow_counters: &'a NetworkExtensionFlowCounterSummary,
+    pub(crate) execution_id_provided: bool,
+    pub(crate) provider_reload_delivery: Option<&'a EdrNetworkExtensionReloadDeliveryProof>,
 }
 
-fn network_extension_live_enforcement_proof(
+pub(crate) fn network_extension_live_enforcement_proof(
     input: NetworkExtensionLiveEnforcementProofInput<'_>,
 ) -> NetworkExtensionLiveEnforcementProof {
     let mut reasons = Vec::new();
@@ -20669,7 +17156,7 @@ fn network_extension_reload_request_evidence(
     evidence
 }
 
-async fn network_extension_reload_delivery_for_execution(
+pub(crate) async fn network_extension_reload_delivery_for_execution(
     state: &AgentApiState,
     execution_id: Option<&str>,
     provider: &ProviderStatus,
@@ -20778,25 +17265,25 @@ async fn network_extension_reload_delivery_for_execution(
     }))
 }
 
-struct NetworkExtensionEgressPolicyProofEvidenceInput<'a> {
-    provider_policy_path: &'a FsPath,
-    snapshot_present: bool,
-    snapshot_decodable: bool,
-    snapshot_hash: Option<&'a str>,
-    generated_at: Option<&'a chrono::DateTime<chrono::Utc>>,
-    restriction_count: usize,
-    active_restriction_count: usize,
-    expired_restriction_count: usize,
-    enforcement_ready: bool,
-    live_enforcement_proven: bool,
-    live_enforcement_proof_reasons: &'a [String],
-    flow_counter_observed: bool,
-    provider: &'a ProviderStatus,
-    provider_status_refresh: &'a EdrProviderStatusRefreshResult,
-    provider_reload_delivery: Option<&'a EdrNetworkExtensionReloadDeliveryProof>,
+pub(crate) struct NetworkExtensionEgressPolicyProofEvidenceInput<'a> {
+    pub(crate) provider_policy_path: &'a FsPath,
+    pub(crate) snapshot_present: bool,
+    pub(crate) snapshot_decodable: bool,
+    pub(crate) snapshot_hash: Option<&'a str>,
+    pub(crate) generated_at: Option<&'a chrono::DateTime<chrono::Utc>>,
+    pub(crate) restriction_count: usize,
+    pub(crate) active_restriction_count: usize,
+    pub(crate) expired_restriction_count: usize,
+    pub(crate) enforcement_ready: bool,
+    pub(crate) live_enforcement_proven: bool,
+    pub(crate) live_enforcement_proof_reasons: &'a [String],
+    pub(crate) flow_counter_observed: bool,
+    pub(crate) provider: &'a ProviderStatus,
+    pub(crate) provider_status_refresh: &'a EdrProviderStatusRefreshResult,
+    pub(crate) provider_reload_delivery: Option<&'a EdrNetworkExtensionReloadDeliveryProof>,
 }
 
-fn network_extension_egress_policy_proof_evidence(
+pub(crate) fn network_extension_egress_policy_proof_evidence(
     input: NetworkExtensionEgressPolicyProofEvidenceInput<'_>,
 ) -> Vec<EndpointReceiptEvidence> {
     let mut evidence = vec![
@@ -21894,316 +18381,7 @@ pub(crate) use crate::edr::ledger::read_control_archive_upload_retry_ledger;
 
 pub(crate) use crate::edr::ledger::EndpointHoneyRegistry;
 
-async fn agent_edr_deception_plan(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrDeceptionPlanInput>,
-) -> Result<Json<EdrDeceptionPlanResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    let root = input.root.trim();
-    let endpoint_id = input.endpoint_id.trim();
-    if root.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "root must not be empty".to_string(),
-        ));
-    }
-    if endpoint_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "endpoint_id must not be empty".to_string(),
-        ));
-    }
-
-    let plan = DeceptionPlan::standard(root, endpoint_id);
-    Ok(Json(EdrDeceptionPlanResponse {
-        artifact_count: plan.artifacts.len(),
-        plan,
-    }))
-}
-
-async fn agent_edr_materialize_deception_plan(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrMaterializeDeceptionPlanInput>,
-) -> Result<Json<EdrMaterializeDeceptionPlanResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    if input.plan.artifacts.len() > EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "too many honey artifacts: max {}",
-                EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST
-            ),
-        ));
-    }
-    let plan = input.plan;
-    let artifacts = plan.artifacts.clone();
-    let materialize_plan = plan.clone();
-    let report = tokio::task::spawn_blocking(move || materialize_plan.materialize())
-        .await
-        .map_err(|err| internal_error(err.into()))?
-        .map_err(internal_error)?;
-    let mut registry = state.edr_honey_registry.lock().await;
-    let registered_artifact_count = registry.register(&artifacts).map_err(internal_error)?;
-    let registry_path = registry.path().map(|path| path.display().to_string());
-    drop(registry);
-    let receipt = emit_edr_deception_materialization_receipt(
-        &state,
-        &plan,
-        &report,
-        registered_artifact_count,
-    )
-    .await
-    .map_err(internal_error)?;
-
-    Ok(Json(EdrMaterializeDeceptionPlanResponse {
-        report,
-        registered_artifact_count,
-        registry_path,
-        receipt,
-    }))
-}
-
-async fn agent_edr_cleanup_deception_plan(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrCleanupDeceptionPlanInput>,
-) -> Result<Json<EdrCleanupDeceptionPlanResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    if input.plan.artifacts.len() > EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "too many honey artifacts: max {}",
-                EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST
-            ),
-        ));
-    }
-    validate_deception_cleanup_plan(&input.plan)
-        .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
-
-    let dry_run = input.dry_run.unwrap_or(true);
-    let plan = input.plan;
-    let registered_ids = {
-        let registry = state.edr_honey_registry.lock().await;
-        registry
-            .load()
-            .map_err(internal_error)?
-            .into_iter()
-            .map(|artifact| artifact.artifact_id)
-            .collect::<BTreeSet<_>>()
-    };
-
-    let cleanup_plan = plan.clone();
-    let cleanup_registered_ids = registered_ids.clone();
-    let (report, artifact_ids_to_deregister) = tokio::task::spawn_blocking(move || {
-        cleanup_deception_plan(&cleanup_plan, &cleanup_registered_ids, dry_run)
-    })
-    .await
-    .map_err(|err| internal_error(err.into()))?
-    .map_err(internal_error)?;
-
-    let mut registry = state.edr_honey_registry.lock().await;
-    let deregistered_artifact_count = if dry_run {
-        0
-    } else {
-        registry
-            .unregister(&artifact_ids_to_deregister)
-            .map_err(internal_error)?
-    };
-    let remaining_registered_artifact_count = registry.load().map_err(internal_error)?.len();
-    let registry_path = registry.path().map(|path| path.display().to_string());
-    drop(registry);
-
-    let receipt = emit_edr_deception_cleanup_receipt(
-        &state,
-        &plan,
-        &report,
-        deregistered_artifact_count,
-        remaining_registered_artifact_count,
-    )
-    .await
-    .map_err(internal_error)?;
-
-    Ok(Json(EdrCleanupDeceptionPlanResponse {
-        report,
-        deregistered_artifact_count,
-        remaining_registered_artifact_count,
-        registry_path,
-        receipt,
-    }))
-}
-
-async fn agent_edr_rotate_deception_plan(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-    Json(input): Json<EdrRotateDeceptionPlanInput>,
-) -> Result<Json<EdrRotateDeceptionPlanResponse>, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    if input.old_plan.artifacts.len() > EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST
-        || input.new_plan.artifacts.len() > EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "too many honey artifacts: max {} per plan",
-                EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST
-            ),
-        ));
-    }
-    validate_deception_cleanup_plan(&input.old_plan)
-        .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
-    validate_deception_cleanup_plan(&input.new_plan)
-        .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
-
-    let dry_run = input.dry_run.unwrap_or(true);
-    let old_plan = input.old_plan;
-    let new_plan = input.new_plan;
-    let registered_ids = {
-        let registry = state.edr_honey_registry.lock().await;
-        registry
-            .load()
-            .map_err(internal_error)?
-            .into_iter()
-            .map(|artifact| artifact.artifact_id)
-            .collect::<BTreeSet<_>>()
-    };
-
-    let preflight_old_plan = old_plan.clone();
-    let preflight_registered_ids = registered_ids.clone();
-    let (preflight_cleanup, _) = tokio::task::spawn_blocking(move || {
-        cleanup_deception_plan(&preflight_old_plan, &preflight_registered_ids, true)
-    })
-    .await
-    .map_err(|err| internal_error(err.into()))?
-    .map_err(internal_error)?;
-    if !preflight_cleanup.refused.is_empty() {
-        return Err((
-            StatusCode::CONFLICT,
-            "deception rotation cleanup preflight refused one or more artifacts".to_string(),
-        ));
-    }
-
-    if dry_run {
-        let registry = state.edr_honey_registry.lock().await;
-        let remaining_registered_artifact_count = registry.load().map_err(internal_error)?.len();
-        let registry_path = registry.path().map(|path| path.display().to_string());
-        drop(registry);
-        let report = DeceptionRotationReport {
-            dry_run,
-            cleanup: preflight_cleanup,
-            materialization: None,
-            deregistered_artifact_count: 0,
-            registered_artifact_count: 0,
-            remaining_registered_artifact_count,
-        };
-        let cleanup_receipt = emit_edr_deception_cleanup_receipt(
-            &state,
-            &old_plan,
-            &report.cleanup,
-            0,
-            remaining_registered_artifact_count,
-        )
-        .await
-        .map_err(internal_error)?;
-        let rotation_receipt =
-            emit_edr_deception_rotation_receipt(&state, &old_plan, &new_plan, &report)
-                .await
-                .map_err(internal_error)?;
-
-        return Ok(Json(EdrRotateDeceptionPlanResponse {
-            deregistered_artifact_count: report.deregistered_artifact_count,
-            registered_artifact_count: report.registered_artifact_count,
-            remaining_registered_artifact_count: report.remaining_registered_artifact_count,
-            registry_path,
-            cleanup_receipt,
-            materialization_receipt: None,
-            rotation_receipt,
-            report,
-        }));
-    }
-
-    let cleanup_old_plan = old_plan.clone();
-    let cleanup_registered_ids = registered_ids.clone();
-    let (cleanup_report, artifact_ids_to_deregister) = tokio::task::spawn_blocking(move || {
-        cleanup_deception_plan(&cleanup_old_plan, &cleanup_registered_ids, false)
-    })
-    .await
-    .map_err(|err| internal_error(err.into()))?
-    .map_err(internal_error)?;
-    if !cleanup_report.refused.is_empty() {
-        return Err((
-            StatusCode::CONFLICT,
-            "deception rotation cleanup refused one or more artifacts".to_string(),
-        ));
-    }
-
-    let mut registry = state.edr_honey_registry.lock().await;
-    let deregistered_artifact_count = registry
-        .unregister(&artifact_ids_to_deregister)
-        .map_err(internal_error)?;
-    let remaining_after_cleanup = registry.load().map_err(internal_error)?.len();
-    let registry_path = registry.path().map(|path| path.display().to_string());
-    drop(registry);
-
-    let cleanup_receipt = emit_edr_deception_cleanup_receipt(
-        &state,
-        &old_plan,
-        &cleanup_report,
-        deregistered_artifact_count,
-        remaining_after_cleanup,
-    )
-    .await
-    .map_err(internal_error)?;
-
-    let materialize_plan = new_plan.clone();
-    let materialization_report =
-        tokio::task::spawn_blocking(move || materialize_plan.materialize())
-            .await
-            .map_err(|err| internal_error(err.into()))?
-            .map_err(internal_error)?;
-    let mut registry = state.edr_honey_registry.lock().await;
-    let registered_artifact_count = registry
-        .register(&new_plan.artifacts)
-        .map_err(internal_error)?;
-    let remaining_registered_artifact_count = registry.load().map_err(internal_error)?.len();
-    drop(registry);
-
-    let materialization_receipt = emit_edr_deception_materialization_receipt(
-        &state,
-        &new_plan,
-        &materialization_report,
-        registered_artifact_count,
-    )
-    .await
-    .map_err(internal_error)?;
-    let report = DeceptionRotationReport {
-        dry_run,
-        cleanup: cleanup_report,
-        materialization: Some(materialization_report),
-        deregistered_artifact_count,
-        registered_artifact_count,
-        remaining_registered_artifact_count,
-    };
-    let rotation_receipt =
-        emit_edr_deception_rotation_receipt(&state, &old_plan, &new_plan, &report)
-            .await
-            .map_err(internal_error)?;
-
-    Ok(Json(EdrRotateDeceptionPlanResponse {
-        deregistered_artifact_count,
-        registered_artifact_count,
-        remaining_registered_artifact_count,
-        registry_path,
-        cleanup_receipt,
-        materialization_receipt: Some(materialization_receipt),
-        rotation_receipt,
-        report,
-    }))
-}
-
-fn validate_deception_cleanup_plan(plan: &DeceptionPlan) -> std::result::Result<(), String> {
+pub(crate) fn validate_deception_cleanup_plan(plan: &DeceptionPlan) -> std::result::Result<(), String> {
     if !plan.root.is_absolute() {
         return Err(format!(
             "deception cleanup root must be absolute: {}",
@@ -22237,7 +18415,7 @@ fn validate_deception_cleanup_relative_path(path: &FsPath) -> std::result::Resul
     Ok(())
 }
 
-fn cleanup_deception_plan(
+pub(crate) fn cleanup_deception_plan(
     plan: &DeceptionPlan,
     registered_ids: &BTreeSet<String>,
     dry_run: bool,
@@ -22309,7 +18487,7 @@ fn cleanup_deception_plan(
     Ok((report, artifact_ids_to_deregister))
 }
 
-fn validate_edr_request_sizes(
+pub(crate) fn validate_edr_request_sizes(
     observation_count: usize,
     honey_artifact_count: usize,
 ) -> Result<(), (StatusCode, String)> {
@@ -23070,7 +19248,7 @@ fn auth_token_from_cookie(headers: &HeaderMap) -> Option<String> {
     None
 }
 
-fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (StatusCode, String)> {
+pub(crate) fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (StatusCode, String)> {
     let auth_header = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -23098,7 +19276,7 @@ fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (Statu
     Err((StatusCode::UNAUTHORIZED, err))
 }
 
-fn internal_error(err: anyhow::Error) -> (StatusCode, String) {
+pub(crate) fn internal_error(err: anyhow::Error) -> (StatusCode, String) {
     tracing::error!(error = %err, "Agent API error");
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
