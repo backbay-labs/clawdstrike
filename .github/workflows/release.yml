@@ -975,6 +975,9 @@ jobs:
       NOTARYTOOL_PROFILE: ${{ secrets.NOTARYTOOL_PROFILE }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_SIGNING_KEYCHAIN_PASSWORD }}
       CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING: "1"
       NOTARIZE_OUT_DIR: ${{ github.workspace }}/.github-artifacts/clawdstrike-notarization
     steps:
@@ -990,8 +993,64 @@ jobs:
       - name: Install tauri-cli
         run: cargo install tauri-cli --locked --version '^2'
 
+      - name: Import Apple signing certificate
+        if: ${{ env.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}
+        shell: bash
+        env:
+          KEYCHAIN_PATH: ${{ runner.temp }}/clawdstrike-signing.keychain-db
+          CERT_PATH: ${{ runner.temp }}/developer-id-application.p12
+        run: |
+          set -euo pipefail
+          keychain_password="${APPLE_SIGNING_KEYCHAIN_PASSWORD:-$(uuidgen)}"
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          certificate = os.environ["APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64"]
+          Path(os.environ["CERT_PATH"]).write_bytes(base64.b64decode(certificate))
+          PY
+          security create-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          existing_keychains="$(security list-keychains -d user | sed 's/[\" ]//g')"
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $existing_keychains
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$keychain_password" \
+            "$KEYCHAIN_PATH"
+
+      - name: Store notarytool credentials
+        if: ${{ env.NOTARYTOOL_PROFILE != '' && env.APPLE_ID != '' && env.APPLE_PASSWORD != '' && env.APPLE_TEAM_ID != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun notarytool store-credentials "$NOTARYTOOL_PROFILE" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID"
+
       - name: Build and notarize agent app bundle
         run: bash scripts/notarize-agent-macos.sh
+
+      - name: Cleanup Apple signing keychain
+        if: ${{ always() && env.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}
+        shell: bash
+        env:
+          KEYCHAIN_PATH: ${{ runner.temp }}/clawdstrike-signing.keychain-db
+          CERT_PATH: ${{ runner.temp }}/developer-id-application.p12
+        run: |
+          set -euo pipefail
+          rm -f "$CERT_PATH"
+          security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
 
       - name: Upload agent DMG artifact
         uses: actions/upload-artifact@v6
