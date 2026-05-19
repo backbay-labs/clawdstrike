@@ -52,6 +52,8 @@ enum SecretLeaseEnvelope {
         value: String,
         subject: String,
         #[serde(default)]
+        revocation: Option<serde_json::Value>,
+        #[serde(default)]
         expires_at: Option<DateTime<Utc>>,
         #[serde(default)]
         expires_in_secs: Option<i64>,
@@ -60,6 +62,8 @@ enum SecretLeaseEnvelope {
         header_name: String,
         value: String,
         subject: String,
+        #[serde(default)]
+        revocation: Option<serde_json::Value>,
         #[serde(default)]
         expires_at: Option<DateTime<Utc>>,
         #[serde(default)]
@@ -177,45 +181,57 @@ fn resolve_envelope(
         SecretLeaseEnvelope::GenericHttpsBearer {
             value,
             subject,
+            revocation,
             expires_at,
             expires_in_secs,
-        } => Ok(ResolvedExecutionCredential {
-            provider_secret: serde_json::json!({
+        } => {
+            let mut provider_secret = serde_json::json!({
                 "type": "bearer",
                 "value": value,
+            });
+            if let Some(revocation) = revocation {
+                provider_secret["revocation"] = revocation;
+            }
+            Ok(ResolvedExecutionCredential {
+                provider_secret: provider_secret.to_string(),
+                minted_identity: Some(BrokerMintedIdentity {
+                    kind: BrokerMintedIdentityKind::Static,
+                    subject,
+                    issued_at: Utc::now(),
+                    expires_at: resolve_expiry(expires_at, expires_in_secs)?,
+                    metadata: BTreeMap::new(),
+                }),
+                suspicion_reason: None,
             })
-            .to_string(),
-            minted_identity: Some(BrokerMintedIdentity {
-                kind: BrokerMintedIdentityKind::Static,
-                subject,
-                issued_at: Utc::now(),
-                expires_at: resolve_expiry(expires_at, expires_in_secs)?,
-                metadata: BTreeMap::new(),
-            }),
-            suspicion_reason: None,
-        }),
+        }
         SecretLeaseEnvelope::GenericHttpsHeader {
             header_name,
             value,
             subject,
+            revocation,
             expires_at,
             expires_in_secs,
-        } => Ok(ResolvedExecutionCredential {
-            provider_secret: serde_json::json!({
+        } => {
+            let mut provider_secret = serde_json::json!({
                 "type": "header",
                 "header_name": header_name,
                 "value": value,
+            });
+            if let Some(revocation) = revocation {
+                provider_secret["revocation"] = revocation;
+            }
+            Ok(ResolvedExecutionCredential {
+                provider_secret: provider_secret.to_string(),
+                minted_identity: Some(BrokerMintedIdentity {
+                    kind: BrokerMintedIdentityKind::Static,
+                    subject,
+                    issued_at: Utc::now(),
+                    expires_at: resolve_expiry(expires_at, expires_in_secs)?,
+                    metadata: BTreeMap::new(),
+                }),
+                suspicion_reason: None,
             })
-            .to_string(),
-            minted_identity: Some(BrokerMintedIdentity {
-                kind: BrokerMintedIdentityKind::Static,
-                subject,
-                issued_at: Utc::now(),
-                expires_at: resolve_expiry(expires_at, expires_in_secs)?,
-                metadata: BTreeMap::new(),
-            }),
-            suspicion_reason: None,
-        }),
+        }
         SecretLeaseEnvelope::Tripwire { reason } => Ok(ResolvedExecutionCredential {
             provider_secret: String::new(),
             minted_identity: None,
@@ -462,6 +478,7 @@ mod tests {
         let resolved = resolve_envelope(SecretLeaseEnvelope::GenericHttpsBearer {
             value: "token-abc".to_string(),
             subject: "service-account@example.com".to_string(),
+            revocation: None,
             expires_at: None,
             expires_in_secs: Some(120),
         })
@@ -479,10 +496,33 @@ mod tests {
     }
 
     #[test]
+    fn resolves_generic_https_bearer_descriptor_with_revocation_contract() {
+        let resolved = resolve_envelope(SecretLeaseEnvelope::GenericHttpsBearer {
+            value: "token-abc".to_string(),
+            subject: "service-account@example.com".to_string(),
+            revocation: Some(serde_json::json!({
+                "path": "/oauth/revoke",
+                "method": "POST"
+            })),
+            expires_at: None,
+            expires_in_secs: Some(120),
+        })
+        .expect("resolved");
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&resolved.provider_secret).expect("valid JSON");
+        assert_eq!(parsed["type"], "bearer");
+        assert_eq!(parsed["value"], "token-abc");
+        assert_eq!(parsed["revocation"]["path"], "/oauth/revoke");
+        assert_eq!(parsed["revocation"]["method"], "POST");
+    }
+
+    #[test]
     fn generic_https_bearer_without_expiry_errors() {
         let err = resolve_envelope(SecretLeaseEnvelope::GenericHttpsBearer {
             value: "tok".to_string(),
             subject: "sub".to_string(),
+            revocation: None,
             expires_at: None,
             expires_in_secs: None,
         })
@@ -500,6 +540,7 @@ mod tests {
             header_name: "x-api-key".to_string(),
             value: "key-xyz".to_string(),
             subject: "api-consumer".to_string(),
+            revocation: None,
             expires_at: None,
             expires_in_secs: Some(180),
         })
@@ -523,6 +564,7 @@ mod tests {
             header_name: "x-api-key".to_string(),
             value: "k".to_string(),
             subject: "s".to_string(),
+            revocation: None,
             expires_at: None,
             expires_in_secs: None,
         })

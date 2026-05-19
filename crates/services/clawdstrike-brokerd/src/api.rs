@@ -8,16 +8,18 @@ use axum::{
 };
 use chrono::Utc;
 use clawdstrike_broker_protocol::{
-    BrokerCapability, BrokerCapabilityState, BrokerCapabilityStatus, BrokerExecuteRequest,
-    BrokerExecuteResponse, BrokerExecutionEvidence, BrokerExecutionOutcome, BrokerExecutionPhase,
-    BrokerMintedIdentity, BrokerRequest, BROKER_CAPABILITY_ID_HEADER, BROKER_EXECUTION_ID_HEADER,
-    BROKER_PROVIDER_HEADER,
+    sha256_hex, BrokerCapability, BrokerCapabilityState, BrokerCapabilityStatus,
+    BrokerExecuteRequest, BrokerExecuteResponse, BrokerExecutionEvidence, BrokerExecutionOutcome,
+    BrokerExecutionPhase, BrokerMintedIdentity, BrokerMintedIdentityKind, BrokerProvider,
+    BrokerRequest, BROKER_CAPABILITY_ID_HEADER, BROKER_EXECUTION_ID_HEADER, BROKER_PROVIDER_HEADER,
 };
 use futures::StreamExt;
+use reqwest::header::{HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
+use url::Url;
 use uuid::Uuid;
 
 use crate::capability::validate_execute_request;
@@ -119,6 +121,25 @@ pub struct ExecutionsResponse {
 pub struct RevokeCapabilityResponse {
     pub capability_id: String,
     pub revoked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_revocation: Option<ProviderTokenRevocationReport>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ProviderTokenRevocationReport {
+    pub provider: BrokerProvider,
+    pub secret_ref_id: String,
+    pub attempted: bool,
+    pub supported: bool,
+    pub revoked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_code: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_token_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_body_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -225,11 +246,369 @@ pub async fn revoke_capability(
     Path(capability_id): Path<String>,
 ) -> Result<Json<RevokeCapabilityResponse>, ApiError> {
     require_admin_auth(&headers, &state)?;
+    let capability_record = state.operator_state.capability_record(&capability_id).await;
     let revoked = state.operator_state.revoke_capability(&capability_id).await;
+    let provider_revocation = match capability_record.as_ref() {
+        Some(record) => Some(revoke_provider_token_for_capability(&state, record).await?),
+        None => None,
+    };
     Ok(Json(RevokeCapabilityResponse {
         capability_id,
         revoked,
+        provider_revocation,
     }))
+}
+
+async fn revoke_provider_token_for_capability(
+    state: &AppState,
+    record: &CapabilityRecord,
+) -> Result<ProviderTokenRevocationReport, ApiError> {
+    let credential = resolve_execution_credential(state, &record.secret_ref_id).await?;
+    match record.provider {
+        BrokerProvider::Github => {
+            let is_installation_token =
+                credential.minted_identity.as_ref().is_some_and(|identity| {
+                    identity.kind == BrokerMintedIdentityKind::GithubAppInstallation
+                });
+            if !is_installation_token {
+                return Ok(unsupported_provider_token_revocation(
+                    record,
+                    "github provider-side revocation is only supported for GitHub App installation tokens",
+                ));
+            }
+            revoke_github_installation_token(state, record, &credential.provider_secret).await
+        }
+        BrokerProvider::Slack => {
+            revoke_slack_token(state, record, &credential.provider_secret).await
+        }
+        BrokerProvider::GenericHttps => {
+            revoke_generic_https_token(state, record, &credential.provider_secret).await
+        }
+        BrokerProvider::Openai => Ok(unsupported_provider_token_revocation(
+            record,
+            "provider does not expose a brokerd-supported token revocation endpoint",
+        )),
+    }
+}
+
+fn unsupported_provider_token_revocation(
+    record: &CapabilityRecord,
+    reason: impl Into<String>,
+) -> ProviderTokenRevocationReport {
+    ProviderTokenRevocationReport {
+        provider: record.provider,
+        secret_ref_id: record.secret_ref_id.clone(),
+        attempted: false,
+        supported: false,
+        revoked: false,
+        status_code: None,
+        provider_token_hash: None,
+        response_body_sha256: None,
+        reason: Some(reason.into()),
+    }
+}
+
+async fn revoke_github_installation_token(
+    state: &AppState,
+    record: &CapabilityRecord,
+    provider_token: &str,
+) -> Result<ProviderTokenRevocationReport, ApiError> {
+    let url = provider_revocation_url(record, "/installation/token")?;
+    let response = state
+        .upstream_client
+        .delete(url)
+        .header("accept", "application/vnd.github+json")
+        .header("user-agent", "clawdstrike-brokerd")
+        .header("x-github-api-version", "2022-11-28")
+        .bearer_auth(provider_token)
+        .send()
+        .await
+        .map_err(|error| {
+            ApiError::bad_gateway("BROKER_PROVIDER_REVOKE_FAILED", error.to_string())
+        })?;
+    let status = response.status();
+    let body = response.text().await.map_err(|error| {
+        ApiError::bad_gateway("BROKER_PROVIDER_REVOKE_READ_FAILED", error.to_string())
+    })?;
+    if status != StatusCode::NO_CONTENT {
+        return Err(ApiError::bad_gateway(
+            "BROKER_PROVIDER_REVOKE_FAILED",
+            format!(
+                "github installation token revoke returned HTTP {}",
+                status.as_u16()
+            ),
+        ));
+    }
+    Ok(ProviderTokenRevocationReport {
+        provider: record.provider,
+        secret_ref_id: record.secret_ref_id.clone(),
+        attempted: true,
+        supported: true,
+        revoked: true,
+        status_code: Some(status.as_u16()),
+        provider_token_hash: Some(sha256_hex(provider_token)),
+        response_body_sha256: non_empty_sha256(&body),
+        reason: None,
+    })
+}
+
+async fn revoke_slack_token(
+    state: &AppState,
+    record: &CapabilityRecord,
+    provider_token: &str,
+) -> Result<ProviderTokenRevocationReport, ApiError> {
+    let url = provider_revocation_url(record, "/api/auth.revoke")?;
+    let response = state
+        .upstream_client
+        .get(url)
+        .bearer_auth(provider_token)
+        .send()
+        .await
+        .map_err(|error| {
+            ApiError::bad_gateway("BROKER_PROVIDER_REVOKE_FAILED", error.to_string())
+        })?;
+    let status = response.status();
+    let body = response.text().await.map_err(|error| {
+        ApiError::bad_gateway("BROKER_PROVIDER_REVOKE_READ_FAILED", error.to_string())
+    })?;
+    if !status.is_success() {
+        return Err(ApiError::bad_gateway(
+            "BROKER_PROVIDER_REVOKE_FAILED",
+            format!("slack token revoke returned HTTP {}", status.as_u16()),
+        ));
+    }
+    let payload = serde_json::from_str::<serde_json::Value>(&body).map_err(|error| {
+        ApiError::bad_gateway("BROKER_PROVIDER_REVOKE_INVALID", error.to_string())
+    })?;
+    let ok = payload
+        .get("ok")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let revoked = payload
+        .get("revoked")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if !ok || !revoked {
+        let provider_error = payload
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown_error");
+        return Err(ApiError::bad_gateway(
+            "BROKER_PROVIDER_REVOKE_FAILED",
+            format!("slack token revoke failed: {provider_error}"),
+        ));
+    }
+    Ok(ProviderTokenRevocationReport {
+        provider: record.provider,
+        secret_ref_id: record.secret_ref_id.clone(),
+        attempted: true,
+        supported: true,
+        revoked: true,
+        status_code: Some(status.as_u16()),
+        provider_token_hash: Some(sha256_hex(provider_token)),
+        response_body_sha256: non_empty_sha256(&body),
+        reason: None,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum GenericHttpsRevocableSecretEnvelope {
+    Bearer {
+        value: String,
+        #[serde(default)]
+        revocation: Option<GenericHttpsRevocationConfig>,
+    },
+    Header {
+        header_name: String,
+        value: String,
+        #[serde(default)]
+        revocation: Option<GenericHttpsRevocationConfig>,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GenericHttpsRevocationConfig {
+    #[serde(alias = "revocationPath", alias = "revocation_path")]
+    path: String,
+    #[serde(default)]
+    method: Option<String>,
+}
+
+struct GenericHttpsRevocationSecret {
+    token_for_hash: String,
+    header_name: HeaderName,
+    header_value: HeaderValue,
+    revocation: GenericHttpsRevocationConfig,
+}
+
+async fn revoke_generic_https_token(
+    state: &AppState,
+    record: &CapabilityRecord,
+    provider_secret: &str,
+) -> Result<ProviderTokenRevocationReport, ApiError> {
+    let Some(secret) = parse_generic_https_revocation_secret(provider_secret)? else {
+        return Ok(unsupported_provider_token_revocation(
+            record,
+            "generic_https provider-side revocation requires a secret envelope with revocation.path",
+        ));
+    };
+    let method = generic_https_revocation_method(secret.revocation.method.as_deref())?;
+    let url = provider_revocation_url(record, &secret.revocation.path)?;
+    let response = state
+        .upstream_client
+        .request(method, url)
+        .header(secret.header_name, secret.header_value)
+        .send()
+        .await
+        .map_err(|error| {
+            ApiError::bad_gateway("BROKER_PROVIDER_REVOKE_FAILED", error.to_string())
+        })?;
+    let status = response.status();
+    let body = response.text().await.map_err(|error| {
+        ApiError::bad_gateway("BROKER_PROVIDER_REVOKE_READ_FAILED", error.to_string())
+    })?;
+    if !status.is_success() {
+        return Err(ApiError::bad_gateway(
+            "BROKER_PROVIDER_REVOKE_FAILED",
+            format!(
+                "generic_https token revoke returned HTTP {}",
+                status.as_u16()
+            ),
+        ));
+    }
+    Ok(ProviderTokenRevocationReport {
+        provider: record.provider,
+        secret_ref_id: record.secret_ref_id.clone(),
+        attempted: true,
+        supported: true,
+        revoked: true,
+        status_code: Some(status.as_u16()),
+        provider_token_hash: Some(sha256_hex(&secret.token_for_hash)),
+        response_body_sha256: non_empty_sha256(&body),
+        reason: None,
+    })
+}
+
+fn parse_generic_https_revocation_secret(
+    provider_secret: &str,
+) -> Result<Option<GenericHttpsRevocationSecret>, ApiError> {
+    let Ok(envelope) = serde_json::from_str::<GenericHttpsRevocableSecretEnvelope>(provider_secret)
+    else {
+        return Ok(None);
+    };
+    match envelope {
+        GenericHttpsRevocableSecretEnvelope::Bearer { value, revocation } => {
+            let Some(revocation) = usable_generic_https_revocation(revocation) else {
+                return Ok(None);
+            };
+            let header_value =
+                HeaderValue::from_str(&format!("Bearer {value}")).map_err(|error| {
+                    ApiError::internal("BROKER_SECRET_FORMAT_INVALID", error.to_string())
+                })?;
+            Ok(Some(GenericHttpsRevocationSecret {
+                token_for_hash: value,
+                header_name: reqwest::header::AUTHORIZATION,
+                header_value,
+                revocation,
+            }))
+        }
+        GenericHttpsRevocableSecretEnvelope::Header {
+            header_name,
+            value,
+            revocation,
+        } => {
+            let Some(revocation) = usable_generic_https_revocation(revocation) else {
+                return Ok(None);
+            };
+            let header_name = HeaderName::from_bytes(header_name.as_bytes()).map_err(|error| {
+                ApiError::internal("BROKER_SECRET_FORMAT_INVALID", error.to_string())
+            })?;
+            let header_value = HeaderValue::from_str(&value).map_err(|error| {
+                ApiError::internal("BROKER_SECRET_FORMAT_INVALID", error.to_string())
+            })?;
+            Ok(Some(GenericHttpsRevocationSecret {
+                token_for_hash: value,
+                header_name,
+                header_value,
+                revocation,
+            }))
+        }
+    }
+}
+
+fn usable_generic_https_revocation(
+    revocation: Option<GenericHttpsRevocationConfig>,
+) -> Option<GenericHttpsRevocationConfig> {
+    revocation.and_then(|revocation| {
+        let path = revocation.path.trim();
+        if path.starts_with('/') && !path.contains("://") && !path.contains('#') {
+            Some(GenericHttpsRevocationConfig {
+                path: path.to_string(),
+                method: revocation.method,
+            })
+        } else {
+            None
+        }
+    })
+}
+
+fn generic_https_revocation_method(method: Option<&str>) -> Result<reqwest::Method, ApiError> {
+    let method = method
+        .map(str::trim)
+        .filter(|method| !method.is_empty())
+        .unwrap_or("POST")
+        .to_ascii_uppercase();
+    match method.as_str() {
+        "POST" => Ok(reqwest::Method::POST),
+        "DELETE" => Ok(reqwest::Method::DELETE),
+        other => Err(ApiError::bad_request(
+            "BROKER_PROVIDER_REVOKE_METHOD_UNSUPPORTED",
+            format!("unsupported generic_https revocation method: {other}"),
+        )),
+    }
+}
+
+fn provider_revocation_url(record: &CapabilityRecord, path: &str) -> Result<String, ApiError> {
+    let scheme = match record.destination_scheme.as_str() {
+        "http" | "https" => record.destination_scheme.as_str(),
+        other => {
+            return Err(ApiError::internal(
+                "BROKER_PROVIDER_REVOKE_URL_INVALID",
+                format!("unsupported provider destination scheme: {other}"),
+            ))
+        }
+    };
+    let host = record.destination_host.trim();
+    if host.is_empty() {
+        return Err(ApiError::internal(
+            "BROKER_PROVIDER_REVOKE_URL_INVALID",
+            "provider destination host is empty",
+        ));
+    }
+    let mut url = Url::parse(&format!("{scheme}://{host}")).map_err(|error| {
+        ApiError::internal("BROKER_PROVIDER_REVOKE_URL_INVALID", error.to_string())
+    })?;
+    if let Some(port) = record.destination_port {
+        url.set_port(Some(port)).map_err(|()| {
+            ApiError::internal(
+                "BROKER_PROVIDER_REVOKE_URL_INVALID",
+                "provider destination port is invalid for URL",
+            )
+        })?;
+    }
+    url.set_path(path);
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url.to_string())
+}
+
+fn non_empty_sha256(value: &str) -> Option<String> {
+    if value.is_empty() {
+        None
+    } else {
+        Some(sha256_hex(value))
+    }
 }
 
 pub async fn set_freeze(
@@ -778,6 +1157,8 @@ async fn submit_evidence(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+    use std::collections::BTreeMap;
+
     use super::*;
 
     // ── constant_time_eq ────────────────────────────────────────────
@@ -898,5 +1279,335 @@ mod tests {
         );
         let err = require_admin_auth(&headers, &state).unwrap_err();
         assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[derive(Clone, Default)]
+    struct ProviderRevokeTestState {
+        requests: std::sync::Arc<tokio::sync::Mutex<Vec<Option<String>>>>,
+    }
+
+    #[tokio::test]
+    async fn revoke_capability_revokes_github_installation_token_provider_side() {
+        let upstream_state = ProviderRevokeTestState::default();
+        let upstream_router = Router::new()
+            .route(
+                "/installation/token",
+                axum::routing::delete(
+                    |State(state): State<ProviderRevokeTestState>, headers: HeaderMap| async move {
+                        state.requests.lock().await.push(
+                            headers
+                                .get(axum::http::header::AUTHORIZATION)
+                                .and_then(|value| value.to_str().ok())
+                                .map(str::to_string),
+                        );
+                        StatusCode::NO_CONTENT
+                    },
+                ),
+            )
+            .with_state(upstream_state.clone());
+        let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_port = upstream_listener.local_addr().unwrap().port();
+        let upstream_task = tokio::spawn(async move {
+            axum::serve(upstream_listener, upstream_router)
+                .await
+                .unwrap();
+        });
+
+        let state = make_test_state(None).with_secret_provider(std::sync::Arc::new(
+            crate::secret_provider::FileSecretProvider::new(BTreeMap::from([(
+                "github/prod".to_string(),
+                serde_json::json!({
+                    "type": "github_app_installation",
+                    "installation_token": "ghs_provider_revoke_test",
+                    "installation_id": "42",
+                    "app_id": "314",
+                    "expires_in_secs": 60
+                })
+                .to_string(),
+            )])),
+        ));
+        let capability = BrokerCapability {
+            capability_id: "cap-github-provider-revoke".to_string(),
+            issued_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::seconds(60),
+            policy_hash: "hash-github-provider-revoke".to_string(),
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+            origin_fingerprint: None,
+            secret_ref: clawdstrike_broker_protocol::CredentialRef {
+                id: "github/prod".to_string(),
+                provider: clawdstrike_broker_protocol::BrokerProvider::Github,
+                tenant_id: None,
+                environment: Some("prod".to_string()),
+                labels: BTreeMap::new(),
+            },
+            proof_binding: None,
+            destination: clawdstrike_broker_protocol::BrokerDestination {
+                scheme: clawdstrike_broker_protocol::UrlScheme::Http,
+                host: "127.0.0.1".to_string(),
+                port: Some(upstream_port),
+                method: clawdstrike_broker_protocol::HttpMethod::POST,
+                exact_paths: vec!["/repos/backbay-labs/clawdstrike/issues".to_string()],
+            },
+            request_constraints: clawdstrike_broker_protocol::BrokerRequestConstraints::default(),
+            evidence_required: true,
+            intent_preview: None,
+            lineage: None,
+        };
+        state.operator_state.register_capability(&capability).await;
+
+        let response = revoke_capability(
+            State(state),
+            HeaderMap::new(),
+            Path("cap-github-provider-revoke".to_string()),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert!(response.revoked);
+        let provider_revocation = response
+            .provider_revocation
+            .expect("expected provider-side token revocation report");
+        assert!(provider_revocation.attempted);
+        assert!(provider_revocation.supported);
+        assert!(provider_revocation.revoked);
+        assert_eq!(
+            provider_revocation.provider,
+            clawdstrike_broker_protocol::BrokerProvider::Github
+        );
+        assert_eq!(provider_revocation.secret_ref_id, "github/prod");
+        assert_eq!(provider_revocation.status_code, Some(204));
+        assert_eq!(
+            provider_revocation.provider_token_hash.as_deref(),
+            Some(sha256_hex("ghs_provider_revoke_test").as_str())
+        );
+
+        let requests = upstream_state.requests.lock().await;
+        assert_eq!(
+            requests.as_slice(),
+            [Some("Bearer ghs_provider_revoke_test".to_string())]
+        );
+        drop(requests);
+        upstream_task.abort();
+    }
+
+    #[tokio::test]
+    async fn revoke_capability_revokes_slack_token_provider_side() {
+        let upstream_state = ProviderRevokeTestState::default();
+        let upstream_router = Router::new()
+            .route(
+                "/api/auth.revoke",
+                get(
+                    |State(state): State<ProviderRevokeTestState>, headers: HeaderMap| async move {
+                        state.requests.lock().await.push(
+                            headers
+                                .get(axum::http::header::AUTHORIZATION)
+                                .and_then(|value| value.to_str().ok())
+                                .map(str::to_string),
+                        );
+                        Json(serde_json::json!({
+                            "ok": true,
+                            "revoked": true
+                        }))
+                    },
+                ),
+            )
+            .with_state(upstream_state.clone());
+        let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_port = upstream_listener.local_addr().unwrap().port();
+        let upstream_task = tokio::spawn(async move {
+            axum::serve(upstream_listener, upstream_router)
+                .await
+                .unwrap();
+        });
+
+        let state = make_test_state(None).with_secret_provider(std::sync::Arc::new(
+            crate::secret_provider::FileSecretProvider::new(BTreeMap::from([(
+                "slack/prod".to_string(),
+                "xoxb-provider-revoke-test".to_string(),
+            )])),
+        ));
+        let capability = BrokerCapability {
+            capability_id: "cap-slack-provider-revoke".to_string(),
+            issued_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::seconds(60),
+            policy_hash: "hash-slack-provider-revoke".to_string(),
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+            origin_fingerprint: None,
+            secret_ref: clawdstrike_broker_protocol::CredentialRef {
+                id: "slack/prod".to_string(),
+                provider: clawdstrike_broker_protocol::BrokerProvider::Slack,
+                tenant_id: None,
+                environment: Some("prod".to_string()),
+                labels: BTreeMap::new(),
+            },
+            proof_binding: None,
+            destination: clawdstrike_broker_protocol::BrokerDestination {
+                scheme: clawdstrike_broker_protocol::UrlScheme::Http,
+                host: "127.0.0.1".to_string(),
+                port: Some(upstream_port),
+                method: clawdstrike_broker_protocol::HttpMethod::POST,
+                exact_paths: vec!["/api/chat.postMessage".to_string()],
+            },
+            request_constraints: clawdstrike_broker_protocol::BrokerRequestConstraints::default(),
+            evidence_required: true,
+            intent_preview: None,
+            lineage: None,
+        };
+        state.operator_state.register_capability(&capability).await;
+
+        let response = revoke_capability(
+            State(state),
+            HeaderMap::new(),
+            Path("cap-slack-provider-revoke".to_string()),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert!(response.revoked);
+        let provider_revocation = response
+            .provider_revocation
+            .expect("expected provider-side token revocation report");
+        assert!(provider_revocation.attempted);
+        assert!(provider_revocation.supported);
+        assert!(provider_revocation.revoked);
+        assert_eq!(
+            provider_revocation.provider,
+            clawdstrike_broker_protocol::BrokerProvider::Slack
+        );
+        assert_eq!(provider_revocation.secret_ref_id, "slack/prod");
+        assert_eq!(provider_revocation.status_code, Some(200));
+        assert_eq!(
+            provider_revocation.provider_token_hash.as_deref(),
+            Some(sha256_hex("xoxb-provider-revoke-test").as_str())
+        );
+        assert_eq!(
+            provider_revocation.response_body_sha256.as_deref(),
+            Some(sha256_hex(r#"{"ok":true,"revoked":true}"#).as_str())
+        );
+
+        let requests = upstream_state.requests.lock().await;
+        assert_eq!(
+            requests.as_slice(),
+            [Some("Bearer xoxb-provider-revoke-test".to_string())]
+        );
+        drop(requests);
+        upstream_task.abort();
+    }
+
+    #[tokio::test]
+    async fn revoke_capability_revokes_generic_https_token_provider_side() {
+        let upstream_state = ProviderRevokeTestState::default();
+        let upstream_router = Router::new()
+            .route(
+                "/oauth/revoke",
+                post(
+                    |State(state): State<ProviderRevokeTestState>, headers: HeaderMap| async move {
+                        state.requests.lock().await.push(
+                            headers
+                                .get(axum::http::header::AUTHORIZATION)
+                                .and_then(|value| value.to_str().ok())
+                                .map(str::to_string),
+                        );
+                        StatusCode::NO_CONTENT
+                    },
+                ),
+            )
+            .with_state(upstream_state.clone());
+        let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_port = upstream_listener.local_addr().unwrap().port();
+        let upstream_task = tokio::spawn(async move {
+            axum::serve(upstream_listener, upstream_router)
+                .await
+                .unwrap();
+        });
+
+        let state = make_test_state(None).with_secret_provider(std::sync::Arc::new(
+            crate::secret_provider::FileSecretProvider::new(BTreeMap::from([(
+                "generic/prod".to_string(),
+                serde_json::json!({
+                    "type": "bearer",
+                    "value": "generic-provider-revoke-test",
+                    "revocation": {
+                        "path": "/oauth/revoke",
+                        "method": "POST"
+                    }
+                })
+                .to_string(),
+            )])),
+        ));
+        let capability = BrokerCapability {
+            capability_id: "cap-generic-provider-revoke".to_string(),
+            issued_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::seconds(60),
+            policy_hash: "hash-generic-provider-revoke".to_string(),
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+            origin_fingerprint: None,
+            secret_ref: clawdstrike_broker_protocol::CredentialRef {
+                id: "generic/prod".to_string(),
+                provider: clawdstrike_broker_protocol::BrokerProvider::GenericHttps,
+                tenant_id: None,
+                environment: Some("prod".to_string()),
+                labels: BTreeMap::new(),
+            },
+            proof_binding: None,
+            destination: clawdstrike_broker_protocol::BrokerDestination {
+                scheme: clawdstrike_broker_protocol::UrlScheme::Http,
+                host: "127.0.0.1".to_string(),
+                port: Some(upstream_port),
+                method: clawdstrike_broker_protocol::HttpMethod::POST,
+                exact_paths: vec!["/v1/widgets".to_string()],
+            },
+            request_constraints: clawdstrike_broker_protocol::BrokerRequestConstraints::default(),
+            evidence_required: true,
+            intent_preview: None,
+            lineage: None,
+        };
+        state.operator_state.register_capability(&capability).await;
+
+        let response = revoke_capability(
+            State(state),
+            HeaderMap::new(),
+            Path("cap-generic-provider-revoke".to_string()),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert!(response.revoked);
+        let provider_revocation = response
+            .provider_revocation
+            .expect("expected provider-side token revocation report");
+        assert!(provider_revocation.attempted);
+        assert!(provider_revocation.supported);
+        assert!(provider_revocation.revoked);
+        assert_eq!(
+            provider_revocation.provider,
+            clawdstrike_broker_protocol::BrokerProvider::GenericHttps
+        );
+        assert_eq!(provider_revocation.secret_ref_id, "generic/prod");
+        assert_eq!(provider_revocation.status_code, Some(204));
+        assert_eq!(
+            provider_revocation.provider_token_hash.as_deref(),
+            Some(sha256_hex("generic-provider-revoke-test").as_str())
+        );
+
+        let requests = upstream_state.requests.lock().await;
+        assert_eq!(
+            requests.as_slice(),
+            [Some("Bearer generic-provider-revoke-test".to_string())]
+        );
+        drop(requests);
+        upstream_task.abort();
     }
 }
