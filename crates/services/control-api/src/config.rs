@@ -388,12 +388,9 @@ fn token_glob_overlap(
             token_glob_overlap(left, right, left_idx + 1, right_idx, memo)
                 || token_glob_overlap(left, right, left_idx, right_idx + 1, memo)
                 || token_glob_overlap(left, right, left_idx + 1, right_idx + 1, memo)
-        } else if left_char == b'*' {
+        } else if left_char == b'*' || right_char == b'*' {
             token_glob_overlap(left, right, left_idx + 1, right_idx, memo)
                 || token_glob_overlap(left, right, left_idx, right_idx + 1, memo)
-        } else if right_char == b'*' {
-            token_glob_overlap(left, right, left_idx, right_idx + 1, memo)
-                || token_glob_overlap(left, right, left_idx + 1, right_idx, memo)
         } else if left_char == right_char {
             token_glob_overlap(left, right, left_idx + 1, right_idx + 1, memo)
         } else {

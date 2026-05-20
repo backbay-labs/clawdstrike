@@ -1003,20 +1003,16 @@ fn validate_pack_contents(source_dir: &Path, manifest: &PkgManifest) -> Result<(
                 );
             }
         }
-        PkgType::Guard => {
-            if !source_dir.join("src/lib.rs").exists() {
-                return Err(
-                    "guard package must contain src/lib.rs (or a WASM entrypoint)".to_string(),
-                );
-            }
+        PkgType::Guard if !source_dir.join("src/lib.rs").exists() => {
+            return Err("guard package must contain src/lib.rs (or a WASM entrypoint)".to_string());
         }
-        PkgType::Bundle => {
-            if manifest.dependencies.is_empty() {
-                return Err(
-                    "bundle package must have at least one entry in [dependencies]".to_string(),
-                );
-            }
+        PkgType::Guard => {}
+        PkgType::Bundle if manifest.dependencies.is_empty() => {
+            return Err(
+                "bundle package must have at least one entry in [dependencies]".to_string(),
+            );
         }
+        PkgType::Bundle => {}
         _ => {}
     }
     Ok(())
