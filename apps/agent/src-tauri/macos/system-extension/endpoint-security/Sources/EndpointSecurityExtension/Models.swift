@@ -346,8 +346,11 @@ public enum ClawdStrikeAgentConfigPaths {
         explicitPath: String? = nil,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> [String] {
-        if let explicitPath, !explicitPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return [explicitPath]
+        if let explicitPath {
+            let trimmedExplicitPath = explicitPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedExplicitPath.isEmpty {
+                return [trimmedExplicitPath]
+            }
         }
         let primary = configDirectory(homeDirectory: homeDirectory)
             .appendingPathComponent("agent-local-token")

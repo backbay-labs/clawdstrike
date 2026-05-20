@@ -17,10 +17,15 @@ const REQUIRED_TAURI_CONFIG_SNIPPETS: &[&str] = &[
     "\"macos/system-extension/**/*\"",
     "\"entitlements\": \"macos/system-extension/entitlements/agent-app.entitlements\"",
 ];
+const VALIDATE_MACOS_PACKAGING_ENV: &str = "CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING";
+const REQUIRE_CONCRETE_MACOS_PACKAGING_ENV: &str =
+    "CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING";
 
 #[cfg(not(test))]
 fn main() {
     println!("cargo:rerun-if-changed={TAURI_CONFIG_PATH}");
+    println!("cargo:rerun-if-env-changed={VALIDATE_MACOS_PACKAGING_ENV}");
+    println!("cargo:rerun-if-env-changed={REQUIRE_CONCRETE_MACOS_PACKAGING_ENV}");
     for relative_path in REQUIRED_MACOS_PACKAGING_FILES {
         println!("cargo:rerun-if-changed={relative_path}");
     }
@@ -37,7 +42,7 @@ fn should_validate_macos_packaging() -> bool {
     env::var("TARGET")
         .map(|target| target.contains("apple-darwin"))
         .unwrap_or(false)
-        || env::var_os("CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING").is_some()
+        || env::var_os(VALIDATE_MACOS_PACKAGING_ENV).is_some()
 }
 
 fn validate_macos_packaging() -> Result<(), String> {
@@ -70,7 +75,7 @@ fn validate_macos_packaging() -> Result<(), String> {
         ));
     }
 
-    if env::var_os("CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING").is_some() {
+    if env::var_os(REQUIRE_CONCRETE_MACOS_PACKAGING_ENV).is_some() {
         let files_with_placeholders = REQUIRED_MACOS_PACKAGING_FILES
             .iter()
             .filter_map(|relative_path| {

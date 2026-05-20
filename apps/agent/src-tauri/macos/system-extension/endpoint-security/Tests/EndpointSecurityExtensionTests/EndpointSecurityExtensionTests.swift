@@ -406,7 +406,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
 
     func testAgentTokenCandidatesUseExplicitPathOnly() {
         let candidates = ClawdStrikeAgentConfigPaths.agentTokenCandidates(
-            explicitPath: "/tmp/clawdstrike-token",
+            explicitPath: " /tmp/clawdstrike-token\n",
             homeDirectory: URL(fileURLWithPath: "/Users/tester", isDirectory: true)
         )
 
