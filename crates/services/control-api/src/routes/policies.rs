@@ -513,7 +513,7 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
 ) -> Result<Json<DispatchPolicyProposalFleetRuleDiffResponse>, ApiError> {
     ensure_policy_deployer(&auth)?;
 
-    let proposal = fetch_policy_proposal_row(&state, auth.tenant_id, id)
+    let mut proposal = fetch_policy_proposal_row(&state, auth.tenant_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     if proposal.status != "pending" {
@@ -555,6 +555,29 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
                 proposal.id
             )
         });
+
+    let reservation_preview = reserve_policy_rule_diff_dispatch(
+        proposal.preview.clone(),
+        validation_plan_sha256.as_deref(),
+        &endpoint_requests,
+    )?;
+    let reserved_row = sqlx::query::query(
+        r#"UPDATE policy_proposals
+           SET preview = $3,
+               updated_at = now()
+           WHERE tenant_id = $1
+             AND id = $2
+             AND status = 'pending'
+           RETURNING *"#,
+    )
+    .bind(auth.tenant_id)
+    .bind(id)
+    .bind(&reservation_preview)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+    proposal = policy_proposal_from_row(reserved_row).map_err(ApiError::Database)?;
 
     let mut dispatches = Vec::with_capacity(endpoint_requests.len());
     for endpoint_request in &endpoint_requests {
@@ -615,8 +638,12 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
         }));
     }
 
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let latest_proposal = fetch_policy_proposal_row_for_update(&mut tx, auth.tenant_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let preview = append_policy_rule_diff_dispatches(
-        proposal.preview.clone(),
+        latest_proposal.preview,
         validation_plan_sha256.as_deref(),
         &dispatches,
     )?;
@@ -626,16 +653,16 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
                updated_at = now()
            WHERE tenant_id = $1
              AND id = $2
-             AND status = 'pending'
            RETURNING *"#,
     )
     .bind(auth.tenant_id)
     .bind(id)
     .bind(&preview)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
+    tx.commit().await.map_err(ApiError::Database)?;
 
     Ok(Json(DispatchPolicyProposalFleetRuleDiffResponse {
         proposal: proposal_response_from_row(row, &auth.slug)?,
@@ -666,9 +693,22 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
         .pointer("/fleetRuleDiffValidation/planSha256")
         .and_then(serde_json::Value::as_str)
         .map(str::to_string);
+    let latest_response_action_ids =
+        policy_rule_diff_dispatch_response_action_ids(&proposal.preview)?;
     let response_action_ids = if req.response_action_ids.is_empty() {
-        policy_rule_diff_dispatch_response_action_ids(&proposal.preview)?
+        latest_response_action_ids
     } else {
+        let latest_response_action_ids = latest_response_action_ids
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        for response_action_id in &req.response_action_ids {
+            if !latest_response_action_ids.contains(response_action_id) {
+                return Err(ApiError::BadRequest(
+                    "responseActionIds must reference the latest fleet rule-diff dispatch for each endpoint"
+                        .to_string(),
+                ));
+            }
+        }
         req.response_action_ids
     };
     if response_action_ids.is_empty() {
@@ -676,12 +716,16 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
             "no fleet rule-diff validation response actions are available to collect".to_string(),
         ));
     }
+    let (expected_proposed_policy_sha256, expected_proposed_policy_epoch) =
+        policy_rule_diff_expected_proposed_policy(&proposal.preview)?;
 
     let collected = collect_policy_rule_diff_ack_receipts(
         &state.db,
         auth.tenant_id,
         proposal.id,
         validation_plan_sha256.as_deref(),
+        &expected_proposed_policy_sha256,
+        expected_proposed_policy_epoch,
         &response_action_ids,
     )
     .await?;
@@ -695,7 +739,7 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
     let impact_request = build_collected_policy_rule_diff_impact_request(
         &collected,
         validation_plan_sha256.as_deref(),
-    );
+    )?;
     let mut impact = validate_policy_proposal_impact(impact_request)?;
     impact["fleetRuleDiffCollection"] = serde_json::json!({
         "schemaVersion": 1,
@@ -793,6 +837,51 @@ fn selected_policy_rule_diff_endpoint_requests(
     Ok(selected)
 }
 
+fn reserve_policy_rule_diff_dispatch(
+    mut preview: serde_json::Value,
+    validation_plan_sha256: Option<&str>,
+    endpoint_requests: &[serde_json::Value],
+) -> Result<serde_json::Value, ApiError> {
+    let requested_endpoint_ids = endpoint_requests
+        .iter()
+        .map(|request| {
+            request
+                .get("endpointAgentId")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    ApiError::BadRequest(
+                        "fleet rule-diff endpoint request is missing endpointAgentId".to_string(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let validation = preview
+        .get_mut("fleetRuleDiffValidation")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "proposal preview does not include fleetRuleDiffValidation".to_string(),
+            )
+        })?;
+    validation.insert(
+        "dispatchReservation".to_string(),
+        serde_json::json!({
+            "schemaVersion": 1,
+            "validationPlanSha256": validation_plan_sha256,
+            "reservedAt": Utc::now(),
+            "requestedEndpointCount": requested_endpoint_ids.len(),
+            "requestedEndpointIds": requested_endpoint_ids,
+        }),
+    );
+    validation.insert(
+        "status".to_string(),
+        serde_json::Value::String("dispatching".to_string()),
+    );
+    Ok(preview)
+}
+
 fn append_policy_rule_diff_dispatches(
     mut preview: serde_json::Value,
     validation_plan_sha256: Option<&str>,
@@ -864,24 +953,64 @@ fn policy_rule_diff_dispatch_response_action_ids(
     else {
         return Ok(Vec::new());
     };
-    dispatches
-        .iter()
-        .filter_map(|dispatch| dispatch.get("responseActionId"))
-        .map(|value| {
-            let id = value.as_str().ok_or_else(|| {
+    let mut latest_by_endpoint = BTreeMap::<String, Uuid>::new();
+    for dispatch in dispatches {
+        let endpoint_agent_id = dispatch
+            .get("endpointAgentId")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
                 ApiError::BadRequest(
-                    "fleetRuleDiffValidation.dispatches responseActionId must be a string"
+                    "fleetRuleDiffValidation.dispatches endpointAgentId must be a string"
                         .to_string(),
                 )
             })?;
-            Uuid::parse_str(id).map_err(|_| {
-                ApiError::BadRequest(
-                    "fleetRuleDiffValidation.dispatches responseActionId must be a UUID"
-                        .to_string(),
-                )
-            })
-        })
-        .collect()
+        let response_action_id = dispatch.get("responseActionId").ok_or_else(|| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation.dispatches must include responseActionId".to_string(),
+            )
+        })?;
+        let response_action_id = response_action_id.as_str().ok_or_else(|| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation.dispatches responseActionId must be a string".to_string(),
+            )
+        })?;
+        let response_action_id = Uuid::parse_str(response_action_id).map_err(|_| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation.dispatches responseActionId must be a UUID".to_string(),
+            )
+        })?;
+        latest_by_endpoint.insert(endpoint_agent_id.to_string(), response_action_id);
+    }
+    Ok(latest_by_endpoint.into_values().collect())
+}
+
+fn policy_rule_diff_expected_proposed_policy(
+    preview: &serde_json::Value,
+) -> Result<(String, u64), ApiError> {
+    let validation = preview.get("fleetRuleDiffValidation").ok_or_else(|| {
+        ApiError::BadRequest(
+            "proposal preview does not include fleetRuleDiffValidation".to_string(),
+        )
+    })?;
+    let proposed_policy_sha256 = validation
+        .get("proposedPolicySha256")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation must include proposedPolicySha256".to_string(),
+            )
+        })?;
+    let proposed_policy_version = validation
+        .get("proposedPolicyVersion")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation must include proposedPolicyVersion".to_string(),
+            )
+        })?;
+    Ok((proposed_policy_sha256.to_string(), proposed_policy_version))
 }
 
 struct CollectedPolicyRuleDiffReceipt {
@@ -893,11 +1022,44 @@ struct CollectedPolicyRuleDiffReceipt {
     public_key: String,
 }
 
+fn latest_policy_rule_diff_receipts_by_endpoint(
+    receipts: Vec<CollectedPolicyRuleDiffReceipt>,
+) -> Vec<CollectedPolicyRuleDiffReceipt> {
+    let mut latest_by_endpoint = BTreeMap::<String, CollectedPolicyRuleDiffReceipt>::new();
+    for receipt in receipts {
+        match latest_by_endpoint.entry(receipt.endpoint_agent_id.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(receipt);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let current = entry.get();
+                if receipt.observed_at > current.observed_at
+                    || (receipt.observed_at == current.observed_at
+                        && receipt.response_action_id > current.response_action_id)
+                {
+                    entry.insert(receipt);
+                }
+            }
+        }
+    }
+
+    let mut receipts = latest_by_endpoint.into_values().collect::<Vec<_>>();
+    receipts.sort_by(|left, right| {
+        left.observed_at
+            .cmp(&right.observed_at)
+            .then_with(|| left.endpoint_agent_id.cmp(&right.endpoint_agent_id))
+            .then_with(|| left.response_action_id.cmp(&right.response_action_id))
+    });
+    receipts
+}
+
 async fn collect_policy_rule_diff_ack_receipts(
     db: &PgPool,
     tenant_id: Uuid,
     proposal_id: Uuid,
     validation_plan_sha256: Option<&str>,
+    expected_proposed_policy_sha256: &str,
+    expected_proposed_policy_epoch: u64,
     response_action_ids: &[Uuid],
 ) -> Result<Vec<CollectedPolicyRuleDiffReceipt>, ApiError> {
     let rows = sqlx::query::query(
@@ -952,15 +1114,23 @@ async fn collect_policy_rule_diff_ack_receipts(
         })?;
         let verified =
             validate_policy_proposal_simulation_receipt_value(receipt.clone(), public_key.clone())?;
-        if let Some(receipt_endpoint_id) = verified.endpoint_id.as_deref() {
-            if receipt_endpoint_id != endpoint_agent_id {
-                return Err(ApiError::BadRequest(
-                    "policyRuleDiffValidation receipt endpointId must match the response-action target"
-                        .to_string(),
-                ));
-            }
+        let receipt_endpoint_id = verified.endpoint_id.as_deref().ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation receipt must include endpointId".to_string(),
+            )
+        })?;
+        if receipt_endpoint_id != endpoint_agent_id {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidation receipt endpointId must match the response-action target"
+                    .to_string(),
+            ));
         }
-        validate_policy_rule_diff_impact_against_receipt(&impact, &verified)?;
+        validate_policy_rule_diff_impact_against_receipt(
+            &impact,
+            &verified,
+            expected_proposed_policy_sha256,
+            expected_proposed_policy_epoch,
+        )?;
         collected.push(CollectedPolicyRuleDiffReceipt {
             response_action_id,
             endpoint_agent_id,
@@ -970,7 +1140,7 @@ async fn collect_policy_rule_diff_ack_receipts(
             public_key,
         });
     }
-    Ok(collected)
+    Ok(latest_policy_rule_diff_receipts_by_endpoint(collected))
 }
 
 fn policy_rule_diff_payload(
@@ -1042,6 +1212,8 @@ fn validate_policy_rule_diff_payload_correlation(
 fn validate_policy_rule_diff_impact_against_receipt(
     impact: &serde_json::Value,
     verified: &VerifiedPolicyProposalSimulationReceipt,
+    expected_proposed_policy_sha256: &str,
+    expected_proposed_policy_epoch: u64,
 ) -> Result<(), ApiError> {
     if let (Some(receipt_impact_id), Some(impact_id)) = (
         verified.impact_id.as_deref(),
@@ -1080,6 +1252,36 @@ fn validate_policy_rule_diff_impact_against_receipt(
                 "policyRuleDiffValidation impact {key} does not match signed receipt evidence"
             )));
         }
+    }
+    let proposed_policy_hash = impact
+        .pointer("/proposedPolicy/policyHash")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include proposedPolicy.policyHash"
+                    .to_string(),
+            )
+        })?;
+    if proposed_policy_hash != expected_proposed_policy_sha256 {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation proposedPolicy.policyHash does not match the policy proposal"
+                .to_string(),
+        ));
+    }
+    let proposed_policy_epoch = impact
+        .pointer("/proposedPolicy/policyEpoch")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include proposedPolicy.policyEpoch"
+                    .to_string(),
+            )
+        })?;
+    if proposed_policy_epoch != expected_proposed_policy_epoch {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation proposedPolicy.policyEpoch does not match the policy proposal"
+                .to_string(),
+        ));
     }
     Ok(())
 }
@@ -1120,19 +1322,25 @@ fn policy_rule_diff_impact_evidence_value(
 fn build_collected_policy_rule_diff_impact_request(
     collected: &[CollectedPolicyRuleDiffReceipt],
     validation_plan_sha256: Option<&str>,
-) -> AttachPolicyProposalImpactRequest {
-    let event_count = collected
-        .iter()
-        .map(|receipt| impact_u64(&receipt.impact, "eventCount"))
-        .sum::<u64>();
-    let changed_count = collected
-        .iter()
-        .map(|receipt| impact_u64(&receipt.impact, "changedCount"))
-        .sum::<u64>();
-    let allow_to_block_count = collected
-        .iter()
-        .map(|receipt| impact_u64(&receipt.impact, "allowToBlockCount"))
-        .sum::<u64>();
+) -> Result<AttachPolicyProposalImpactRequest, ApiError> {
+    let event_count = collected.iter().try_fold(0u64, |total, receipt| {
+        Ok::<_, ApiError>(total.saturating_add(required_policy_rule_diff_impact_u64(
+            &receipt.impact,
+            "eventCount",
+        )?))
+    })?;
+    let changed_count = collected.iter().try_fold(0u64, |total, receipt| {
+        Ok::<_, ApiError>(total.saturating_add(required_policy_rule_diff_impact_u64(
+            &receipt.impact,
+            "changedCount",
+        )?))
+    })?;
+    let allow_to_block_count = collected.iter().try_fold(0u64, |total, receipt| {
+        Ok::<_, ApiError>(total.saturating_add(required_policy_rule_diff_impact_u64(
+            &receipt.impact,
+            "allowToBlockCount",
+        )?))
+    })?;
     let endpoint_count = collected
         .iter()
         .map(|receipt| receipt.endpoint_agent_id.as_str())
@@ -1177,7 +1385,7 @@ fn build_collected_policy_rule_diff_impact_request(
         .collect::<Vec<_>>();
     attachments.sort_by(|left, right| left.receipt_id.as_deref().cmp(&right.receipt_id.as_deref()));
 
-    AttachPolicyProposalImpactRequest {
+    Ok(AttachPolicyProposalImpactRequest {
         source: "fleet_history".to_string(),
         summary,
         simulation_receipt_id: None,
@@ -1192,14 +1400,37 @@ fn build_collected_policy_rule_diff_impact_request(
         affected_tool_count: collected.len().min(i64::MAX as usize) as i64,
         recommendation: recommendation.to_string(),
         proof_hashes,
-    }
+    })
 }
 
-fn impact_u64(impact: &serde_json::Value, field: &str) -> u64 {
+fn required_policy_rule_diff_impact_u64(
+    impact: &serde_json::Value,
+    field: &str,
+) -> Result<u64, ApiError> {
     impact
         .get(field)
         .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0)
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation impact must include numeric {field}"
+            ))
+        })
+}
+
+fn ensure_policy_proposal_deployable_impact(proposal: &PolicyProposalRow) -> Result<(), ApiError> {
+    let verified_receipt_count = proposal
+        .impact
+        .as_ref()
+        .and_then(|impact| impact.get("simulationReceiptsVerifiedCount"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    if verified_receipt_count == 0 {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} requires at least one verified simulation receipt before deployment",
+            proposal.id
+        )));
+    }
+    Ok(())
 }
 
 async fn reject_policy_proposal(
@@ -1326,6 +1557,8 @@ async fn approve_policy_proposal(
             approvals_remaining,
         }));
     }
+
+    ensure_policy_proposal_deployable_impact(&proposal)?;
 
     let active_policy = policy_distribution::upsert_active_policy_after_version_with_executor(
         &mut *tx,
@@ -2406,6 +2639,17 @@ struct PolicyProposalFleetRuleDiffEndpointSelection {
     session_ids: BTreeSet<String>,
 }
 
+struct PolicyProposalFleetRuleDiffObservation {
+    event_id: String,
+    timestamp: DateTime<Utc>,
+    verdict: String,
+    action_type: Option<String>,
+    runtime_agent_id: Option<String>,
+    principal_id: Option<String>,
+    session_id: Option<String>,
+    detection_ids: Vec<String>,
+}
+
 impl PolicyProposalFleetRuleDiffEndpointSelection {
     fn new(endpoint_agent_id: String, timestamp: DateTime<Utc>) -> Self {
         Self {
@@ -2424,47 +2668,50 @@ impl PolicyProposalFleetRuleDiffEndpointSelection {
         }
     }
 
-    fn observe(
-        &mut self,
-        event_id: String,
-        timestamp: DateTime<Utc>,
-        verdict: &str,
-        action_type: Option<String>,
-        runtime_agent_id: Option<String>,
-        principal_id: Option<String>,
-        session_id: Option<String>,
-        detection_ids: Vec<String>,
-    ) {
+    fn observe(&mut self, observation: PolicyProposalFleetRuleDiffObservation) {
         self.event_count += 1;
-        if timestamp < self.first_seen {
-            self.first_seen = timestamp;
+        if observation.timestamp < self.first_seen {
+            self.first_seen = observation.timestamp;
         }
-        if timestamp > self.last_seen {
-            self.last_seen = timestamp;
+        if observation.timestamp > self.last_seen {
+            self.last_seen = observation.timestamp;
         }
         if self.event_ids.len() < POLICY_PROPOSAL_FLEET_VALIDATION_EVENT_ID_LIMIT {
-            self.event_ids.push(event_id);
+            self.event_ids.push(observation.event_id);
         }
 
-        match normalize_policy_proposal_history_verdict(verdict) {
+        match normalize_policy_proposal_history_verdict(&observation.verdict) {
             "allow" | "warn" => self.candidate_breakage_count += 1,
             "block" => self.blocking_event_count += 1,
             _ => {}
         }
 
-        if let Some(action_type) = action_type.filter(|value| !value.trim().is_empty()) {
+        if let Some(action_type) = observation
+            .action_type
+            .filter(|value| !value.trim().is_empty())
+        {
             *self.action_type_counts.entry(action_type).or_insert(0) += 1;
         }
-        if let Some(runtime_agent_id) = runtime_agent_id.filter(|value| !value.trim().is_empty()) {
+        if let Some(runtime_agent_id) = observation
+            .runtime_agent_id
+            .filter(|value| !value.trim().is_empty())
+        {
             self.runtime_agent_ids.insert(runtime_agent_id);
         }
-        if let Some(principal_id) = principal_id.filter(|value| !value.trim().is_empty()) {
+        if let Some(principal_id) = observation
+            .principal_id
+            .filter(|value| !value.trim().is_empty())
+        {
             self.principal_ids.insert(principal_id);
         }
-        if let Some(session_id) = session_id.filter(|value| !value.trim().is_empty()) {
+        if let Some(session_id) = observation
+            .session_id
+            .filter(|value| !value.trim().is_empty())
+        {
             self.session_ids.insert(session_id);
         }
-        for detection_id in detection_ids
+        for detection_id in observation
+            .detection_ids
             .into_iter()
             .filter(|value| !value.trim().is_empty())
         {
@@ -2538,16 +2785,16 @@ async fn build_policy_proposal_fleet_rule_diff_validation_plan(
                     timestamp,
                 )
             })
-            .observe(
+            .observe(PolicyProposalFleetRuleDiffObservation {
                 event_id,
                 timestamp,
-                &verdict,
+                verdict,
                 action_type,
                 runtime_agent_id,
                 principal_id,
                 session_id,
                 detection_ids,
-            );
+            });
     }
 
     let mut endpoint_selections = endpoints.into_values().collect::<Vec<_>>();
@@ -2806,5 +3053,101 @@ mod tests {
     #[test]
     fn policy_sync_key_is_stable() {
         assert_eq!(policy_distribution::POLICY_SYNC_KEY, "policy.yaml");
+    }
+
+    #[test]
+    fn fleet_rule_diff_dispatch_reservation_marks_intent_before_publish() {
+        let preview = serde_json::json!({
+            "fleetRuleDiffValidation": {
+                "status": "ready_for_endpoint_receipt_collection",
+                "planSha256": "abc123"
+            }
+        });
+        let reserved = reserve_policy_rule_diff_dispatch(
+            preview,
+            Some("abc123"),
+            &[
+                serde_json::json!({ "endpointAgentId": "endpoint-a" }),
+                serde_json::json!({ "endpointAgentId": "endpoint-b" }),
+            ],
+        )
+        .expect("dispatch reservation");
+
+        assert_eq!(reserved["fleetRuleDiffValidation"]["status"], "dispatching");
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["validationPlanSha256"],
+            "abc123"
+        );
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["requestedEndpointCount"],
+            2
+        );
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["requestedEndpointIds"],
+            serde_json::json!(["endpoint-a", "endpoint-b"])
+        );
+    }
+
+    #[test]
+    fn fleet_rule_diff_default_collection_keeps_latest_dispatch_per_endpoint() {
+        let old_endpoint_a = Uuid::from_u128(1);
+        let endpoint_b = Uuid::from_u128(2);
+        let latest_endpoint_a = Uuid::from_u128(3);
+        let preview = serde_json::json!({
+            "fleetRuleDiffValidation": {
+                "dispatches": [
+                    {
+                        "endpointAgentId": "endpoint-a",
+                        "responseActionId": old_endpoint_a
+                    },
+                    {
+                        "endpointAgentId": "endpoint-b",
+                        "responseActionId": endpoint_b
+                    },
+                    {
+                        "endpointAgentId": "endpoint-a",
+                        "responseActionId": latest_endpoint_a
+                    }
+                ]
+            }
+        });
+
+        let ids = policy_rule_diff_dispatch_response_action_ids(&preview)
+            .expect("dispatch response action ids");
+
+        assert_eq!(ids, vec![latest_endpoint_a, endpoint_b]);
+    }
+
+    #[test]
+    fn fleet_rule_diff_collection_aggregates_latest_receipt_per_endpoint() {
+        let observed = |seconds| {
+            DateTime::parse_from_rfc3339(&format!("2026-05-20T00:00:{seconds:02}Z"))
+                .expect("timestamp")
+                .with_timezone(&Utc)
+        };
+        let receipt_for =
+            |response_action_id: Uuid, endpoint_agent_id: &str, observed_at: DateTime<Utc>| {
+                CollectedPolicyRuleDiffReceipt {
+                    response_action_id,
+                    endpoint_agent_id: endpoint_agent_id.to_string(),
+                    observed_at,
+                    impact: serde_json::json!({}),
+                    receipt: serde_json::json!({}),
+                    public_key: "public-key".to_string(),
+                }
+            };
+
+        let endpoint_a_old = Uuid::from_u128(10);
+        let endpoint_a_latest = Uuid::from_u128(11);
+        let endpoint_b = Uuid::from_u128(12);
+        let receipts = latest_policy_rule_diff_receipts_by_endpoint(vec![
+            receipt_for(endpoint_a_old, "endpoint-a", observed(1)),
+            receipt_for(endpoint_b, "endpoint-b", observed(2)),
+            receipt_for(endpoint_a_latest, "endpoint-a", observed(3)),
+        ]);
+
+        assert_eq!(receipts.len(), 2);
+        assert_eq!(receipts[0].response_action_id, endpoint_b);
+        assert_eq!(receipts[1].response_action_id, endpoint_a_latest);
     }
 }

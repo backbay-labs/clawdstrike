@@ -1267,7 +1267,11 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
     .await;
     assert_eq!(invalid_impact_resp.0, StatusCode::BAD_REQUEST);
 
-    let proposed_policy_hash = "e".repeat(64);
+    let proposed_policy_hash = proposal["preview"]["fleetRuleDiffValidation"]
+        ["proposedPolicySha256"]
+        .as_str()
+        .expect("fleet validation proposed policy hash")
+        .to_string();
     let impact_report = serde_json::json!({
         "impactId": "policy-impact-int-1",
         "analyzedAt": now,
@@ -1279,7 +1283,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         },
         "proposedPolicy": {
             "policyVersion": "proposal-test-proposed",
-            "policyHash": proposed_policy_hash,
+            "policyHash": proposed_policy_hash.clone(),
             "policyEpoch": 2
         },
         "eventCount": 2,
@@ -1303,7 +1307,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         },
         "proposedPolicy": {
             "policyVersion": "proposal-test-proposed",
-            "policyHash": "f".repeat(64),
+            "policyHash": proposed_policy_hash.clone(),
             "policyEpoch": 2
         },
         "eventCount": 1,
@@ -1836,6 +1840,78 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             .expect("active policy should remain present");
     assert_eq!(active_after.version, 2);
     assert!(active_after.policy_yaml.contains("mode: proposed-approved"));
+
+    let proof_only_create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/policies/proposals".to_string(),
+        Some(member_key),
+        Some(serde_json::json!({
+            "policy_yaml": "policy:\n  mode: proof-only-proposal\n",
+            "description": "proof hash without verified simulation receipt"
+        })),
+    )
+    .await;
+    assert_eq!(proof_only_create_resp.0, StatusCode::OK);
+    let proof_only_proposal_id = proof_only_create_resp.1["proposal"]["id"]
+        .as_str()
+        .expect("proof-only proposal id")
+        .to_string();
+    let proof_only_impact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proof_only_proposal_id}/impact"),
+        Some(member_key),
+        Some(serde_json::json!({
+            "source": "manual_review",
+            "summary": "Manual review attached only an opaque proof hash.",
+            "changed_verdict_count": 0,
+            "blocking_change_count": 0,
+            "developer_breakage_score": 0.0,
+            "affected_identity_count": 0,
+            "affected_tool_count": 0,
+            "recommendation": "approve",
+            "proof_hashes": ["a".repeat(64)]
+        })),
+    )
+    .await;
+    assert_eq!(proof_only_impact_resp.0, StatusCode::OK);
+    assert_eq!(
+        proof_only_impact_resp.1["impact"]["simulationReceiptsVerifiedCount"],
+        0
+    );
+    let proof_only_first_approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proof_only_proposal_id}/approve-deploy"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({ "note": "first proof-only approval" })),
+    )
+    .await;
+    assert_eq!(proof_only_first_approve_resp.0, StatusCode::OK);
+    assert_eq!(
+        proof_only_first_approve_resp.1["proposal"]["status"],
+        "pending"
+    );
+    let proof_only_final_approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/policies/proposals/{proof_only_proposal_id}/approve-deploy"),
+        Some(admin2_key),
+        Some(serde_json::json!({ "note": "should require verified receipt" })),
+    )
+    .await;
+    assert_eq!(proof_only_final_approve_resp.0, StatusCode::CONFLICT);
+    assert!(proof_only_final_approve_resp.1["error"]
+        .as_str()
+        .expect("proof-only deploy error")
+        .contains("verified simulation receipt"));
+    let active_after_proof_only =
+        policy_distribution::fetch_active_policy_by_tenant_id(&harness.db, harness.tenant_id)
+            .await
+            .expect("fetch active policy after proof-only deploy block")
+            .expect("active policy should remain present after proof-only deploy block");
+    assert_eq!(active_after_proof_only.version, 2);
 
     let bucket = policy_distribution::policy_sync_bucket(
         &tenant_subject_prefix(&harness.tenant_slug),
