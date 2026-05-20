@@ -7051,7 +7051,7 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
     )
     .await;
     let execution_id = "duplicate_response_execution:test";
-    let (signed_receipt, local_receipt_hash) = response_ack_signed_receipt_fixture(
+    let (signed_receipt, _local_receipt_hash) = response_ack_signed_receipt_fixture(
         &keypair,
         action_id,
         "endpoint-1",
@@ -7071,10 +7071,15 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
             "status": "acknowledged",
             "ackToken": &ack_token,
             "rawPayload": {
-                "source": "clawdstrike-agent",
-                "localExecutionId": execution_id,
-                "localReceiptHash": local_receipt_hash,
-                "signedReceipt": signed_receipt
+                "policyRuleDiffValidation": {
+                    "proposalId": "proposal-test",
+                    "validationPlanSha256": "sha256:plan",
+                    "endpointAgentId": "endpoint-1",
+                    "impact": {
+                        "impactId": "impact-test"
+                    },
+                    "receipt": signed_receipt
+                }
             }
         })),
     )
