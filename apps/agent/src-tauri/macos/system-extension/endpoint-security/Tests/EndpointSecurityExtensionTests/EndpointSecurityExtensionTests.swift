@@ -44,6 +44,32 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         try assertFixture(report, named: "deadline-miss")
     }
 
+    func testDeadlineBoundaryCountsAsMiss() {
+        let monitor = EndpointSecurityMonitor(
+            installState: .installed,
+            approval: .approved,
+            providerActive: true,
+            fullDiskAccessGranted: true
+        )
+        monitor.recordAuthorization(
+            AuthorizationEvent(
+                path: "/tmp/clawdstrike-es-boundary.txt",
+                decision: .allow,
+                latencyMs: 200,
+                deadlineMs: 200,
+                notifyObserved: true,
+                observedAt: Date(timeIntervalSince1970: 1_778_824_801)
+            )
+        )
+
+        let report = monitor.snapshot()
+
+        XCTAssertEqual(report.counters.authOpenAllowCount, 1)
+        XCTAssertEqual(report.counters.deadlineMissCount, 1)
+        XCTAssertTrue(report.degradedReasons.contains("authorization_deadline_missed"))
+        XCTAssertEqual(report.providerState.availability, .degraded)
+    }
+
     func testDroppedEventsCarryEvidencePathAndDegradeProvider() throws {
         let report = EndpointSecurityMonitor.fixtureScenario(.droppedEvents)
 
