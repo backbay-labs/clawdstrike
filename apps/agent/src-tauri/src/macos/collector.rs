@@ -15,7 +15,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{timeout, Instant};
 
 use super::host::{
-    MacosHostService, MacosNetworkExtensionReloadError, MacosNetworkExtensionReloadResult,
+    MacosHostRefreshRequest, MacosHostService, MacosNetworkExtensionReloadError,
+    MacosNetworkExtensionReloadRequest, MacosNetworkExtensionReloadResult,
 };
 use super::status::{
     CombinedSystemExtensionStatus, EvidenceArtifact, MdmProfileState, ProviderAttestationState,
@@ -222,59 +223,64 @@ pub fn start_status_collector<R: Runtime + 'static>(
         let (status_tx, mut status_rx) = mpsc::channel::<(u64, CombinedSystemExtensionStatus)>(1);
         let mut next_poll = Box::pin(tokio::time::sleep(Duration::ZERO));
         let mut status_poll_generation = 0_u64;
-        let mut active_status_poll_generation = None;
-        let mut active_status_poll: Option<JoinHandle<()>> = None;
+        let mut active_status_probe_generation = None;
+        let mut active_status_probe: Option<JoinHandle<()>> = None;
+        let mut pending_refresh_replies = Vec::<MacosHostRefreshRequest>::new();
+        let mut active_reload_requests = Vec::<JoinHandle<()>>::new();
 
         loop {
             tokio::select! {
                 biased;
 
                 _ = shutdown.recv() => break,
-                request = refresh_rx.recv() => {
-                    abort_status_poll(
-                        &mut active_status_poll,
-                        &mut active_status_poll_generation,
-                        &mut status_rx,
-                    );
-                    let Some(reply_tx) = request else {
-                        break;
-                    };
-                    let combined =
-                        collect_combined_status(endpoint_tool.as_ref(), network_tool.as_ref()).await;
-                    macos_host.replace_status(combined.clone()).await;
-                    let _ = reply_tx.send(combined);
-                    next_poll.as_mut().reset(Instant::now() + STATUS_POLL_INTERVAL);
-                }
                 request = network_reload_rx.recv() => {
-                    abort_status_poll(
-                        &mut active_status_poll,
-                        &mut active_status_poll_generation,
+                    abort_status_probe(
+                        &mut active_status_probe,
+                        &mut active_status_probe_generation,
                         &mut status_rx,
+                        &mut pending_refresh_replies,
                     );
                     let Some(request) = request else {
                         break;
                     };
-                    let result = request_network_extension_reload(
-                        network_tool.as_ref(),
-                        &request.policy_snapshot_path,
-                        request.generation,
-                    )
-                    .await;
-                    let _ = request.reply_tx.send(result);
+                    active_reload_requests.retain(|handle| !handle.is_finished());
+                    active_reload_requests.push(spawn_network_extension_reload(
+                        network_tool.clone(),
+                        request,
+                    ));
                     next_poll.as_mut().reset(Instant::now() + STATUS_POLL_INTERVAL);
                 }
-                Some((generation, combined)) = status_rx.recv(), if active_status_poll_generation.is_some() => {
-                    if active_status_poll_generation == Some(generation) {
-                        macos_host.replace_status(combined).await;
+                request = refresh_rx.recv() => {
+                    let Some(reply_tx) = request else {
+                        break;
+                    };
+                    retain_open_refresh_replies(&mut pending_refresh_replies);
+                    pending_refresh_replies.push(reply_tx);
+                    if active_status_probe_generation.is_none() {
+                        status_poll_generation = status_poll_generation.wrapping_add(1);
+                        active_status_probe_generation = Some(status_poll_generation);
+                        active_status_probe = Some(spawn_status_probe(
+                            endpoint_tool.clone(),
+                            network_tool.clone(),
+                            status_tx.clone(),
+                            status_poll_generation,
+                        ));
                     }
-                    active_status_poll_generation = None;
-                    active_status_poll = None;
-                    next_poll.as_mut().reset(Instant::now() + STATUS_POLL_INTERVAL);
                 }
-                _ = &mut next_poll, if active_status_poll_generation.is_none() => {
+                Some((generation, combined)) = status_rx.recv() => {
+                    if active_status_probe_generation == Some(generation) {
+                        let refresh_reply = combined.clone();
+                        macos_host.replace_status(combined).await;
+                        reply_to_pending_refreshes(&mut pending_refresh_replies, refresh_reply);
+                        active_status_probe_generation = None;
+                        active_status_probe = None;
+                        next_poll.as_mut().reset(Instant::now() + STATUS_POLL_INTERVAL);
+                    }
+                }
+                _ = &mut next_poll, if active_status_probe_generation.is_none() => {
                     status_poll_generation = status_poll_generation.wrapping_add(1);
-                    active_status_poll_generation = Some(status_poll_generation);
-                    active_status_poll = Some(spawn_status_poll(
+                    active_status_probe_generation = Some(status_poll_generation);
+                    active_status_probe = Some(spawn_status_probe(
                         endpoint_tool.clone(),
                         network_tool.clone(),
                         status_tx.clone(),
@@ -283,13 +289,16 @@ pub fn start_status_collector<R: Runtime + 'static>(
                 }
             }
         }
-        if let Some(handle) = active_status_poll {
+        if let Some(handle) = active_status_probe {
+            handle.abort();
+        }
+        for handle in active_reload_requests {
             handle.abort();
         }
     });
 }
 
-fn spawn_status_poll(
+fn spawn_status_probe(
     endpoint_tool: Option<ToolInvocation>,
     network_tool: Option<ToolInvocation>,
     status_tx: mpsc::Sender<(u64, CombinedSystemExtensionStatus)>,
@@ -301,16 +310,46 @@ fn spawn_status_poll(
     })
 }
 
-fn abort_status_poll(
-    active_status_poll: &mut Option<JoinHandle<()>>,
-    active_status_poll_generation: &mut Option<u64>,
+fn spawn_network_extension_reload(
+    network_tool: Option<ToolInvocation>,
+    request: MacosNetworkExtensionReloadRequest,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let result = request_network_extension_reload(
+            network_tool.as_ref(),
+            &request.policy_snapshot_path,
+            request.generation,
+        )
+        .await;
+        let _ = request.reply_tx.send(result);
+    })
+}
+
+fn abort_status_probe(
+    active_status_probe: &mut Option<JoinHandle<()>>,
+    active_status_probe_generation: &mut Option<u64>,
     status_rx: &mut mpsc::Receiver<(u64, CombinedSystemExtensionStatus)>,
+    pending_refresh_replies: &mut Vec<MacosHostRefreshRequest>,
 ) {
-    if let Some(handle) = active_status_poll.take() {
+    if let Some(handle) = active_status_probe.take() {
         handle.abort();
     }
-    *active_status_poll_generation = None;
+    *active_status_probe_generation = None;
+    pending_refresh_replies.clear();
     while status_rx.try_recv().is_ok() {}
+}
+
+fn reply_to_pending_refreshes(
+    pending_refresh_replies: &mut Vec<MacosHostRefreshRequest>,
+    combined: CombinedSystemExtensionStatus,
+) {
+    for reply_tx in pending_refresh_replies.drain(..) {
+        let _ = reply_tx.send(combined.clone());
+    }
+}
+
+fn retain_open_refresh_replies(refresh_replies: &mut Vec<MacosHostRefreshRequest>) {
+    refresh_replies.retain(|reply_tx| !reply_tx.is_closed());
 }
 
 async fn collect_combined_status(
@@ -790,6 +829,65 @@ mod tests {
             last_error: None,
             last_reload_observation: None,
         }
+    }
+
+    #[tokio::test]
+    async fn reply_to_pending_refreshes_completes_all_open_waiters() {
+        let (first_tx, first_rx) = tokio::sync::oneshot::channel();
+        let (second_tx, second_rx) = tokio::sync::oneshot::channel();
+        let expected = CombinedSystemExtensionStatus {
+            install_state: SystemExtensionInstallState::Installed,
+            approval: SystemExtensionApproval::Approved,
+            ..CombinedSystemExtensionStatus::default()
+        };
+        let mut replies = vec![first_tx, second_tx];
+
+        reply_to_pending_refreshes(&mut replies, expected.clone());
+
+        assert!(replies.is_empty());
+        assert_eq!(first_rx.await.expect("first refresh reply"), expected);
+        assert_eq!(second_rx.await.expect("second refresh reply"), expected);
+    }
+
+    #[test]
+    fn retain_open_refresh_replies_drops_closed_waiters() {
+        let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+        let (open_tx, _open_rx) = tokio::sync::oneshot::channel();
+        drop(closed_rx);
+        let mut replies = vec![closed_tx, open_tx];
+
+        retain_open_refresh_replies(&mut replies);
+
+        assert_eq!(replies.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn abort_status_probe_cancels_refresh_waiters_and_drains_results() {
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        let (status_tx, mut status_rx) = mpsc::channel(1);
+        status_tx
+            .send((7, CombinedSystemExtensionStatus::default()))
+            .await
+            .expect("queue stale status");
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        let mut active_probe = Some(handle);
+        let mut active_generation = Some(7);
+        let mut pending_replies = vec![reply_tx];
+
+        abort_status_probe(
+            &mut active_probe,
+            &mut active_generation,
+            &mut status_rx,
+            &mut pending_replies,
+        );
+
+        assert!(active_probe.is_none());
+        assert_eq!(active_generation, None);
+        assert!(pending_replies.is_empty());
+        assert!(reply_rx.await.is_err());
+        assert!(status_rx.try_recv().is_err());
     }
 
     #[tokio::test]
