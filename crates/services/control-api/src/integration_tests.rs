@@ -70,7 +70,6 @@ struct OperatorFlowFixture {
     response_raw_ref: String,
     principal_id: Uuid,
     response_subject: String,
-    legacy_response_subject: String,
     grant_id: Uuid,
     finding_id: Uuid,
     case_id: String,
@@ -4301,7 +4300,6 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         response_raw_ref,
         principal_id,
         response_subject,
-        legacy_response_subject,
         grant_id,
         finding_id,
         case_id,
@@ -4312,11 +4310,6 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         .subscribe(response_subject.clone())
         .await
         .expect("subscribe response subject");
-    let mut legacy_subscriber = harness
-        .nats
-        .subscribe(legacy_response_subject.clone())
-        .await
-        .expect("subscribe legacy response subject");
     harness.nats.flush().await.expect("nats flush");
 
     let finding_resp = request_json(
@@ -4385,17 +4378,10 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         finding_id.to_string()
     );
     assert_eq!(envelope["fact"]["caseId"], case_id);
-    let legacy_message = tokio::time::timeout(Duration::from_secs(5), legacy_subscriber.next())
-        .await
-        .expect("legacy response action publish timeout")
-        .expect("legacy subscriber stream ended");
-    let legacy_envelope: Value = serde_json::from_slice(&legacy_message.payload)
-        .expect("legacy response payload should be JSON");
-    assert!(
-        spine::verify_envelope(&legacy_envelope).expect("legacy envelope should verify"),
-        "legacy response payload must be a signed spine envelope"
+    assert_eq!(
+        envelope["fact"]["actionType"],
+        "policy_rule_diff_validation"
     );
-    assert_eq!(legacy_envelope["fact"]["command"], "request_policy_reload");
 
     let overview_resp = request_json(
         &harness.app,
@@ -4487,7 +4473,7 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
                 "severity": "medium",
                 "verdict": "deny",
                 "summary": "response action published for Operator Endpoint",
-                "actionType": "request_policy_reload",
+                "actionType": "policy_rule_diff_validation",
                 "principal": {
                     "principalId": principal_id.to_string(),
                     "endpointAgentId": agent_id,
@@ -5324,7 +5310,10 @@ async fn case_artifacts_require_verified_references_and_mark_annotations_untrust
         .expect("response_action artifact");
     assert_eq!(
         response_action_artifact["summary"],
-        format!("request_policy_reload -> endpoint:{}", fixture.agent_id)
+        format!(
+            "policy_rule_diff_validation -> endpoint:{}",
+            fixture.agent_id
+        )
     );
     assert_eq!(
         response_action_artifact["metadata"]["artifactClass"],
@@ -6347,7 +6336,7 @@ async fn grant_exercise_requires_verified_event_and_active_grant() {
                 "severity": "medium",
                 "verdict": "deny",
                 "summary": "verified response exercise event",
-                "actionType": "request_policy_reload",
+                "actionType": "policy_rule_diff_validation",
                 "principal": {
                     "principalId": fixture.principal_id.to_string(),
                     "endpointAgentId": fixture.agent_id,
@@ -6404,7 +6393,7 @@ async fn grant_exercise_requires_verified_event_and_active_grant() {
                 "severity": "medium",
                 "verdict": "deny",
                 "summary": "mismatched grant exercise event",
-                "actionType": "request_policy_reload",
+                "actionType": "policy_rule_diff_validation",
                 "principal": {
                     "principalId": fixture.principal_id.to_string(),
                     "endpointAgentId": fixture.agent_id,
@@ -6823,7 +6812,7 @@ async fn response_action_acks_reject_actions_without_acknowledgement_enabled() {
     }
 
     let harness = setup_harness().await;
-    seed_console_read_model_fixture(&harness).await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
 
     let create_resp = request_json(
         &harness.app,
@@ -6831,10 +6820,10 @@ async fn response_action_acks_reject_actions_without_acknowledgement_enabled() {
         "/api/v1/response-actions".to_string(),
         Some(&harness.api_key),
         Some(serde_json::json!({
-            "actionType": "request_policy_reload",
+            "actionType": "quarantine_principal",
             "target": {
-                "kind": "endpoint",
-                "id": "endpoint-1"
+                "kind": "principal",
+                "id": fixture.principal_id.to_string()
             },
             "reason": "Contain endpoint",
             "requireAcknowledgement": false,
@@ -6854,8 +6843,8 @@ async fn response_action_acks_reject_actions_without_acknowledgement_enabled() {
         format!("/api/v1/response-actions/{action_id}/acks"),
         Some(&harness.api_key),
         Some(serde_json::json!({
-            "targetKind": "endpoint",
-            "targetId": "endpoint-1",
+            "targetKind": "principal",
+            "targetId": fixture.principal_id.to_string(),
             "status": "acknowledged",
             "ackToken": "not-enabled"
         })),
@@ -6898,7 +6887,7 @@ async fn seed_ack_enabled_response_action(
            ) VALUES (
                $1,
                $2,
-               'request_policy_reload',
+               'policy_rule_diff_validation',
                'endpoint',
                'endpoint-1',
                'service',
@@ -7469,14 +7458,16 @@ async fn response_actions_accept_uuid_shaped_external_target_ids() {
         "/api/v1/response-actions".to_string(),
         Some(&harness.api_key),
         Some(serde_json::json!({
-            "actionType": "request_policy_reload",
+            "actionType": "policy_rule_diff_validation",
             "target": {
                 "kind": "endpoint",
                 "id": endpoint_agent_id
             },
-            "reason": "Reload endpoint policy",
-            "requireAcknowledgement": false,
-            "payload": {}
+            "reason": "Validate endpoint policy diff",
+            "requireAcknowledgement": true,
+            "payload": {
+                "operation": "policy_rule_diff_validation"
+            }
         })),
     )
     .await;
@@ -7787,14 +7778,16 @@ async fn response_actions_canonicalize_endpoint_row_ids_to_public_agent_ids() {
         "/api/v1/response-actions".to_string(),
         Some(&harness.api_key),
         Some(serde_json::json!({
-            "actionType": "request_policy_reload",
+            "actionType": "policy_rule_diff_validation",
             "target": {
                 "kind": "endpoint",
                 "id": fixture.endpoint_agent_row_id.to_string()
             },
-            "reason": "Reload endpoint policy",
-            "requireAcknowledgement": false,
-            "payload": {}
+            "reason": "Validate endpoint policy diff",
+            "requireAcknowledgement": true,
+            "payload": {
+                "operation": "policy_rule_diff_validation"
+            }
         })),
     )
     .await;
@@ -9223,15 +9216,11 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
         "{}.response.command.endpoint.{agent_id}",
         tenant_subject_prefix(&harness.tenant_slug)
     );
-    let legacy_response_subject = format!(
-        "{}.posture.command.{agent_id}",
-        tenant_subject_prefix(&harness.tenant_slug)
-    );
     let js = async_nats::jetstream::new(harness.nats.clone());
     spine::nats_transport::ensure_stream(
         &js,
         "response-action-integration",
-        vec![response_subject.clone(), legacy_response_subject.clone()],
+        vec![response_subject.clone()],
         1,
     )
     .await
@@ -9353,7 +9342,7 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
         "/api/v1/response-actions".to_string(),
         Some(&harness.api_key),
         Some(serde_json::json!({
-            "actionType": "request_policy_reload",
+            "actionType": "policy_rule_diff_validation",
             "target": {
                 "kind": "endpoint",
                 "id": &agent_id
@@ -9361,9 +9350,9 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
             "reason": "Investigate suspicious operator flow",
             "caseId": &case_id,
             "sourceDetectionId": finding.id.to_string(),
-            "requireAcknowledgement": false,
+            "requireAcknowledgement": true,
             "payload": {
-                "reloadMode": "full"
+                "operation": "policy_rule_diff_validation"
             }
         })),
     )
@@ -9380,7 +9369,6 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
         response_raw_ref,
         principal_id,
         response_subject,
-        legacy_response_subject,
         grant_id,
         finding_id: finding.id,
         case_id,
