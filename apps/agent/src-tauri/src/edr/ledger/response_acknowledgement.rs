@@ -5,7 +5,7 @@
 //! confirm each ACK was received.
 
 use std::collections::VecDeque;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write as _;
 use std::path::{Path as FsPath, PathBuf};
 
@@ -13,6 +13,8 @@ use anyhow::{Context, Result};
 use clawdstrike_policy_event::edr::EndpointResponseAcknowledgementReport;
 
 use crate::api_server::EDR_MAX_STORED_FINDINGS;
+
+use super::open_private_append;
 
 pub(crate) struct EndpointResponseAcknowledgementLedger {
     path: Option<PathBuf>,
@@ -61,16 +63,7 @@ impl EndpointResponseAcknowledgementLedger {
             })?;
         }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| {
-                format!(
-                    "open endpoint response acknowledgement ledger {}",
-                    path.display()
-                )
-            })?;
+        let mut file = open_private_append(path, "endpoint response acknowledgement ledger")?;
         serde_json::to_writer(&mut file, acknowledgement).with_context(|| {
             format!(
                 "serialize endpoint response acknowledgement {}",

@@ -1280,6 +1280,7 @@ async fn prepare_publish(
     .ok_or(ApiError::NotFound)?;
     let action = ResponseActionRecord::from_row(row).map_err(ApiError::Database)?;
     ensure_publishable(&action.status, allow_retry)?;
+    validate_publish_delivery_contract(&action)?;
 
     if action
         .expires_at
@@ -1558,13 +1559,6 @@ fn validate_create_request(
             ));
         }
     }
-    if matches!(action_type, ResponseActionType::TransitionPosture)
-        && transition_posture_value(input.payload.as_ref().unwrap_or(&Value::Null)).is_none()
-    {
-        return Err(ApiError::BadRequest(
-            "transition_posture actions require payload.toState or payload.posture".to_string(),
-        ));
-    }
     if require_acknowledgement
         && !matches!(action_type, ResponseActionType::PolicyRuleDiffValidation)
     {
@@ -1572,12 +1566,31 @@ fn validate_create_request(
             "response acknowledgements are not supported for the current executor set".to_string(),
         ));
     }
+    if matches!(action_type, ResponseActionType::PolicyRuleDiffValidation)
+        && !require_acknowledgement
+    {
+        return Err(ApiError::BadRequest(
+            "policy_rule_diff_validation actions require acknowledgement".to_string(),
+        ));
+    }
+    if matches!(target_kind, ResponseTargetKind::Endpoint)
+        && !endpoint_delivery_action_supported(action_type)
+    {
+        return Err(ApiError::BadRequest(
+            "endpoint response-action delivery currently supports only policy_rule_diff_validation"
+                .to_string(),
+        ));
+    }
+    if matches!(action_type, ResponseActionType::TransitionPosture)
+        && transition_posture_value(input.payload.as_ref().unwrap_or(&Value::Null)).is_none()
+    {
+        return Err(ApiError::BadRequest(
+            "transition_posture actions require payload.toState or payload.posture".to_string(),
+        ));
+    }
 
     match (action_type, target_kind) {
-        (ResponseActionType::TransitionPosture, ResponseTargetKind::Endpoint)
-        | (ResponseActionType::RequestPolicyReload, ResponseTargetKind::Endpoint)
-        | (ResponseActionType::KillSwitch, ResponseTargetKind::Endpoint)
-        | (ResponseActionType::PolicyRuleDiffValidation, ResponseTargetKind::Endpoint)
+        (ResponseActionType::PolicyRuleDiffValidation, ResponseTargetKind::Endpoint)
         | (ResponseActionType::QuarantinePrincipal, ResponseTargetKind::Principal)
         | (ResponseActionType::RevokeGrant, ResponseTargetKind::Grant)
         | (ResponseActionType::RevokePrincipal, ResponseTargetKind::Principal) => Ok(()),
@@ -1586,6 +1599,29 @@ fn validate_create_request(
             input.action_type, input.target.kind
         ))),
     }
+}
+
+fn endpoint_delivery_action_supported(action_type: &ResponseActionType) -> bool {
+    matches!(action_type, ResponseActionType::PolicyRuleDiffValidation)
+}
+
+fn validate_publish_delivery_contract(action: &ResponseActionRecord) -> Result<(), ApiError> {
+    if matches!(action.target.kind, ResponseTargetKind::Endpoint)
+        && action.action_type != ResponseActionType::PolicyRuleDiffValidation.as_str()
+    {
+        return Err(ApiError::BadRequest(
+            "endpoint response-action delivery currently supports only policy_rule_diff_validation"
+                .to_string(),
+        ));
+    }
+    if action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str()
+        && !action.require_acknowledgement
+    {
+        return Err(ApiError::BadRequest(
+            "policy_rule_diff_validation actions require acknowledgement".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_response_action_field_len(
@@ -2260,11 +2296,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn delivery_plan_uses_response_subject_for_endpoint_actions() {
+    fn delivery_plan_uses_response_subject_for_supported_endpoint_actions() {
         let action = ResponseActionRecord {
             id: Uuid::new_v4(),
             tenant_id: Uuid::new_v4(),
-            action_type: "transition_posture".to_string(),
+            action_type: "policy_rule_diff_validation".to_string(),
             target: ResponseTarget {
                 kind: ResponseTargetKind::Endpoint,
                 id: "agent-123".to_string(),
@@ -2280,7 +2316,7 @@ mod tests {
             source_detection_id: None,
             source_approval_id: None,
             require_acknowledgement: true,
-            payload: json!({"toState": "restricted"}),
+            payload: json!({"operation": "policy_rule_diff_validation"}),
             status: "queued".to_string(),
             metadata: json!({}),
         };
@@ -2290,15 +2326,47 @@ mod tests {
             plan.delivery_subject.as_deref(),
             Some("tenant-acme.clawdstrike.response.command.endpoint.agent-123")
         );
-        assert_eq!(
-            plan.metadata["compat_mirror_subject"],
-            "tenant-acme.clawdstrike.posture.command.agent-123"
-        );
+        assert!(plan.metadata["compat_mirror_subject"].is_null());
         assert_eq!(
             plan.metadata["canonical_subject"],
             "tenant-acme.clawdstrike.response.command.endpoint.agent-123"
         );
         assert!(plan.metadata["ack_token"].is_string());
+    }
+
+    #[test]
+    fn publish_contract_rejects_legacy_endpoint_actions() {
+        let action = ResponseActionRecord {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            action_type: "request_policy_reload".to_string(),
+            target: ResponseTarget {
+                kind: ResponseTargetKind::Endpoint,
+                id: "agent-123".to_string(),
+            },
+            requested_by: RequestedBy {
+                actor_type: "user".to_string(),
+                actor_id: "alice".to_string(),
+            },
+            requested_at: Utc::now(),
+            expires_at: None,
+            reason: "reload".to_string(),
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: false,
+            payload: json!({}),
+            status: "queued".to_string(),
+            metadata: json!({}),
+        };
+
+        let err = validate_publish_delivery_contract(&action).unwrap_err();
+        match err {
+            ApiError::BadRequest(message) => {
+                assert!(message.contains("policy_rule_diff_validation"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
     }
 
     #[test]
@@ -2359,11 +2427,101 @@ mod tests {
     }
 
     #[test]
+    fn create_validation_rejects_endpoint_actions_without_agent_executor() {
+        let input = CreateResponseActionRequest {
+            action_type: "request_policy_reload".to_string(),
+            target: ResponseTargetInput {
+                kind: "endpoint".to_string(),
+                id: "agent-1".to_string(),
+            },
+            reason: "reload".to_string(),
+            expires_at: None,
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(false),
+            payload: None,
+        };
+
+        let err = validate_create_request(
+            &input,
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            false,
+        )
+        .unwrap_err();
+        match err {
+            ApiError::BadRequest(message) => {
+                assert!(message.contains("policy_rule_diff_validation"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_validation_requires_policy_rule_diff_acknowledgement() {
+        let input = CreateResponseActionRequest {
+            action_type: "policy_rule_diff_validation".to_string(),
+            target: ResponseTargetInput {
+                kind: "endpoint".to_string(),
+                id: "agent-1".to_string(),
+            },
+            reason: "validate proposal".to_string(),
+            expires_at: None,
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(false),
+            payload: Some(json!({"operation": "policy_rule_diff_validation"})),
+        };
+
+        let err = validate_create_request(
+            &input,
+            &ResponseActionType::PolicyRuleDiffValidation,
+            &ResponseTargetKind::Endpoint,
+            false,
+        )
+        .unwrap_err();
+        match err {
+            ApiError::BadRequest(message) => {
+                assert!(message.contains("require acknowledgement"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_validation_accepts_policy_rule_diff_endpoint_contract() {
+        let input = CreateResponseActionRequest {
+            action_type: "policy_rule_diff_validation".to_string(),
+            target: ResponseTargetInput {
+                kind: "endpoint".to_string(),
+                id: "agent-1".to_string(),
+            },
+            reason: "validate proposal".to_string(),
+            expires_at: Some(Utc::now() + Duration::minutes(5)),
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(true),
+            payload: Some(json!({"operation": "policy_rule_diff_validation"})),
+        };
+
+        validate_create_request(
+            &input,
+            &ResponseActionType::PolicyRuleDiffValidation,
+            &ResponseTargetKind::Endpoint,
+            true,
+        )
+        .expect("policy_rule_diff_validation endpoint command should be accepted");
+    }
+
+    #[test]
     fn transition_posture_requires_target_state_in_payload() {
         let input = CreateResponseActionRequest {
             action_type: "transition_posture".to_string(),
             target: ResponseTargetInput {
-                kind: "endpoint".to_string(),
+                kind: "project".to_string(),
                 id: "agent-1".to_string(),
             },
             reason: "contain".to_string(),
@@ -2378,11 +2536,16 @@ mod tests {
         let err = validate_create_request(
             &input,
             &ResponseActionType::TransitionPosture,
-            &ResponseTargetKind::Endpoint,
+            &ResponseTargetKind::Project,
             false,
         )
         .unwrap_err();
-        assert!(matches!(err, ApiError::BadRequest(_)));
+        match err {
+            ApiError::BadRequest(message) => {
+                assert!(message.contains("payload.toState"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
     }
 
     #[test]

@@ -5,7 +5,7 @@
 //! `restriction_id` means each entry can be active or inactive.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write as _;
 use std::path::{Path as FsPath, PathBuf};
 
@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use crate::api_server::{
     local_stable_id, EDR_MAX_STORED_FINDINGS, EDR_NETWORK_EXTENSION_EGRESS_POLICY_SCHEMA_VERSION,
 };
+
+use super::open_private_append;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -163,13 +165,7 @@ impl EndpointEgressRestrictionLedger {
             })?;
         }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| {
-                format!("open endpoint egress restriction ledger {}", path.display())
-            })?;
+        let mut file = open_private_append(path, "endpoint egress restriction ledger")?;
         for restriction in restrictions {
             serde_json::to_writer(&mut file, restriction).with_context(|| {
                 format!(

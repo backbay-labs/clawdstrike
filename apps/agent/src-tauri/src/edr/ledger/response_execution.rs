@@ -6,14 +6,18 @@
 //! egress restriction activation check.
 
 use std::collections::VecDeque;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write as _;
 use std::path::{Path as FsPath, PathBuf};
 
 use anyhow::{Context, Result};
-use clawdstrike_policy_event::edr::{EndpointResponseExecutionReport, EndpointResponseExecutionStatus};
+use clawdstrike_policy_event::edr::{
+    EndpointResponseExecutionReport, EndpointResponseExecutionStatus,
+};
 
 use crate::api_server::EDR_MAX_STORED_FINDINGS;
+
+use super::open_private_append;
 
 pub(crate) struct EndpointResponseExecutionLedger {
     path: Option<PathBuf>,
@@ -59,13 +63,7 @@ impl EndpointResponseExecutionLedger {
             })?;
         }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| {
-                format!("open endpoint response execution ledger {}", path.display())
-            })?;
+        let mut file = open_private_append(path, "endpoint response execution ledger")?;
         serde_json::to_writer(&mut file, execution).with_context(|| {
             format!(
                 "serialize endpoint response execution {}",
@@ -87,10 +85,7 @@ impl EndpointResponseExecutionLedger {
         Ok(())
     }
 
-    pub(crate) fn read_recent(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<EndpointResponseExecutionReport>> {
+    pub(crate) fn read_recent(&self, limit: usize) -> Result<Vec<EndpointResponseExecutionReport>> {
         if let Some(path) = &self.path {
             let executions = read_response_execution_ledger(path)?;
             return Ok(executions
