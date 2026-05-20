@@ -14,6 +14,9 @@ use std::fs::{self, OpenOptions};
 use std::io::{Seek as _, SeekFrom, Write as _};
 use std::path::{Path as FsPath, PathBuf};
 
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+
 use anyhow::{Context, Result};
 use clawdstrike_policy_event::edr::{
     CausalGraph, DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan,
@@ -865,21 +868,26 @@ impl EndpointReceiptLedger {
             })?;
         }
 
-        let mut file = OpenOptions::new()
+        let mut ledger_options = OpenOptions::new();
+        #[cfg(unix)]
+        ledger_options.mode(0o600);
+        let mut file = ledger_options
             .create(true)
             .append(true)
             .open(path)
             .with_context(|| format!("open endpoint receipt ledger {}", path.display()))?;
-        let mut index_file = OpenOptions::new()
+        crate::settings::enforce_private_mode(path, "endpoint receipt ledger")?;
+
+        let index_path = endpoint_receipt_index_path(path);
+        let mut index_options = OpenOptions::new();
+        #[cfg(unix)]
+        index_options.mode(0o600);
+        let mut index_file = index_options
             .create(true)
             .append(true)
-            .open(endpoint_receipt_index_path(path))
-            .with_context(|| {
-                format!(
-                    "open endpoint receipt index {}",
-                    endpoint_receipt_index_path(path).display()
-                )
-            })?;
+            .open(&index_path)
+            .with_context(|| format!("open endpoint receipt index {}", index_path.display()))?;
+        crate::settings::enforce_private_mode(&index_path, "endpoint receipt index")?;
         for receipt in receipts {
             let line = serde_json::to_vec(receipt).with_context(|| {
                 format!(
@@ -912,7 +920,7 @@ impl EndpointReceiptLedger {
             index_file.write_all(b"\n").with_context(|| {
                 format!(
                     "write endpoint receipt index {}",
-                    endpoint_receipt_index_path(path).display()
+                    index_path.display()
                 )
             })?;
         }
@@ -921,7 +929,7 @@ impl EndpointReceiptLedger {
         index_file.flush().with_context(|| {
             format!(
                 "flush endpoint receipt index {}",
-                endpoint_receipt_index_path(path).display()
+                index_path.display()
             )
         })?;
         Ok(())
@@ -932,5 +940,103 @@ impl EndpointReceiptLedger {
             return Ok(());
         };
         rebuild_endpoint_receipt_index(path)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clawdstrike_policy_event::edr::{
+        EndpointEvent, EndpointProcess, EndpointTelemetryPrivacyMode,
+    };
+
+    fn unique_test_path(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("clawdstrike-receipt-ledger-{name}-{nonce}.jsonl"))
+    }
+
+    fn signed_test_receipt() -> SignedReceipt {
+        let observation = EndpointObservation {
+            observation_id: "obs-receipt-private-mode".to_string(),
+            timestamp: chrono::DateTime::parse_from_rfc3339("2026-05-20T12:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&chrono::Utc),
+            host_id: Some("host-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            process: EndpointProcess {
+                pid: Some(42),
+                image: Some("/bin/zsh".to_string()),
+                command_line: Some("/bin/zsh -lc echo ok".to_string()),
+                ..EndpointProcess::default()
+            },
+            event: EndpointEvent::ProcessExec {
+                image: "/bin/zsh".to_string(),
+                args: vec!["-lc".to_string(), "echo ok".to_string()],
+                env: std::collections::BTreeMap::new(),
+            },
+            metadata: std::collections::BTreeMap::new(),
+        };
+        let report = EndpointTelemetryPrivacyReport::from_observations(
+            &[observation],
+            EndpointTelemetryPrivacyMode::HashesFeatures,
+        );
+        let keypair = Keypair::from_seed(&[17u8; 32]);
+        let mut receipt = EndpointDecisionReceipt::for_telemetry_privacy(
+            EndpointTelemetryPrivacyReceiptInput {
+                local_sequence: 1,
+                endpoint_id: "endpoint-test",
+                signer_identity: "local-edr:endpoint-test",
+                policy: EndpointPolicySnapshot {
+                    policy_version: "test-policy@1".to_string(),
+                    policy_hash: hush_core::sha256(b"test-policy").to_hex_prefixed(),
+                    policy_epoch: 1,
+                },
+                sensor_state: EndpointSensorState::single_active_agent("agent-api:test"),
+                report: &report,
+            },
+        );
+        receipt.signer.signer_public_key = Some(keypair.public_key().to_hex());
+        receipt.sign_with(&keypair).expect("signed receipt")
+    }
+
+    #[cfg(unix)]
+    fn assert_private_mode(path: &FsPath) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = fs::metadata(path)
+            .unwrap_or_else(|err| panic!("metadata for {}: {err}", path.display()))
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "unexpected mode for {}", path.display());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn append_creates_private_receipt_ledger_and_index() {
+        let path = unique_test_path("append");
+        let ledger_keypair = Keypair::from_seed(&[18u8; 32]);
+        let ledger = EndpointReceiptLedger {
+            path: Some(path.clone()),
+            next_sequence: 1,
+            signer_identity: "local-edr:endpoint-test".to_string(),
+            signer_public_key: ledger_keypair.public_key().to_hex(),
+            keypair: ledger_keypair,
+        };
+        ledger
+            .append(&[signed_test_receipt()])
+            .expect("append receipt");
+        let index_path = endpoint_receipt_index_path(&path);
+
+        assert_private_mode(&path);
+        assert_private_mode(&index_path);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(index_path);
     }
 }

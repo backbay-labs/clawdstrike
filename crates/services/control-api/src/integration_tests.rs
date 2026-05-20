@@ -1652,7 +1652,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             "simulation_receipt": signed_impact_receipt_value,
             "simulation_receipt_public_key": impact_receipt_keypair.public_key().to_hex(),
             "changed_verdict_count": 3,
-            "blocking_change_count": 1,
+            "blocking_change_count": 0,
             "developer_breakage_score": 12.5,
             "affected_identity_count": 1,
             "affected_tool_count": 2,
@@ -1711,7 +1711,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
     assert!(simulation_receipts
         .iter()
         .any(|receipt| receipt["endpointId"] == "endpoint-policy-2"));
-    assert_eq!(attach_impact_resp.1["impact"]["blockingChangeCount"], 1);
+    assert_eq!(attach_impact_resp.1["impact"]["blockingChangeCount"], 0);
     let impact_attached_by = attach_impact_resp.1["impact_attached_by"]
         .as_str()
         .expect("impact attached-by actor");

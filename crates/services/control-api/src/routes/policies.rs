@@ -1418,15 +1418,39 @@ fn required_policy_rule_diff_impact_u64(
 }
 
 fn ensure_policy_proposal_deployable_impact(proposal: &PolicyProposalRow) -> Result<(), ApiError> {
-    let verified_receipt_count = proposal
-        .impact
-        .as_ref()
-        .and_then(|impact| impact.get("simulationReceiptsVerifiedCount"))
+    let Some(impact) = proposal.impact.as_ref() else {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} requires verified simulation impact before deployment",
+            proposal.id
+        )));
+    };
+    let verified_receipt_count = impact
+        .get("simulationReceiptsVerifiedCount")
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     if verified_receipt_count == 0 {
         return Err(ApiError::Conflict(format!(
             "policy proposal {} requires at least one verified simulation receipt before deployment",
+            proposal.id
+        )));
+    }
+    let recommendation = impact
+        .get("recommendation")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if matches!(recommendation, "revise" | "reject") {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} cannot deploy while verified simulation impact recommends {recommendation}",
+            proposal.id
+        )));
+    }
+    let blocking_change_count = impact
+        .get("blockingChangeCount")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    if blocking_change_count > 0 {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} cannot deploy with {blocking_change_count} verified blocking simulation change(s)",
             proposal.id
         )));
     }
@@ -3066,6 +3090,64 @@ mod tests {
     #[test]
     fn policy_sync_key_is_stable() {
         assert_eq!(policy_distribution::POLICY_SYNC_KEY, "policy.yaml");
+    }
+
+    fn proposal_row_with_impact(impact: serde_json::Value) -> PolicyProposalRow {
+        let now = Utc::now();
+        PolicyProposalRow {
+            id: Uuid::from_u128(1),
+            tenant_id: Uuid::from_u128(2),
+            policy_yaml: "policy:\n  mode: test\n".to_string(),
+            checksum_sha256: "0".repeat(64),
+            description: None,
+            status: "pending".to_string(),
+            base_active_policy_version: 1,
+            proposed_policy_version: 2,
+            preview: serde_json::json!({}),
+            required_approvals: 1,
+            approved_by: Vec::new(),
+            approval_notes: serde_json::json!([]),
+            impact: Some(impact),
+            impact_attached_by: Some("test".to_string()),
+            impact_attached_at: Some(now),
+            deployed_policy_version: None,
+            deployment_id: None,
+            submitted_by: "test".to_string(),
+            reviewed_by: None,
+            review_note: None,
+            created_at: now,
+            updated_at: now,
+            reviewed_at: None,
+            deployed_at: None,
+        }
+    }
+
+    #[test]
+    fn deployable_impact_rejects_revise_recommendation() {
+        let proposal = proposal_row_with_impact(serde_json::json!({
+            "simulationReceiptsVerifiedCount": 1,
+            "blockingChangeCount": 0,
+            "recommendation": "revise"
+        }));
+
+        assert!(matches!(
+            ensure_policy_proposal_deployable_impact(&proposal),
+            Err(ApiError::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn deployable_impact_rejects_verified_blocking_changes() {
+        let proposal = proposal_row_with_impact(serde_json::json!({
+            "simulationReceiptsVerifiedCount": 1,
+            "blockingChangeCount": 1,
+            "recommendation": "observe_only"
+        }));
+
+        assert!(matches!(
+            ensure_policy_proposal_deployable_impact(&proposal),
+            Err(ApiError::Conflict(_))
+        ));
     }
 
     #[test]

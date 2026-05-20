@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 
 import type { Decision, PolicyEvent } from "../types.js";
-import type { DecisionReceipt, ReceiptSignerConfig } from "./types.js";
+import type { DecisionReceipt, ReceiptSignerConfig, ReceiptVerifyOptions } from "./types.js";
 
 /** Default configuration values for receipt signing */
 const DEFAULTS: Required<ReceiptSignerConfig> = {
@@ -92,13 +92,12 @@ export class ReceiptSigner {
   /**
    * Verify a receipt signature.
    *
-   * Stub implementation: always returns `true` for unsigned receipts
-   * (signature === null). When hush-wasm is integrated, this will
-   * perform real Ed25519 signature verification.
+   * Unsigned receipts are development artifacts, not verified attestations.
+   * Callers that need legacy local-dev behavior must opt in explicitly.
    */
-  static verify(receipt: DecisionReceipt): boolean {
+  static verify(receipt: DecisionReceipt, options: ReceiptVerifyOptions = {}): boolean {
     if (receipt.signature === null) {
-      return true;
+      return options.allowUnsignedDevReceipts === true;
     }
 
     // TODO: Delegate to hush-wasm Ed25519 verification when available.

@@ -6247,6 +6247,12 @@ async fn execute_restrict_egress_response(
     let execution = EndpointResponseExecutionReport::restrict_egress(plan, graph, &targets)
         .map_err(internal_error)?;
     let reload_proof = append_edr_egress_restrictions(state, &execution, &targets).await?;
+    ensure_network_extension_reload_proof_succeeded(&reload_proof).map_err(|message| {
+        (
+            StatusCode::CONFLICT,
+            format!("NetworkExtension did not activate egress restrictions: {message}"),
+        )
+    })?;
     let additional_evidence = network_extension_reload_request_evidence(&reload_proof);
     persist_edr_response_execution_with_evidence(
         state,
@@ -6918,7 +6924,73 @@ async fn append_edr_egress_restrictions(
         let mut ledger = state.edr_egress_restriction_ledger.lock().await;
         ledger.append(&restrictions).map_err(internal_error)?;
     }
-    sync_edr_network_extension_egress_policy(state, now).await
+    let reload_proof = match sync_edr_network_extension_egress_policy(state, now).await {
+        Ok(reload_proof) => reload_proof,
+        Err(err) => {
+            rollback_egress_restrictions_after_failed_reload(state, execution, now).await?;
+            return Err(err);
+        }
+    };
+    if let Err(message) = ensure_network_extension_reload_proof_succeeded(&reload_proof) {
+        rollback_egress_restrictions_after_failed_reload(state, execution, now).await?;
+        return Err((
+            StatusCode::CONFLICT,
+            format!("NetworkExtension egress policy reload failed: {message}"),
+        ));
+    }
+    Ok(reload_proof)
+}
+
+async fn rollback_egress_restrictions_after_failed_reload(
+    state: &AgentApiState,
+    execution: &EndpointResponseExecutionReport,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), (StatusCode, String)> {
+    {
+        let mut ledger = state.edr_egress_restriction_ledger.lock().await;
+        ledger
+            .deactivate_execution(&execution.execution_id, now)
+            .map_err(internal_error)?;
+    }
+    match sync_edr_network_extension_egress_policy(state, now).await {
+        Ok(rollback_proof) => {
+            if let Err(message) = ensure_network_extension_reload_proof_succeeded(&rollback_proof) {
+                tracing::warn!(
+                    execution_id = %execution.execution_id,
+                    action_id = %execution.action_id,
+                    error = %message,
+                    "NetworkExtension egress restriction rollback snapshot was written but reload did not acknowledge"
+                );
+            }
+        }
+        Err((status, message)) => {
+            tracing::warn!(
+                execution_id = %execution.execution_id,
+                action_id = %execution.action_id,
+                status = %status,
+                error = %message,
+                "NetworkExtension egress restriction rollback sync failed"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn ensure_network_extension_reload_proof_succeeded(
+    proof: &NetworkExtensionReloadRequestProof,
+) -> Result<(), String> {
+    if proof.requested && proof.saved && proof.error.is_none() {
+        return Ok(());
+    }
+    let reason = proof
+        .error
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("reload request was not acknowledged by the provider");
+    Err(format!(
+        "requested={}, saved={}, generation={}, reason={reason}",
+        proof.requested, proof.saved, proof.generation
+    ))
 }
 
 pub(crate) async fn deactivate_expired_egress_restrictions(

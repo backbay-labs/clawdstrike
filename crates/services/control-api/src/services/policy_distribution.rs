@@ -450,11 +450,13 @@ async fn reconcile_effective_policy_yaml_for_agent(
         .map_err(|err| err.to_string())?;
     let mut expected_policy_yaml = policy_yaml.to_string();
     if let Some(existing) = existing.as_ref() {
-        if existing.as_ref() == expected_policy_yaml.as_bytes()
-            || policy_yaml_content_matches_ignoring_epoch(
-                expected_policy_yaml.as_bytes(),
-                existing.as_ref(),
-            )
+        if existing.as_ref() == expected_policy_yaml.as_bytes() {
+            return Ok(false);
+        }
+        if policy_yaml_content_matches_ignoring_epoch(
+            expected_policy_yaml.as_bytes(),
+            existing.as_ref(),
+        ) && !candidate_policy_epoch_advances_existing(&expected_policy_yaml, existing.as_ref())?
         {
             return Ok(false);
         }
@@ -472,6 +474,18 @@ async fn reconcile_effective_policy_yaml_for_agent(
         .await
         .map_err(|err| err.to_string())?;
     Ok(true)
+}
+
+fn candidate_policy_epoch_advances_existing(
+    candidate_policy_yaml: &str,
+    existing_policy_yaml: &[u8],
+) -> Result<bool, String> {
+    let candidate_epoch = policy_epoch_from_yaml(candidate_policy_yaml.as_bytes())
+        .ok_or_else(|| "effective policy is missing policy_epoch".to_string())?;
+    let Some(existing_epoch) = policy_epoch_from_yaml(existing_policy_yaml) else {
+        return Ok(true);
+    };
+    Ok(candidate_epoch > existing_epoch)
 }
 
 fn policy_yaml_with_epoch_after_existing(
@@ -1234,6 +1248,31 @@ policy_epoch: 12
             candidate.as_bytes(),
             existing.as_bytes()
         ));
+        assert!(
+            !candidate_policy_epoch_advances_existing(candidate, existing.as_bytes())
+                .expect("epoch comparison")
+        );
+    }
+
+    #[test]
+    fn effective_policy_publish_epoch_writes_higher_epoch_same_content() {
+        let existing = "policy:
+  mode: new
+policy_epoch: 13
+";
+        let candidate = "policy:
+  mode: new
+policy_epoch: 14
+";
+
+        assert!(policy_yaml_content_matches_ignoring_epoch(
+            candidate.as_bytes(),
+            existing.as_bytes()
+        ));
+        assert!(
+            candidate_policy_epoch_advances_existing(candidate, existing.as_bytes())
+                .expect("epoch comparison")
+        );
     }
 
     #[test]

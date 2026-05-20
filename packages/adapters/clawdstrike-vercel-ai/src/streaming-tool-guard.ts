@@ -1,5 +1,5 @@
 import type { AdapterConfig, SecurityContext, ToolInterceptor } from "@clawdstrike/adapter-core";
-import { createSecurityContext } from "@clawdstrike/adapter-core";
+import { ClawdstrikeBlockedError, createSecurityContext } from "@clawdstrike/adapter-core";
 
 export type StreamChunk = Record<string, unknown> & {
   type?: string;
@@ -93,11 +93,7 @@ export class StreamingToolGuard {
       this.pendingToolCalls.delete(toolCallId);
 
       if (!result.proceed) {
-        return {
-          ...chunk,
-          __clawdstrike_blocked: true,
-          __clawdstrike_reason: result.decision.message ?? result.decision.reason ?? "denied",
-        };
+        throw new ClawdstrikeBlockedError(toolName, result.decision);
       }
 
       return chunk;

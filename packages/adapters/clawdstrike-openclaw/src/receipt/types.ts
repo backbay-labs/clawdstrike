@@ -49,3 +49,12 @@ export interface ReceiptSignerConfig {
   /** Key ID for the signing key */
   keyId?: string;
 }
+
+/** Options for receipt verification. */
+export interface ReceiptVerifyOptions {
+  /**
+   * Permit unsigned local-development receipts to verify.
+   * Production callers should leave this false.
+   */
+  allowUnsignedDevReceipts?: boolean;
+}

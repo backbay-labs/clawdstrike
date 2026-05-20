@@ -9,6 +9,9 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead as _, BufReader, ErrorKind, Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Component, Path, PathBuf};
 
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -33,6 +36,38 @@ use super::{
     ENDPOINT_FLIGHT_RECORDER_GRAPH_INDEX_SCHEMA_VERSION,
     ENDPOINT_FLIGHT_RECORDER_HISTORY_INDEX_SCHEMA_VERSION,
 };
+
+#[cfg(unix)]
+const ENDPOINT_PRIVATE_FILE_MODE: u32 = 0o600;
+
+fn endpoint_private_open_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    #[cfg(unix)]
+    {
+        options.mode(ENDPOINT_PRIVATE_FILE_MODE);
+    }
+    options
+}
+
+fn enforce_endpoint_private_file_mode(path: &Path, target: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let metadata = fs::metadata(path)
+            .with_context(|| format!("read {target} metadata {}", path.display()))?;
+        let mode = metadata.permissions().mode() & 0o777;
+        if mode != ENDPOINT_PRIVATE_FILE_MODE {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(ENDPOINT_PRIVATE_FILE_MODE);
+            fs::set_permissions(path, permissions)
+                .with_context(|| format!("set {target} permissions on {}", path.display()))?;
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, target);
+    }
+    Ok(())
+}
 
 /// Durable local flight recorder for endpoint observations.
 ///
@@ -219,12 +254,14 @@ impl EndpointFlightRecorder {
                 }
             }
 
-            let mut file = OpenOptions::new()
+            let mut options = endpoint_private_open_options();
+            let mut file = options
                 .create(true)
                 .append(true)
                 .read(true)
                 .open(path)
                 .with_context(|| format!("open endpoint flight recorder log {}", path.display()))?;
+            enforce_endpoint_private_file_mode(path, "endpoint flight recorder log")?;
             let mut byte_offset = file
                 .seek(SeekFrom::End(0))
                 .with_context(|| format!("seek endpoint flight recorder log {}", path.display()))?;
@@ -1002,7 +1039,8 @@ fn append_endpoint_observation_index(
             })?;
         }
     }
-    let mut file = OpenOptions::new()
+    let mut options = endpoint_private_open_options();
+    let mut file = options
         .create(true)
         .append(true)
         .open(&index_path)
@@ -1012,6 +1050,7 @@ fn append_endpoint_observation_index(
                 index_path.display()
             )
         })?;
+    enforce_endpoint_private_file_mode(&index_path, "endpoint flight recorder index")?;
     for entry in entries {
         serde_json::to_writer(&mut file, entry).with_context(|| {
             format!(
@@ -1247,7 +1286,8 @@ fn replace_endpoint_graph_node_index(
     }
     let tmp_path = index_path.with_extension("jsonl.tmp");
     {
-        let mut file = OpenOptions::new()
+        let mut options = endpoint_private_open_options();
+        let mut file = options
             .create(true)
             .truncate(true)
             .write(true)
@@ -1258,6 +1298,10 @@ fn replace_endpoint_graph_node_index(
                     tmp_path.display()
                 )
             })?;
+        enforce_endpoint_private_file_mode(
+            &tmp_path,
+            "temporary endpoint flight recorder graph index",
+        )?;
         for entry in &entries {
             serde_json::to_writer(&mut file, entry).with_context(|| {
                 format!(
@@ -1287,6 +1331,7 @@ fn replace_endpoint_graph_node_index(
             tmp_path.display()
         )
     })?;
+    enforce_endpoint_private_file_mode(&index_path, "endpoint flight recorder graph index")?;
     Ok(entries)
 }
 
@@ -1397,7 +1442,8 @@ fn replace_endpoint_graph_edge_index(
     }
     let tmp_path = index_path.with_extension("jsonl.tmp");
     {
-        let mut file = OpenOptions::new()
+        let mut options = endpoint_private_open_options();
+        let mut file = options
             .create(true)
             .truncate(true)
             .write(true)
@@ -1408,6 +1454,10 @@ fn replace_endpoint_graph_edge_index(
                     tmp_path.display()
                 )
             })?;
+        enforce_endpoint_private_file_mode(
+            &tmp_path,
+            "temporary endpoint flight recorder graph edge index",
+        )?;
         for entry in &entries {
             serde_json::to_writer(&mut file, entry).with_context(|| {
                 format!(
@@ -1437,6 +1487,7 @@ fn replace_endpoint_graph_edge_index(
             tmp_path.display()
         )
     })?;
+    enforce_endpoint_private_file_mode(&index_path, "endpoint flight recorder graph edge index")?;
     Ok(entries)
 }
 
@@ -1446,4 +1497,75 @@ fn endpoint_flight_recorder_graph_edge_index_path(path: &Path) -> PathBuf {
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "flight-recorder.jsonl".to_string());
     path.with_file_name(format!("{file_name}.graph-edge-index.jsonl"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::edr::{EndpointEvent, EndpointProcess};
+
+    fn unique_test_path(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("clawdstrike-flight-recorder-{name}-{nonce}.jsonl"))
+    }
+
+    fn test_observation() -> EndpointObservation {
+        EndpointObservation {
+            observation_id: "obs-private-mode".to_string(),
+            timestamp: DateTime::parse_from_rfc3339("2026-05-20T12:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&Utc),
+            host_id: Some("host-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            process: EndpointProcess {
+                pid: Some(42),
+                image: Some("/bin/zsh".to_string()),
+                command_line: Some("/bin/zsh -lc echo ok".to_string()),
+                ..EndpointProcess::default()
+            },
+            event: EndpointEvent::ProcessExec {
+                image: "/bin/zsh".to_string(),
+                args: vec!["-lc".to_string(), "echo ok".to_string()],
+                env: BTreeMap::new(),
+            },
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    #[cfg(unix)]
+    fn assert_private_mode(path: &Path) {
+        let mode = fs::metadata(path)
+            .unwrap_or_else(|err| panic!("metadata for {}: {err}", path.display()))
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "unexpected mode for {}", path.display());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn append_creates_private_log_and_sidecar_indexes() {
+        let path = unique_test_path("append");
+        let mut recorder = EndpointFlightRecorder::open(&path).expect("open recorder");
+        recorder
+            .append_observations(&[test_observation()])
+            .expect("append observation");
+        let (node_index_path, _) = recorder.read_graph_node_index().expect("graph node index");
+        let (edge_index_path, _) = recorder.read_graph_edge_index().expect("graph edge index");
+        let history_index_path = endpoint_flight_recorder_index_path(&path);
+
+        assert_private_mode(&path);
+        assert_private_mode(&history_index_path);
+        assert_private_mode(&node_index_path);
+        assert_private_mode(&edge_index_path);
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(history_index_path);
+        let _ = fs::remove_file(node_index_path);
+        let _ = fs::remove_file(edge_index_path);
+    }
 }

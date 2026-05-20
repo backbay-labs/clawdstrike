@@ -25,7 +25,7 @@ import {
   SanitizationStream,
   type WatermarkConfig,
 } from "@clawdstrike/sdk";
-import { ClawdstrikePromptSecurityError } from "./errors.js";
+import { ClawdstrikeBlockedError, ClawdstrikePromptSecurityError } from "./errors.js";
 import { StreamingToolGuard } from "./streaming-tool-guard.js";
 import type { VercelAiToolLike } from "./tools.js";
 import { secureTools } from "./tools.js";
@@ -305,12 +305,7 @@ function createWrappedModel(
 
             const interceptResult = await interceptor.beforeExecute(toolName, args, context);
             if (!interceptResult.proceed) {
-              return {
-                ...call,
-                __clawdstrike_blocked: true,
-                __clawdstrike_reason:
-                  interceptResult.decision.message ?? interceptResult.decision.reason ?? "denied",
-              };
+              throw new ClawdstrikeBlockedError(toolName, interceptResult.decision);
             }
 
             return call;

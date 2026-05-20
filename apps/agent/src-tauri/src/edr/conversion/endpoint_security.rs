@@ -22,8 +22,11 @@ pub(crate) fn endpoint_security_event_observation(
 ) -> Result<EndpointObservation, (StatusCode, String)> {
     let process = endpoint_security_event_process(event)?;
     let event_kind = endpoint_security_endpoint_event(event)?;
+    let timestamp = event.observed_at.unwrap_or_else(chrono::Utc::now);
     let observation_id = trimmed_owned(event.event_id.as_deref()).unwrap_or_else(|| {
         let index = index.to_string();
+        let timestamp = timestamp.to_rfc3339();
+        let sequence_hint = endpoint_security_event_sequence_hint(event);
         let primary = event
             .path
             .as_deref()
@@ -36,6 +39,8 @@ pub(crate) fn endpoint_security_event_observation(
                 event.kind.as_str(),
                 event.session_id.as_deref().unwrap_or_default(),
                 primary,
+                sequence_hint.as_deref().unwrap_or_default(),
+                timestamp.as_str(),
                 index.as_str(),
             ],
         )
@@ -43,7 +48,7 @@ pub(crate) fn endpoint_security_event_observation(
 
     Ok(EndpointObservation {
         observation_id,
-        timestamp: event.observed_at.unwrap_or_else(chrono::Utc::now),
+        timestamp,
         host_id: trimmed_owned(event.host_id.as_deref()),
         user_id: trimmed_owned(event.user_id.as_deref()),
         session_id: trimmed_owned(event.session_id.as_deref()),
@@ -213,6 +218,35 @@ pub(crate) fn endpoint_security_event_metadata(
     metadata
 }
 
+fn endpoint_security_event_sequence_hint(event: &EdrEndpointSecurityEvent) -> Option<String> {
+    for key in [
+        "endpointSecurityGlobalSeqNum",
+        "endpointSecurityGlobalSequence",
+        "endpointSecurityGlobalSequenceNumber",
+        "globalSeqNum",
+        "globalSequenceNumber",
+        "endpointSecuritySeqNum",
+        "endpointSecuritySequence",
+        "endpointSecuritySequenceNumber",
+        "seqNum",
+        "sequenceNumber",
+    ] {
+        let Some(value) = event.metadata.get(key) else {
+            continue;
+        };
+        if let Some(sequence) = value.as_u64() {
+            return Some(format!("{key}:{sequence}"));
+        }
+        if let Some(sequence) = value.as_i64() {
+            return Some(format!("{key}:{sequence}"));
+        }
+        if let Some(sequence) = value.as_str().and_then(|value| trimmed_owned(Some(value))) {
+            return Some(format!("{key}:{sequence}"));
+        }
+    }
+    None
+}
+
 pub(crate) fn endpoint_security_event_loss_fields(
     event: &EdrEndpointSecurityEvent,
 ) -> BTreeMap<String, serde_json::Value> {
@@ -379,4 +413,79 @@ pub(crate) fn bad_endpoint_security_event_request(
         StatusCode::BAD_REQUEST,
         format!("invalid EndpointSecurity event {event_id}: {message}"),
     )
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn process_exec_event(observed_at: &str) -> EdrEndpointSecurityEvent {
+        EdrEndpointSecurityEvent {
+            event_id: None,
+            kind: EdrEndpointSecurityEventKind::ProcessExec,
+            observed_at: Some(
+                chrono::DateTime::parse_from_rfc3339(observed_at)
+                    .expect("test timestamp")
+                    .with_timezone(&chrono::Utc),
+            ),
+            host_id: Some("host-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            process: None,
+            metadata: BTreeMap::new(),
+            pid: Some(42),
+            ppid: Some(1),
+            process_guid: Some("proc-1".to_string()),
+            parent_process_guid: None,
+            image: Some("/bin/zsh".to_string()),
+            args: vec!["-lc".to_string(), "echo ok".to_string()],
+            command_line: None,
+            cwd: Some("/tmp".to_string()),
+            path: None,
+            operation: None,
+            decision: None,
+            reason: None,
+            deadline_missed: None,
+            deadline_ms: None,
+            dropped_event_count: None,
+            deadline_miss_count: None,
+            full_disk_access: None,
+        }
+    }
+
+    #[test]
+    fn fallback_observation_id_includes_durable_timestamp() {
+        let first = endpoint_security_event_observation(
+            &process_exec_event("2026-05-20T12:00:00Z"),
+            0,
+        )
+        .expect("first observation");
+        let second = endpoint_security_event_observation(
+            &process_exec_event("2026-05-20T12:00:01Z"),
+            0,
+        )
+        .expect("second observation");
+
+        assert_ne!(first.observation_id, second.observation_id);
+    }
+
+    #[test]
+    fn fallback_observation_id_uses_provider_sequence_hint() {
+        let mut first = process_exec_event("2026-05-20T12:00:00Z");
+        first.metadata.insert(
+            "endpointSecurityGlobalSeqNum".to_string(),
+            serde_json::json!(1001),
+        );
+        let mut second = process_exec_event("2026-05-20T12:00:00Z");
+        second.metadata.insert(
+            "endpointSecurityGlobalSeqNum".to_string(),
+            serde_json::json!(1002),
+        );
+
+        let first = endpoint_security_event_observation(&first, 0).expect("first observation");
+        let second = endpoint_security_event_observation(&second, 0).expect("second observation");
+
+        assert_ne!(first.observation_id, second.observation_id);
+    }
 }

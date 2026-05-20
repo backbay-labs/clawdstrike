@@ -21,7 +21,7 @@ export { loadPolicy, loadPolicyFromString, PolicyLoadError } from "./policy/load
 export { validatePolicy } from "./policy/validator.js";
 // Receipt/Attestation
 export { ReceiptSigner } from "./receipt/signer.js";
-export type { DecisionReceipt, ReceiptSignerConfig } from "./receipt/types.js";
+export type { DecisionReceipt, ReceiptSignerConfig, ReceiptVerifyOptions } from "./receipt/types.js";
 // Security Prompt
 export { generateSecurityPrompt } from "./security-prompt.js";
 // Tools
