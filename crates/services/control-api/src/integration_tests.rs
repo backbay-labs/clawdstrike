@@ -7036,6 +7036,20 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
     }
 
     let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": "endpoint-1",
+            "name": "Duplicate Ack Endpoint",
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
     let (action_id, ack_token) = seed_ack_enabled_response_action(
         &harness.db,
         harness.tenant_id,
@@ -7045,6 +7059,15 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
         Some(chrono::Utc::now() + chrono::Duration::minutes(10)),
     )
     .await;
+    let execution_id = "duplicate_response_execution:test";
+    let (signed_receipt, local_receipt_hash) = response_ack_signed_receipt_fixture(
+        &keypair,
+        action_id,
+        "endpoint-1",
+        &ack_token,
+        "acknowledged",
+        execution_id,
+    );
 
     let first_ack = request_json(
         &harness.app,
@@ -7055,7 +7078,13 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
             "targetKind": "endpoint",
             "targetId": "endpoint-1",
             "status": "acknowledged",
-            "ackToken": &ack_token
+            "ackToken": &ack_token,
+            "rawPayload": {
+                "source": "clawdstrike-agent",
+                "localExecutionId": execution_id,
+                "localReceiptHash": local_receipt_hash,
+                "signedReceipt": signed_receipt
+            }
         })),
     )
     .await;
@@ -7188,8 +7217,10 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
     assert_eq!(detail_resp.1["action"]["status"], "acknowledged");
     assert_eq!(detail_resp.1["deliveries"][0]["status"], "acknowledged");
     assert_eq!(
-        detail_resp.1["acknowledgements"][0]["raw_payload"]["localReceiptHash"],
-        "0xagentreceipt"
+        detail_resp.1["acknowledgements"][0]["raw_payload"]["localReceiptHash"]
+            .as_str()
+            .expect("local receipt hash is persisted"),
+        local_receipt_hash
     );
 }
 

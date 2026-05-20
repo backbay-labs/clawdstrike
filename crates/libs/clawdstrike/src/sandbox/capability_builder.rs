@@ -57,6 +57,13 @@ impl CapabilityBuilder {
         // 1. Collect forbidden patterns FIRST (before any grants).
         //    On Linux (Landlock), once a path is granted it cannot be revoked.
         let forbidden_patterns = self.collect_forbidden_patterns();
+        let allowlist_enabled = self
+            .policy
+            .guards
+            .path_allowlist
+            .as_ref()
+            .map(|cfg| cfg.enabled)
+            .unwrap_or(false);
 
         // 2. System read paths -- skip forbidden (including parent dirs of forbidden files)
         for path in system_read_paths() {
@@ -83,6 +90,18 @@ impl CapabilityBuilder {
             if !path.exists() {
                 continue;
             }
+            if allowlist_enabled && path_covers_path(&path, &self.working_dir) {
+                warnings.push(TranslationWarning {
+                    guard: "PathAllowlistGuard".into(),
+                    message: format!(
+                        "Skipping system write path {} because it contains working directory {} while deny-by-default path allowlists are enabled",
+                        path.display(),
+                        self.working_dir.display()
+                    ),
+                    severity: WarningSeverity::Warning,
+                });
+                continue;
+            }
             if is_path_forbidden(&path, &forbidden_patterns) {
                 warnings.push(TranslationWarning {
                     guard: "ForbiddenPathGuard".into(),
@@ -104,13 +123,6 @@ impl CapabilityBuilder {
         // working directory and hoping later guards claw access back. The static
         // sandbox has to fail closed instead of widening access beyond policy.
         let wd_has_forbidden = self.working_dir_contains_forbidden(&forbidden_patterns);
-        let allowlist_enabled = self
-            .policy
-            .guards
-            .path_allowlist
-            .as_ref()
-            .map(|cfg| cfg.enabled)
-            .unwrap_or(false);
 
         if wd_has_forbidden {
             let is_home = dirs::home_dir()
@@ -458,6 +470,14 @@ fn expand_glob_to_existing(pattern: &str) -> Vec<PathBuf> {
         Ok(paths) => paths.filter_map(|r| r.ok()).collect(),
         Err(_) => vec![],
     }
+}
+
+fn path_covers_path(parent: &Path, child: &Path) -> bool {
+    let parent = parent
+        .canonicalize()
+        .unwrap_or_else(|_| parent.to_path_buf());
+    let child = child.canonicalize().unwrap_or_else(|_| child.to_path_buf());
+    child == parent || child.starts_with(parent)
 }
 
 /// Escape a path for embedding in a Seatbelt S-expression string.
