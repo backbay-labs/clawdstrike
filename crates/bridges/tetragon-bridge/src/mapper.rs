@@ -191,15 +191,15 @@ fn classify_kprobe_severity(kprobe: &proto::ProcessKprobe) -> Severity {
     for arg in &kprobe.args {
         if let Some(a) = &arg.arg {
             match a {
-                proto::kprobe_argument::Arg::PathArg(path) => {
-                    if SENSITIVE_PATHS.iter().any(|s| path.path.starts_with(s)) {
-                        return Severity::Critical;
-                    }
+                proto::kprobe_argument::Arg::PathArg(path)
+                    if SENSITIVE_PATHS.iter().any(|s| path.path.starts_with(s)) =>
+                {
+                    return Severity::Critical;
                 }
-                proto::kprobe_argument::Arg::FileArg(file) => {
-                    if SENSITIVE_PATHS.iter().any(|s| file.path.starts_with(s)) {
-                        return Severity::Critical;
-                    }
+                proto::kprobe_argument::Arg::FileArg(file)
+                    if SENSITIVE_PATHS.iter().any(|s| file.path.starts_with(s)) =>
+                {
+                    return Severity::Critical;
                 }
                 proto::kprobe_argument::Arg::SockArg(_sock) => {
                     // Network connect detected — medium baseline.

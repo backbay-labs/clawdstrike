@@ -1463,7 +1463,7 @@ pub async fn capability_status(
                 "broker capability status was not found",
             )
         })?;
-    executions.sort_by(|left, right| right.executed_at.cmp(&left.executed_at));
+    executions.sort_by_key(|right| std::cmp::Reverse(right.executed_at));
 
     Ok(Json(BrokerCapabilityDetailResponse {
         capability,
@@ -1528,7 +1528,7 @@ pub async fn revoke_capability(
                 "broker capability status was not found",
             )
         })?;
-    executions.sort_by(|left, right| right.executed_at.cmp(&left.executed_at));
+    executions.sort_by_key(|right| std::cmp::Reverse(right.executed_at));
 
     Ok(Json(BrokerCapabilityDetailResponse {
         capability,

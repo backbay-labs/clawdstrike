@@ -157,7 +157,7 @@ impl BrokerStateStore {
         for status in statuses {
             hydrated.push(self.apply_runtime_state(status).await);
         }
-        hydrated.sort_by(|left, right| right.issued_at.cmp(&left.issued_at));
+        hydrated.sort_by_key(|right| std::cmp::Reverse(right.issued_at));
         hydrated
     }
 
@@ -190,7 +190,7 @@ impl BrokerStateStore {
             .values()
             .map(|record| record.preview.clone())
             .collect::<Vec<_>>();
-        previews.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        previews.sort_by_key(|right| std::cmp::Reverse(right.created_at));
         previews
     }
 
@@ -272,7 +272,7 @@ impl BrokerStateStore {
             .values()
             .cloned()
             .collect::<Vec<_>>();
-        providers.sort_by(|left, right| right.frozen_at.cmp(&left.frozen_at));
+        providers.sort_by_key(|right| std::cmp::Reverse(right.frozen_at));
         providers
     }
 

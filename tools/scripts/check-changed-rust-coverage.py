@@ -152,6 +152,11 @@ DECLARATION_PREFIXES = (
     "static ",
 )
 FN_SIGNATURE_RE = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\b")
+DECLARATION_BLOCK_RE = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?(?:enum|struct)\b")
+
+
+def brace_delta(line: str) -> int:
+    return line.count("{") - line.count("}")
 
 
 def has_executable_rust_lines(path: str) -> bool:
@@ -161,6 +166,7 @@ def has_executable_rust_lines(path: str) -> bool:
 
     in_block_comment = False
     in_use_group = False
+    declaration_block_depth = 0
     pending_fn_signature = False
 
     with source_path.open("r", encoding="utf-8") as handle:
@@ -176,6 +182,10 @@ def has_executable_rust_lines(path: str) -> bool:
             if line.startswith("/*"):
                 if "*/" not in line:
                     in_block_comment = True
+                continue
+
+            if declaration_block_depth > 0:
+                declaration_block_depth += brace_delta(line)
                 continue
 
             if line.startswith("//") or line.startswith("#!") or line.startswith("#["):
@@ -202,6 +212,11 @@ def has_executable_rust_lines(path: str) -> bool:
                 if ";" in line:
                     continue
                 pending_fn_signature = True
+                continue
+
+            if DECLARATION_BLOCK_RE.match(line):
+                if "{" in line:
+                    declaration_block_depth = max(brace_delta(line), 0)
                 continue
 
             if line.startswith("impl "):

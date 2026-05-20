@@ -980,12 +980,13 @@ fn validate_policy_escalation(
                     }
                 }
             }
+            "guards.secret_leak.patterns" if child.guards.secret_leak.is_some() => {
+                return Err(PolicyScopingError::InvalidCondition(
+                    "escalation_prevention: cannot override secret_leak patterns".to_string(),
+                ));
+            }
             "guards.secret_leak.patterns" => {
-                if child.guards.secret_leak.is_some() {
-                    return Err(PolicyScopingError::InvalidCondition(
-                        "escalation_prevention: cannot override secret_leak patterns".to_string(),
-                    ));
-                }
+                // Locked field is unchanged.
             }
             _ => {
                 // Unknown field locks are ignored for now (conservative).
