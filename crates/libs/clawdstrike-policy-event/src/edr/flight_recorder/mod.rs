@@ -1504,19 +1504,19 @@ mod tests {
     use super::*;
     use crate::edr::{EndpointEvent, EndpointProcess};
 
-    fn unique_test_path(name: &str) -> PathBuf {
+    fn unique_test_path(name: &str) -> Result<PathBuf> {
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock")
+            .context("system clock before unix epoch")?
             .as_nanos();
-        std::env::temp_dir().join(format!("clawdstrike-flight-recorder-{name}-{nonce}.jsonl"))
+        Ok(std::env::temp_dir().join(format!("clawdstrike-flight-recorder-{name}-{nonce}.jsonl")))
     }
 
-    fn test_observation() -> EndpointObservation {
-        EndpointObservation {
+    fn test_observation() -> Result<EndpointObservation> {
+        Ok(EndpointObservation {
             observation_id: "obs-private-mode".to_string(),
             timestamp: DateTime::parse_from_rfc3339("2026-05-20T12:00:00Z")
-                .expect("timestamp")
+                .context("parse test timestamp")?
                 .with_timezone(&Utc),
             host_id: Some("host-1".to_string()),
             user_id: Some("user-1".to_string()),
@@ -1533,39 +1533,39 @@ mod tests {
                 env: BTreeMap::new(),
             },
             metadata: BTreeMap::new(),
-        }
+        })
     }
 
     #[cfg(unix)]
-    fn assert_private_mode(path: &Path) {
+    fn assert_private_mode(path: &Path) -> Result<()> {
         let mode = fs::metadata(path)
-            .unwrap_or_else(|err| panic!("metadata for {}: {err}", path.display()))
+            .with_context(|| format!("metadata for {}", path.display()))?
             .permissions()
             .mode()
             & 0o777;
         assert_eq!(mode, 0o600, "unexpected mode for {}", path.display());
+        Ok(())
     }
 
     #[cfg(unix)]
     #[test]
-    fn append_creates_private_log_and_sidecar_indexes() {
-        let path = unique_test_path("append");
-        let mut recorder = EndpointFlightRecorder::open(&path).expect("open recorder");
-        recorder
-            .append_observations(&[test_observation()])
-            .expect("append observation");
-        let (node_index_path, _) = recorder.read_graph_node_index().expect("graph node index");
-        let (edge_index_path, _) = recorder.read_graph_edge_index().expect("graph edge index");
+    fn append_creates_private_log_and_sidecar_indexes() -> Result<()> {
+        let path = unique_test_path("append")?;
+        let mut recorder = EndpointFlightRecorder::open(&path)?;
+        recorder.append_observations(&[test_observation()?])?;
+        let (node_index_path, _) = recorder.read_graph_node_index()?;
+        let (edge_index_path, _) = recorder.read_graph_edge_index()?;
         let history_index_path = endpoint_flight_recorder_index_path(&path);
 
-        assert_private_mode(&path);
-        assert_private_mode(&history_index_path);
-        assert_private_mode(&node_index_path);
-        assert_private_mode(&edge_index_path);
+        assert_private_mode(&path)?;
+        assert_private_mode(&history_index_path)?;
+        assert_private_mode(&node_index_path)?;
+        assert_private_mode(&edge_index_path)?;
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(history_index_path);
         let _ = fs::remove_file(node_index_path);
         let _ = fs::remove_file(edge_index_path);
+        Ok(())
     }
 }
