@@ -913,6 +913,10 @@ async fn validate_endpoint_ack_signed_receipt(
     context: &AckContext,
     ack: &AckSubmission,
 ) -> Result<(), ApiError> {
+    if context.action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str() {
+        return validate_policy_rule_diff_ack_payload(ack);
+    }
+
     if !requires_endpoint_ack_signed_receipt(&context.action, ack) {
         return Ok(());
     }
@@ -997,8 +1001,36 @@ fn requires_endpoint_ack_signed_receipt(
     ack: &AckSubmission,
 ) -> bool {
     action.target.kind.as_str() == "endpoint"
-        && action.action_type != ResponseActionType::PolicyRuleDiffValidation.as_str()
         && matches!(ack.ack_status, "acknowledged" | "rolled_back")
+}
+
+fn validate_policy_rule_diff_ack_payload(ack: &AckSubmission) -> Result<(), ApiError> {
+    if !matches!(ack.ack_status, "acknowledged") {
+        return Ok(());
+    }
+
+    let payload = ack
+        .raw_payload
+        .get("policyRuleDiffValidation")
+        .or_else(|| ack.raw_payload.get("policy_rule_diff_validation"))
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "acknowledgement raw_payload must include policyRuleDiffValidation".to_string(),
+            )
+        })?;
+
+    if payload.get("receipt").is_none() {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include receipt".to_string(),
+        ));
+    }
+    if payload.get("impact").is_none() {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include impact".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn validate_endpoint_ack_receipt_contract(
@@ -2885,6 +2917,81 @@ mod tests {
             Err(err) => err,
         };
         assert!(matches!(oversized_raw_payload, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn policy_rule_diff_ack_payload_requires_receipt_and_impact_for_success() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let missing_receipt = parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: Some(json!({
+                "policyRuleDiffValidation": {
+                    "impact": {
+                        "impactId": "impact-test"
+                    }
+                }
+            })),
+        })
+        .expect("ack payload parses");
+        let message = bad_request_message(
+            validate_policy_rule_diff_ack_payload(&missing_receipt).unwrap_err(),
+        );
+        assert!(message.contains("policyRuleDiffValidation acknowledgement must include receipt"));
+
+        let complete = parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: Some(json!({
+                "policyRuleDiffValidation": {
+                    "impact": {
+                        "impactId": "impact-test"
+                    },
+                    "receipt": {
+                        "receipt": {
+                            "receipt_id": "receipt-test"
+                        }
+                    }
+                }
+            })),
+        })
+        .expect("ack payload parses");
+        validate_policy_rule_diff_ack_payload(&complete)
+            .expect("complete policy rule-diff acknowledgement payload");
+
+        let failed_without_receipt = parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "failed".to_string(),
+            observed_at: None,
+            message: Some("local validation failed".to_string()),
+            resulting_state: None,
+            raw_payload: Some(json!({
+                "policyRuleDiffValidationError": {
+                    "message": "local validation failed"
+                }
+            })),
+        })
+        .expect("ack payload parses");
+        validate_policy_rule_diff_ack_payload(&failed_without_receipt)
+            .expect("failed policy rule-diff acknowledgement may omit receipt");
     }
 
     #[test]

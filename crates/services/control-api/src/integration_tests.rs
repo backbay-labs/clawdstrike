@@ -7133,7 +7133,7 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
     )
     .await;
     let execution_id = "response_execution:test";
-    let (signed_receipt, local_receipt_hash) = response_ack_signed_receipt_fixture(
+    let (signed_receipt, _local_receipt_hash) = response_ack_signed_receipt_fixture(
         &keypair,
         action_id,
         "endpoint-1",
@@ -7155,9 +7155,14 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
             "message": "endpoint execution receipt accepted",
             "resultingState": "collect_evidence:succeeded",
             "rawPayload": {
-                "source": "clawdstrike-agent",
-                "localExecutionId": execution_id,
-                "localReceiptHash": local_receipt_hash
+                "policyRuleDiffValidation": {
+                    "proposalId": "proposal-test",
+                    "validationPlanSha256": "sha256:plan",
+                    "endpointAgentId": "endpoint-1",
+                    "impact": {
+                        "impactId": "impact-test"
+                    }
+                }
             }
         })),
     )
@@ -7165,8 +7170,8 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
     assert_eq!(missing_receipt_resp.0, StatusCode::BAD_REQUEST);
     assert!(missing_receipt_resp.1["error"]
         .as_str()
-        .expect("missing signed receipt error")
-        .contains("signedReceipt"));
+        .expect("missing policy rule-diff receipt error")
+        .contains("policyRuleDiffValidation acknowledgement must include receipt"));
 
     let ack_resp = request_json(
         &harness.app,
@@ -7181,10 +7186,15 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
             "message": "endpoint execution receipt accepted",
             "resultingState": "collect_evidence:succeeded",
             "rawPayload": {
-                "source": "clawdstrike-agent",
-                "localExecutionId": execution_id,
-                "localReceiptHash": local_receipt_hash,
-                "signedReceipt": signed_receipt
+                "policyRuleDiffValidation": {
+                    "proposalId": "proposal-test",
+                    "validationPlanSha256": "sha256:plan",
+                    "endpointAgentId": "endpoint-1",
+                    "impact": {
+                        "impactId": "impact-test"
+                    },
+                    "receipt": signed_receipt
+                }
             }
         })),
     )
@@ -7208,10 +7218,11 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
     assert_eq!(detail_resp.1["action"]["status"], "acknowledged");
     assert_eq!(detail_resp.1["deliveries"][0]["status"], "acknowledged");
     assert_eq!(
-        detail_resp.1["acknowledgements"][0]["raw_payload"]["localReceiptHash"]
+        detail_resp.1["acknowledgements"][0]["raw_payload"]["policyRuleDiffValidation"]["receipt"]
+            ["receipt"]["receipt_id"]
             .as_str()
-            .expect("local receipt hash is persisted"),
-        local_receipt_hash
+            .expect("acknowledgement receipt is persisted"),
+        "receipt-response-ack-test"
     );
 }
 
