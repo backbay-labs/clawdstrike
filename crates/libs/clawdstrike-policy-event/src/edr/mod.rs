@@ -5,6 +5,8 @@
 //! models safe honey artifacts, and records local causal evidence without
 //! depending on a specific EDR transport.
 
+#![allow(dead_code, unused_imports)]
+
 pub mod action;
 pub mod actor;
 pub mod causal;
@@ -8436,23 +8438,15 @@ mod tests {
             let effect_key = effect_evidence.key.clone();
             *effect_evidence = EndpointReceiptEvidence::hashed(effect_key, "");
         }
-        let response_action_id = response_action_id_from_signed_response_fields(
-            empty_rollback_effect
-                .graph
-                .process_node_id
-                .as_deref()
-                .unwrap(),
-            empty_rollback_effect
-                .graph
-                .graph_slice_id
-                .as_deref()
-                .unwrap(),
-            &empty_rollback_effect.decision.action,
-            empty_rollback_effect.decision.ttl_seconds.unwrap(),
-        );
+        let response_action_id = empty_rollback_effect
+            .decision
+            .rollback_ref
+            .as_deref()
+            .and_then(|rollback_ref| rollback_ref.strip_prefix("rollback:"))
+            .unwrap();
         let rollback_id = response_rollback_id_from_signed_evidence(
             &empty_rollback_effect.evidence,
-            response_action_id.as_str(),
+            response_action_id,
             empty_rollback_effect
                 .decision
                 .rollback_ref

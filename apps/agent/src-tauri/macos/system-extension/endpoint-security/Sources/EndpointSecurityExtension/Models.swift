@@ -280,6 +280,7 @@ public struct AuthorizationEvent: Codable, Equatable {
         case latencyMs = "latency_ms"
         case deadlineMs = "deadline_ms"
         case notifyObserved = "notify_observed"
+        case observedAt = "observed_at"
     }
 }
 

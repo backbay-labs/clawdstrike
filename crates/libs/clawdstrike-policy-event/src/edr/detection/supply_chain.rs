@@ -266,29 +266,28 @@ impl SupplyChainRuntimeGuard {
                 path,
                 label,
                 operation,
-            } => {
-                if path_is_launch_persistence(path) {
-                    let mut evidence =
-                        vec![ev("path", path), ev("operation", format!("{operation:?}"))];
-                    if let Some(evidence_item) = opt_ev("label", label.as_deref()) {
-                        evidence.push(evidence_item);
-                    }
-                    findings.push(finding(
-                        observation,
-                        evidence,
-                        FindingRule {
-                            rule_id: "supply_chain.launch_persistence",
-                            title: "LaunchAgent or LaunchDaemon persistence changed",
-                            severity: DetectionSeverity::High,
-                            confidence: 0.84,
-                            description: "A launch persistence location was created or modified during endpoint activity.",
-                            mitre_attack: vec!["T1543.001"],
-                            tags: vec!["persistence", "supply_chain"],
-                            remediation: "Disable the launch item, preserve the plist, and trace the writing process back to its package or tool origin.",
-                        },
-                    ));
+            } if path_is_launch_persistence(path) => {
+                let mut evidence =
+                    vec![ev("path", path), ev("operation", format!("{operation:?}"))];
+                if let Some(evidence_item) = opt_ev("label", label.as_deref()) {
+                    evidence.push(evidence_item);
                 }
+                findings.push(finding(
+                    observation,
+                    evidence,
+                    FindingRule {
+                        rule_id: "supply_chain.launch_persistence",
+                        title: "LaunchAgent or LaunchDaemon persistence changed",
+                        severity: DetectionSeverity::High,
+                        confidence: 0.84,
+                        description: "A launch persistence location was created or modified during endpoint activity.",
+                        mitre_attack: vec!["T1543.001"],
+                        tags: vec!["persistence", "supply_chain"],
+                        remediation: "Disable the launch item, preserve the plist, and trace the writing process back to its package or tool origin.",
+                    },
+                ));
             }
+            EndpointEvent::LaunchPersistence { .. } => {}
             EndpointEvent::BrowserExtensionInstall {
                 browser,
                 extension_id,
