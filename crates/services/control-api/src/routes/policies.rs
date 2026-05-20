@@ -63,6 +63,9 @@ pub fn router() -> Router<AppState> {
 pub struct DeployPolicyRequest {
     pub policy_yaml: String,
     pub description: Option<String>,
+    #[serde(default)]
+    pub break_glass: bool,
+    pub break_glass_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -280,9 +283,8 @@ async fn deploy_policy(
     auth: AuthenticatedTenant,
     Json(req): Json<DeployPolicyRequest>,
 ) -> Result<Json<DeployPolicyResponse>, ApiError> {
-    if auth.role == "viewer" || auth.role == "member" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_policy_deployer(&auth)?;
+    let break_glass_reason = require_direct_policy_deploy_break_glass(&req)?;
 
     // Validate the policy YAML before it becomes tenant distribution state.
     policy_distribution::validate_policy_document(&req.policy_yaml)
@@ -309,10 +311,12 @@ async fn deploy_policy(
     tracing::info!(
         deployment_id = %deployment.deployment_id,
         tenant = %auth.slug,
+        actor = %auth.actor_id(),
+        break_glass_reason = %break_glass_reason,
         policy_version = active_policy.version,
         agents = deployment.agent_count,
         kv_write_failures = deployment.kv_write_failures,
-        "Policy deployed to tenant fleet"
+        "Break-glass policy deployed to tenant fleet"
     );
 
     Ok(Json(DeployPolicyResponse {
@@ -1636,7 +1640,7 @@ async fn approve_policy_proposal(
         ))
     })?;
     tx.commit().await.map_err(ApiError::Database)?;
-    let deployment = match distribute_active_policy_to_fleet(
+    let deployment = distribute_active_policy_to_fleet(
         &state,
         auth.tenant_id,
         &auth.slug,
@@ -1644,25 +1648,23 @@ async fn approve_policy_proposal(
         deployment_id,
     )
     .await
-    {
-        Ok(deployment) => Some(DeployPolicyResponse {
-            deployment_id: deployment.deployment_id,
-            tenant_slug: auth.slug.clone(),
-            nats_subject: deployment.nats_subject,
-            agent_count: deployment.agent_count,
-            kv_write_failures: deployment.kv_write_failures,
-        }),
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                deployment_id = %deployment_id,
-                tenant = %auth.slug,
-                policy_version = active_policy.version,
-                "Policy proposal deployment persisted but fleet distribution failed"
-            );
-            None
-        }
-    };
+    .map_err(|err| {
+        tracing::warn!(
+            error = %err,
+            deployment_id = %deployment_id,
+            tenant = %auth.slug,
+            policy_version = active_policy.version,
+            "Policy proposal deployment persisted but fleet distribution failed"
+        );
+        err
+    })?;
+    let deployment = Some(DeployPolicyResponse {
+        deployment_id: deployment.deployment_id,
+        tenant_slug: auth.slug.clone(),
+        nats_subject: deployment.nats_subject,
+        agent_count: deployment.agent_count,
+        kv_write_failures: deployment.kv_write_failures,
+    });
 
     Ok(Json(ApprovePolicyProposalResponse {
         proposal: proposal_response_from_row(row, &auth.slug)?,
@@ -1745,6 +1747,7 @@ async fn distribute_active_policy_to_fleet(
             );
         }
     }
+    ensure_policy_distribution_complete(kv_write_failures, agent_count, deployment_id)?;
 
     // Best-effort compatibility broadcast for legacy subscribers.
     let subject = policy_distribution::policy_update_subject(tenant_slug);
@@ -1906,6 +1909,37 @@ fn ensure_policy_deployer(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
         return Ok(());
     }
     Err(ApiError::Forbidden)
+}
+
+fn require_direct_policy_deploy_break_glass(req: &DeployPolicyRequest) -> Result<&str, ApiError> {
+    if !req.break_glass {
+        return Err(ApiError::Conflict(
+            "direct policy deployment bypasses proposal simulation receipts; use /api/v1/policies/proposals or set break_glass=true with break_glass_reason for emergency recovery"
+                .to_string(),
+        ));
+    }
+    req.break_glass_reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "break_glass_reason is required for direct policy deployment".to_string(),
+            )
+        })
+}
+
+fn ensure_policy_distribution_complete(
+    kv_write_failures: i64,
+    agent_count: i64,
+    deployment_id: Uuid,
+) -> Result<(), ApiError> {
+    if kv_write_failures == 0 {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(format!(
+        "policy deployment {deployment_id} failed to write effective policy KV for {kv_write_failures} of {agent_count} agents"
+    )))
 }
 
 fn append_policy_proposal_approval_note(
@@ -3090,6 +3124,71 @@ mod tests {
     #[test]
     fn policy_sync_key_is_stable() {
         assert_eq!(policy_distribution::POLICY_SYNC_KEY, "policy.yaml");
+    }
+
+    fn direct_deploy_request(break_glass: bool, reason: Option<&str>) -> DeployPolicyRequest {
+        DeployPolicyRequest {
+            policy_yaml: "version: \"1.0.0\"\nrules: []\n".to_string(),
+            description: None,
+            break_glass,
+            break_glass_reason: reason.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_requires_break_glass_flag() {
+        let req = direct_deploy_request(false, Some("emergency recovery"));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Err(ApiError::Conflict(message)) => {
+                assert!(message.contains("proposal simulation receipts"));
+            }
+            Ok(_) => panic!("direct deploy without break_glass unexpectedly succeeded"),
+            Err(err) => panic!("unexpected direct deploy error: {err}"),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_requires_break_glass_reason() {
+        let req = direct_deploy_request(true, Some("   "));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Err(ApiError::BadRequest(message)) => {
+                assert!(message.contains("break_glass_reason"));
+            }
+            Ok(_) => panic!("direct deploy without reason unexpectedly succeeded"),
+            Err(err) => panic!("unexpected direct deploy error: {err}"),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_accepts_explicit_break_glass_reason() {
+        let req = direct_deploy_request(true, Some("  emergency recovery  "));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Ok(reason) => assert_eq!(reason, "emergency recovery"),
+            Err(err) => panic!("direct deploy break-glass rejected valid reason: {err}"),
+        }
+    }
+
+    #[test]
+    fn policy_distribution_rejects_partial_kv_failures() {
+        match ensure_policy_distribution_complete(2, 5, Uuid::from_u128(42)) {
+            Err(ApiError::Conflict(message)) => {
+                assert!(message.contains("failed to write effective policy KV"));
+                assert!(message.contains("2 of 5 agents"));
+            }
+            Ok(_) => panic!("partial KV distribution unexpectedly succeeded"),
+            Err(err) => panic!("unexpected policy distribution error: {err}"),
+        }
+    }
+
+    #[test]
+    fn policy_distribution_allows_complete_kv_distribution() {
+        match ensure_policy_distribution_complete(0, 5, Uuid::from_u128(42)) {
+            Ok(()) => {}
+            Err(err) => panic!("complete KV distribution rejected: {err}"),
+        }
     }
 
     fn proposal_row_with_impact(impact: serde_json::Value) -> PolicyProposalRow {

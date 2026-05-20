@@ -108,7 +108,9 @@ async fn policies_deploy_and_enroll_backfills_policy_kv_bucket() {
         Some(&harness.api_key),
         Some(serde_json::json!({
             "policy_yaml": policy_yaml,
-            "description": "integration-test"
+            "description": "integration-test",
+            "break_glass": true,
+            "break_glass_reason": "integration test seeds active policy before enrollment"
         })),
     )
     .await;

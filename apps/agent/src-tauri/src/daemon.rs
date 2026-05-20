@@ -826,15 +826,11 @@ impl PolicyCache {
         let path_for_log = path.clone();
         let body_clone = body.clone();
         tokio::task::spawn_blocking(move || {
-            crate::security::fs::write_private_atomic(
+            write_policy_cache_generation(
                 &path,
                 body_clone.as_bytes(),
-                "policy cache file",
-            )?;
-            crate::security::fs::write_private_atomic(
                 &manifest_path,
                 &manifest_bytes,
-                "policy cache manifest",
             )?;
             Ok::<_, anyhow::Error>(())
         })
@@ -904,6 +900,57 @@ impl PolicyCache {
 fn read_policy_cache_manifest(path: &Path) -> Option<PolicyCacheManifest> {
     let raw = std::fs::read(path).ok()?;
     serde_json::from_slice(&raw).ok()
+}
+
+fn write_policy_cache_generation(
+    policy_path: &Path,
+    policy_bytes: &[u8],
+    manifest_path: &Path,
+    manifest_bytes: &[u8],
+) -> Result<()> {
+    let previous_policy = std::fs::read(policy_path).ok();
+    crate::security::fs::write_private_atomic(policy_path, policy_bytes, "policy cache file")?;
+
+    if let Err(err) = crate::security::fs::write_private_atomic(
+        manifest_path,
+        manifest_bytes,
+        "policy cache manifest",
+    ) {
+        if let Err(rollback_err) =
+            rollback_policy_cache_file(policy_path, previous_policy.as_deref())
+        {
+            anyhow::bail!(
+                "policy cache manifest write failed after policy file write: {err}; rollback failed: {rollback_err}"
+            );
+        }
+        return Err(err).with_context(|| {
+            format!(
+                "Policy cache manifest commit failed for {}; rolled back policy cache file {}",
+                manifest_path.display(),
+                policy_path.display()
+            )
+        });
+    }
+
+    Ok(())
+}
+
+fn rollback_policy_cache_file(policy_path: &Path, previous_policy: Option<&[u8]>) -> Result<()> {
+    if let Some(previous_policy) = previous_policy {
+        crate::security::fs::write_private_atomic(
+            policy_path,
+            previous_policy,
+            "policy cache rollback file",
+        )
+    } else {
+        match std::fs::remove_file(policy_path) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err).with_context(|| {
+                format!("Failed to remove partial policy cache file {policy_path:?}")
+            }),
+        }
+    }
 }
 
 fn parse_cached_policy_version(policy_yaml: &str) -> Option<String> {
@@ -2457,6 +2504,56 @@ mod tests {
         server.abort();
         let _ = std::fs::remove_file(cache.cache_path);
         let _ = std::fs::remove_file(cache.manifest_path);
+    }
+
+    #[test]
+    fn policy_cache_generation_rolls_back_policy_file_when_manifest_commit_fails() {
+        let dir = std::env::temp_dir().join(format!(
+            "clawdstrike-policy-cache-rollback-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir)
+            .unwrap_or_else(|err| panic!("create policy cache rollback dir: {err}"));
+        let policy_path = dir.join("policy.yaml");
+        let manifest_path = dir.join("manifest.json");
+        let original_policy = b"version: fleet-v2\npolicy_epoch: 20\nrules: []\n";
+        crate::security::fs::write_private_atomic(
+            &policy_path,
+            original_policy,
+            "test policy cache file",
+        )
+        .unwrap_or_else(|err| panic!("write original policy cache: {err}"));
+        crate::security::fs::write_private_atomic(
+            &manifest_path,
+            br#"{"schema_version":1,"policy_epoch":20}"#,
+            "test policy cache manifest",
+        )
+        .unwrap_or_else(|err| panic!("write original policy cache manifest: {err}"));
+
+        std::fs::remove_file(&manifest_path)
+            .unwrap_or_else(|err| panic!("remove manifest before failure injection: {err}"));
+        std::fs::create_dir(&manifest_path)
+            .unwrap_or_else(|err| panic!("create manifest collision directory: {err}"));
+
+        let err = match write_policy_cache_generation(
+            &policy_path,
+            b"version: fleet-v3\npolicy_epoch: 21\nrules: []\n",
+            &manifest_path,
+            br#"{"schema_version":1,"policy_epoch":21}"#,
+        ) {
+            Ok(()) => panic!("manifest collision sync unexpectedly succeeded"),
+            Err(err) => err,
+        };
+        let error = err.to_string();
+        assert!(
+            error.contains("rolled back policy cache file"),
+            "unexpected manifest failure error: {error}"
+        );
+        let disk_policy = std::fs::read(&policy_path)
+            .unwrap_or_else(|err| panic!("read rolled back policy cache: {err}"));
+        assert_eq!(disk_policy, original_policy);
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]

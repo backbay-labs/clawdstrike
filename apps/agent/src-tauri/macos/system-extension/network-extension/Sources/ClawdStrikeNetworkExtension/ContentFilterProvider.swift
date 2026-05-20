@@ -466,7 +466,12 @@ public final class NetworkExtensionContentFilterRuntime {
 
     public func evaluate(target: NetworkExtensionFlowTarget, now: Date = Date()) -> NetworkExtensionFlowDecision {
         lock.lock()
-        let decision = policy?.decision(for: target, now: now) ?? .allow
+        let decision: NetworkExtensionFlowDecision
+        if let policy, policySynced, policy.enforcementReady {
+            decision = policy.decision(for: target, now: now)
+        } else {
+            decision = failClosedDecision(target: target, now: now, reason: "policy_not_enforcing")
+        }
         lock.unlock()
         return decision
     }
@@ -498,11 +503,13 @@ public final class NetworkExtensionContentFilterRuntime {
 
         lock.lock()
         counters.flowsObserved += 1
-        let decision = target
-            .flatMap { policy?.decision(for: $0, now: now) }
-            ?? .allow
-        if policySynced, policy?.enforcementReady == true {
+        let decision: NetworkExtensionFlowDecision
+        if let target, let policy, policySynced, policy.enforcementReady {
+            decision = policy.decision(for: target, now: now)
             lastHealthyAt = now
+        } else {
+            let reason = target == nil ? "flow_target_unresolved" : "policy_not_enforcing"
+            decision = failClosedDecision(target: target, now: now, reason: reason)
         }
         if case .block = decision {
             counters.flowsBlocked += 1
@@ -510,6 +517,23 @@ public final class NetworkExtensionContentFilterRuntime {
         lock.unlock()
 
         return decision
+    }
+
+    private func failClosedDecision(
+        target: NetworkExtensionFlowTarget?,
+        now: Date,
+        reason: String
+    ) -> NetworkExtensionFlowDecision {
+        counters.droppedVerdicts += 1
+        degradedReasons = [reason]
+        lastError = reason
+        return .block(NetworkExtensionEgressRestriction(
+            restrictionID: "clawdstrike_fail_closed",
+            actionID: "clawdstrike_fail_closed",
+            executionID: "clawdstrike_fail_closed",
+            target: target.map { "\($0.host):\($0.port)" } ?? "unresolved-flow-target",
+            expiresAt: now.addingTimeInterval(60)
+        ))
     }
 
     public func snapshot(
@@ -782,10 +806,10 @@ public final class ClawdStrikeContentFilterDataProvider: NEFilterDataProvider {
         guard let hostEndpoint = socketFlow.remoteEndpoint as? NWHostEndpoint else {
             return nil
         }
-        return NetworkExtensionFlowTarget(
-            host: hostEndpoint.hostname,
-            port: Int(hostEndpoint.port)
-        )
+        guard let port = Int(hostEndpoint.port) else {
+            return nil
+        }
+        return NetworkExtensionFlowTarget(host: hostEndpoint.hostname, port: port)
     }
 
     private static func target(from endpoint: Network.NWEndpoint) -> NetworkExtensionFlowTarget? {

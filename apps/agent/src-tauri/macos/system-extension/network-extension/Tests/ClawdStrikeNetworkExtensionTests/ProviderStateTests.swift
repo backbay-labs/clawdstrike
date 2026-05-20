@@ -492,6 +492,99 @@ final class ProviderStateTests: XCTestCase {
         )
     }
 
+    func testContentFilterRuntimeFailsClosedWithoutPolicy() throws {
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(host: "missing-policy.example.invalid", port: 443),
+            now: now
+        )
+
+        guard case .block(let restriction) = decision else {
+            return XCTFail("missing policy must block")
+        }
+        XCTAssertEqual(restriction.target, "missing-policy.example.invalid:443")
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+        XCTAssertFalse(snapshot.policySynced)
+        XCTAssertFalse(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
+        XCTAssertEqual(snapshot.lastError, "policy_not_enforcing")
+    }
+
+    func testContentFilterRuntimeFailsClosedForUnresolvedTarget() throws {
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        runtime.updatePolicy(NetworkExtensionEgressPolicy(restrictions: [
+            NetworkExtensionEgressRestriction(
+                restrictionID: "restriction-active",
+                actionID: "action-active",
+                executionID: "execution-active",
+                target: "configured.example.invalid:443",
+                expiresAt: now.addingTimeInterval(60)
+            ),
+        ]))
+
+        let decision = runtime.recordFlow(target: nil, now: now)
+
+        guard case .block(let restriction) = decision else {
+            return XCTFail("unresolved flow target must block")
+        }
+        XCTAssertEqual(restriction.target, "unresolved-flow-target")
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertTrue(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
+        XCTAssertEqual(snapshot.lastError, "flow_target_unresolved")
+    }
+
+    func testContentFilterRuntimeFailsClosedAfterReloadFailure() throws {
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-missing-\(UUID().uuidString).json")
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: missingURL)
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+
+        XCTAssertFalse(runtime.requestPolicyReloadFromHostApp(
+            requestID: "reload-missing-policy",
+            policySnapshotPath: missingURL.path,
+            generation: 7
+        ))
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(host: "reload-failed.example.invalid", port: 443),
+            now: now
+        )
+
+        guard case .block(let restriction) = decision else {
+            return XCTFail("reload failure must block")
+        }
+        XCTAssertEqual(restriction.target, "reload-failed.example.invalid:443")
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+        XCTAssertFalse(snapshot.policySynced)
+        XCTAssertFalse(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.remediationRequests, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
+    }
+
     func testProviderCommandReloadPolicyRefreshesWatchedSnapshotAndReturnsCounters() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("clawdstrike-ne-provider-command-\(UUID().uuidString).json")

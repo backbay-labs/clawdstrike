@@ -234,10 +234,14 @@ pub(crate) struct AgentApiState {
     pub(crate) edr_honey_registry: Arc<Mutex<EndpointHoneyRegistry>>,
     pub(crate) edr_evidence_bundle_store: Arc<Mutex<EndpointEvidenceBundleStore>>,
     pub(crate) edr_response_execution_ledger: Arc<Mutex<EndpointResponseExecutionLedger>>,
-    pub(crate) edr_response_acknowledgement_ledger: Arc<Mutex<EndpointResponseAcknowledgementLedger>>,
-    pub(crate) edr_control_ack_postback_retry_ledger: Arc<Mutex<EndpointControlAckPostbackRetryLedger>>,
-    pub(crate) edr_control_archive_upload_retry_ledger: Arc<Mutex<EndpointControlArchiveUploadRetryLedger>>,
-    pub(crate) edr_control_receipt_upload_retry_ledger: Arc<Mutex<EndpointControlReceiptUploadRetryLedger>>,
+    pub(crate) edr_response_acknowledgement_ledger:
+        Arc<Mutex<EndpointResponseAcknowledgementLedger>>,
+    pub(crate) edr_control_ack_postback_retry_ledger:
+        Arc<Mutex<EndpointControlAckPostbackRetryLedger>>,
+    pub(crate) edr_control_archive_upload_retry_ledger:
+        Arc<Mutex<EndpointControlArchiveUploadRetryLedger>>,
+    pub(crate) edr_control_receipt_upload_retry_ledger:
+        Arc<Mutex<EndpointControlReceiptUploadRetryLedger>>,
     pub(crate) edr_fleet_hunt_event_outbox: Arc<Mutex<EndpointFleetHuntEventOutbox>>,
     pub(crate) edr_egress_restriction_ledger: Arc<Mutex<EndpointEgressRestrictionLedger>>,
     pub(crate) edr_staged_detection_ledger: Arc<Mutex<EndpointStagedDetectionLedger>>,
@@ -1918,7 +1922,6 @@ pub(crate) struct AgentHealthResponse {
     version: &'static str,
 }
 
-
 #[derive(Debug, Deserialize)]
 struct DaemonAgentStatusResponse {
     endpoints: Vec<DaemonEndpointStatus>,
@@ -2224,80 +2227,9 @@ struct DiagnosticsBundleResponse {
     generated_at: String,
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // identity_filter_matches moved to crate::edr::queries::causal
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // PendingFindingGroup moved to crate::edr::queries::finding_groups
-
-
 
 #[derive(Debug, Serialize)]
 struct AgentPolicyCheckResponse {
@@ -2306,82 +2238,7 @@ struct AgentPolicyCheckResponse {
     receipt: SignedReceipt,
 }
 
-
-
-
-
-
-
-
 // PendingGraphSearchMatch moved to crate::edr::queries::graph_search
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 pub(crate) async fn response_execution_record_with_attribution(
     state: &AgentApiState,
@@ -2428,23 +2285,6 @@ async fn hydrate_response_execution_record_attribution(
     Ok(())
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct StoredEndpointEvidenceBundle {
@@ -2453,28 +2293,6 @@ pub(crate) struct StoredEndpointEvidenceBundle {
     pub(crate) byte_count: usize,
     pub(crate) graph: CausalGraph,
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct ControlStoreReceiptRequest {
@@ -2497,8 +2315,6 @@ pub(crate) struct ControlStoreReceiptRequest {
 pub(crate) struct ControlBatchStoreReceiptsRequest {
     pub(crate) receipts: Vec<ControlStoreReceiptRequest>,
 }
-
-
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
@@ -2523,18 +2339,6 @@ pub(crate) struct EndpointReceiptIndexRecord {
     pub(crate) byte_offset: u64,
     pub(crate) byte_len: u64,
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 fn default_apply_integrations_changes() -> bool {
     true
@@ -3528,7 +3332,10 @@ async fn agent_policy_check(
     }))
 }
 
-pub(crate) fn local_stable_id<'a>(prefix: &str, parts: impl IntoIterator<Item = &'a str>) -> String {
+pub(crate) fn local_stable_id<'a>(
+    prefix: &str,
+    parts: impl IntoIterator<Item = &'a str>,
+) -> String {
     let mut material = String::from(prefix);
     for part in parts {
         material.push('\0');
@@ -4560,7 +4367,10 @@ pub(crate) fn resolve_graph_root_from_selector(
     resolve_graph_root(root_node_id, process.as_ref())
 }
 
-pub(crate) fn bounded_graph_depth(field: &str, depth: Option<usize>) -> Result<usize, (StatusCode, String)> {
+pub(crate) fn bounded_graph_depth(
+    field: &str,
+    depth: Option<usize>,
+) -> Result<usize, (StatusCode, String)> {
     let depth = depth.unwrap_or(EDR_MAX_CAUSAL_SUBGRAPH_DEPTH);
     if depth <= EDR_MAX_CAUSAL_SUBGRAPH_DEPTH {
         return Ok(depth);
@@ -4931,6 +4741,7 @@ pub(crate) async fn build_policy_delta_apply_enforcement_proof(
         daemon_restart_requested,
         provider_ack_timeout_ms,
     } = input;
+    let provider_ack_timeout_ms = effective_macos_provider_ack_timeout_ms(provider_ack_timeout_ms);
     let mut daemon_restarted = false;
     let mut daemon_restart_error = None;
     if daemon_restart_requested {
@@ -4990,12 +4801,16 @@ pub(crate) async fn build_policy_delta_apply_enforcement_proof(
         &receipt_evidence,
     )
     .await?;
-    let degraded_provider_receipts = emit_edr_provider_degradation_receipts(
-        state.as_ref(),
-        local_policy.clone(),
-        sensor_state.clone(),
-    )
-    .await?;
+    let degraded_provider_receipts = if macos_provider_enforcement_applicable() {
+        emit_edr_provider_degradation_receipts(
+            state.as_ref(),
+            local_policy.clone(),
+            sensor_state.clone(),
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
 
     Ok(EdrPolicyDeltaApplyEnforcementProof {
         policy_synced_to_disk: true,
@@ -5018,10 +4833,23 @@ pub(crate) async fn build_policy_delta_apply_enforcement_proof(
     })
 }
 
+fn macos_provider_enforcement_applicable() -> bool {
+    cfg!(target_os = "macos")
+}
+
+fn effective_macos_provider_ack_timeout_ms(timeout_ms: u64) -> u64 {
+    if macos_provider_enforcement_applicable() {
+        timeout_ms
+    } else {
+        0
+    }
+}
+
 pub(crate) async fn refresh_macos_provider_status(
     state: &Arc<AgentApiState>,
     timeout_ms: u64,
 ) -> EdrProviderStatusRefreshResult {
+    let timeout_ms = effective_macos_provider_ack_timeout_ms(timeout_ms);
     if timeout_ms == 0 {
         return EdrProviderStatusRefreshResult {
             requested: false,
@@ -5088,6 +4916,20 @@ async fn wait_for_provider_policy_acknowledgements(
     Vec<EdrProviderPolicyAcknowledgement>,
     EdrProviderAcknowledgementPoll,
 ) {
+    if !macos_provider_enforcement_applicable() {
+        return (
+            CombinedSystemExtensionStatus::default(),
+            Vec::new(),
+            EdrProviderAcknowledgementPoll {
+                requested: false,
+                timeout_ms: 0,
+                elapsed_ms: 0,
+                attempts: 0,
+                satisfied: true,
+            },
+        );
+    }
+
     let started = Instant::now();
     let timeout = Duration::from_millis(timeout_ms);
     let mut attempts = 0u64;
@@ -5690,7 +5532,10 @@ pub(crate) fn policy_delta_source_context_evidence_value<T: Serialize>(value: &T
         .unwrap_or_else(|| "null".to_string())
 }
 
-pub(crate) fn apply_policy_delta_patch_to_policy(current_bytes: &[u8], patch: &Value) -> Result<Vec<u8>> {
+pub(crate) fn apply_policy_delta_patch_to_policy(
+    current_bytes: &[u8],
+    patch: &Value,
+) -> Result<Vec<u8>> {
     let current_yaml: serde_yaml::Value =
         serde_yaml::from_slice(current_bytes).context("parse current policy yaml")?;
     let mut current_json =
@@ -6035,7 +5880,10 @@ pub(crate) fn validate_response_reason(
     ))
 }
 
-pub(crate) fn default_response_action_reason(action: &EndpointDecisionAction, dry_run: bool) -> &'static str {
+pub(crate) fn default_response_action_reason(
+    action: &EndpointDecisionAction,
+    dry_run: bool,
+) -> &'static str {
     if dry_run {
         return "endpoint response dry run";
     }
@@ -6979,7 +6827,13 @@ async fn rollback_egress_restrictions_after_failed_reload(
 fn ensure_network_extension_reload_proof_succeeded(
     proof: &NetworkExtensionReloadRequestProof,
 ) -> Result<(), String> {
-    if proof.requested && proof.saved && proof.error.is_none() {
+    if proof.requested
+        && proof.saved
+        && proof.error.is_none()
+        && proof.provider_reload_matched
+        && proof.provider_policy_synced == Some(true)
+        && proof.provider_enforcement_ready == Some(true)
+    {
         return Ok(());
     }
     let reason = proof
@@ -6988,8 +6842,14 @@ fn ensure_network_extension_reload_proof_succeeded(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("reload request was not acknowledged by the provider");
     Err(format!(
-        "requested={}, saved={}, generation={}, reason={reason}",
-        proof.requested, proof.saved, proof.generation
+        "requested={}, saved={}, observed={}, matched={}, policy_synced={:?}, enforcement_ready={:?}, generation={}, reason={reason}",
+        proof.requested,
+        proof.saved,
+        proof.provider_reload_observed,
+        proof.provider_reload_matched,
+        proof.provider_policy_synced,
+        proof.provider_enforcement_ready,
+        proof.generation
     ))
 }
 
@@ -7062,6 +6922,7 @@ async fn request_policy_delta_network_extension_reload(
     settings: &Settings,
     timeout_ms: u64,
 ) -> NetworkExtensionReloadRequestProof {
+    let timeout_ms = effective_macos_provider_ack_timeout_ms(timeout_ms);
     let generation = network_extension_reload_generation(chrono::Utc::now());
     let policy_path = settings.policy_path.clone();
     if timeout_ms == 0 {
@@ -7071,6 +6932,16 @@ async fn request_policy_delta_network_extension_reload(
             request_id: None,
             policy_snapshot_path: policy_path.display().to_string(),
             generation,
+            provider_reload_observed: false,
+            provider_reload_matched: false,
+            provider_reload_request_id_matches: false,
+            provider_reload_generation_matches: false,
+            provider_reload_policy_snapshot_path_matches: false,
+            provider_reloaded: None,
+            provider_policy_synced: None,
+            provider_enforcement_ready: None,
+            provider_reload_elapsed_ms: 0,
+            provider_reload_attempts: 0,
             error: None,
         };
     }
@@ -7097,14 +6968,30 @@ async fn request_network_extension_reload_for_path(
         .request_network_extension_reload(policy_snapshot_path, generation, timeout)
         .await
     {
-        Ok(result) => NetworkExtensionReloadRequestProof {
-            requested: result.requested,
-            saved: result.saved,
-            request_id: Some(result.request_id),
-            policy_snapshot_path: result.policy_snapshot_path,
-            generation: result.generation,
-            error: None,
-        },
+        Ok(result) => {
+            let mut proof = NetworkExtensionReloadRequestProof {
+                requested: result.requested,
+                saved: result.saved,
+                request_id: Some(result.request_id),
+                policy_snapshot_path: result.policy_snapshot_path,
+                generation: result.generation,
+                provider_reload_observed: false,
+                provider_reload_matched: false,
+                provider_reload_request_id_matches: false,
+                provider_reload_generation_matches: false,
+                provider_reload_policy_snapshot_path_matches: false,
+                provider_reloaded: None,
+                provider_policy_synced: None,
+                provider_enforcement_ready: None,
+                provider_reload_elapsed_ms: 0,
+                provider_reload_attempts: 0,
+                error: None,
+            };
+            if proof.requested && proof.saved {
+                wait_for_network_extension_reload_delivery(state, &mut proof, timeout).await;
+            }
+            proof
+        }
         Err(err) => {
             tracing::warn!(
                 error = %err,
@@ -7119,10 +7006,93 @@ async fn request_network_extension_reload_for_path(
                 request_id: None,
                 policy_snapshot_path: policy_snapshot_path_display,
                 generation,
+                provider_reload_observed: false,
+                provider_reload_matched: false,
+                provider_reload_request_id_matches: false,
+                provider_reload_generation_matches: false,
+                provider_reload_policy_snapshot_path_matches: false,
+                provider_reloaded: None,
+                provider_policy_synced: None,
+                provider_enforcement_ready: None,
+                provider_reload_elapsed_ms: 0,
+                provider_reload_attempts: 0,
                 error: Some(err.to_string()),
             }
         }
     }
+}
+
+async fn wait_for_network_extension_reload_delivery(
+    state: &AgentApiState,
+    proof: &mut NetworkExtensionReloadRequestProof,
+    timeout: Duration,
+) {
+    let started = Instant::now();
+    let mut attempts = 0u64;
+
+    loop {
+        attempts = attempts.saturating_add(1);
+        let elapsed = started.elapsed();
+        let remaining = timeout.saturating_sub(elapsed);
+        let status = match state
+            .macos_host
+            .request_refresh(remaining.min(EDR_PROVIDER_ACK_POLL_INTERVAL))
+            .await
+        {
+            Ok(status) => status,
+            Err(_) => state.macos_host.snapshot().await,
+        };
+        update_network_extension_reload_delivery(proof, &status, started.elapsed(), attempts);
+
+        if proof.provider_reload_matched || started.elapsed() >= timeout {
+            return;
+        }
+
+        let remaining = timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return;
+        }
+        tokio::time::sleep(remaining.min(EDR_PROVIDER_ACK_POLL_INTERVAL)).await;
+    }
+}
+
+fn update_network_extension_reload_delivery(
+    proof: &mut NetworkExtensionReloadRequestProof,
+    status: &CombinedSystemExtensionStatus,
+    elapsed: Duration,
+    attempts: u64,
+) {
+    let provider = &status.network_extension;
+    let observation = provider.last_reload_observation.as_ref();
+    let request_id_matches = observation
+        .and_then(|observation| observation.request_id.as_deref())
+        .zip(proof.request_id.as_deref())
+        .is_some_and(|(observed, expected)| observed == expected);
+    let generation_matches = observation
+        .and_then(|observation| observation.generation)
+        .is_some_and(|observed| observed == proof.generation);
+    let policy_snapshot_path_matches = observation
+        .and_then(|observation| observation.policy_snapshot_path.as_deref())
+        .is_some_and(|observed| observed == proof.policy_snapshot_path);
+    let provider_reloaded = observation.and_then(|observation| observation.reloaded);
+    proof.provider_reload_observed = observation.is_some();
+    proof.provider_reload_request_id_matches = request_id_matches;
+    proof.provider_reload_generation_matches = generation_matches;
+    proof.provider_reload_policy_snapshot_path_matches = policy_snapshot_path_matches;
+    proof.provider_reloaded = provider_reloaded;
+    proof.provider_policy_synced = provider.policy_synced;
+    proof.provider_enforcement_ready = provider.enforcement_ready;
+    proof.provider_reload_elapsed_ms = elapsed.as_millis().min(u128::from(u64::MAX)) as u64;
+    proof.provider_reload_attempts = attempts;
+    proof.provider_reload_matched = proof.requested
+        && proof.saved
+        && proof.error.is_none()
+        && request_id_matches
+        && generation_matches
+        && policy_snapshot_path_matches
+        && provider_reloaded == Some(true)
+        && provider.policy_synced == Some(true)
+        && provider.enforcement_ready == Some(true);
 }
 
 fn network_extension_reload_generation(now: chrono::DateTime<chrono::Utc>) -> u64 {
@@ -10264,7 +10234,9 @@ fn redact_developer_activity_metadata(
     redact_endpoint_observation_metadata(metadata)
 }
 
-pub(crate) fn redact_endpoint_observations(observations: &[EndpointObservation]) -> Vec<EndpointObservation> {
+pub(crate) fn redact_endpoint_observations(
+    observations: &[EndpointObservation],
+) -> Vec<EndpointObservation> {
     observations
         .iter()
         .map(redact_endpoint_observation)
@@ -10653,7 +10625,9 @@ fn is_local_only_honey_marker_finding(finding: &DetectionFinding) -> bool {
             .any(|item| item.key == "matchType" && item.value == "marker")
 }
 
-pub(crate) fn parse_policy_event_jsonl(body: &str) -> Result<Vec<PolicyEvent>, (StatusCode, String)> {
+pub(crate) fn parse_policy_event_jsonl(
+    body: &str,
+) -> Result<Vec<PolicyEvent>, (StatusCode, String)> {
     let mut events = Vec::new();
     for (line_index, line) in body.lines().enumerate() {
         let line_number = line_index + 1;
@@ -11339,7 +11313,9 @@ pub(crate) fn build_policy_event_history_causal_impact(
 }
 
 // affected_identities_for_causal_impact and push_affected_identity moved to crate::edr::queries::causal
-pub(crate) fn affected_tools_for_causal_impact(graph: &CausalGraph) -> Vec<EdrPolicyEventHistoryAffectedTool> {
+pub(crate) fn affected_tools_for_causal_impact(
+    graph: &CausalGraph,
+) -> Vec<EdrPolicyEventHistoryAffectedTool> {
     graph
         .nodes
         .values()
@@ -14617,9 +14593,8 @@ pub(crate) async fn drain_control_ack_postback_retries(
 }
 
 pub(crate) use crate::edr::ledger::{
-    EndpointReceiptLedger,
-    ResponseExecutionReceiptSigningInput, EdrPolicyDeltaReceiptSigningInput,
     DeceptionCleanupReceiptSigningInput, DeceptionRotationReceiptSigningInput,
+    EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger, ResponseExecutionReceiptSigningInput,
 };
 
 pub(crate) async fn emit_edr_detection_receipts(
@@ -15294,7 +15269,10 @@ async fn emit_edr_evidence_bundle_manifest_receipt(
     Ok(receipt)
 }
 
-pub(crate) fn receipt_matches_filter(receipt: &SignedReceipt, filter: EdrReceiptFilter<'_>) -> bool {
+pub(crate) fn receipt_matches_filter(
+    receipt: &SignedReceipt,
+    filter: EdrReceiptFilter<'_>,
+) -> bool {
     if let Some(expected) = filter.receipt_id {
         if !receipt
             .receipt
@@ -16406,7 +16384,10 @@ pub(crate) fn receipt_compaction_record(
     }
 }
 
-pub(crate) fn receipt_age_seconds(receipt: &SignedReceipt, now: chrono::DateTime<chrono::Utc>) -> u64 {
+pub(crate) fn receipt_age_seconds(
+    receipt: &SignedReceipt,
+    now: chrono::DateTime<chrono::Utc>,
+) -> u64 {
     chrono::DateTime::parse_from_rfc3339(&receipt.receipt.timestamp)
         .map(|timestamp| {
             now.signed_duration_since(timestamp.with_timezone(&chrono::Utc))
@@ -16430,13 +16411,17 @@ pub(crate) fn receipt_family(receipt: &SignedReceipt) -> Option<&str> {
     receipt_endpoint_decision_str(receipt, &["receiptFamily"])
 }
 
-pub(crate) fn receipt_endpoint_decision_graph(receipt: &SignedReceipt) -> Result<EndpointGraphReference> {
+pub(crate) fn receipt_endpoint_decision_graph(
+    receipt: &SignedReceipt,
+) -> Result<EndpointGraphReference> {
     let graph = receipt_endpoint_decision_value(receipt, &["graph"])
         .ok_or_else(|| anyhow::anyhow!("endpoint receipt is missing graph reference"))?;
     serde_json::from_value(graph.clone()).context("decode endpoint receipt graph reference")
 }
 
-pub(crate) fn receipt_endpoint_decision_sensor_state(receipt: &SignedReceipt) -> Result<EndpointSensorState> {
+pub(crate) fn receipt_endpoint_decision_sensor_state(
+    receipt: &SignedReceipt,
+) -> Result<EndpointSensorState> {
     let sensor_state = receipt_endpoint_decision_value(receipt, &["sensorState"])
         .ok_or_else(|| anyhow::anyhow!("endpoint receipt is missing sensor state"))?;
     serde_json::from_value(sensor_state.clone()).context("decode endpoint receipt sensor state")
@@ -16454,7 +16439,10 @@ fn receipt_endpoint_decision_actor(receipt: &SignedReceipt) -> Result<EndpointDe
     serde_json::from_value(actor.clone()).context("decode endpoint receipt actor")
 }
 
-pub(crate) fn receipt_endpoint_decision_str<'a>(receipt: &'a SignedReceipt, path: &[&str]) -> Option<&'a str> {
+pub(crate) fn receipt_endpoint_decision_str<'a>(
+    receipt: &'a SignedReceipt,
+    path: &[&str],
+) -> Option<&'a str> {
     receipt_endpoint_decision_value(receipt, path)?.as_str()
 }
 
@@ -16548,7 +16536,9 @@ pub(crate) fn protected_observation_ids_for_receipts(
     observation_ids
 }
 
-pub(crate) fn detection_severity_from_policy_label(value: Option<&str>) -> Option<DetectionSeverity> {
+pub(crate) fn detection_severity_from_policy_label(
+    value: Option<&str>,
+) -> Option<DetectionSeverity> {
     match value?.trim().to_ascii_lowercase().as_str() {
         "info" => Some(DetectionSeverity::Info),
         "low" => Some(DetectionSeverity::Low),
@@ -16742,7 +16732,9 @@ fn yaml_bool_value(value: &serde_yaml::Value) -> Option<bool> {
     }
 }
 
-pub(crate) fn endpoint_policy_snapshot_from_settings(settings: &Settings) -> Result<EndpointPolicySnapshot> {
+pub(crate) fn endpoint_policy_snapshot_from_settings(
+    settings: &Settings,
+) -> Result<EndpointPolicySnapshot> {
     let bytes = fs::read(&settings.policy_path).with_context(|| {
         format!(
             "read local policy for endpoint receipt {}",
@@ -16824,7 +16816,10 @@ fn policy_epoch_from_file(path: &FsPath) -> Option<u64> {
     Some(since_epoch.as_secs())
 }
 
-pub(crate) fn endpoint_id_for_observation(settings: &Settings, observation: &EndpointObservation) -> String {
+pub(crate) fn endpoint_id_for_observation(
+    settings: &Settings,
+    observation: &EndpointObservation,
+) -> String {
     settings
         .enrollment
         .agent_uuid
@@ -17126,6 +17121,16 @@ pub(crate) struct NetworkExtensionReloadRequestProof {
     pub(crate) request_id: Option<String>,
     pub(crate) policy_snapshot_path: String,
     pub(crate) generation: u64,
+    pub(crate) provider_reload_observed: bool,
+    pub(crate) provider_reload_matched: bool,
+    pub(crate) provider_reload_request_id_matches: bool,
+    pub(crate) provider_reload_generation_matches: bool,
+    pub(crate) provider_reload_policy_snapshot_path_matches: bool,
+    pub(crate) provider_reloaded: Option<bool>,
+    pub(crate) provider_policy_synced: Option<bool>,
+    pub(crate) provider_enforcement_ready: Option<bool>,
+    pub(crate) provider_reload_elapsed_ms: u64,
+    pub(crate) provider_reload_attempts: u64,
     pub(crate) error: Option<String>,
 }
 
@@ -17219,7 +17224,55 @@ fn network_extension_reload_request_evidence(
             "networkExtensionReloadPolicySnapshotPath",
             proof.policy_snapshot_path.as_str(),
         ),
+        EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderObserved",
+            proof.provider_reload_observed.to_string(),
+        ),
+        EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderMatched",
+            proof.provider_reload_matched.to_string(),
+        ),
+        EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderRequestIdMatches",
+            proof.provider_reload_request_id_matches.to_string(),
+        ),
+        EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderGenerationMatches",
+            proof.provider_reload_generation_matches.to_string(),
+        ),
+        EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderPolicySnapshotPathMatches",
+            proof
+                .provider_reload_policy_snapshot_path_matches
+                .to_string(),
+        ),
+        EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderAttempts",
+            proof.provider_reload_attempts.to_string(),
+        ),
+        EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderElapsedMs",
+            proof.provider_reload_elapsed_ms.to_string(),
+        ),
     ];
+    if let Some(reloaded) = proof.provider_reloaded {
+        evidence.push(EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderReloaded",
+            reloaded.to_string(),
+        ));
+    }
+    if let Some(policy_synced) = proof.provider_policy_synced {
+        evidence.push(EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderPolicySynced",
+            policy_synced.to_string(),
+        ));
+    }
+    if let Some(enforcement_ready) = proof.provider_enforcement_ready {
+        evidence.push(EndpointReceiptEvidence::hashed(
+            "networkExtensionReloadProviderEnforcementReady",
+            enforcement_ready.to_string(),
+        ));
+    }
     if let Some(request_id) = proof.request_id.as_deref() {
         evidence.push(EndpointReceiptEvidence::hashed(
             "networkExtensionReloadRequestId",
@@ -18424,8 +18477,8 @@ pub(crate) use crate::edr::ledger::EndpointPolicyDeltaStore;
 pub(crate) use crate::edr::ledger::EndpointResponseExecutionLedger;
 
 pub(crate) use crate::edr::ledger::{
-    EndpointEgressRestriction, EndpointEgressRestrictionLedger,
-    NetworkExtensionEgressPolicySnapshot, write_network_extension_egress_policy_snapshot,
+    write_network_extension_egress_policy_snapshot, EndpointEgressRestriction,
+    EndpointEgressRestrictionLedger, NetworkExtensionEgressPolicySnapshot,
 };
 // read_*_ledger free functions are used only in mod tests { use super::* }
 #[allow(unused_imports)]
@@ -18433,34 +18486,35 @@ pub(crate) use crate::edr::ledger::read_egress_restriction_ledger;
 
 pub(crate) use crate::edr::ledger::EndpointResponseAcknowledgementLedger;
 
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_fleet_hunt_event_outbox;
 pub(crate) use crate::edr::ledger::{
     EndpointFleetHuntEventOutbox, EndpointFleetHuntEventOutboxEntry,
 };
-#[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_fleet_hunt_event_outbox;
 
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_control_ack_postback_retry_ledger;
 pub(crate) use crate::edr::ledger::{
     EndpointControlAckPostbackRetry, EndpointControlAckPostbackRetryLedger,
 };
-#[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_control_ack_postback_retry_ledger;
 
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_control_receipt_upload_retry_ledger;
 pub(crate) use crate::edr::ledger::{
     EndpointControlReceiptUploadRetry, EndpointControlReceiptUploadRetryLedger,
 };
-#[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_control_receipt_upload_retry_ledger;
 
+#[allow(unused_imports)]
+pub(crate) use crate::edr::ledger::read_control_archive_upload_retry_ledger;
 pub(crate) use crate::edr::ledger::{
     EndpointControlArchiveUploadRetry, EndpointControlArchiveUploadRetryLedger,
 };
-#[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_control_archive_upload_retry_ledger;
-
 
 pub(crate) use crate::edr::ledger::EndpointHoneyRegistry;
 
-pub(crate) fn validate_deception_cleanup_plan(plan: &DeceptionPlan) -> std::result::Result<(), String> {
+pub(crate) fn validate_deception_cleanup_plan(
+    plan: &DeceptionPlan,
+) -> std::result::Result<(), String> {
     if !plan.root.is_absolute() {
         return Err(format!(
             "deception cleanup root must be absolute: {}",
@@ -19327,7 +19381,10 @@ fn auth_token_from_cookie(headers: &HeaderMap) -> Option<String> {
     None
 }
 
-pub(crate) fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (StatusCode, String)> {
+pub(crate) fn require_auth(
+    headers: &HeaderMap,
+    state: &AgentApiState,
+) -> Result<(), (StatusCode, String)> {
     let auth_header = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -21053,6 +21110,82 @@ mod tests {
                 "unexpected out-of-range timeout error for {uri}: {error}"
             );
         }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[tokio::test]
+    async fn policy_delta_apply_enforcement_marks_macos_providers_non_applicable_off_macos() {
+        let state = Arc::new(test_state());
+        let settings = state.settings.read().await.clone();
+        let proof = build_policy_delta_apply_enforcement_proof(
+            &state,
+            PolicyDeltaApplyEnforcementProofInput {
+                settings: &settings,
+                local_policy: EndpointPolicySnapshot {
+                    policy_version: "test-policy@non-macos".to_string(),
+                    policy_hash: sha256(b"test-policy-non-macos").to_hex_prefixed(),
+                    policy_epoch: 7,
+                },
+                cross_window_impact_hash: None,
+                cross_window_recommendation_hash: None,
+                daemon_policy_reload_requested: false,
+                daemon_restart_requested: false,
+                provider_ack_timeout_ms: EDR_DEFAULT_PROVIDER_ACK_TIMEOUT_MS,
+            },
+        )
+        .await
+        .unwrap_or_else(|err| panic!("build non-macOS enforcement proof: {err}"));
+
+        assert!(!proof.network_extension_policy_reload.requested);
+        assert!(!proof.network_extension_policy_reload.saved);
+        assert!(!proof.provider_status_refresh.requested);
+        assert!(!proof.provider_status_refresh.refreshed);
+        assert_eq!(proof.provider_status_refresh.timeout_ms, 0);
+        assert!(!proof.provider_acknowledgement_poll.requested);
+        assert_eq!(proof.provider_acknowledgement_poll.timeout_ms, 0);
+        assert_eq!(proof.provider_acknowledgement_poll.attempts, 0);
+        assert!(proof.provider_acknowledgement_poll.satisfied);
+        assert!(proof.provider_policy_acknowledgements.is_empty());
+        assert!(proof.degraded_provider_receipts.is_empty());
+    }
+
+    #[test]
+    fn network_extension_reload_proof_requires_observed_provider_delivery() {
+        let mut proof = NetworkExtensionReloadRequestProof {
+            requested: true,
+            saved: true,
+            request_id: Some("reload-test-1".to_string()),
+            policy_snapshot_path: "/tmp/clawdstrike-ne-policy.json".to_string(),
+            generation: 42,
+            provider_reload_observed: false,
+            provider_reload_matched: false,
+            provider_reload_request_id_matches: false,
+            provider_reload_generation_matches: false,
+            provider_reload_policy_snapshot_path_matches: false,
+            provider_reloaded: None,
+            provider_policy_synced: Some(true),
+            provider_enforcement_ready: Some(true),
+            provider_reload_elapsed_ms: 0,
+            provider_reload_attempts: 1,
+            error: None,
+        };
+
+        let err = match ensure_network_extension_reload_proof_succeeded(&proof) {
+            Ok(()) => panic!("reload proof unexpectedly succeeded without provider delivery"),
+            Err(err) => err,
+        };
+        assert!(err.contains("observed=false"));
+        assert!(err.contains("matched=false"));
+
+        proof.provider_reload_observed = true;
+        proof.provider_reload_matched = true;
+        proof.provider_reload_request_id_matches = true;
+        proof.provider_reload_generation_matches = true;
+        proof.provider_reload_policy_snapshot_path_matches = true;
+        proof.provider_reloaded = Some(true);
+
+        ensure_network_extension_reload_proof_succeeded(&proof)
+            .unwrap_or_else(|err| panic!("matched reload proof should succeed: {err}"));
     }
 
     #[test]
@@ -38981,6 +39114,7 @@ guards:
             let reload_generation_probe = reload_generation_probe.clone();
             let reload_count = reload_count.clone();
             let reload_policy_path = reload_policy_path.clone();
+            let macos_host = state.macos_host.clone();
             tokio::spawn(async move {
                 while let Some(request) = reload_rx.recv().await {
                     let count = reload_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
@@ -38988,6 +39122,41 @@ guards:
                         reload_generation_probe
                             .store(request.generation, std::sync::atomic::Ordering::SeqCst);
                     }
+                    macos_host
+                        .replace_status(CombinedSystemExtensionStatus {
+                            install_state: SystemExtensionInstallState::Installed,
+                            approval: SystemExtensionApproval::Approved,
+                            endpoint_security: ProviderStatus {
+                                runtime: ProviderRuntimeState::Active,
+                                ..ProviderStatus::unknown()
+                            },
+                            network_extension: ProviderStatus {
+                                runtime: ProviderRuntimeState::Active,
+                                counters: BTreeMap::from([
+                                    ("flows_observed".to_string(), 11),
+                                    ("flows_blocked".to_string(), 3),
+                                    ("remediation_requests".to_string(), 1),
+                                    ("dropped_verdicts".to_string(), 0),
+                                ]),
+                                policy_epoch: Some(99),
+                                policy_synced: Some(true),
+                                enforcement_ready: Some(true),
+                                last_reload_observation: Some(
+                                    crate::macos::status::ProviderReloadObservation {
+                                        request_id: Some(format!("restrict-egress-reload-{count}")),
+                                        command: Some("reload_policy".to_string()),
+                                        policy_snapshot_path: Some(reload_policy_path.clone()),
+                                        generation: Some(request.generation),
+                                        accepted: Some(true),
+                                        reloaded: Some(true),
+                                        error: None,
+                                    },
+                                ),
+                                ..ProviderStatus::unknown()
+                            },
+                            ..CombinedSystemExtensionStatus::default()
+                        })
+                        .await;
                     let _ = request.reply_tx.send(Ok(
                         crate::macos::host::MacosNetworkExtensionReloadResult {
                             requested: true,
