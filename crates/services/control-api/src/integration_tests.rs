@@ -6946,77 +6946,62 @@ async fn seed_ack_enabled_response_action(
     (action_id, ack_token)
 }
 
-fn response_ack_signed_receipt_fixture(
+fn policy_rule_diff_simulation_receipt_fixture(
     keypair: &hush_core::Keypair,
-    action_id: Uuid,
     target_id: &str,
-    ack_token: &str,
-    ack_status: &str,
-    execution_id: &str,
-) -> (Value, String) {
-    let ack_token_hash = hush_core::sha256(ack_token.as_bytes()).to_hex_prefixed();
-    let evidence_for = |key: &str, raw_value: &str| {
-        serde_json::json!({
-            "key": key,
-            "valueHash": hush_core::sha256(raw_value.as_bytes()).to_hex_prefixed(),
-            "redactionClass": "hash_only",
-            "rawValue": null
-        })
+) -> (Value, String, String) {
+    use clawdstrike_policy_event::edr::{
+        EndpointDecisionReceipt, EndpointPolicyEventImpactReceiptInput, EndpointPolicySnapshot,
+        EndpointSensorState,
     };
-    let endpoint_decision = serde_json::json!({
-        "schemaVersion": "clawdstrike.endpoint_decision.v1",
-        "receiptFamily": "response_acknowledgement",
-        "localSequence": 77,
-        "clock": {},
-        "signer": {
-            "signerIdentity": format!("local-edr:{target_id}"),
-            "signerPublicKey": keypair.public_key().to_hex()
-        },
-        "actor": {
-            "endpointId": target_id
-        },
-        "policy": {
-            "policyVersion": "test-policy",
-            "policyHash": "d".repeat(64),
-            "policyEpoch": 1
-        },
-        "sensorState": {},
-        "decision": {
-            "findingId": "response_acknowledgement:test",
-            "ruleId": "endpoint.response_acknowledgement",
-            "action": "observe",
-            "passed": true
-        },
-        "graph": {
-            "graphSliceId": "response_ack_graph:test",
-            "processNodeId": "response_action",
-            "nodeIds": ["response_action"],
-            "edgeIds": []
-        },
-        "evidence": [
-            evidence_for("controlResponseActionId", &action_id.to_string()),
-            evidence_for("controlTargetId", target_id),
-            evidence_for("controlAckStatus", ack_status),
-            evidence_for("acknowledgedStatus", ack_status),
-            evidence_for("controlAckTokenHash", &ack_token_hash),
-            evidence_for("executionId", execution_id)
-        ]
-    });
-    let receipt = hush_core::Receipt::new(
-        hush_core::Hash::from_bytes([17u8; 32]),
-        hush_core::Verdict::pass(),
-    )
-    .with_id("receipt-response-ack-test")
-    .with_metadata(serde_json::json!({
-        "endpointDecision": endpoint_decision
-    }));
-    let signed = hush_core::SignedReceipt::sign(receipt, keypair)
-        .expect("sign response acknowledgement receipt");
+
+    let policy_hash = hush_core::sha256(b"current-policy").to_hex_prefixed();
+    let proposed_policy_hash = hush_core::sha256(b"proposed-policy").to_hex_prefixed();
+    let event_stream_hash = hush_core::sha256(b"events").to_hex_prefixed();
+    let current_result_hash = hush_core::sha256(b"current-results").to_hex_prefixed();
+    let proposed_result_hash = hush_core::sha256(b"proposed-results").to_hex_prefixed();
+    let impact_hash = hush_core::sha256(b"impact").to_hex_prefixed();
+    let mut receipt =
+        EndpointDecisionReceipt::for_policy_event_impact(EndpointPolicyEventImpactReceiptInput {
+            local_sequence: 77,
+            endpoint_id: target_id,
+            signer_identity: &format!("local-edr:{target_id}"),
+            policy: EndpointPolicySnapshot {
+                policy_version: "test-policy".to_string(),
+                policy_hash,
+                policy_epoch: 1,
+            },
+            sensor_state: EndpointSensorState::single_active_agent(format!(
+                "agent-api:{target_id}"
+            )),
+            impact_id: "ignored-by-builder",
+            event_stream_hash: &event_stream_hash,
+            current_result_hash: &current_result_hash,
+            proposed_result_hash: &proposed_result_hash,
+            impact_hash: &impact_hash,
+            proposed_policy_hash: &proposed_policy_hash,
+            proposed_policy_epoch: 2,
+            event_count: 2,
+            changed_count: 1,
+            allow_to_block_count: 1,
+            track_posture: true,
+        });
+    receipt.signer.signer_public_key = Some(keypair.public_key().to_hex());
+    let impact_id = receipt
+        .decision
+        .finding_id
+        .clone()
+        .expect("policy event impact receipt id");
+    let signed = receipt
+        .sign_with(keypair)
+        .expect("sign policy rule-diff simulation receipt");
+    let receipt_id = signed
+        .receipt
+        .receipt_id
+        .clone()
+        .expect("signed policy rule-diff receipt id");
     let signed_value = serde_json::to_value(&signed).expect("signed receipt to json");
-    let canonical =
-        hush_core::canonicalize_json(&signed_value).expect("canonical response ack receipt");
-    let local_receipt_hash = hush_core::sha256(canonical.as_bytes()).to_hex_prefixed();
-    (signed_value, local_receipt_hash)
+    (signed_value, receipt_id, impact_id)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -7050,15 +7035,8 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
         Some(chrono::Utc::now() + chrono::Duration::minutes(10)),
     )
     .await;
-    let execution_id = "duplicate_response_execution:test";
-    let (signed_receipt, _local_receipt_hash) = response_ack_signed_receipt_fixture(
-        &keypair,
-        action_id,
-        "endpoint-1",
-        &ack_token,
-        "acknowledged",
-        execution_id,
-    );
+    let (signed_receipt, _receipt_id, impact_id) =
+        policy_rule_diff_simulation_receipt_fixture(&keypair, "endpoint-1");
 
     let first_ack = request_json(
         &harness.app,
@@ -7076,7 +7054,7 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
                     "validationPlanSha256": "sha256:plan",
                     "endpointAgentId": "endpoint-1",
                     "impact": {
-                        "impactId": "impact-test"
+                        "impactId": &impact_id
                     },
                     "receipt": signed_receipt
                 }
@@ -7137,15 +7115,8 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
         Some(chrono::Utc::now() + chrono::Duration::minutes(10)),
     )
     .await;
-    let execution_id = "response_execution:test";
-    let (signed_receipt, _local_receipt_hash) = response_ack_signed_receipt_fixture(
-        &keypair,
-        action_id,
-        "endpoint-1",
-        &ack_token,
-        "acknowledged",
-        execution_id,
-    );
+    let (signed_receipt, receipt_id, impact_id) =
+        policy_rule_diff_simulation_receipt_fixture(&keypair, "endpoint-1");
 
     let missing_receipt_resp = request_json(
         &harness.app,
@@ -7178,6 +7149,42 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
         .expect("missing policy rule-diff receipt error")
         .contains("policyRuleDiffValidation acknowledgement must include receipt"));
 
+    let invalid_receipt_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/agent-acks"),
+        None,
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "acknowledged",
+            "ackToken": &ack_token,
+            "message": "forged receipt must be rejected before ack persistence",
+            "resultingState": "collect_evidence:succeeded",
+            "rawPayload": {
+                "policyRuleDiffValidation": {
+                    "proposalId": "proposal-test",
+                    "validationPlanSha256": "sha256:plan",
+                    "endpointAgentId": "endpoint-1",
+                    "impact": {
+                        "impactId": &impact_id
+                    },
+                    "receipt": {
+                        "receipt": {
+                            "receipt_id": "forged-policy-diff-receipt"
+                        }
+                    }
+                }
+            }
+        })),
+    )
+    .await;
+    assert_eq!(invalid_receipt_resp.0, StatusCode::BAD_REQUEST);
+    assert!(invalid_receipt_resp.1["error"]
+        .as_str()
+        .expect("invalid policy rule-diff receipt error")
+        .contains("policyRuleDiffValidation receipt is invalid"));
+
     let ack_resp = request_json(
         &harness.app,
         Method::POST,
@@ -7196,7 +7203,7 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
                     "validationPlanSha256": "sha256:plan",
                     "endpointAgentId": "endpoint-1",
                     "impact": {
-                        "impactId": "impact-test"
+                        "impactId": &impact_id
                     },
                     "receipt": signed_receipt
                 }
@@ -7227,7 +7234,7 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
             ["receipt"]["receipt_id"]
             .as_str()
             .expect("acknowledgement receipt is persisted"),
-        "receipt-response-ack-test"
+        receipt_id
     );
 }
 

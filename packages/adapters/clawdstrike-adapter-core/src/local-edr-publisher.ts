@@ -13,6 +13,7 @@ export interface LocalEdrConfig {
   includeAllowed?: boolean;
   includeResults?: boolean;
   includeDeveloperActivity?: boolean;
+  packageLifecycleEnforcement?: PackageLifecycleEnforcementMode;
 }
 
 type LocalEdrEndpoint = {
@@ -48,6 +49,7 @@ type PackageManagerLifecycleHookInput = {
   env?: Record<string, string | undefined>;
   now?: Date;
 };
+export type PackageLifecycleEnforcementMode = "observe" | "block";
 type PackageManagerLifecycleEvent = {
   eventId: string;
   observedAt: string;
@@ -776,11 +778,20 @@ export async function publishPackageManagerLifecycleEventToLocalEdr(
   input: PackageManagerLifecycleHookInput = {},
   config?: LocalEdrConfig,
 ): Promise<void> {
-  const event = buildPackageManagerLifecycleEventFromEnvironmentForLocalEdr(input);
+  const env = input.env ?? processEnv();
+  const enforcementMode = packageLifecycleEnforcementMode(config, env);
+  const event = buildPackageManagerLifecycleEventFromEnvironmentForLocalEdr({ ...input, env });
   if (!event) return;
 
   const endpoint = resolveLocalEdrEndpoint(config, "package_manager_events");
-  if (!endpoint) return;
+  if (!endpoint) {
+    if (enforcementMode === "block") {
+      throw new Error(
+        "Clawdstrike package-manager lifecycle enforcement is enabled, but local EDR is unavailable",
+      );
+    }
+    return;
+  }
 
   try {
     const response = await fetch(endpoint.url, {
@@ -793,11 +804,51 @@ export async function publishPackageManagerLifecycleEventToLocalEdr(
       body: JSON.stringify({ events: [event] }),
     });
     if (!response.ok) {
+      if (enforcementMode === "block") {
+        throw new Error(
+          `Clawdstrike package-manager lifecycle enforcement rejected unavailable local EDR response: HTTP ${response.status}`,
+        );
+      }
       return;
     }
-  } catch {
+    if (enforcementMode === "block") {
+      const payload = await response.json().catch(() => null);
+      if (packageLifecycleResponseHasFindings(payload)) {
+        throw new Error(
+          "Clawdstrike package-manager lifecycle enforcement blocked package script findings",
+        );
+      }
+    }
+  } catch (error) {
+    if (enforcementMode === "block") {
+      throw error;
+    }
     // Package-manager lifecycle capture must never break dependency installation.
   }
+}
+
+function packageLifecycleEnforcementMode(
+  config: LocalEdrConfig | undefined,
+  env: Record<string, string | undefined>,
+): PackageLifecycleEnforcementMode {
+  const configured = config?.packageLifecycleEnforcement?.trim().toLowerCase();
+  const fromEnv = env.CLAWDSTRIKE_PACKAGE_LIFECYCLE_ENFORCEMENT?.trim().toLowerCase();
+  const value = configured ?? fromEnv;
+  return value === "block" || value === "enforce" || value === "fail_closed" ? "block" : "observe";
+}
+
+function packageLifecycleResponseHasFindings(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  const findingCount =
+    numericRecordValue(record, "findingCount") ?? numericRecordValue(record, "finding_count");
+  if (typeof findingCount === "number" && findingCount > 0) return true;
+  return Array.isArray(record.findings) && record.findings.length > 0;
+}
+
+function numericRecordValue(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function resolvePolicyEventsEndpoint(config?: LocalEdrConfig): LocalEdrEndpoint | null {

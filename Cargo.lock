@@ -1789,6 +1789,7 @@ dependencies = [
  "axum-extra",
  "chrono",
  "clawdstrike-ocsf",
+ "clawdstrike-policy-event",
  "futures",
  "hex",
  "hmac",

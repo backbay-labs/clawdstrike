@@ -4,6 +4,7 @@ use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
+use clawdstrike_policy_event::edr::{EndpointDecisionReceipt, EndpointDecisionReceiptFamily};
 use hush_core::receipt::PublicKeySet;
 use hush_core::{canonicalize_json, sha256, PublicKey, SignedReceipt};
 use serde::{Deserialize, Serialize};
@@ -380,6 +381,12 @@ struct AckSubmission {
 struct AckContext {
     action: ResponseActionRecord,
     delivery_id: Uuid,
+}
+
+struct VerifiedEndpointDecisionReceipt {
+    signed_receipt_hash: String,
+    endpoint_decision: EndpointDecisionReceipt,
+    endpoint_decision_value: Value,
 }
 
 struct PublishContext {
@@ -914,32 +921,15 @@ async fn validate_endpoint_ack_signed_receipt(
     ack: &AckSubmission,
 ) -> Result<(), ApiError> {
     if context.action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str() {
-        return validate_policy_rule_diff_ack_payload(ack);
+        return validate_policy_rule_diff_ack_receipt(tx, context, ack).await;
     }
 
     if !requires_endpoint_ack_signed_receipt(&context.action, ack) {
         return Ok(());
     }
 
-    let public_key_hex = sqlx::query_scalar::query_scalar::<_, String>(
-        r#"SELECT public_key
-           FROM agents
-           WHERE tenant_id = $1
-             AND agent_id = $2"#,
-    )
-    .bind(context.action.tenant_id)
-    .bind(&ack.target_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(ApiError::Database)?
-    .ok_or_else(|| {
-        ApiError::BadRequest(
-            "endpoint acknowledgement target does not match a registered agent".to_string(),
-        )
-    })?;
-    let public_key = PublicKey::from_hex(public_key_hex.trim()).map_err(|_| {
-        ApiError::BadRequest("endpoint acknowledgement agent public_key is invalid".to_string())
-    })?;
+    let public_key =
+        load_endpoint_ack_public_key(tx, context.action.tenant_id, &ack.target_id).await?;
 
     let signed_receipt_value = ack
         .raw_payload
@@ -951,23 +941,70 @@ async fn validate_endpoint_ack_signed_receipt(
                 "endpoint acknowledgement raw_payload must include signedReceipt".to_string(),
             )
         })?;
+    let verified = verify_endpoint_decision_signed_receipt_value(
+        signed_receipt_value,
+        &public_key,
+        "endpoint acknowledgement signedReceipt",
+    )?;
+
+    if let Some(local_receipt_hash) = ack
+        .raw_payload
+        .get("localReceiptHash")
+        .and_then(Value::as_str)
+    {
+        if local_receipt_hash != verified.signed_receipt_hash {
+            return Err(ApiError::BadRequest(
+                "endpoint acknowledgement localReceiptHash must match signedReceipt".to_string(),
+            ));
+        }
+    }
+
+    validate_endpoint_ack_receipt_contract(&verified, context, ack)
+}
+
+async fn load_endpoint_ack_public_key(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    agent_id: &str,
+) -> Result<PublicKey, ApiError> {
+    let public_key_hex = sqlx::query_scalar::query_scalar::<_, String>(
+        r#"SELECT public_key
+           FROM agents
+           WHERE tenant_id = $1
+             AND agent_id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(agent_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or_else(|| {
+        ApiError::BadRequest(
+            "endpoint acknowledgement target does not match a registered agent".to_string(),
+        )
+    })?;
+    let public_key = PublicKey::from_hex(public_key_hex.trim()).map_err(|_| {
+        ApiError::BadRequest("endpoint acknowledgement agent public_key is invalid".to_string())
+    })?;
+    Ok(public_key)
+}
+
+fn verify_endpoint_decision_signed_receipt_value(
+    signed_receipt_value: Value,
+    public_key: &PublicKey,
+    label: &str,
+) -> Result<VerifiedEndpointDecisionReceipt, ApiError> {
     let canonical_signed_receipt = canonicalize_json(&signed_receipt_value).map_err(|err| {
-        ApiError::BadRequest(format!(
-            "endpoint acknowledgement signedReceipt is not canonicalizable JSON: {err}"
-        ))
+        ApiError::BadRequest(format!("{label} is not canonicalizable JSON: {err}"))
     })?;
     if canonical_signed_receipt.len() > ACK_SIGNED_RECEIPT_MAX_BYTES {
         return Err(ApiError::BadRequest(format!(
-            "endpoint acknowledgement signedReceipt must be no larger than {ACK_SIGNED_RECEIPT_MAX_BYTES} bytes"
+            "{label} must be no larger than {ACK_SIGNED_RECEIPT_MAX_BYTES} bytes"
         )));
     }
     let signed_receipt: SignedReceipt = serde_json::from_value(signed_receipt_value.clone())
-        .map_err(|err| {
-            ApiError::BadRequest(format!(
-                "endpoint acknowledgement signedReceipt is invalid: {err}"
-            ))
-        })?;
-    let verification = signed_receipt.verify(&PublicKeySet::new(public_key));
+        .map_err(|err| ApiError::BadRequest(format!("{label} is invalid: {err}")))?;
+    let verification = signed_receipt.verify(&PublicKeySet::new(public_key.clone()));
     if !verification.valid {
         let reason = if verification.errors.is_empty() {
             "unknown verification error".to_string()
@@ -975,25 +1012,154 @@ async fn validate_endpoint_ack_signed_receipt(
             verification.errors.join("; ")
         };
         return Err(ApiError::BadRequest(format!(
-            "endpoint acknowledgement signedReceipt failed verification: {}",
-            reason
+            "{label} failed verification: {reason}"
         )));
     }
 
-    let signed_receipt_hash = sha256(canonical_signed_receipt.as_bytes()).to_hex_prefixed();
-    if let Some(local_receipt_hash) = ack
-        .raw_payload
-        .get("localReceiptHash")
-        .and_then(Value::as_str)
-    {
-        if local_receipt_hash != signed_receipt_hash {
-            return Err(ApiError::BadRequest(
-                "endpoint acknowledgement localReceiptHash must match signedReceipt".to_string(),
-            ));
-        }
+    let endpoint_decision_value = signed_receipt
+        .receipt
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("endpointDecision"))
+        .cloned()
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "{label} must include receipt.metadata.endpointDecision"
+            ))
+        })?;
+    let endpoint_decision: EndpointDecisionReceipt =
+        serde_json::from_value(endpoint_decision_value.clone()).map_err(|err| {
+            ApiError::BadRequest(format!("{label} endpointDecision is invalid: {err}"))
+        })?;
+    endpoint_decision.validate().map_err(|err| {
+        ApiError::BadRequest(format!("{label} endpointDecision failed validation: {err}"))
+    })?;
+
+    let canonical_endpoint_decision =
+        canonicalize_json(&endpoint_decision_value).map_err(|err| {
+            ApiError::BadRequest(format!(
+                "{label} endpointDecision is not canonicalizable JSON: {err}"
+            ))
+        })?;
+    let endpoint_decision_hash = sha256(canonical_endpoint_decision.as_bytes());
+    if signed_receipt.receipt.content_hash != endpoint_decision_hash {
+        return Err(ApiError::BadRequest(format!(
+            "{label} content_hash must match receipt.metadata.endpointDecision"
+        )));
     }
 
-    validate_endpoint_ack_receipt_contract(&signed_receipt, context, ack)
+    let signer_public_key = endpoint_decision
+        .signer
+        .signer_public_key
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "{label} endpointDecision.signer.signerPublicKey is required"
+            ))
+        })?;
+    let metadata_public_key = PublicKey::from_hex(signer_public_key).map_err(|_| {
+        ApiError::BadRequest(format!(
+            "{label} endpointDecision.signer.signerPublicKey must be a valid Ed25519 public key hex"
+        ))
+    })?;
+    if metadata_public_key.to_hex() != public_key.to_hex() {
+        return Err(ApiError::BadRequest(format!(
+            "{label} endpointDecision.signer.signerPublicKey must match registered agent public_key"
+        )));
+    }
+
+    Ok(VerifiedEndpointDecisionReceipt {
+        signed_receipt_hash: sha256(canonical_signed_receipt.as_bytes()).to_hex_prefixed(),
+        endpoint_decision,
+        endpoint_decision_value,
+    })
+}
+
+async fn validate_policy_rule_diff_ack_receipt(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
+    validate_policy_rule_diff_ack_payload(ack)?;
+    if !matches!(ack.ack_status, "acknowledged") {
+        return Ok(());
+    }
+
+    let payload = policy_rule_diff_ack_payload_value(ack)?;
+    let signed_receipt_value = payload.get("receipt").cloned().ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include receipt".to_string(),
+        )
+    })?;
+    let public_key =
+        load_endpoint_ack_public_key(tx, context.action.tenant_id, &ack.target_id).await?;
+    let verified = verify_endpoint_decision_signed_receipt_value(
+        signed_receipt_value,
+        &public_key,
+        "policyRuleDiffValidation receipt",
+    )?;
+
+    if verified.endpoint_decision.receipt_family != EndpointDecisionReceiptFamily::Simulation {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation receipt endpointDecision.receiptFamily must be simulation"
+                .to_string(),
+        ));
+    }
+    if verified.endpoint_decision.decision.rule_id.as_deref()
+        != Some("endpoint.policy_event_impact")
+    {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation receipt endpointDecision.decision.ruleId must be endpoint.policy_event_impact"
+                .to_string(),
+        ));
+    }
+    if verified.endpoint_decision.actor.endpoint_id != ack.target_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation receipt endpoint id must match target_id".to_string(),
+        ));
+    }
+
+    let impact_id = payload
+        .pointer("/impact/impactId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include impactId".to_string(),
+            )
+        })?;
+    let receipt_impact_id = verified
+        .endpoint_decision
+        .decision
+        .finding_id
+        .as_deref()
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation receipt endpointDecision.decision.findingId is required"
+                    .to_string(),
+            )
+        })?;
+    if impact_id != receipt_impact_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation impactId must match the signed receipt findingId".to_string(),
+        ));
+    }
+    require_endpoint_ack_receipt_evidence_hash(
+        &verified.endpoint_decision_value,
+        "impactId",
+        impact_id,
+    )
+}
+
+fn policy_rule_diff_ack_payload_value(ack: &AckSubmission) -> Result<&Value, ApiError> {
+    ack.raw_payload
+        .get("policyRuleDiffValidation")
+        .or_else(|| ack.raw_payload.get("policy_rule_diff_validation"))
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "acknowledgement raw_payload must include policyRuleDiffValidation".to_string(),
+            )
+        })
 }
 
 fn requires_endpoint_ack_signed_receipt(
@@ -1009,15 +1175,7 @@ fn validate_policy_rule_diff_ack_payload(ack: &AckSubmission) -> Result<(), ApiE
         return Ok(());
     }
 
-    let payload = ack
-        .raw_payload
-        .get("policyRuleDiffValidation")
-        .or_else(|| ack.raw_payload.get("policy_rule_diff_validation"))
-        .ok_or_else(|| {
-            ApiError::BadRequest(
-                "acknowledgement raw_payload must include policyRuleDiffValidation".to_string(),
-            )
-        })?;
+    let payload = policy_rule_diff_ack_payload_value(ack)?;
 
     if payload.get("receipt").is_none() {
         return Err(ApiError::BadRequest(
@@ -1034,74 +1192,58 @@ fn validate_policy_rule_diff_ack_payload(ack: &AckSubmission) -> Result<(), ApiE
 }
 
 fn validate_endpoint_ack_receipt_contract(
-    signed_receipt: &SignedReceipt,
+    verified: &VerifiedEndpointDecisionReceipt,
     context: &AckContext,
     ack: &AckSubmission,
 ) -> Result<(), ApiError> {
-    let endpoint_decision = signed_receipt
-        .receipt
-        .metadata
-        .as_ref()
-        .and_then(|metadata| metadata.get("endpointDecision"))
-        .ok_or_else(|| {
-            ApiError::BadRequest(
-                "endpoint acknowledgement signedReceipt must include receipt.metadata.endpointDecision"
-                    .to_string(),
-            )
-        })?;
-    let receipt_family = endpoint_decision
-        .get("receiptFamily")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            ApiError::BadRequest(
-                "endpoint acknowledgement signedReceipt endpointDecision.receiptFamily is required"
-                    .to_string(),
-            )
-        })?;
-    if receipt_family != "response_acknowledgement" {
+    let endpoint_decision = &verified.endpoint_decision;
+    if endpoint_decision.receipt_family != EndpointDecisionReceiptFamily::ResponseAcknowledgement {
         return Err(ApiError::BadRequest(
             "endpoint acknowledgement signedReceipt must be a response_acknowledgement receipt"
                 .to_string(),
         ));
     }
-    let receipt_endpoint_id = endpoint_decision
-        .pointer("/actor/endpointId")
-        .or_else(|| endpoint_decision.pointer("/actor/agentId"))
-        .or_else(|| endpoint_decision.pointer("/actor/agent_id"))
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            ApiError::BadRequest(
-                "endpoint acknowledgement signedReceipt must bind actor endpoint id".to_string(),
-            )
-        })?;
-    if receipt_endpoint_id != ack.target_id {
+    if endpoint_decision.actor.endpoint_id != ack.target_id {
         return Err(ApiError::BadRequest(
             "endpoint acknowledgement signedReceipt endpoint id must match target_id".to_string(),
         ));
     }
 
+    let endpoint_decision_value = &verified.endpoint_decision_value;
     require_endpoint_ack_receipt_evidence_hash(
-        endpoint_decision,
+        endpoint_decision_value,
         "controlResponseActionId",
         &context.action.id.to_string(),
     )?;
     require_endpoint_ack_receipt_evidence_hash(
-        endpoint_decision,
+        endpoint_decision_value,
         "controlTargetId",
         &ack.target_id,
     )?;
     require_endpoint_ack_receipt_evidence_hash(
-        endpoint_decision,
+        endpoint_decision_value,
         "controlAckStatus",
         ack.ack_status,
     )?;
+    if let Some(resulting_state) = ack.resulting_state.as_deref() {
+        require_endpoint_ack_receipt_evidence_hash(
+            endpoint_decision_value,
+            "controlResultingState",
+            resulting_state,
+        )?;
+    }
+    let acknowledged_status = ack
+        .resulting_state
+        .as_deref()
+        .map(endpoint_acknowledged_status_from_resulting_state)
+        .unwrap_or(ack.ack_status);
     require_endpoint_ack_receipt_evidence_hash(
-        endpoint_decision,
+        endpoint_decision_value,
         "acknowledgedStatus",
-        ack.ack_status,
+        acknowledged_status,
     )?;
     require_endpoint_ack_receipt_evidence_hash(
-        endpoint_decision,
+        endpoint_decision_value,
         "controlAckTokenHash",
         &sha256(ack.ack_token.as_bytes()).to_hex_prefixed(),
     )?;
@@ -1111,12 +1253,19 @@ fn validate_endpoint_ack_receipt_contract(
         .and_then(Value::as_str)
     {
         require_endpoint_ack_receipt_evidence_hash(
-            endpoint_decision,
+            endpoint_decision_value,
             "executionId",
             local_execution_id,
         )?;
     }
     Ok(())
+}
+
+fn endpoint_acknowledged_status_from_resulting_state(resulting_state: &str) -> &str {
+    resulting_state
+        .rsplit_once(':')
+        .map(|(_, status)| status)
+        .unwrap_or(resulting_state)
 }
 
 fn require_endpoint_ack_receipt_evidence_hash(

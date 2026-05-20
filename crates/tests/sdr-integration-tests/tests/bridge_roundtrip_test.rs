@@ -131,8 +131,14 @@ async fn test_tetragon_process_exec_mapping() {
     assert_eq!(fact["severity"], "medium"); // normal namespace, normal binary
     assert_eq!(fact["node_name"], "worker-1");
     assert!(fact["process"].is_object());
-    assert_eq!(fact["process"]["binary"], "/usr/bin/curl");
+    assert_eq!(fact["process"]["binary"], "curl");
+    assert!(fact["process"]["binary_path"]["sha256"].is_string());
+    assert!(fact["process"]["arguments"]["sha256"].is_string());
+    assert!(fact["process"]["cwd"]["sha256"].is_string());
     assert_eq!(fact["process"]["pid"], 1234);
+    let serialized = serde_json::to_string(&fact).unwrap();
+    assert!(!serialized.contains("/usr/bin/curl"));
+    assert!(!serialized.contains("--help"));
 }
 
 /// Test file event mapping through kprobe with sensitive path detection.
@@ -178,6 +184,10 @@ async fn test_tetragon_file_event_mapping() {
     assert_eq!(fact["node_name"], "worker-2");
     assert_eq!(fact["function_name"], "security_file_open");
     assert_eq!(fact["policy_name"], "sensitive-file-access");
+    assert!(fact["message"]["sha256"].is_string());
+    assert!(fact["args"][0]["value"]["file"]["path"]["sha256"].is_string());
+    let serialized = serde_json::to_string(&fact).unwrap();
+    assert!(!serialized.contains("/etc/shadow"));
 }
 
 /// Create a simulated Hubble flow, run through hubble mapper, verify envelope.
@@ -279,7 +289,10 @@ async fn test_tetragon_process_exit_mapping() {
     assert_eq!(fact["signal"], "SIGTERM");
     assert_eq!(fact["status"], 143);
     assert!(fact["process"].is_object());
-    assert_eq!(fact["process"]["binary"], "/usr/bin/sleep");
+    assert_eq!(fact["process"]["binary"], "sleep");
+    assert!(fact["process"]["binary_path"]["sha256"].is_string());
+    let serialized = serde_json::to_string(&fact).unwrap();
+    assert!(!serialized.contains("/usr/bin/sleep"));
 }
 
 /// Test that a GetEventsResponse with event: None returns None from map_event.

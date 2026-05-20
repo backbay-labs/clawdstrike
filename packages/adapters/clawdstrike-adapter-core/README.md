@@ -120,6 +120,13 @@ script, and posts a `package_script` event to
 `/api/v1/agent/edr/package-manager/events`. Capture failures are swallowed so
 dependency installation is not broken by local EDR availability.
 
+Set `CLAWDSTRIKE_PACKAGE_LIFECYCLE_ENFORCEMENT=block` when the hook is wired as
+an enforcement gate instead of passive telemetry. In blocking mode, the hook
+exits non-zero if local EDR is unavailable, returns a non-2xx response, or
+records package-script findings in the response payload. This is the mode to use
+for guarded CI, controlled developer workstations, or package-manager wrappers
+that must fail closed on risky lifecycle scripts.
+
 For language-package ecosystems that do not expose npm-compatible lifecycle
 environment, wrappers can call the same hook with
 `CLAWDSTRIKE_PACKAGE_MANAGER` (`pip`, `cargo`, `gem`, `go`, `brew`,
