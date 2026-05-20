@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(dead_code))]
 
+use serde_json::Value;
 use std::{env, fs, path::PathBuf};
 
 const REQUIRED_MACOS_PACKAGING_FILES: &[&str] = &[
@@ -12,14 +13,12 @@ const REQUIRED_MACOS_PACKAGING_FILES: &[&str] = &[
 
 const TAURI_CONFIG_PATH: &str = "tauri.conf.json";
 const SCAFFOLD_ONLY_MARKER: &str = "scaffold_only";
-const REQUIRED_TAURI_CONFIG_SNIPPETS: &[&str] = &[
-    "\"minimumSystemVersion\": \"13.0\"",
-    "\"macos/system-extension/**/*\"",
-    "\"entitlements\": \"macos/system-extension/entitlements/agent-app.entitlements\"",
-];
+const REQUIRED_MACOS_MINIMUM_SYSTEM_VERSION: &str = "13.0";
+const REQUIRED_MACOS_RESOURCE_GLOB: &str = "macos/system-extension/**/*";
+const REQUIRED_MACOS_ENTITLEMENTS: &str =
+    "macos/system-extension/entitlements/agent-app.entitlements";
 const VALIDATE_MACOS_PACKAGING_ENV: &str = "CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING";
-const REQUIRE_CONCRETE_MACOS_PACKAGING_ENV: &str =
-    "CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING";
+const REQUIRE_CONCRETE_MACOS_PACKAGING_ENV: &str = "CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING";
 
 #[cfg(not(test))]
 fn main() {
@@ -64,17 +63,7 @@ fn validate_macos_packaging() -> Result<(), String> {
 
     let tauri_config = fs::read_to_string(manifest_dir.join(TAURI_CONFIG_PATH))
         .map_err(|error| format!("failed to read {TAURI_CONFIG_PATH}: {error}"))?;
-    let missing_config = REQUIRED_TAURI_CONFIG_SNIPPETS
-        .iter()
-        .filter(|snippet| !tauri_config.contains(**snippet))
-        .copied()
-        .collect::<Vec<_>>();
-    if !missing_config.is_empty() {
-        return Err(format!(
-            "tauri.conf.json is missing required macOS packaging entries: {}",
-            missing_config.join(", ")
-        ));
-    }
+    validate_tauri_config(&tauri_config)?;
 
     if env::var_os(REQUIRE_CONCRETE_MACOS_PACKAGING_ENV).is_some() {
         let files_with_placeholders = REQUIRED_MACOS_PACKAGING_FILES
@@ -119,6 +108,48 @@ fn manifest_dir() -> Result<PathBuf, String> {
         .map_err(|error| format!("missing CARGO_MANIFEST_DIR: {error}"))
 }
 
+fn validate_tauri_config(contents: &str) -> Result<(), String> {
+    let config = serde_json::from_str::<Value>(contents)
+        .map_err(|error| format!("failed to parse {TAURI_CONFIG_PATH}: {error}"))?;
+
+    let mut missing_config = Vec::new();
+    if string_at(&config, &["bundle", "macOS", "minimumSystemVersion"])
+        != Some(REQUIRED_MACOS_MINIMUM_SYSTEM_VERSION)
+    {
+        missing_config.push(format!(
+            "bundle.macOS.minimumSystemVersion = {REQUIRED_MACOS_MINIMUM_SYSTEM_VERSION}"
+        ));
+    }
+
+    let has_required_resource =
+        array_at(&config, &["bundle", "resources"]).is_some_and(|resources| {
+            resources
+                .iter()
+                .any(|resource| resource.as_str() == Some(REQUIRED_MACOS_RESOURCE_GLOB))
+        });
+    if !has_required_resource {
+        missing_config.push(format!(
+            "bundle.resources contains {REQUIRED_MACOS_RESOURCE_GLOB}"
+        ));
+    }
+
+    if string_at(&config, &["bundle", "macOS", "entitlements"]) != Some(REQUIRED_MACOS_ENTITLEMENTS)
+    {
+        missing_config.push(format!(
+            "bundle.macOS.entitlements = {REQUIRED_MACOS_ENTITLEMENTS}"
+        ));
+    }
+
+    if !missing_config.is_empty() {
+        return Err(format!(
+            "tauri.conf.json is missing required macOS packaging entries: {}",
+            missing_config.join(", ")
+        ));
+    }
+
+    Ok(())
+}
+
 fn contains_release_placeholder(contents: &str) -> bool {
     let bytes = contents.as_bytes();
     let mut start = 0usize;
@@ -154,9 +185,49 @@ fn contains_release_placeholder(contents: &str) -> bool {
     false
 }
 
+fn string_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
+    path.iter()
+        .try_fold(value, |current, key| current.get(*key))
+        .and_then(Value::as_str)
+}
+
+fn array_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a [Value]> {
+    path.iter()
+        .try_fold(value, |current, key| current.get(*key))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::contains_release_placeholder;
+    use super::{contains_release_placeholder, validate_tauri_config};
+
+    #[test]
+    fn validates_tauri_config_structurally() -> Result<(), String> {
+        validate_tauri_config(
+            r#"{
+                "bundle": {
+                    "macOS": {
+                        "entitlements": "macos/system-extension/entitlements/agent-app.entitlements",
+                        "minimumSystemVersion": "13.0"
+                    },
+                    "resources": ["icons/*", "macos/system-extension/**/*"]
+                }
+            }"#,
+        )
+    }
+
+    #[test]
+    fn rejects_tauri_config_missing_required_entries() {
+        let Err(error) = validate_tauri_config(r#"{"bundle":{"resources":[],"macOS":{}}}"#) else {
+            panic!("expected missing macOS packaging entries");
+        };
+        assert!(error.contains("bundle.macOS.minimumSystemVersion = 13.0"));
+        assert!(error.contains("bundle.resources contains macos/system-extension/**/*"));
+        assert!(error.contains(
+            "bundle.macOS.entitlements = macos/system-extension/entitlements/agent-app.entitlements"
+        ));
+    }
 
     #[test]
     fn detects_release_placeholders_with_internal_underscores() {
