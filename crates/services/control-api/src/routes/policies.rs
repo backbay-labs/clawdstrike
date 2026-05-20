@@ -1612,24 +1612,37 @@ async fn approve_policy_proposal(
         ))
     })?;
     tx.commit().await.map_err(ApiError::Database)?;
-    let deployment = distribute_active_policy_to_fleet(
+    let deployment = match distribute_active_policy_to_fleet(
         &state,
         auth.tenant_id,
         &auth.slug,
         &active_policy,
         deployment_id,
     )
-    .await?;
-
-    Ok(Json(ApprovePolicyProposalResponse {
-        proposal: proposal_response_from_row(row, &auth.slug)?,
-        deployment: Some(DeployPolicyResponse {
+    .await
+    {
+        Ok(deployment) => Some(DeployPolicyResponse {
             deployment_id: deployment.deployment_id,
-            tenant_slug: auth.slug,
+            tenant_slug: auth.slug.clone(),
             nats_subject: deployment.nats_subject,
             agent_count: deployment.agent_count,
             kv_write_failures: deployment.kv_write_failures,
         }),
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                deployment_id = %deployment_id,
+                tenant = %auth.slug,
+                policy_version = active_policy.version,
+                "Policy proposal deployment persisted but fleet distribution failed"
+            );
+            None
+        }
+    };
+
+    Ok(Json(ApprovePolicyProposalResponse {
+        proposal: proposal_response_from_row(row, &auth.slug)?,
+        deployment,
         approvals_remaining: 0,
     }))
 }

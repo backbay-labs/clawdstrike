@@ -43,6 +43,7 @@ fn should_validate_macos_packaging() -> bool {
         .map(|target| target.contains("apple-darwin"))
         .unwrap_or(false)
         || env::var_os(VALIDATE_MACOS_PACKAGING_ENV).is_some()
+        || env::var_os(REQUIRE_CONCRETE_MACOS_PACKAGING_ENV).is_some()
 }
 
 fn validate_macos_packaging() -> Result<(), String> {
