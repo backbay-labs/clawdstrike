@@ -26,7 +26,7 @@ use crate::updater::{HushdUpdater, OtaStatus};
 use anyhow::{Context, Result};
 use axum::body::Body;
 use axum::extract::DefaultBodyLimit;
-use axum::extract::{Form, Path, Query, Request, State};
+use axum::extract::{Form, Path, Request, State};
 use axum::http::header::{
     ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
 };
@@ -14247,6 +14247,7 @@ pub(crate) async fn post_control_response_acknowledgement(
         "localActionId": acknowledgement.action_id,
         "localGraphSliceId": acknowledgement.graph_slice_id,
         "localReceiptHash": local_receipt_hash,
+        "signedReceipt": receipt,
         "localEffectCount": acknowledgement.effects.len(),
     });
     let payload = control_ack_postback_payload(ControlAckPostbackPayloadInput {
@@ -42163,6 +42164,12 @@ guards:
         assert_eq!(
             request.body["rawPayload"]["localExecutionId"],
             action_payload["execution"]["executionId"]
+        );
+        assert!(request.body["rawPayload"]["signedReceipt"].is_object());
+        assert_eq!(
+            request.body["rawPayload"]["signedReceipt"]["receipt"]["metadata"]["endpointDecision"]
+                ["receiptFamily"],
+            "response_acknowledgement"
         );
 
         let local_ack_json = serde_json::to_string(&acknowledgement_payload)

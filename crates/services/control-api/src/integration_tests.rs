@@ -6955,6 +6955,79 @@ async fn seed_ack_enabled_response_action(
     (action_id, ack_token)
 }
 
+fn response_ack_signed_receipt_fixture(
+    keypair: &hush_core::Keypair,
+    action_id: Uuid,
+    target_id: &str,
+    ack_token: &str,
+    ack_status: &str,
+    execution_id: &str,
+) -> (Value, String) {
+    let ack_token_hash = hush_core::sha256(ack_token.as_bytes()).to_hex_prefixed();
+    let evidence_for = |key: &str, raw_value: &str| {
+        serde_json::json!({
+            "key": key,
+            "valueHash": hush_core::sha256(raw_value.as_bytes()).to_hex_prefixed(),
+            "redactionClass": "hash_only",
+            "rawValue": null
+        })
+    };
+    let endpoint_decision = serde_json::json!({
+        "schemaVersion": "clawdstrike.endpoint_decision.v1",
+        "receiptFamily": "response_acknowledgement",
+        "localSequence": 77,
+        "clock": {},
+        "signer": {
+            "signerIdentity": format!("local-edr:{target_id}"),
+            "signerPublicKey": keypair.public_key().to_hex()
+        },
+        "actor": {
+            "endpointId": target_id
+        },
+        "policy": {
+            "policyVersion": "test-policy",
+            "policyHash": "d".repeat(64),
+            "policyEpoch": 1
+        },
+        "sensorState": {},
+        "decision": {
+            "findingId": "response_acknowledgement:test",
+            "ruleId": "endpoint.response_acknowledgement",
+            "action": "observe",
+            "passed": true
+        },
+        "graph": {
+            "graphSliceId": "response_ack_graph:test",
+            "processNodeId": "response_action",
+            "nodeIds": ["response_action"],
+            "edgeIds": []
+        },
+        "evidence": [
+            evidence_for("controlResponseActionId", &action_id.to_string()),
+            evidence_for("controlTargetId", target_id),
+            evidence_for("controlAckStatus", ack_status),
+            evidence_for("acknowledgedStatus", ack_status),
+            evidence_for("controlAckTokenHash", &ack_token_hash),
+            evidence_for("executionId", execution_id)
+        ]
+    });
+    let receipt = hush_core::Receipt::new(
+        hush_core::Hash::from_bytes([17u8; 32]),
+        hush_core::Verdict::pass(),
+    )
+    .with_id("receipt-response-ack-test")
+    .with_metadata(serde_json::json!({
+        "endpointDecision": endpoint_decision
+    }));
+    let signed = hush_core::SignedReceipt::sign(receipt, keypair)
+        .expect("sign response acknowledgement receipt");
+    let signed_value = serde_json::to_value(&signed).expect("signed receipt to json");
+    let canonical =
+        hush_core::canonicalize_json(&signed_value).expect("canonical response ack receipt");
+    let local_receipt_hash = hush_core::sha256(canonical.as_bytes()).to_hex_prefixed();
+    (signed_value, local_receipt_hash)
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn response_action_acks_reject_duplicate_delivery_acks() {
     if !docker_available() {
@@ -7016,6 +7089,20 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
     }
 
     let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": "endpoint-1",
+            "name": "Response Ack Endpoint",
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
     let (action_id, ack_token) = seed_ack_enabled_response_action(
         &harness.db,
         harness.tenant_id,
@@ -7025,6 +7112,41 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
         Some(chrono::Utc::now() + chrono::Duration::minutes(10)),
     )
     .await;
+    let execution_id = "response_execution:test";
+    let (signed_receipt, local_receipt_hash) = response_ack_signed_receipt_fixture(
+        &keypair,
+        action_id,
+        "endpoint-1",
+        &ack_token,
+        "acknowledged",
+        execution_id,
+    );
+
+    let missing_receipt_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/agent-acks"),
+        None,
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "acknowledged",
+            "ackToken": &ack_token,
+            "message": "endpoint execution receipt accepted",
+            "resultingState": "collect_evidence:succeeded",
+            "rawPayload": {
+                "source": "clawdstrike-agent",
+                "localExecutionId": execution_id,
+                "localReceiptHash": local_receipt_hash
+            }
+        })),
+    )
+    .await;
+    assert_eq!(missing_receipt_resp.0, StatusCode::BAD_REQUEST);
+    assert!(missing_receipt_resp.1["error"]
+        .as_str()
+        .expect("missing signed receipt error")
+        .contains("signedReceipt"));
 
     let ack_resp = request_json(
         &harness.app,
@@ -7040,7 +7162,9 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
             "resultingState": "collect_evidence:succeeded",
             "rawPayload": {
                 "source": "clawdstrike-agent",
-                "localReceiptHash": "0xagentreceipt"
+                "localExecutionId": execution_id,
+                "localReceiptHash": local_receipt_hash,
+                "signedReceipt": signed_receipt
             }
         })),
     )

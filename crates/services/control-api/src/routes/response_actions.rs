@@ -4,6 +4,8 @@ use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
+use hush_core::receipt::PublicKeySet;
+use hush_core::{canonicalize_json, sha256, PublicKey, SignedReceipt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::row::Row;
@@ -30,6 +32,7 @@ const ACK_TOKEN_MAX_BYTES: usize = 1024;
 const ACK_MESSAGE_MAX_BYTES: usize = 2048;
 const ACK_RESULTING_STATE_MAX_BYTES: usize = 256;
 const ACK_RAW_PAYLOAD_MAX_BYTES: usize = 65_536;
+const ACK_SIGNED_RECEIPT_MAX_BYTES: usize = 256 * 1024;
 const ACK_OBSERVED_AT_FUTURE_SKEW_SECONDS: i64 = 300;
 const ACK_OBSERVED_AT_MAX_AGE_SECONDS: i64 = 3600;
 const RESPONSE_TARGET_KIND_ALLOWLIST: &str =
@@ -37,7 +40,7 @@ const RESPONSE_TARGET_KIND_ALLOWLIST: &str =
 const RESPONSE_ACTION_TYPE_ALLOWLIST: &str = "transition_posture, request_policy_reload, \
 terminate_session, kill_switch, quarantine_principal, revoke_grant, revoke_principal, \
 policy_rule_diff_validation";
-const ACK_STATUS_ALLOWLIST: &str = "acknowledged, rejected, failed, expired";
+const ACK_STATUS_ALLOWLIST: &str = "acknowledged, rejected, failed, expired, rolled_back";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -556,6 +559,7 @@ async fn record_ack(
             ));
         }
     };
+    validate_endpoint_ack_signed_receipt(&mut tx, &context, &ack).await?;
     persist_ack_submission(&mut tx, &context, &ack).await?;
     tx.commit().await.map_err(ApiError::Database)?;
     get_action(State(state), auth, Path(id)).await
@@ -579,6 +583,7 @@ async fn record_agent_ack(
             ));
         }
     };
+    validate_endpoint_ack_signed_receipt(&mut tx, &context, &ack).await?;
     persist_ack_submission(&mut tx, &context, &ack).await?;
     tx.commit().await.map_err(ApiError::Database)?;
 
@@ -901,6 +906,216 @@ async fn load_ack_context(
         action,
         delivery_id,
     }))
+}
+
+async fn validate_endpoint_ack_signed_receipt(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
+    if !requires_endpoint_ack_signed_receipt(&context.action, ack) {
+        return Ok(());
+    }
+
+    let public_key_hex = sqlx::query_scalar::query_scalar::<_, String>(
+        r#"SELECT public_key
+           FROM agents
+           WHERE tenant_id = $1
+             AND agent_id = $2"#,
+    )
+    .bind(context.action.tenant_id)
+    .bind(&ack.target_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or_else(|| {
+        ApiError::BadRequest(
+            "endpoint acknowledgement target does not match a registered agent".to_string(),
+        )
+    })?;
+    let public_key = PublicKey::from_hex(public_key_hex.trim()).map_err(|_| {
+        ApiError::BadRequest("endpoint acknowledgement agent public_key is invalid".to_string())
+    })?;
+
+    let signed_receipt_value = ack
+        .raw_payload
+        .get("signedReceipt")
+        .or_else(|| ack.raw_payload.get("signed_receipt"))
+        .cloned()
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "endpoint acknowledgement raw_payload must include signedReceipt".to_string(),
+            )
+        })?;
+    let canonical_signed_receipt = canonicalize_json(&signed_receipt_value).map_err(|err| {
+        ApiError::BadRequest(format!(
+            "endpoint acknowledgement signedReceipt is not canonicalizable JSON: {err}"
+        ))
+    })?;
+    if canonical_signed_receipt.len() > ACK_SIGNED_RECEIPT_MAX_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "endpoint acknowledgement signedReceipt must be no larger than {ACK_SIGNED_RECEIPT_MAX_BYTES} bytes"
+        )));
+    }
+    let signed_receipt: SignedReceipt = serde_json::from_value(signed_receipt_value.clone())
+        .map_err(|err| {
+            ApiError::BadRequest(format!(
+                "endpoint acknowledgement signedReceipt is invalid: {err}"
+            ))
+        })?;
+    let verification = signed_receipt.verify(&PublicKeySet::new(public_key));
+    if !verification.valid {
+        let reason = if verification.errors.is_empty() {
+            "unknown verification error".to_string()
+        } else {
+            verification.errors.join("; ")
+        };
+        return Err(ApiError::BadRequest(format!(
+            "endpoint acknowledgement signedReceipt failed verification: {}",
+            reason
+        )));
+    }
+
+    let signed_receipt_hash = sha256(canonical_signed_receipt.as_bytes()).to_hex_prefixed();
+    if let Some(local_receipt_hash) = ack
+        .raw_payload
+        .get("localReceiptHash")
+        .and_then(Value::as_str)
+    {
+        if local_receipt_hash != signed_receipt_hash {
+            return Err(ApiError::BadRequest(
+                "endpoint acknowledgement localReceiptHash must match signedReceipt".to_string(),
+            ));
+        }
+    }
+
+    validate_endpoint_ack_receipt_contract(&signed_receipt, context, ack)
+}
+
+fn requires_endpoint_ack_signed_receipt(
+    action: &ResponseActionRecord,
+    ack: &AckSubmission,
+) -> bool {
+    action.target.kind.as_str() == "endpoint"
+        && action.action_type != ResponseActionType::PolicyRuleDiffValidation.as_str()
+        && matches!(ack.ack_status, "acknowledged" | "rolled_back")
+}
+
+fn validate_endpoint_ack_receipt_contract(
+    signed_receipt: &SignedReceipt,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
+    let endpoint_decision = signed_receipt
+        .receipt
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("endpointDecision"))
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "endpoint acknowledgement signedReceipt must include receipt.metadata.endpointDecision"
+                    .to_string(),
+            )
+        })?;
+    let receipt_family = endpoint_decision
+        .get("receiptFamily")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "endpoint acknowledgement signedReceipt endpointDecision.receiptFamily is required"
+                    .to_string(),
+            )
+        })?;
+    if receipt_family != "response_acknowledgement" {
+        return Err(ApiError::BadRequest(
+            "endpoint acknowledgement signedReceipt must be a response_acknowledgement receipt"
+                .to_string(),
+        ));
+    }
+    let receipt_endpoint_id = endpoint_decision
+        .pointer("/actor/endpointId")
+        .or_else(|| endpoint_decision.pointer("/actor/agentId"))
+        .or_else(|| endpoint_decision.pointer("/actor/agent_id"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "endpoint acknowledgement signedReceipt must bind actor endpoint id".to_string(),
+            )
+        })?;
+    if receipt_endpoint_id != ack.target_id {
+        return Err(ApiError::BadRequest(
+            "endpoint acknowledgement signedReceipt endpoint id must match target_id".to_string(),
+        ));
+    }
+
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision,
+        "controlResponseActionId",
+        &context.action.id.to_string(),
+    )?;
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision,
+        "controlTargetId",
+        &ack.target_id,
+    )?;
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision,
+        "controlAckStatus",
+        ack.ack_status,
+    )?;
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision,
+        "acknowledgedStatus",
+        ack.ack_status,
+    )?;
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision,
+        "controlAckTokenHash",
+        &sha256(ack.ack_token.as_bytes()).to_hex_prefixed(),
+    )?;
+    if let Some(local_execution_id) = ack
+        .raw_payload
+        .get("localExecutionId")
+        .and_then(Value::as_str)
+    {
+        require_endpoint_ack_receipt_evidence_hash(
+            endpoint_decision,
+            "executionId",
+            local_execution_id,
+        )?;
+    }
+    Ok(())
+}
+
+fn require_endpoint_ack_receipt_evidence_hash(
+    endpoint_decision: &Value,
+    key: &str,
+    raw_value: &str,
+) -> Result<(), ApiError> {
+    let expected_hash = sha256(raw_value.as_bytes()).to_hex_prefixed();
+    let evidence_hash = endpoint_decision
+        .get("evidence")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                if item.get("key").and_then(Value::as_str) == Some(key) {
+                    item.get("valueHash").and_then(Value::as_str)
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "endpoint acknowledgement signedReceipt evidence is missing {key}"
+            ))
+        })?;
+    if evidence_hash != expected_hash {
+        return Err(ApiError::BadRequest(format!(
+            "endpoint acknowledgement signedReceipt evidence {key} does not match acknowledgement"
+        )));
+    }
+    Ok(())
 }
 
 async fn ensure_ack_window_open(
@@ -1553,6 +1768,7 @@ fn normalize_ack_status(status: &str) -> Result<&'static str, ApiError> {
         "rejected" => Ok("rejected"),
         "failed" => Ok("failed"),
         "expired" => Ok("expired"),
+        "rolled_back" => Ok("rolled_back"),
         _ => Err(ApiError::BadRequest(format!(
             "unsupported ack status; allowed values: {ACK_STATUS_ALLOWLIST}"
         ))),
@@ -2421,6 +2637,11 @@ mod tests {
             Err(err) => err,
         };
         assert!(matches!(stale_observed_at, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn normalize_ack_status_accepts_rollback_acknowledgement() {
+        assert_eq!(normalize_ack_status("rolled_back").unwrap(), "rolled_back");
     }
 
     #[test]
