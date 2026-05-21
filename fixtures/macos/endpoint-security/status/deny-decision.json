@@ -14,7 +14,7 @@
   "evidence_paths" : [
 
   ],
-  "fail_open_possible" : true,
+  "fail_open_possible" : false,
   "fd_injection_equivalent" : false,
   "host_status" : {
     "approval" : "approved",

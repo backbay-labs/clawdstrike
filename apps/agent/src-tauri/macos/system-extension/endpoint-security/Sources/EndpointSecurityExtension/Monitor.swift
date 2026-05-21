@@ -137,7 +137,7 @@ public final class EndpointSecurityMonitor {
                 contract: Self.authorizationContract,
                 authorizationModel: Self.authorizationModel,
                 fdInjectionEquivalent: false,
-                failOpenPossible: true,
+                failOpenPossible: false,
                 hostStatus: hostStatus,
                 providerState: providerState,
                 counters: counters,

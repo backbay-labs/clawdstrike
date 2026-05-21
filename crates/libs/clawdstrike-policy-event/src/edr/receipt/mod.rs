@@ -692,6 +692,12 @@ impl EndpointDecisionReceipt {
                         EndpointResponseExecutionStatus::Partial => {
                             "Endpoint response action partially executed"
                         }
+                        EndpointResponseExecutionStatus::RollbackPending => {
+                            "Endpoint response rollback pending"
+                        }
+                        EndpointResponseExecutionStatus::RollbackFailed => {
+                            "Endpoint response rollback failed"
+                        }
                         EndpointResponseExecutionStatus::Expired => {
                             "Endpoint response action expired"
                         }
@@ -2993,6 +2999,8 @@ fn response_execution_transition_id_prefix(status: &str) -> Option<&'static str>
     match status {
         "failed" => Some("response_execution_failed"),
         "partial" => Some("response_execution_partial"),
+        "rollback_pending" => Some("response_execution_rollback_pending"),
+        "rollback_failed" => Some("response_execution_rollback_failed"),
         "expired" => Some("response_execution_expired"),
         "cancelled" => Some("response_execution_cancelled"),
         "rolled_back" => Some("response_execution_rolled_back"),
@@ -6056,6 +6064,8 @@ fn response_execution_status_from_decision(
         "Endpoint response action executed" => "succeeded",
         "Endpoint response action failed" => "failed",
         "Endpoint response action partially executed" => "partial",
+        "Endpoint response rollback pending" => "rollback_pending",
+        "Endpoint response rollback failed" => "rollback_failed",
         "Endpoint response action expired" => "expired",
         "Endpoint response action cancelled" => "cancelled",
         "Endpoint response action rolled back" => "rolled_back",

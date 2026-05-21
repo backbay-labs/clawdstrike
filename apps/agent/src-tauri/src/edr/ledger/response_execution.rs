@@ -206,7 +206,10 @@ impl EndpointResponseExecutionLedger {
         };
         if !matches!(
             latest.status,
-            EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
+            EndpointResponseExecutionStatus::Succeeded
+                | EndpointResponseExecutionStatus::Partial
+                | EndpointResponseExecutionStatus::RollbackPending
+                | EndpointResponseExecutionStatus::RollbackFailed
         ) {
             return Ok(None);
         }
@@ -244,14 +247,13 @@ impl EndpointResponseExecutionLedger {
         let current = self.all()?;
         let mut expired = Vec::new();
         for execution in &current {
-            if !matches!(
-                execution.status,
-                EndpointResponseExecutionStatus::Succeeded
-                    | EndpointResponseExecutionStatus::Partial
-            ) {
+            if !Self::is_expirable_effect_state(&execution.status) {
                 continue;
             }
             if now <= execution.expires_at() {
+                continue;
+            }
+            if Self::has_later_effect_state(&current, execution) {
                 continue;
             }
             if Self::has_terminal_transition(&current, execution) {
@@ -284,10 +286,31 @@ impl EndpointResponseExecutionLedger {
                 EndpointResponseExecutionStatus::Expired
                     | EndpointResponseExecutionStatus::Cancelled
                     | EndpointResponseExecutionStatus::RolledBack
-                    | EndpointResponseExecutionStatus::Failed
             ) && candidate.action_id == execution.action_id
                 && candidate.rollback_ref == execution.rollback_ref
         })
+    }
+
+    fn has_later_effect_state(
+        current: &[EndpointResponseExecutionReport],
+        execution: &EndpointResponseExecutionReport,
+    ) -> bool {
+        let search_start = current
+            .iter()
+            .rposition(|candidate| candidate == execution)
+            .map_or(0, |index| index + 1);
+        current[search_start..].iter().any(|candidate| {
+            candidate.action_id == execution.action_id
+                && candidate.rollback_ref == execution.rollback_ref
+                && Self::is_expirable_effect_state(&candidate.status)
+        })
+    }
+
+    fn is_expirable_effect_state(status: &EndpointResponseExecutionStatus) -> bool {
+        matches!(
+            status,
+            EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
+        )
     }
 }
 
@@ -333,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_execution_terminates_prior_partial_intent() {
+    fn failed_execution_does_not_terminate_prior_partial_intent() {
         let partial = execution(
             "response_execution_partial:1",
             EndpointResponseExecutionStatus::Partial,
@@ -343,10 +366,31 @@ mod tests {
             EndpointResponseExecutionStatus::Failed,
         );
 
-        assert!(EndpointResponseExecutionLedger::has_terminal_transition(
+        assert!(!EndpointResponseExecutionLedger::has_terminal_transition(
             &[partial.clone(), failed],
             &partial,
         ));
+    }
+
+    #[test]
+    fn succeeded_execution_supersedes_prior_partial_intent_for_expiration() {
+        let partial = execution(
+            "response_execution_partial:ttl",
+            EndpointResponseExecutionStatus::Partial,
+        );
+        let mut succeeded = partial.clone();
+        succeeded.execution_id = "response_execution_succeeded:ttl".to_string();
+        succeeded.status = EndpointResponseExecutionStatus::Succeeded;
+        succeeded.completed_at = partial.completed_at + chrono::Duration::seconds(1);
+        let now = partial.completed_at
+            + chrono::Duration::seconds(i64::try_from(partial.ttl_seconds + 1).unwrap());
+        let mut ledger = EndpointResponseExecutionLedger::transient();
+        ledger.append(&partial).unwrap();
+        ledger.append(&succeeded).unwrap();
+
+        let pending = ledger.pending_expiring_executions(now).unwrap();
+
+        assert_eq!(pending, vec![succeeded]);
     }
 
     #[test]

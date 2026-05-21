@@ -462,17 +462,45 @@ pub(crate) async fn expire_edr_response_executions(
                     ),
                 )
             })?;
-        let rollback = execute_response_expiration_rollback(&state, execution)
-            .await
-            .map_err(|(status, err)| {
-                (
+        let reason = format!("response execution {} TTL expired", execution.execution_id);
+        let (_rollback_intent, _rollback_intent_receipt) =
+            record_edr_response_rollback_intent(&state, execution, &reason, graph).await?;
+        let rollback = match execute_response_expiration_rollback(&state, execution).await {
+            Ok(rollback) => rollback,
+            Err((status, err)) => {
+                let record_message = sanitize_response_execution_failure(&err);
+                let record_result = record_edr_response_rollback_failure(
+                    &state,
+                    execution,
+                    &reason,
+                    record_message.as_str(),
+                    graph,
+                )
+                .await;
+                let suffix = match record_result {
+                    Ok((failed, receipt)) => {
+                        let receipt = receipt
+                            .receipt
+                            .receipt_id
+                            .unwrap_or_else(|| "unknown".to_string());
+                        format!(
+                            "; rollback failure recorded as {} with receipt {}",
+                            failed.execution_id, receipt
+                        )
+                    }
+                    Err((_, record_err)) => {
+                        format!("; rollback failure recording also failed: {record_err}")
+                    }
+                };
+                return Err((
                     status,
                     format!(
-                        "failed to roll back expired response execution {}: {err}",
+                        "failed to roll back expired response execution {}: {err}{suffix}",
                         execution.execution_id
                     ),
-                )
-            })?;
+                ));
+            }
+        };
         let receipt = emit_edr_response_rollback_receipt(&state, &rollback, graph)
             .await
             .map_err(internal_error)?;
@@ -572,7 +600,10 @@ pub(crate) async fn agent_edr_response_execution_cancel(
     }
     if !matches!(
         execution.status,
-        EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
+        EndpointResponseExecutionStatus::Succeeded
+            | EndpointResponseExecutionStatus::Partial
+            | EndpointResponseExecutionStatus::RollbackPending
+            | EndpointResponseExecutionStatus::RollbackFailed
     ) {
         return Err((
             StatusCode::CONFLICT,
@@ -728,7 +759,10 @@ pub(crate) async fn agent_edr_response_execution_rollback(
             .graph
     };
 
-    let rollback = match execution.action {
+    let (_rollback_intent, _rollback_intent_receipt) =
+        record_edr_response_rollback_intent(&state, &execution, &reason, &graph).await?;
+
+    let rollback_result = match execution.action {
         EndpointDecisionAction::RestrictEgress => {
             execute_restrict_egress_rollback(&state, &execution, &reason).await
         }
@@ -742,13 +776,40 @@ pub(crate) async fn agent_edr_response_execution_rollback(
             execute_suspend_process_tree_rollback(&execution, &reason)
         }
         _ => unreachable!("rollback-capable action was validated above"),
-    }
-    .map_err(|(status, err)| {
-        (
-            status,
-            format!("failed to roll back response execution {execution_id}: {err}"),
-        )
-    })?;
+    };
+    let rollback = match rollback_result {
+        Ok(rollback) => rollback,
+        Err((status, err)) => {
+            let record_message = sanitize_response_execution_failure(&err);
+            let record_result = record_edr_response_rollback_failure(
+                &state,
+                &execution,
+                &reason,
+                record_message.as_str(),
+                &graph,
+            )
+            .await;
+            let suffix = match record_result {
+                Ok((failed, receipt)) => {
+                    let receipt = receipt
+                        .receipt
+                        .receipt_id
+                        .unwrap_or_else(|| "unknown".to_string());
+                    format!(
+                        "; rollback failure recorded as {} with receipt {}",
+                        failed.execution_id, receipt
+                    )
+                }
+                Err((_, record_err)) => {
+                    format!("; rollback failure recording also failed: {record_err}")
+                }
+            };
+            return Err((
+                status,
+                format!("failed to roll back response execution {execution_id}: {err}{suffix}"),
+            ));
+        }
+    };
     let receipt = emit_edr_response_rollback_receipt(&state, &rollback, &graph)
         .await
         .map_err(internal_error)?;

@@ -7,7 +7,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         let report = EndpointSecurityMonitor.fixtureScenario(.healthyAllow)
 
         XCTAssertEqual(report.fdInjectionEquivalent, false)
-        XCTAssertEqual(report.failOpenPossible, true)
+        XCTAssertEqual(report.failOpenPossible, false)
         XCTAssertEqual(report.contract, "macos_endpoint_security_auth_contract")
         XCTAssertEqual(report.authorizationModel, "auth_open_point_in_time")
         XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .active)

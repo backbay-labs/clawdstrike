@@ -62,11 +62,12 @@ use clawdstrike_policy_event::edr::{
     EndpointResponseAcknowledgementReport, EndpointResponseControlCorrelation,
     EndpointResponseExecutionEffect, EndpointResponseExecutionReceiptInput,
     EndpointResponseExecutionReport, EndpointResponseExecutionStatus, EndpointResponsePlan,
-    EndpointResponseReceiptInput, EndpointResponseRollbackReceiptInput,
-    EndpointResponseRollbackReport, EndpointSensorState, EndpointSensorStateReceiptInput,
-    EndpointSimulationImpactLevel, EndpointSimulationReceiptInput, EndpointTelemetryPrivacyMode,
-    EndpointTelemetryPrivacyReceiptInput, EndpointTelemetryPrivacyReport, FileOperation,
-    HoneyArtifact, PackageManager, SupplyChainRuntimeGuard,
+    EndpointResponseProcessIdentityBinding, EndpointResponseReceiptInput,
+    EndpointResponseRollbackReceiptInput, EndpointResponseRollbackReport, EndpointSensorState,
+    EndpointSensorStateReceiptInput, EndpointSimulationImpactLevel, EndpointSimulationReceiptInput,
+    EndpointTelemetryPrivacyMode, EndpointTelemetryPrivacyReceiptInput,
+    EndpointTelemetryPrivacyReport, FileOperation, HoneyArtifact, PackageManager,
+    SupplyChainRuntimeGuard,
 };
 use clawdstrike_policy_event::event::PolicyEvent;
 use clawdstrike_policy_event::simulate::replay_events;
@@ -6481,24 +6482,34 @@ async fn execute_suspend_process_tree_response(
         )
     })?;
     for target in &targets {
-        check_process_signalable(target.pid).map_err(|err| {
+        validate_process_signal_target_before_signal(target).map_err(|err| {
             (
                 StatusCode::CONFLICT,
-                format!("process {} cannot be signalled: {err}", target.pid),
+                format!("process {} cannot be signalled safely: {err}", target.pid),
             )
         })?;
     }
 
-    let pids = targets.iter().map(|target| target.pid).collect::<Vec<_>>();
     let root_pid = targets.first().map(|target| target.pid).ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
             "process tree target is empty".to_string(),
         )
     })?;
-    let execution =
-        EndpointResponseExecutionReport::suspend_process_tree(plan, graph, root_pid, &pids)
-            .map_err(internal_error)?;
+    let identity_bindings = targets
+        .iter()
+        .map(|target| EndpointResponseProcessIdentityBinding {
+            pid: target.pid,
+            process_identity_key: target.process_identity_key.clone(),
+        })
+        .collect::<Vec<_>>();
+    let execution = EndpointResponseExecutionReport::suspend_process_tree_with_identity_bindings(
+        plan,
+        graph,
+        root_pid,
+        &identity_bindings,
+    )
+    .map_err(internal_error)?;
     emit_pre_effect_response_execution_receipt(
         state,
         &execution,
@@ -6510,13 +6521,74 @@ async fn execute_suspend_process_tree_response(
 
     let mut suspended = Vec::new();
     for target in targets.iter().rev() {
+        validate_process_signal_target_before_signal(target).map_err(|err| {
+            (
+                StatusCode::CONFLICT,
+                format!(
+                    "process {} identity changed before suspend signal: {err}",
+                    target.pid
+                ),
+            )
+        })?;
         if let Err(err) = signal_process(target.pid, process_suspend_signal()) {
+            let mut resume_errors = Vec::new();
             for pid in &suspended {
-                let _ = signal_process(*pid, process_resume_signal());
+                if let Err(resume_err) = signal_process(*pid, process_resume_signal()) {
+                    resume_errors.push(format!(
+                        "failed to resume partially suspended pid {pid}: {resume_err}"
+                    ));
+                }
             }
+            let cleanup_reason = format!(
+                "suspend process tree failed while signalling pid {}; partial suspend cleanup ran",
+                target.pid
+            );
+            if resume_errors.is_empty() {
+                let compensated = EndpointResponseExecutionReport::rolled_back_from(
+                    &execution,
+                    cleanup_reason.as_str(),
+                    chrono::Utc::now(),
+                );
+                {
+                    let mut ledger = state.edr_response_execution_ledger.lock().await;
+                    ledger.append(&compensated).map_err(internal_error)?;
+                }
+                let _ = emit_edr_response_execution_receipt(
+                    state,
+                    &compensated,
+                    graph,
+                    compensated.actor.clone(),
+                    &[EndpointReceiptEvidence::hashed(
+                        "partialSuspendCleanupForExecutionId",
+                        execution.execution_id.as_str(),
+                    )],
+                )
+                .await;
+            } else {
+                let failure = resume_errors.join("; ");
+                let _ = record_edr_response_rollback_failure(
+                    state,
+                    &execution,
+                    cleanup_reason.as_str(),
+                    failure.as_str(),
+                    graph,
+                )
+                .await;
+            }
+            let cleanup_suffix = if resume_errors.is_empty() {
+                "; partially suspended processes were resumed and a rollback transition was recorded".to_string()
+            } else {
+                format!(
+                    "; partial suspend cleanup failed and remains rollbackable: {}",
+                    resume_errors.join("; ")
+                )
+            };
             return Err((
                 StatusCode::CONFLICT,
-                format!("failed to suspend process {}: {err}", target.pid),
+                format!(
+                    "failed to suspend process {}: {err}{cleanup_suffix}",
+                    target.pid
+                ),
             ));
         }
         suspended.push(target.pid);
@@ -6774,7 +6846,7 @@ pub(crate) fn execute_suspend_process_tree_rollback(
             format!("invalid process tree execution effect: {err}"),
         )
     })?;
-    let pids = process_tree_effect_pids(effect).map_err(|err| {
+    let targets = process_tree_effect_signal_targets(effect).map_err(|err| {
         (
             StatusCode::BAD_REQUEST,
             format!("invalid process tree pid set: {err}"),
@@ -6783,11 +6855,20 @@ pub(crate) fn execute_suspend_process_tree_rollback(
     let rollback =
         EndpointResponseRollbackReport::suspend_process_tree(execution, reason, chrono::Utc::now())
             .map_err(internal_error)?;
-    for pid in &pids {
-        signal_process(*pid, process_resume_signal()).map_err(|err| {
+    for target in &targets {
+        validate_process_effect_signal_target_before_signal(target).map_err(|err| {
             (
                 StatusCode::CONFLICT,
-                format!("failed to resume suspended process {pid}: {err}"),
+                format!(
+                    "process {} identity changed before resume signal: {err}",
+                    target.pid
+                ),
+            )
+        })?;
+        signal_process(target.pid, process_resume_signal()).map_err(|err| {
+            (
+                StatusCode::CONFLICT,
+                format!("failed to resume suspended process {}: {err}", target.pid),
             )
         })?;
     }
@@ -6843,6 +6924,68 @@ async fn emit_pre_effect_response_execution_receipt(
     emit_edr_response_execution_receipt(state, &prepared, graph, Some(actor), &evidence)
         .await
         .map_err(internal_error)
+}
+
+pub(crate) async fn record_edr_response_rollback_intent(
+    state: &AgentApiState,
+    execution: &EndpointResponseExecutionReport,
+    reason: &str,
+    graph: &CausalGraph,
+) -> Result<(EndpointResponseExecutionReport, SignedReceipt), (StatusCode, String)> {
+    let pending = EndpointResponseExecutionReport::rollback_pending_from(
+        execution,
+        reason,
+        chrono::Utc::now(),
+    );
+    {
+        let mut ledger = state.edr_response_execution_ledger.lock().await;
+        ledger.append(&pending).map_err(internal_error)?;
+    }
+    let receipt = emit_edr_response_execution_receipt(
+        state,
+        &pending,
+        graph,
+        pending.actor.clone(),
+        &[EndpointReceiptEvidence::hashed(
+            "rollbackIntentForExecutionId",
+            execution.execution_id.as_str(),
+        )],
+    )
+    .await
+    .map_err(internal_error)?;
+    Ok((pending, receipt))
+}
+
+pub(crate) async fn record_edr_response_rollback_failure(
+    state: &AgentApiState,
+    execution: &EndpointResponseExecutionReport,
+    reason: &str,
+    failure: &str,
+    graph: &CausalGraph,
+) -> Result<(EndpointResponseExecutionReport, SignedReceipt), (StatusCode, String)> {
+    let failed = EndpointResponseExecutionReport::rollback_failed_from(
+        execution,
+        reason,
+        failure,
+        chrono::Utc::now(),
+    );
+    {
+        let mut ledger = state.edr_response_execution_ledger.lock().await;
+        ledger.append(&failed).map_err(internal_error)?;
+    }
+    let receipt = emit_edr_response_execution_receipt(
+        state,
+        &failed,
+        graph,
+        failed.actor.clone(),
+        &[EndpointReceiptEvidence::hashed(
+            "rollbackFailureForExecutionId",
+            execution.execution_id.as_str(),
+        )],
+    )
+    .await
+    .map_err(internal_error)?;
+    Ok((failed, receipt))
 }
 
 fn response_execution_transition_id(
@@ -8039,6 +8182,44 @@ fn validate_process_signal_targets(targets: &[ProcessSignalTarget]) -> Result<()
             return Err(anyhow::anyhow!(
                 "refusing to signal protected process label {}",
                 target.label
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_process_signal_target_before_signal(target: &ProcessSignalTarget) -> Result<()> {
+    validate_process_identity_binding(target.pid, Some(target.process_identity_key.as_str()))?;
+    check_process_signalable(target.pid)
+}
+
+fn validate_process_effect_signal_target_before_signal(
+    target: &ProcessTreeEffectSignalTarget,
+) -> Result<()> {
+    validate_process_identity_binding(target.pid, target.process_identity_key.as_deref())?;
+    check_process_signalable(target.pid)
+}
+
+fn validate_process_identity_binding(pid: u32, identity_key: Option<&str>) -> Result<()> {
+    let identity_key = identity_key
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing durable process identity binding"))?;
+    if !identity_key.starts_with("guid:") {
+        return Err(anyhow::anyhow!(
+            "process identity binding is not durable: {identity_key}"
+        ));
+    }
+    if let Some(rest) = identity_key.strip_prefix("guid:macos:") {
+        let Some(identity_pid) = rest.split(':').next() else {
+            return Err(anyhow::anyhow!("macOS process identity is missing pid"));
+        };
+        let identity_pid = identity_pid
+            .parse::<u32>()
+            .with_context(|| format!("parse macOS process identity pid {identity_pid}"))?;
+        if identity_pid != pid {
+            return Err(anyhow::anyhow!(
+                "macOS process identity pid {identity_pid} does not match live target pid {pid}"
             ));
         }
     }
@@ -13238,7 +13419,8 @@ fn validate_control_ack_uuid(field: &str, value: &str) -> Result<(), (StatusCode
 
 fn default_control_ack_status(status: &EndpointResponseExecutionStatus) -> &'static str {
     match status {
-        EndpointResponseExecutionStatus::Failed => "failed",
+        EndpointResponseExecutionStatus::Failed
+        | EndpointResponseExecutionStatus::RollbackFailed => "failed",
         EndpointResponseExecutionStatus::Expired => "expired",
         EndpointResponseExecutionStatus::RolledBack => "rolled_back",
         _ => "acknowledged",
@@ -16052,9 +16234,14 @@ fn expected_response_rollback_effects(
                         "response rollback receipt target does not match response execution proof contract",
                     )
                 })?;
-            let pids = response_proof_contract_pid_artifact(effect)?;
+            let artifact = response_proof_contract_required_effect_field(
+                effect.artifact.as_deref(),
+                "response rollback receipt artifact does not match response execution proof contract",
+            )?;
             let rollback_effect =
-                EndpointResponseExecutionEffect::resume_process_tree(root_pid, &pids);
+                EndpointResponseExecutionEffect::resume_process_tree_from_artifact(
+                    root_pid, artifact,
+                );
             verify_rollback_effect_matches_execution_effect(&rollback_effect, effect)?;
             Ok(vec![rollback_effect])
         }
@@ -16098,21 +16285,6 @@ fn response_proof_contract_string_artifact(
         ));
     }
     Ok(values)
-}
-
-fn response_proof_contract_pid_artifact(
-    effect: &EndpointResponseExecutionEffect,
-) -> Result<Vec<u32>, (StatusCode, String)> {
-    response_proof_contract_string_artifact(effect)?
-        .into_iter()
-        .map(|pid| {
-            pid.parse::<u32>().map_err(|_| {
-                response_proof_contract_conflict(
-                    "response rollback receipt artifact does not match response execution proof contract",
-                )
-            })
-        })
-        .collect()
 }
 
 fn response_proof_contract_required_effect_field<'a>(
@@ -18298,6 +18470,8 @@ fn response_execution_status_from_receipt(receipt: &SignedReceipt) -> Option<Str
         "succeeded",
         "failed",
         "partial",
+        "rollback_pending",
+        "rollback_failed",
         "expired",
         "cancelled",
         "rolled_back",
@@ -43451,6 +43625,10 @@ guards:
             payload["execution"]["effects"][0]["byteCount"],
             serde_json::Value::from(1)
         );
+        assert_eq!(
+            payload["execution"]["effects"][0]["artifact"],
+            format!("{child_pid}=guid:proc-suspend-tree-1")
+        );
 
         let execution_id = payload["execution"]["executionId"]
             .as_str()
@@ -43581,6 +43759,22 @@ guards:
             Err(err) => err.to_string(),
         };
         assert!(err.contains("duplicate pids"));
+    }
+
+    #[test]
+    fn process_signal_identity_binding_rejects_pid_only_and_mismatched_macos_pid() {
+        let pid_only = validate_process_identity_binding(42, None)
+            .expect_err("pid-only signal target must fail closed")
+            .to_string();
+        assert!(pid_only.contains("missing durable process identity"));
+
+        let mismatched = validate_process_identity_binding(42, Some("guid:macos:43:9"))
+            .expect_err("mismatched macOS pid identity must fail closed")
+            .to_string();
+        assert!(mismatched.contains("does not match live target pid 42"));
+
+        validate_process_identity_binding(42, Some("guid:macos:42:9"))
+            .expect("matching macOS pid identity should pass structural validation");
     }
 
     #[tokio::test]
@@ -44082,6 +44276,35 @@ guards:
             .iter()
             .any(|item| item["key"] == "executionStatus"
                 && item["valueHash"].as_str() == Some(rolled_back_hash.as_str())));
+
+        let rollback_lifecycle = {
+            let ledger = state.edr_response_execution_ledger.lock().await;
+            ledger
+                .read_recent(20)
+                .unwrap_or_else(|err| panic!("failed to read rollback lifecycle ledger: {err}"))
+                .into_iter()
+                .filter(|record| {
+                    record.action_id == response_action_id
+                        && record.rollback_ref
+                            == payload["plan"]["rollbackRef"]
+                                .as_str()
+                                .unwrap_or_else(|| panic!("missing rollback ref"))
+                })
+                .map(|record| record.status)
+                .collect::<Vec<_>>()
+        };
+        let pending_index = rollback_lifecycle
+            .iter()
+            .position(|status| *status == EndpointResponseExecutionStatus::RollbackPending)
+            .unwrap_or_else(|| panic!("missing durable rollback intent before quarantine restore"));
+        let rolled_back_index = rollback_lifecycle
+            .iter()
+            .position(|status| *status == EndpointResponseExecutionStatus::RolledBack)
+            .unwrap_or_else(|| panic!("missing durable rolled-back transition"));
+        assert!(
+            pending_index < rolled_back_index,
+            "rollback intent must be durable before terminal rollback transition"
+        );
 
         let req = axum::http::Request::builder()
             .method("GET")
