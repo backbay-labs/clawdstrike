@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -14,17 +12,19 @@ use clawdstrike_policy_event::edr::*;
 #[allow(unused_imports)]
 use clawdstrike_policy_event::event::PolicyEvent;
 #[allow(unused_imports)]
+use hush_core::sha256;
+#[allow(unused_imports)]
 use hush_core::SignedReceipt;
 #[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
 #[allow(unused_imports)]
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::fs;
 #[allow(unused_imports)]
-use hush_core::sha256;
+use std::sync::Arc;
 
 pub(crate) async fn agent_edr_policy_events_replay(
     State(state): State<Arc<AgentApiState>>,
@@ -41,7 +41,6 @@ pub(crate) async fn agent_edr_policy_events_replay(
     .map(Json)
 }
 
-
 pub(crate) async fn agent_edr_policy_events_replay_jsonl(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -53,7 +52,6 @@ pub(crate) async fn agent_edr_policy_events_replay_jsonl(
         .await
         .map(Json)
 }
-
 
 pub(crate) async fn agent_edr_policy_events_replay_history(
     State(state): State<Arc<AgentApiState>>,
@@ -74,7 +72,6 @@ pub(crate) async fn agent_edr_policy_events_replay_history(
     }))
 }
 
-
 pub(crate) async fn agent_edr_policy_events_impact(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -90,7 +87,6 @@ pub(crate) async fn agent_edr_policy_events_impact(
     .await
     .map(Json)
 }
-
 
 pub(crate) async fn agent_edr_policy_events_impact_history(
     State(state): State<Arc<AgentApiState>>,
@@ -165,7 +161,6 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
     }))
 }
 
-
 pub(crate) async fn agent_edr_policy_simulation(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -227,7 +222,6 @@ pub(crate) async fn agent_edr_policy_simulation(
         receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_policy_replay(
     State(state): State<Arc<AgentApiState>>,
@@ -318,7 +312,6 @@ pub(crate) async fn agent_edr_policy_replay(
     }))
 }
 
-
 pub(crate) async fn agent_edr_detection_candidate(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -327,7 +320,6 @@ pub(crate) async fn agent_edr_detection_candidate(
     require_auth(&headers, &state)?;
     build_edr_detection_candidate(&state, input).await.map(Json)
 }
-
 
 pub(crate) async fn agent_edr_stage_detection(
     State(state): State<Arc<AgentApiState>>,
@@ -342,7 +334,7 @@ pub(crate) async fn agent_edr_stage_detection(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or(candidate_response.recommended_stage.as_str());
-    validate_detection_stage(stage, &candidate_response.stage_plan)?;
+    let stage_entry = detection_stage_entry(stage, &candidate_response.stage_plan)?;
     let staged_by = input
         .staged_by
         .as_deref()
@@ -372,6 +364,12 @@ pub(crate) async fn agent_edr_stage_detection(
     let cross_window_recommendation_hash = normalize_staged_detection_hash(
         "crossWindowRecommendationHash",
         input.cross_window_recommendation_hash,
+    )?;
+    validate_detection_stage_promotion_readiness(
+        stage,
+        stage_entry,
+        cross_window_impact_hash.as_deref(),
+        cross_window_recommendation_hash.as_deref(),
     )?;
 
     let settings = state.settings.read().await.clone();
@@ -415,7 +413,6 @@ pub(crate) async fn agent_edr_stage_detection(
     }))
 }
 
-
 pub(crate) async fn agent_edr_staged_detections(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -436,7 +433,6 @@ pub(crate) async fn agent_edr_staged_detections(
         staged_detections,
     }))
 }
-
 
 pub(crate) async fn agent_edr_policy_delta(
     State(state): State<Arc<AgentApiState>>,
@@ -553,7 +549,6 @@ pub(crate) async fn agent_edr_policy_delta(
     Ok(Json(EdrPolicyDeltaResponse { path, record }))
 }
 
-
 pub(crate) async fn agent_edr_policy_deltas(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -574,7 +569,6 @@ pub(crate) async fn agent_edr_policy_deltas(
         policy_deltas,
     }))
 }
-
 
 pub(crate) async fn agent_edr_policy_delta_apply(
     State(state): State<Arc<AgentApiState>>,
@@ -817,4 +811,3 @@ pub(crate) async fn agent_edr_policy_delta_apply(
         post_apply_enforcement,
     }))
 }
-

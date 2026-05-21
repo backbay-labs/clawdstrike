@@ -5607,18 +5607,39 @@ pub(crate) fn policy_delta_backup_path(
     ))
 }
 
-pub(crate) fn validate_detection_stage(
+pub(crate) fn detection_stage_entry<'a>(
     stage: &str,
-    stage_plan: &[EdrDetectionCandidateStage],
-) -> Result<(), (StatusCode, String)> {
-    if stage_plan.iter().any(|candidate| candidate.stage == stage) {
-        return Ok(());
+    stage_plan: &'a [EdrDetectionCandidateStage],
+) -> Result<&'a EdrDetectionCandidateStage, (StatusCode, String)> {
+    if let Some(candidate) = stage_plan.iter().find(|candidate| candidate.stage == stage) {
+        return Ok(candidate);
     }
     Err((
         StatusCode::BAD_REQUEST,
         format!(
             "stage must be one of: {}",
             detection_stage_names(stage_plan)
+        ),
+    ))
+}
+
+pub(crate) fn validate_detection_stage_promotion_readiness(
+    stage: &str,
+    stage_entry: &EdrDetectionCandidateStage,
+    cross_window_impact_hash: Option<&str>,
+    cross_window_recommendation_hash: Option<&str>,
+) -> Result<(), (StatusCode, String)> {
+    if !policy_delta_stage_is_enforcing(stage, &stage_entry.action) {
+        return Ok(());
+    }
+    if cross_window_impact_hash.is_some() && cross_window_recommendation_hash.is_some() {
+        return Ok(());
+    }
+    Err((
+        StatusCode::BAD_REQUEST,
+        format!(
+            "{stage} is an enforcing endpoint policy stage for action {}; provide crossWindowImpactHash and crossWindowRecommendationHash from a promotionReady=true policy-events impact history response before staging enforcement",
+            stage_entry.action.as_str()
         ),
     ))
 }
@@ -37307,6 +37328,41 @@ guards:
                 .map(|(node_id, _)| node_id.clone())
                 .unwrap_or_else(|| panic!("missing network graph node"))
         };
+
+        let body = serde_json::json!({
+            "rootNodeId": network_node_id,
+            "maxDepth": 8,
+            "selectedStage": "limited_block",
+            "stagedBy": "operator:bob",
+            "note": "attempt enforcement without cross-window readiness"
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/staged-detections")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build ungated policy-delta stage request: {e}"));
+        let response = app
+            .clone()
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("ungated policy-delta stage request failed: {e}"));
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 256 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read ungated stage response: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "ungated stage response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(
+            String::from_utf8_lossy(&bytes).contains("promotionReady=true"),
+            "ungated stage response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
 
         let body = serde_json::json!({
             "rootNodeId": network_node_id,
