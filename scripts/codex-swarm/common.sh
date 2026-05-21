@@ -121,34 +121,88 @@ swarm_orchestrator_lane_count() {
   ' "$(swarm_lane_table "$repo_root")"
 }
 
+swarm_lane_namespaces() {
+  local repo_root="$1"
+  local selected_lanes="${2:-}"
+
+  awk -F '\t' -v selected_lanes="$selected_lanes" '
+    BEGIN {
+      selected_count = split(selected_lanes, lane_list, /[,[:space:]]+/)
+      for (i = 1; i <= selected_count; i++) {
+        if (lane_list[i] != "") {
+          selected[lane_list[i]] = 1
+        }
+      }
+    }
+    NR == 1 {
+      for (i = 1; i <= NF; i++) {
+        idx[$i] = i
+      }
+      next
+    }
+    ("swarm" in idx) && $(idx["swarm"]) != "" {
+      if (selected_lanes == "" || ($1 in selected)) {
+        namespaces[$(idx["swarm"])] = 1
+      }
+    }
+    END {
+      for (namespace in namespaces) {
+        print namespace
+      }
+    }
+  ' "$(swarm_lane_table "$repo_root")" | sort -u
+}
+
+swarm_single_namespace_from_lanes() {
+  local repo_root="$1"
+  local selected_lanes="${2:-}"
+  local namespace
+  local namespace_count
+
+  namespace="$(swarm_lane_namespaces "$repo_root" "$selected_lanes")"
+  if [[ -z "$namespace" ]]; then
+    return 1
+  fi
+  namespace_count="$(printf '%s\n' "$namespace" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+  if [[ "$namespace_count" != "1" ]]; then
+    if [[ -n "$selected_lanes" ]]; then
+      printf 'Selected swarm lanes span multiple namespaces:\n%s\n' "$namespace" >&2
+      return 2
+    fi
+    return 1
+  fi
+  swarm_assert_safe_namespace_name "$namespace"
+  printf '%s\n' "$namespace"
+}
+
 swarm_namespace() {
   local repo_root
   local namespace
   local orch_lane
   local orch_worktree
   local orch_branch
+  local selected_lanes
+  local namespace_status
   repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
   if [[ -n "${CLAWDSTRIKE_SWARM_NAMESPACE:-}" ]]; then
     swarm_assert_safe_namespace_name "$CLAWDSTRIKE_SWARM_NAMESPACE"
     printf '%s\n' "$CLAWDSTRIKE_SWARM_NAMESPACE"
     return
   fi
-  namespace="$(
-    awk -F '\t' '
-      NR == 1 {
-        for (i = 1; i <= NF; i++) {
-          idx[$i] = i
-        }
-        next
-      }
-      ("swarm" in idx) && $(idx["swarm"]) != "" {
-        print $(idx["swarm"])
-        exit
-      }
-    ' "$(swarm_lane_table "$repo_root")"
-  )"
-  if [[ -n "$namespace" ]]; then
-    swarm_assert_safe_namespace_name "$namespace"
+  selected_lanes="${CLAWDSTRIKE_SWARM_SELECTED_LANES:-}"
+  if [[ -n "$selected_lanes" ]]; then
+    namespace_status=0
+    namespace="$(swarm_single_namespace_from_lanes "$repo_root" "$selected_lanes")" || namespace_status=$?
+    if [[ "$namespace_status" == "0" ]]; then
+      printf '%s\n' "$namespace"
+      return
+    elif [[ "$namespace_status" == "2" ]]; then
+      exit 1
+    fi
+  fi
+  namespace_status=0
+  namespace="$(swarm_single_namespace_from_lanes "$repo_root")" || namespace_status=$?
+  if [[ "$namespace_status" == "0" ]]; then
     printf '%s\n' "$namespace"
     return
   fi
@@ -358,8 +412,16 @@ swarm_lane_worktree_path() {
 swarm_lane_orch_dir() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"
+  local orchestration_dir
+  if [[ -n "${CLAWDSTRIKE_SWARM_SELECTED_LANES:-}" ]]; then
+    orchestration_dir="$(swarm_orchestration_dir "$repo_root")"
+  else
+    orchestration_dir="$(
+      CLAWDSTRIKE_SWARM_SELECTED_LANES="$lane" swarm_orchestration_dir "$repo_root"
+    )"
+  fi
   printf '%s/%s\n' \
-    "$(swarm_orchestration_dir "$repo_root")" \
+    "$orchestration_dir" \
     "$lane"
 }
 
@@ -373,7 +435,6 @@ swarm_ensure_dirs() {
   local repo_root="${1:-$(swarm_repo_root)}"
   local lane
   mkdir -p "$(swarm_worktrees_dir "$repo_root")"
-  mkdir -p "$(swarm_orchestration_dir "$repo_root")"
   while IFS= read -r lane; do
     mkdir -p "$(swarm_lane_orch_dir "$lane" "$repo_root")"
   done < <(swarm_all_lanes "$repo_root")

@@ -89,8 +89,9 @@ source. Keep it to reviewed preset IDs such as `cargo-fetch-locked` or
 `cargo-fetch-agent-locked` so the launcher never needs `eval`.
 
 When multiple initiatives share one `*-worktrees` directory, orchestration
-artifacts default to a swarm-specific namespace inferred from the `ORCH` lane
-metadata so stale `final.md`, `review.md`, or `run.pid` files do not collide.
+artifacts default to the selected lane's `swarm` namespace in
+`.codex/swarm/lanes.tsv` so stale `final.md`, `review.md`, or `run.pid` files
+do not collide.
 Override that namespace with `CLAWDSTRIKE_SWARM_NAMESPACE` or set an exact path
 with `CLAWDSTRIKE_SWARM_ORCH_DIR` when needed.
 
