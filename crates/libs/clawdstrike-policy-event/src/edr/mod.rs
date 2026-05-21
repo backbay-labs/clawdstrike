@@ -7500,6 +7500,18 @@ mod tests {
             allowed_receipt.actor.agent_id.as_deref(),
             Some("agent:codex")
         );
+        assert!(allowed_receipt
+            .evidence
+            .iter()
+            .any(|item| item.key == "actorHash"));
+        assert!(allowed_receipt
+            .evidence
+            .iter()
+            .any(|item| item.key == "actorSessionId"));
+        assert!(allowed_receipt
+            .evidence
+            .iter()
+            .any(|item| item.key == "policyEpoch"));
 
         let mut mismatched_allowed = allowed_receipt.clone();
         if let Some(allowed_evidence) = mismatched_allowed
@@ -7544,6 +7556,40 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("policy decision graph slice"));
+
+        let mut tampered_actor_hash = allowed_receipt.clone();
+        tampered_actor_hash.actor.agent_id = Some("agent:other".to_string());
+        assert!(tampered_actor_hash
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("policy decision actor hash evidence hash"));
+
+        let mut tampered_actor_session = allowed_receipt.clone();
+        tampered_actor_session.actor.session_id = Some("session-other".to_string());
+        if let Some(actor_hash_evidence) = tampered_actor_session
+            .evidence
+            .iter_mut()
+            .find(|item| item.key == "actorHash")
+        {
+            *actor_hash_evidence = EndpointReceiptEvidence::hashed(
+                "actorHash",
+                endpoint_decision_actor_content_hash(&tampered_actor_session.actor),
+            );
+        }
+        assert!(tampered_actor_session
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("policy decision actor session evidence hash"));
+
+        let mut tampered_policy_epoch = allowed_receipt.clone();
+        tampered_policy_epoch.policy.policy_epoch += 1;
+        assert!(tampered_policy_epoch
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("policy decision policy epoch evidence hash"));
 
         let mut relabeled_policy_decision_id = allowed_receipt.clone();
         relabeled_policy_decision_id.decision.finding_id =

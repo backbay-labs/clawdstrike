@@ -403,10 +403,16 @@ impl EndpointDecisionReceipt {
     pub fn for_policy_decision(input: EndpointPolicyDecisionReceiptInput<'_>) -> Self {
         let allowed_text = input.allowed.to_string();
         let guard = input.guard.unwrap_or("none");
+        let actor_hash = endpoint_decision_actor_content_hash(&input.actor);
+        let actor_session_id = policy_decision_actor_session_value(&input.actor);
+        let policy_epoch = input.policy.policy_epoch.to_string();
         let graph_ref = EndpointGraphReference::for_observation(input.observation, input.graph);
         let decision_id = policy_decision_id_from_fields(
             input.actor.endpoint_id.as_str(),
             input.policy.policy_hash.as_str(),
+            input.policy.policy_epoch,
+            actor_hash.as_str(),
+            actor_session_id.as_str(),
             input.action_type,
             input.target,
             input.allowed,
@@ -417,6 +423,9 @@ impl EndpointDecisionReceipt {
             EndpointReceiptEvidence::hashed("target", input.target),
             EndpointReceiptEvidence::hashed("allowed", allowed_text),
             EndpointReceiptEvidence::hashed("guard", guard),
+            EndpointReceiptEvidence::hashed("actorHash", actor_hash),
+            EndpointReceiptEvidence::hashed("actorSessionId", actor_session_id),
+            EndpointReceiptEvidence::hashed("policyEpoch", policy_epoch),
             EndpointReceiptEvidence::hashed(
                 "observationId",
                 input.observation.observation_id.clone(),
@@ -2781,16 +2790,26 @@ fn endpoint_provider_full_disk_access_evidence_value(value: Option<bool>) -> &'s
 fn policy_decision_id_from_fields(
     endpoint_id: &str,
     policy_hash: &str,
+    policy_epoch: u64,
+    actor_hash: &str,
+    actor_session_id: &str,
     action_type: &str,
     target: &str,
     allowed: bool,
     guard: &str,
 ) -> String {
+    let policy_epoch = policy_epoch.to_string();
+    let policy_epoch_evidence_hash = sha256(policy_epoch.as_bytes()).to_hex_prefixed();
+    let actor_hash_evidence_hash = sha256(actor_hash.as_bytes()).to_hex_prefixed();
+    let actor_session_id_evidence_hash = sha256(actor_session_id.as_bytes()).to_hex_prefixed();
     let target_evidence_hash = sha256(target.as_bytes()).to_hex_prefixed();
     let guard_evidence_hash = sha256(guard.as_bytes()).to_hex_prefixed();
     policy_decision_id_from_evidence_hashes(
         endpoint_id,
         policy_hash,
+        policy_epoch_evidence_hash.as_str(),
+        actor_hash_evidence_hash.as_str(),
+        actor_session_id_evidence_hash.as_str(),
         action_type,
         target_evidence_hash.as_str(),
         allowed,
@@ -2805,6 +2824,18 @@ fn policy_decision_id_from_evidence(
     action_type: &str,
     allowed: bool,
 ) -> Result<String> {
+    let policy_epoch_evidence_hash = evidence_value_hash(
+        evidence,
+        "policyEpoch",
+        "policy decision policy epoch evidence",
+    )?;
+    let actor_hash_evidence_hash =
+        evidence_value_hash(evidence, "actorHash", "policy decision actor hash evidence")?;
+    let actor_session_id_evidence_hash = evidence_value_hash(
+        evidence,
+        "actorSessionId",
+        "policy decision actor session evidence",
+    )?;
     let target_evidence_hash =
         evidence_value_hash(evidence, "target", "policy decision target evidence")?;
     let guard_evidence_hash =
@@ -2812,6 +2843,9 @@ fn policy_decision_id_from_evidence(
     Ok(policy_decision_id_from_evidence_hashes(
         endpoint_id,
         policy_hash,
+        policy_epoch_evidence_hash,
+        actor_hash_evidence_hash,
+        actor_session_id_evidence_hash,
         action_type,
         target_evidence_hash,
         allowed,
@@ -2822,6 +2856,9 @@ fn policy_decision_id_from_evidence(
 fn policy_decision_id_from_evidence_hashes(
     endpoint_id: &str,
     policy_hash: &str,
+    policy_epoch_evidence_hash: &str,
+    actor_hash_evidence_hash: &str,
+    actor_session_id_evidence_hash: &str,
     action_type: &str,
     target_evidence_hash: &str,
     allowed: bool,
@@ -2833,6 +2870,9 @@ fn policy_decision_id_from_evidence_hashes(
         [
             endpoint_id,
             policy_hash,
+            policy_epoch_evidence_hash,
+            actor_hash_evidence_hash,
+            actor_session_id_evidence_hash,
             action_type,
             target_evidence_hash,
             allowed_text.as_str(),
@@ -4935,6 +4975,26 @@ fn require_policy_decision_evidence(
         "policy decision action type evidence",
     )?;
     require_nonempty_hashed_evidence(evidence, "target", "policy decision target evidence")?;
+    let actor_hash = endpoint_decision_actor_content_hash(actor);
+    require_evidence_value_hash(
+        evidence,
+        "actorHash",
+        actor_hash.as_str(),
+        "policy decision actor hash evidence",
+    )?;
+    let actor_session_id = policy_decision_actor_session_value(actor);
+    require_evidence_value_hash(
+        evidence,
+        "actorSessionId",
+        actor_session_id.as_str(),
+        "policy decision actor session evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "policyEpoch",
+        policy.policy_epoch.to_string(),
+        "policy decision policy epoch evidence",
+    )?;
     require_evidence_value_hash(
         evidence,
         "observationId",
@@ -4994,7 +5054,7 @@ fn require_policy_decision_evidence(
     )?;
     if signed_id != expected_decision_id {
         return Err(anyhow!(
-            "policy decision id must match signed endpoint, policy, action, target, allowed, and guard evidence"
+            "policy decision id must match signed endpoint, policy, policy epoch, actor hash, actor session, action, target, allowed, and guard evidence"
         ));
     }
     if evidence.iter().any(|item| item.key == "severity") {
@@ -5011,6 +5071,16 @@ fn require_policy_decision_evidence(
         require_nonempty_hashed_evidence(evidence, "details", "policy decision details evidence")?;
     }
     Ok(())
+}
+
+fn policy_decision_actor_session_value(actor: &EndpointDecisionActor) -> String {
+    actor
+        .session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("none")
+        .to_string()
 }
 
 fn require_simulation_evidence(
