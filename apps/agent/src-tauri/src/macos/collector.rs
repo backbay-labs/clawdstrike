@@ -330,6 +330,7 @@ fn spawn_network_extension_reload(
             network_tool.as_ref(),
             &request.policy_snapshot_path,
             request.generation,
+            request.timeout_duration,
         )
         .await;
         let _ = request.reply_tx.send(result);
@@ -415,10 +416,11 @@ async fn request_network_extension_reload(
     tool: Option<&ToolInvocation>,
     policy_snapshot_path: &Path,
     generation: u64,
+    timeout_duration: Duration,
 ) -> Result<MacosNetworkExtensionReloadResult, MacosNetworkExtensionReloadError> {
     let tool = tool.ok_or(MacosNetworkExtensionReloadError::Unavailable)?;
     let args = network_extension_reload_args(policy_snapshot_path, generation);
-    let stdout = match timeout(STATUS_TOOL_TIMEOUT, execute_tool_with_args(tool, &args)).await {
+    let stdout = match timeout(timeout_duration, execute_tool_with_args(tool, &args)).await {
         Ok(Ok(stdout)) => stdout,
         Ok(Err(error)) => {
             return Err(MacosNetworkExtensionReloadError::HelperFailed(

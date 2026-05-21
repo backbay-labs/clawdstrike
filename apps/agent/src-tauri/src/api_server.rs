@@ -23605,6 +23605,10 @@ mod tests {
             *state.edr_network_extension_egress_policy_path
         );
         assert_eq!(request.generation, now.timestamp_millis() as u64);
+        assert_eq!(
+            request.timeout_duration,
+            Duration::from_millis(EDR_DEFAULT_PROVIDER_ACK_TIMEOUT_MS)
+        );
         request
             .reply_tx
             .send(Ok(crate::macos::host::MacosNetworkExtensionReloadResult {

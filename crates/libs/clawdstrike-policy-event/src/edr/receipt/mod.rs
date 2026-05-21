@@ -407,17 +407,17 @@ impl EndpointDecisionReceipt {
         let actor_session_id = policy_decision_actor_session_value(&input.actor);
         let policy_epoch = input.policy.policy_epoch.to_string();
         let graph_ref = EndpointGraphReference::for_observation(input.observation, input.graph);
-        let decision_id = policy_decision_id_from_fields(
-            input.actor.endpoint_id.as_str(),
-            input.policy.policy_hash.as_str(),
-            input.policy.policy_epoch,
-            actor_hash.as_str(),
-            actor_session_id.as_str(),
-            input.action_type,
-            input.target,
-            input.allowed,
+        let decision_id = policy_decision_id_from_fields(PolicyDecisionIdFields {
+            endpoint_id: input.actor.endpoint_id.as_str(),
+            policy_hash: input.policy.policy_hash.as_str(),
+            policy_epoch: input.policy.policy_epoch,
+            actor_hash: actor_hash.as_str(),
+            actor_session_id: actor_session_id.as_str(),
+            action_type: input.action_type,
+            target: input.target,
+            allowed: input.allowed,
             guard,
-        );
+        });
         let mut evidence = vec![
             EndpointReceiptEvidence::hashed("actionType", input.action_type),
             EndpointReceiptEvidence::hashed("target", input.target),
@@ -2787,34 +2787,37 @@ fn endpoint_provider_full_disk_access_evidence_value(value: Option<bool>) -> &'s
     }
 }
 
-fn policy_decision_id_from_fields(
-    endpoint_id: &str,
-    policy_hash: &str,
+struct PolicyDecisionIdFields<'a> {
+    endpoint_id: &'a str,
+    policy_hash: &'a str,
     policy_epoch: u64,
-    actor_hash: &str,
-    actor_session_id: &str,
-    action_type: &str,
-    target: &str,
+    actor_hash: &'a str,
+    actor_session_id: &'a str,
+    action_type: &'a str,
+    target: &'a str,
     allowed: bool,
-    guard: &str,
-) -> String {
-    let policy_epoch = policy_epoch.to_string();
+    guard: &'a str,
+}
+
+fn policy_decision_id_from_fields(fields: PolicyDecisionIdFields<'_>) -> String {
+    let policy_epoch = fields.policy_epoch.to_string();
     let policy_epoch_evidence_hash = sha256(policy_epoch.as_bytes()).to_hex_prefixed();
-    let actor_hash_evidence_hash = sha256(actor_hash.as_bytes()).to_hex_prefixed();
-    let actor_session_id_evidence_hash = sha256(actor_session_id.as_bytes()).to_hex_prefixed();
-    let target_evidence_hash = sha256(target.as_bytes()).to_hex_prefixed();
-    let guard_evidence_hash = sha256(guard.as_bytes()).to_hex_prefixed();
-    policy_decision_id_from_evidence_hashes(
-        endpoint_id,
-        policy_hash,
-        policy_epoch_evidence_hash.as_str(),
-        actor_hash_evidence_hash.as_str(),
-        actor_session_id_evidence_hash.as_str(),
-        action_type,
-        target_evidence_hash.as_str(),
-        allowed,
-        guard_evidence_hash.as_str(),
-    )
+    let actor_hash_evidence_hash = sha256(fields.actor_hash.as_bytes()).to_hex_prefixed();
+    let actor_session_id_evidence_hash =
+        sha256(fields.actor_session_id.as_bytes()).to_hex_prefixed();
+    let target_evidence_hash = sha256(fields.target.as_bytes()).to_hex_prefixed();
+    let guard_evidence_hash = sha256(fields.guard.as_bytes()).to_hex_prefixed();
+    policy_decision_id_from_evidence_hashes(PolicyDecisionIdEvidenceHashes {
+        endpoint_id: fields.endpoint_id,
+        policy_hash: fields.policy_hash,
+        policy_epoch_evidence_hash: policy_epoch_evidence_hash.as_str(),
+        actor_hash_evidence_hash: actor_hash_evidence_hash.as_str(),
+        actor_session_id_evidence_hash: actor_session_id_evidence_hash.as_str(),
+        action_type: fields.action_type,
+        target_evidence_hash: target_evidence_hash.as_str(),
+        allowed: fields.allowed,
+        guard_evidence_hash: guard_evidence_hash.as_str(),
+    })
 }
 
 fn policy_decision_id_from_evidence(
@@ -2841,33 +2844,7 @@ fn policy_decision_id_from_evidence(
     let guard_evidence_hash =
         evidence_value_hash(evidence, "guard", "policy decision guard evidence")?;
     Ok(policy_decision_id_from_evidence_hashes(
-        endpoint_id,
-        policy_hash,
-        policy_epoch_evidence_hash,
-        actor_hash_evidence_hash,
-        actor_session_id_evidence_hash,
-        action_type,
-        target_evidence_hash,
-        allowed,
-        guard_evidence_hash,
-    ))
-}
-
-fn policy_decision_id_from_evidence_hashes(
-    endpoint_id: &str,
-    policy_hash: &str,
-    policy_epoch_evidence_hash: &str,
-    actor_hash_evidence_hash: &str,
-    actor_session_id_evidence_hash: &str,
-    action_type: &str,
-    target_evidence_hash: &str,
-    allowed: bool,
-    guard_evidence_hash: &str,
-) -> String {
-    let allowed_text = allowed.to_string();
-    stable_id(
-        "policy_decision",
-        [
+        PolicyDecisionIdEvidenceHashes {
             endpoint_id,
             policy_hash,
             policy_epoch_evidence_hash,
@@ -2875,8 +2852,38 @@ fn policy_decision_id_from_evidence_hashes(
             actor_session_id_evidence_hash,
             action_type,
             target_evidence_hash,
-            allowed_text.as_str(),
+            allowed,
             guard_evidence_hash,
+        },
+    ))
+}
+
+struct PolicyDecisionIdEvidenceHashes<'a> {
+    endpoint_id: &'a str,
+    policy_hash: &'a str,
+    policy_epoch_evidence_hash: &'a str,
+    actor_hash_evidence_hash: &'a str,
+    actor_session_id_evidence_hash: &'a str,
+    action_type: &'a str,
+    target_evidence_hash: &'a str,
+    allowed: bool,
+    guard_evidence_hash: &'a str,
+}
+
+fn policy_decision_id_from_evidence_hashes(fields: PolicyDecisionIdEvidenceHashes<'_>) -> String {
+    let allowed_text = fields.allowed.to_string();
+    stable_id(
+        "policy_decision",
+        [
+            fields.endpoint_id,
+            fields.policy_hash,
+            fields.policy_epoch_evidence_hash,
+            fields.actor_hash_evidence_hash,
+            fields.actor_session_id_evidence_hash,
+            fields.action_type,
+            fields.target_evidence_hash,
+            allowed_text.as_str(),
+            fields.guard_evidence_hash,
         ],
     )
 }

@@ -12,6 +12,7 @@ pub(crate) type MacosNetworkExtensionReloadReply =
 pub(crate) struct MacosNetworkExtensionReloadRequest {
     pub policy_snapshot_path: PathBuf,
     pub generation: u64,
+    pub timeout_duration: Duration,
     pub reply_tx: MacosNetworkExtensionReloadReply,
 }
 
@@ -172,6 +173,7 @@ impl MacosHostService {
         tx.send(MacosNetworkExtensionReloadRequest {
             policy_snapshot_path,
             generation,
+            timeout_duration,
             reply_tx,
         })
         .await

@@ -1000,7 +1000,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --locked --version '2.0.0'
+        run: cargo install tauri-cli --locked --version '2.10.2'
 
       - name: Import Apple signing certificate
         if: ${{ env.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}
