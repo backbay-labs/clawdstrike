@@ -112,6 +112,7 @@ pub(crate) const EDR_MAX_FLEET_HUNT_EVENT_OUTBOX: usize = 1_000;
 pub(crate) const EDR_CONTROL_ACK_RETRY_INITIAL_BACKOFF_SECONDS: i64 = 30;
 pub(crate) const EDR_CONTROL_ACK_RETRY_MAX_BACKOFF_SECONDS: i64 = 300;
 pub(crate) const EDR_CONTROL_ACK_RETRY_DRAIN_INTERVAL: Duration = Duration::from_secs(30);
+pub(crate) const EDR_RESPONSE_EXPIRATION_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 pub(crate) const EDR_CONTROL_ACK_RETRY_BACKGROUND_LIMIT: usize = 25;
 pub(crate) const EDR_CONTROL_RECEIPT_UPLOAD_BACKGROUND_LIMIT: usize = 25;
 pub(crate) const EDR_CONTROL_RECEIPT_UPLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
@@ -953,6 +954,16 @@ impl AgentApiServer {
             control_receipt_upload_retry_drain_loop(
                 receipt_upload_drain_state,
                 &mut receipt_upload_drain_shutdown,
+            )
+            .await;
+        });
+
+        let response_expiration_state = self.state.clone();
+        let mut response_expiration_shutdown = shutdown_rx.resubscribe();
+        tokio::spawn(async move {
+            response_execution_expiration_sweep_loop(
+                response_expiration_state,
+                &mut response_expiration_shutdown,
             )
             .await;
         });
@@ -19361,6 +19372,39 @@ async fn control_receipt_upload_retry_drain_loop(
                 break;
             }
             _ = tokio::time::sleep(EDR_CONTROL_ACK_RETRY_DRAIN_INTERVAL) => {}
+        }
+    }
+}
+
+async fn response_execution_expiration_sweep_loop(
+    state: Arc<AgentApiState>,
+    shutdown_rx: &mut broadcast::Receiver<()>,
+) {
+    loop {
+        match expire_edr_response_executions(&state).await {
+            Ok(response) if response.expired_count > 0 || response.rollback_count > 0 => {
+                tracing::info!(
+                    expired_count = response.expired_count,
+                    rollback_count = response.rollback_count,
+                    "Expired due EDR response executions"
+                );
+            }
+            Ok(_) => {}
+            Err((status, err)) => {
+                tracing::warn!(
+                    status = %status,
+                    error = %err,
+                    "Scheduled EDR response execution expiration sweep failed"
+                );
+            }
+        }
+
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                tracing::debug!("EDR response execution expiration sweep loop shutting down");
+                break;
+            }
+            _ = tokio::time::sleep(EDR_RESPONSE_EXPIRATION_SWEEP_INTERVAL) => {}
         }
     }
 }

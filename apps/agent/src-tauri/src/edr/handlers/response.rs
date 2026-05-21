@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -19,6 +17,8 @@ use hush_core::SignedReceipt;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
+#[allow(unused_imports)]
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::sync::Arc;
 
@@ -197,7 +197,6 @@ pub(crate) async fn agent_edr_response_action(
     }))
 }
 
-
 pub(crate) async fn agent_edr_response_executions(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -224,7 +223,6 @@ pub(crate) async fn agent_edr_response_executions(
         executions,
     }))
 }
-
 
 pub(crate) async fn agent_edr_response_execution(
     State(state): State<Arc<AgentApiState>>,
@@ -258,7 +256,6 @@ pub(crate) async fn agent_edr_response_execution(
 
     Ok(Json(EdrResponseExecutionResponse { path, execution }))
 }
-
 
 pub(crate) async fn agent_edr_response_execution_proof(
     State(state): State<Arc<AgentApiState>>,
@@ -405,12 +402,18 @@ pub(crate) async fn agent_edr_response_execution_proof(
     }))
 }
 
-
 pub(crate) async fn agent_edr_response_execution_expire(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
 ) -> Result<Json<EdrResponseExecutionExpireResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
+    let response = expire_edr_response_executions(&state).await?;
+    Ok(Json(response))
+}
+
+pub(crate) async fn expire_edr_response_executions(
+    state: &Arc<AgentApiState>,
+) -> Result<EdrResponseExecutionExpireResponse, (StatusCode, String)> {
     let now = chrono::Utc::now();
     let (path, pending) = {
         let ledger = state.edr_response_execution_ledger.lock().await;
@@ -510,7 +513,7 @@ pub(crate) async fn agent_edr_response_execution_expire(
         records.push(EdrResponseExecutionRecord::from_execution(execution));
     }
 
-    Ok(Json(EdrResponseExecutionExpireResponse {
+    Ok(EdrResponseExecutionExpireResponse {
         path,
         expired_count: records.len(),
         executions: records,
@@ -518,9 +521,8 @@ pub(crate) async fn agent_edr_response_execution_expire(
         rollback_count: rollbacks.len(),
         rollbacks,
         rollback_receipts,
-    }))
+    })
 }
-
 
 pub(crate) async fn agent_edr_response_execution_cancel(
     State(state): State<Arc<AgentApiState>>,
@@ -635,7 +637,6 @@ pub(crate) async fn agent_edr_response_execution_cancel(
         receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_response_execution_rollback(
     State(state): State<Arc<AgentApiState>>,
@@ -780,7 +781,6 @@ pub(crate) async fn agent_edr_response_execution_rollback(
     }))
 }
 
-
 pub(crate) async fn agent_edr_response_execution_acknowledge(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -878,7 +878,6 @@ pub(crate) async fn agent_edr_response_execution_acknowledge(
     }))
 }
 
-
 pub(crate) async fn agent_edr_response_acknowledgements(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -900,4 +899,3 @@ pub(crate) async fn agent_edr_response_acknowledgements(
         acknowledgements,
     }))
 }
-
