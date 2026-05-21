@@ -6,5 +6,5 @@
   "latency_ms": 275,
   "deadline_ms": 200,
   "notify_observed": false,
-  "detail": "Synthetic over-deadline AUTH_OPEN path proving fail-open risk."
+  "detail": "Synthetic over-deadline AUTH_OPEN path proving authorization deadline risk."
 }

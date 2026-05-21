@@ -195,7 +195,7 @@ public final class EndpointSecurityMonitor {
             monitor.addEvidence(
                 kind: "deadline_miss",
                 path: "fixtures/macos/endpoint-security/evidence/deadline-miss.json",
-                detail: "Synthetic over-deadline AUTH_OPEN path proving fail-open risk."
+                detail: "Synthetic over-deadline AUTH_OPEN path proving authorization deadline risk."
             )
         case .droppedEvents:
             monitor.recordAuthorization(
@@ -944,7 +944,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         monitor: EndpointSecurityMonitor,
         publisher: EndpointSecurityAgentEventPublisher<Transport>,
         adapter: EndpointSecurityAuthOpenMessageAdapter = EndpointSecurityAuthOpenMessageAdapter(),
-        decisionHandler: @escaping DecisionHandler = { _ in .allow },
+        decisionHandler: @escaping DecisionHandler = { _ in .deny },
         publishErrorHandler: PublishErrorHandler? = nil
     ) {
         self.monitor = monitor
@@ -963,11 +963,11 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         let monitor = monitor
         let createResult = es_new_client(&createdClient) { [weak self, monitor] client, message in
             guard let self else {
-                _ = Self.issueFailOpenAuthOpenResponse(
+                _ = Self.issueFailClosedAuthOpenResponse(
                     client: client,
                     message: message,
                     monitor: monitor,
-                    detail: "EndpointSecurity runtime was deallocated before AUTH_OPEN handling; fail-open response issued to meet the kernel deadline."
+                    detail: "EndpointSecurity runtime was deallocated before AUTH_OPEN handling; fail-closed response issued to meet the kernel deadline."
                 )
                 return
             }
@@ -1045,11 +1045,11 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
             }
         } catch {
             if message.pointee.event_type == ES_EVENT_TYPE_AUTH_OPEN && !responseAttempted {
-                if let responseDetail = Self.issueFailOpenAuthOpenResponse(
+                if let responseDetail = Self.issueFailClosedAuthOpenResponse(
                     client: client,
                     message: message,
                     monitor: monitor,
-                    detail: "EndpointSecurity AUTH_OPEN message could not be mapped or answered; fail-open response issued to meet the kernel deadline."
+                    detail: "EndpointSecurity AUTH_OPEN message could not be mapped or answered; fail-closed response issued to meet the kernel deadline."
                 ) {
                     Task {
                         do {
@@ -1067,7 +1067,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         }
     }
 
-    private static func issueFailOpenAuthOpenResponse(
+    private static func issueFailClosedAuthOpenResponse(
         client: OpaquePointer,
         message: UnsafePointer<es_message_t>,
         monitor: EndpointSecurityMonitor,
@@ -1077,12 +1077,12 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
             return nil
         }
 
-        let result = es_respond_flags_result(client, message, UInt32.max, false)
+        let result = es_respond_flags_result(client, message, 0, false)
         let responseDetail: String
         if result == ES_RESPOND_RESULT_SUCCESS {
             responseDetail = detail
         } else {
-            responseDetail = "\(detail) Fail-open response result: \(endpointSecurityRespondResultName(result))."
+            responseDetail = "\(detail) Fail-closed response result: \(endpointSecurityRespondResultName(result))."
         }
         monitor.recordDroppedEvents(
             count: 1,

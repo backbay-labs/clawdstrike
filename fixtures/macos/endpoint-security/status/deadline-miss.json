@@ -14,7 +14,7 @@
   ],
   "evidence_paths" : [
     {
-      "detail" : "Synthetic over-deadline AUTH_OPEN path proving fail-open risk.",
+      "detail" : "Synthetic over-deadline AUTH_OPEN path proving authorization deadline risk.",
       "kind" : "deadline_miss",
       "path" : "fixtures/macos/endpoint-security/evidence/deadline-miss.json"
     }

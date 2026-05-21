@@ -305,7 +305,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(events.first?["eventId"] as? String, "es-auth-open-2")
     }
 
-    func testPublisherPostsEndpointSecurityEventLossForFailOpenRecovery() async throws {
+    func testPublisherPostsEndpointSecurityEventLossForFailClosedRecovery() async throws {
         let transport = CapturingEndpointSecurityTransport()
         let publisher = try EndpointSecurityAgentEventPublisher(
             agentURL: "http://127.0.0.1:9878/",
@@ -314,7 +314,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         )
 
         let response = try await publisher.publishEventLoss(
-            reason: "AUTH_OPEN response failed; fail-open recovery issued.",
+            reason: "AUTH_OPEN response failed; fail-closed recovery issued.",
             droppedEventCount: 1
         )
 
@@ -324,7 +324,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
         let delivered = try XCTUnwrap(events.first)
         XCTAssertEqual(delivered["kind"] as? String, "event_loss")
-        XCTAssertEqual(delivered["reason"] as? String, "AUTH_OPEN response failed; fail-open recovery issued.")
+        XCTAssertEqual(delivered["reason"] as? String, "AUTH_OPEN response failed; fail-closed recovery issued.")
         XCTAssertEqual(delivered["droppedEventCount"] as? Int, 1)
         XCTAssertEqual(delivered["deadlineMissCount"] as? Int, 0)
         XCTAssertEqual(delivered["deadlineMissed"] as? Bool, false)
