@@ -39,13 +39,14 @@ use hush_core::{Keypair, SignedReceipt};
 
 use crate::api_server::{
     detection_severity_from_policy_label, endpoint_id_for_observation, endpoint_id_for_settings,
-    endpoint_receipt_index_path, endpoint_receipt_index_record, load_or_create_edr_receipt_signer,
-    next_receipt_sequence, policy_delta_source_context_evidence_value,
-    provider_policy_decision_provider_state, read_endpoint_receipt_ledger,
-    read_recent_indexed_endpoint_receipts, rebuild_endpoint_receipt_index, receipt_age_seconds,
-    receipt_compaction_record, receipt_local_sequence, receipt_matches_filter,
-    EdrPolicyDeltaArtifact, EdrPolicyEventImpactReport, EdrPolicyEventReplayReport,
-    EdrReceiptCompactionRecord, EdrReceiptFilter,
+    endpoint_receipt_index_path, endpoint_receipt_index_record,
+    load_or_create_edr_receipt_signer_with_requirement, next_receipt_sequence,
+    policy_delta_source_context_evidence_value, provider_policy_decision_provider_state,
+    read_endpoint_receipt_ledger, read_recent_indexed_endpoint_receipts,
+    rebuild_endpoint_receipt_index, receipt_age_seconds, receipt_compaction_record,
+    receipt_local_sequence, receipt_matches_filter, EdrPolicyDeltaArtifact,
+    EdrPolicyEventImpactReport, EdrPolicyEventReplayReport, EdrReceiptCompactionRecord,
+    EdrReceiptFilter,
 };
 use crate::policy::PolicyCheckOutput;
 use crate::settings::Settings;
@@ -104,9 +105,21 @@ pub(crate) struct DeceptionRotationReceiptSigningInput<'a> {
 
 impl EndpointReceiptLedger {
     pub(crate) fn open(path: impl Into<PathBuf>) -> Result<Self> {
+        Self::open_with_signer_requirement(path, false)
+    }
+
+    pub(crate) fn open_require_enrollment(path: impl Into<PathBuf>) -> Result<Self> {
+        Self::open_with_signer_requirement(path, true)
+    }
+
+    fn open_with_signer_requirement(
+        path: impl Into<PathBuf>,
+        require_enrolled_signer: bool,
+    ) -> Result<Self> {
         let path = path.into();
         let next_sequence = next_receipt_sequence(&path)?;
-        let (keypair, signer_identity) = load_or_create_edr_receipt_signer()?;
+        let (keypair, signer_identity) =
+            load_or_create_edr_receipt_signer_with_requirement(require_enrolled_signer)?;
         let signer_public_key = keypair.public_key().to_hex();
         Ok(Self {
             path: Some(path),

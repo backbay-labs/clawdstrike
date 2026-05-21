@@ -458,13 +458,20 @@ impl RouteRateLimiter {
 
 impl AgentApiServer {
     pub fn try_new(port: u16, deps: AgentApiServerDeps) -> Result<Self> {
-        let token_grace_minutes = deps
+        let (token_grace_minutes, require_enrolled_receipt_signer) = deps
             .settings
             .try_read()
-            .map(|settings| settings.local_api_security.token_grace_minutes.max(1))
-            .unwrap_or(15);
+            .map(|settings| {
+                (
+                    settings.local_api_security.token_grace_minutes.max(1),
+                    edr_receipt_signer_requires_enrollment(&settings),
+                )
+            })
+            .unwrap_or((15, false));
         let edr_flight_recorder = Arc::new(Mutex::new(default_edr_flight_recorder()?));
-        let edr_receipt_ledger = Arc::new(Mutex::new(default_edr_receipt_ledger()?));
+        let edr_receipt_ledger = Arc::new(Mutex::new(default_edr_receipt_ledger(
+            require_enrolled_receipt_signer,
+        )?));
         let edr_honey_registry = Arc::new(Mutex::new(default_edr_honey_registry()?));
         let edr_evidence_bundle_store = Arc::new(Mutex::new(default_edr_evidence_bundle_store()?));
         let edr_response_execution_ledger =
@@ -18524,7 +18531,9 @@ fn string_filter_matches(actual: Option<&str>, expected: Option<&str>) -> bool {
     expected.map_or(true, |expected| actual == Some(expected))
 }
 
-pub(crate) fn load_or_create_edr_receipt_signer() -> Result<(Keypair, String)> {
+pub(crate) fn load_or_create_edr_receipt_signer_with_requirement(
+    require_enrolled_signer: bool,
+) -> Result<(Keypair, String)> {
     if let Some(key_hex) = crate::enrollment::load_enrollment_key_hex()
         .with_context(|| "load enrollment key for endpoint receipt signer")?
     {
@@ -18532,6 +18541,12 @@ pub(crate) fn load_or_create_edr_receipt_signer() -> Result<(Keypair, String)> {
             .with_context(|| "parse enrollment key for endpoint receipt signer")?;
         let signer_identity = format!("agent-enrollment:{}", keypair.public_key().to_hex());
         return Ok((keypair, signer_identity));
+    }
+
+    if require_enrolled_signer {
+        anyhow::bail!(
+            "endpoint receipt signer requires an enrolled agent key; refusing local EDR signer fallback"
+        );
     }
 
     let path = default_edr_receipt_signing_key_path();
@@ -18656,10 +18671,20 @@ fn default_edr_receipt_signing_key_path() -> PathBuf {
         .join("receipt-signing.key")
 }
 
-fn default_edr_receipt_ledger() -> Result<EndpointReceiptLedger> {
+fn edr_receipt_signer_requires_enrollment(settings: &Settings) -> bool {
+    settings.enrollment.enrolled || settings.nats.enabled || settings.control_api.enabled
+}
+
+fn default_edr_receipt_ledger(
+    require_enrolled_receipt_signer: bool,
+) -> Result<EndpointReceiptLedger> {
     let path = default_edr_receipt_ledger_path();
-    EndpointReceiptLedger::open(&path)
-        .with_context(|| format!("open durable endpoint receipt ledger {}", path.display()))
+    let ledger = if require_enrolled_receipt_signer {
+        EndpointReceiptLedger::open_require_enrollment(&path)
+    } else {
+        EndpointReceiptLedger::open(&path)
+    };
+    ledger.with_context(|| format!("open durable endpoint receipt ledger {}", path.display()))
 }
 
 fn default_edr_honey_registry() -> Result<EndpointHoneyRegistry> {
@@ -19814,6 +19839,23 @@ mod tests {
 
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
         assert!(err.1.contains("approvalId"));
+    }
+
+    #[test]
+    fn edr_receipt_signer_requires_enrollment_for_cloud_connected_modes() {
+        let mut settings = Settings::default();
+        assert!(!edr_receipt_signer_requires_enrollment(&settings));
+
+        settings.enrollment.enrolled = true;
+        assert!(edr_receipt_signer_requires_enrollment(&settings));
+
+        settings.enrollment.enrolled = false;
+        settings.nats.enabled = true;
+        assert!(edr_receipt_signer_requires_enrollment(&settings));
+
+        settings.nats.enabled = false;
+        settings.control_api.enabled = true;
+        assert!(edr_receipt_signer_requires_enrollment(&settings));
     }
 
     fn assert_unknown_field_rejected<T>(payload: serde_json::Value, field: &str)
