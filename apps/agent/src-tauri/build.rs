@@ -71,15 +71,22 @@ fn validate_macos_packaging() -> Result<(), String> {
     validate_tauri_config(&tauri_config)?;
 
     if env::var_os(REQUIRE_CONCRETE_MACOS_PACKAGING_ENV).is_some() {
-        let files_with_placeholders = REQUIRED_MACOS_PACKAGING_FILES
-            .iter()
-            .filter_map(|relative_path| {
-                fs::read_to_string(manifest_dir.join(relative_path))
-                    .ok()
-                    .filter(|contents| contains_release_placeholder(contents))
-                    .map(|_| (*relative_path).to_string())
-            })
-            .collect::<Vec<_>>();
+        let mut files_with_placeholders = Vec::new();
+        let mut files_with_scaffold_marker = Vec::new();
+
+        for relative_path in REQUIRED_MACOS_PACKAGING_FILES {
+            let contents =
+                fs::read_to_string(manifest_dir.join(relative_path)).map_err(|error| {
+                    format!("failed to read required packaging asset {relative_path}: {error}")
+                })?;
+            if contains_release_placeholder(&contents) {
+                files_with_placeholders.push((*relative_path).to_string());
+            }
+            if contents.contains(SCAFFOLD_ONLY_MARKER) {
+                files_with_scaffold_marker.push((*relative_path).to_string());
+            }
+        }
+
         if !files_with_placeholders.is_empty() {
             return Err(format!(
                 "release-gated packaging placeholders remain in: {}",
@@ -87,15 +94,6 @@ fn validate_macos_packaging() -> Result<(), String> {
             ));
         }
 
-        let files_with_scaffold_marker = REQUIRED_MACOS_PACKAGING_FILES
-            .iter()
-            .filter_map(|relative_path| {
-                fs::read_to_string(manifest_dir.join(relative_path))
-                    .ok()
-                    .filter(|contents| contents.contains(SCAFFOLD_ONLY_MARKER))
-                    .map(|_| (*relative_path).to_string())
-            })
-            .collect::<Vec<_>>();
         if !files_with_scaffold_marker.is_empty() {
             return Err(format!(
                 "release-gated packaging sources still declare scaffold_only state: {}",
