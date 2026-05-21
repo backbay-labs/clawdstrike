@@ -69,6 +69,8 @@ struct PolicyRuleDiffActionPayload {
     validation_plan_sha256: String,
     endpoint_agent_id: String,
     request: PolicyRuleDiffLocalRequest,
+    #[serde(default)]
+    expected_receipt: Option<PolicyRuleDiffExpectedReceipt>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -80,6 +82,15 @@ struct PolicyRuleDiffLocalRequest {
     body: Value,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PolicyRuleDiffExpectedReceipt {
+    #[serde(default)]
+    proposed_policy_hash: Option<String>,
+    #[serde(default)]
+    proposed_policy_epoch: Option<u64>,
+}
+
 #[derive(Clone, Debug)]
 struct PolicyRuleDiffValidationCommand {
     response_action_id: String,
@@ -88,6 +99,8 @@ struct PolicyRuleDiffValidationCommand {
     proposal_id: String,
     validation_plan_sha256: String,
     endpoint_agent_id: String,
+    expected_proposed_policy_hash: String,
+    expected_proposed_policy_epoch: u64,
     request_body: Value,
 }
 
@@ -458,6 +471,22 @@ fn policy_rule_diff_validation_command(
         payload.request.path.trim(),
         POLICY_RULE_DIFF_IMPACT_PATH,
     )?;
+    let expected_receipt = payload.expected_receipt.ok_or_else(|| {
+        anyhow::anyhow!("payload.expectedReceipt must include proposed policy identity")
+    })?;
+    let expected_proposed_policy_hash = required_string(
+        "payload.expectedReceipt.proposedPolicyHash",
+        expected_receipt.proposed_policy_hash.as_deref(),
+    )
+    .and_then(|value| {
+        normalize_policy_rule_diff_sha256("payload.expectedReceipt.proposedPolicyHash", &value)
+    })?;
+    let expected_proposed_policy_epoch = expected_receipt
+        .proposed_policy_epoch
+        .filter(|epoch| *epoch > 0)
+        .ok_or_else(|| {
+            anyhow::anyhow!("payload.expectedReceipt.proposedPolicyEpoch must be positive")
+        })?;
 
     Ok(PolicyRuleDiffValidationCommand {
         response_action_id: command.action_id.trim().to_string(),
@@ -469,6 +498,8 @@ fn policy_rule_diff_validation_command(
             Some(&payload.validation_plan_sha256),
         )?,
         endpoint_agent_id: payload.endpoint_agent_id.trim().to_string(),
+        expected_proposed_policy_hash,
+        expected_proposed_policy_epoch,
         request_body: payload.request.body,
     })
 }
@@ -642,11 +673,16 @@ fn policy_rule_diff_success_payload(
         .get("receipt")
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("local validation response missing receipt"))?;
+    validate_policy_rule_diff_expected_receipt(command, &impact, &receipt)?;
     Ok(json!({
         "policyRuleDiffValidation": {
             "proposalId": command.proposal_id,
             "validationPlanSha256": command.validation_plan_sha256,
             "endpointAgentId": command.endpoint_agent_id,
+            "expectedReceipt": {
+                "proposedPolicyHash": command.expected_proposed_policy_hash.as_str(),
+                "proposedPolicyEpoch": command.expected_proposed_policy_epoch,
+            },
             "request": {
                 "method": "POST",
                 "path": POLICY_RULE_DIFF_IMPACT_PATH,
@@ -667,6 +703,10 @@ fn policy_rule_diff_failure_payload(
             "proposalId": command.proposal_id,
             "validationPlanSha256": command.validation_plan_sha256,
             "endpointAgentId": command.endpoint_agent_id,
+            "expectedReceipt": {
+                "proposedPolicyHash": command.expected_proposed_policy_hash.as_str(),
+                "proposedPolicyEpoch": command.expected_proposed_policy_epoch,
+            },
             "request": {
                 "method": "POST",
                 "path": POLICY_RULE_DIFF_IMPACT_PATH,
@@ -675,6 +715,88 @@ fn policy_rule_diff_failure_payload(
             "message": message,
         }
     })
+}
+
+fn validate_policy_rule_diff_expected_receipt(
+    command: &PolicyRuleDiffValidationCommand,
+    impact: &Value,
+    receipt: &Value,
+) -> Result<()> {
+    let proposed_policy_hash = impact
+        .pointer("/proposedPolicy/policyHash")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!("local validation impact missing proposedPolicy.policyHash")
+        })?;
+    let normalized_proposed_policy_hash = normalize_policy_rule_diff_sha256(
+        "local impact proposedPolicy.policyHash",
+        proposed_policy_hash,
+    )?;
+    if normalized_proposed_policy_hash != command.expected_proposed_policy_hash {
+        anyhow::bail!(
+            "local validation proposedPolicy.policyHash does not match dispatched expected receipt"
+        );
+    }
+
+    let proposed_policy_epoch = impact
+        .pointer("/proposedPolicy/policyEpoch")
+        .and_then(Value::as_u64)
+        .filter(|epoch| *epoch > 0)
+        .ok_or_else(|| {
+            anyhow::anyhow!("local validation impact missing positive proposedPolicy.policyEpoch")
+        })?;
+    if proposed_policy_epoch != command.expected_proposed_policy_epoch {
+        anyhow::bail!(
+            "local validation proposedPolicy.policyEpoch does not match dispatched expected receipt"
+        );
+    }
+
+    require_policy_rule_diff_receipt_evidence_hash(
+        receipt,
+        "proposedPolicyHash",
+        proposed_policy_hash,
+    )?;
+    require_policy_rule_diff_receipt_evidence_hash(
+        receipt,
+        "proposedPolicyEpoch",
+        proposed_policy_epoch.to_string(),
+    )?;
+    Ok(())
+}
+
+fn require_policy_rule_diff_receipt_evidence_hash(
+    receipt: &Value,
+    key: &str,
+    expected_value: impl AsRef<str>,
+) -> Result<()> {
+    let expected_hash = hush_core::sha256(expected_value.as_ref().as_bytes()).to_hex_prefixed();
+    let evidence = receipt
+        .pointer("/receipt/metadata/endpointDecision/evidence")
+        .or_else(|| receipt.pointer("/metadata/endpointDecision/evidence"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow::anyhow!("local validation receipt missing endpointDecision evidence")
+        })?;
+    let actual_hash = evidence
+        .iter()
+        .find(|item| item.get("key").and_then(Value::as_str) == Some(key))
+        .and_then(|item| item.get("valueHash").and_then(Value::as_str))
+        .ok_or_else(|| anyhow::anyhow!("local validation receipt evidence missing {key}"))?;
+    if actual_hash != expected_hash {
+        anyhow::bail!("local validation receipt evidence {key} does not match impact");
+    }
+    Ok(())
+}
+
+fn normalize_policy_rule_diff_sha256(field: &str, value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    let digest = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        anyhow::bail!("{field} must be a SHA-256 hex digest");
+    }
+    Ok(digest.to_ascii_lowercase())
 }
 
 fn control_ack_postback_config(
@@ -798,11 +920,15 @@ mod tests {
     use axum::http::HeaderMap;
     use axum::routing::post;
     use axum::{Json, Router};
-    use hush_core::Keypair;
+    use hush_core::{sha256, Keypair};
     use spine::envelope::{build_signed_envelope, now_rfc3339};
     use std::time::Duration;
     use tokio::net::TcpListener;
     use tokio::sync::{broadcast, mpsc};
+
+    const EXPECTED_PROPOSED_POLICY_HASH: &str =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const EXPECTED_PROPOSED_POLICY_EPOCH: u64 = 2;
 
     #[derive(Debug)]
     struct LocalImpactRequest {
@@ -840,6 +966,18 @@ mod tests {
                         "limit": 25,
                         "proposedPolicyYaml": "version: 1\n"
                     }
+                },
+                "expectedReceipt": {
+                    "receiptFamily": "policy_event_impact",
+                    "ruleId": "endpoint.policy_event.impact",
+                    "graphProcessNodeId": "fleet-rule-diff",
+                    "proposedPolicyHash": EXPECTED_PROPOSED_POLICY_HASH,
+                    "proposedPolicyEpoch": EXPECTED_PROPOSED_POLICY_EPOCH,
+                    "requiredEvidenceKeys": [
+                        "impactId",
+                        "proposedPolicyHash",
+                        "proposedPolicyEpoch"
+                    ]
                 }
             },
             "delivery": {
@@ -876,18 +1014,7 @@ mod tests {
                     body,
                 })
                 .await;
-            Json(json!({
-                "impact": {
-                    "impactId": "impact-loopback-1",
-                    "eventStreamHash": "sha256:event-stream",
-                    "changedEventCount": 3
-                },
-                "receipt": {
-                    "receipt_id": "receipt-loopback-1",
-                    "finding_id": "impact-loopback-1",
-                    "signature": "signed"
-                }
-            }))
+            Json(local_policy_rule_diff_response())
         }
 
         let (tx, rx) = mpsc::channel(1);
@@ -900,6 +1027,52 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         (port, rx, task)
+    }
+
+    fn local_policy_rule_diff_response() -> Value {
+        let proposed_policy_hash = format!("0x{EXPECTED_PROPOSED_POLICY_HASH}");
+        let proposed_policy_epoch = EXPECTED_PROPOSED_POLICY_EPOCH;
+        json!({
+            "impact": {
+                "impactId": "impact-loopback-1",
+                "eventStreamHash": "sha256:event-stream",
+                "currentResultHash": "sha256:current-result",
+                "proposedResultHash": "sha256:proposed-result",
+                "impactHash": "sha256:impact",
+                "eventCount": 3,
+                "changedCount": 1,
+                "allowToBlockCount": 0,
+                "trackPosture": true,
+                "changedEventCount": 3,
+                "proposedPolicy": {
+                    "policyHash": proposed_policy_hash,
+                    "policyEpoch": proposed_policy_epoch,
+                }
+            },
+            "receipt": {
+                "receipt_id": "receipt-loopback-1",
+                "finding_id": "impact-loopback-1",
+                "signature": "signed",
+                "receipt": {
+                    "metadata": {
+                        "endpointDecision": {
+                            "evidence": [
+                                {
+                                    "key": "proposedPolicyHash",
+                                    "valueHash": sha256(proposed_policy_hash.as_bytes()).to_hex_prefixed(),
+                                    "redactionClass": "hash_only"
+                                },
+                                {
+                                    "key": "proposedPolicyEpoch",
+                                    "valueHash": sha256(proposed_policy_epoch.to_string().as_bytes()).to_hex_prefixed(),
+                                    "redactionClass": "hash_only"
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        })
     }
 
     async fn spawn_mock_control_api_agent_ack() -> (
@@ -1054,6 +1227,14 @@ mod tests {
         assert_eq!(command.ack_token, "ack-token");
         assert_eq!(command.proposal_id, "22222222-2222-4222-8222-222222222222");
         assert_eq!(command.validation_plan_sha256, "sha256:plan");
+        assert_eq!(
+            command.expected_proposed_policy_hash,
+            EXPECTED_PROPOSED_POLICY_HASH
+        );
+        assert_eq!(
+            command.expected_proposed_policy_epoch,
+            EXPECTED_PROPOSED_POLICY_EPOCH
+        );
         assert_eq!(command.request_body["limit"], 25);
     }
 
@@ -1074,20 +1255,8 @@ mod tests {
             chrono::Utc::now(),
         )
         .unwrap();
-        let raw_payload = policy_rule_diff_success_payload(
-            &command,
-            &json!({
-                "impact": {
-                    "impactId": "impact-1",
-                    "eventStreamHash": "sha256:event-stream"
-                },
-                "receipt": {
-                    "receipt_id": "receipt-1",
-                    "signature": "signed"
-                }
-            }),
-        )
-        .unwrap();
+        let raw_payload =
+            policy_rule_diff_success_payload(&command, &local_policy_rule_diff_response()).unwrap();
         let observed_at = chrono::DateTime::parse_from_rfc3339("2026-05-18T12:00:00Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
@@ -1110,7 +1279,11 @@ mod tests {
         );
         assert_eq!(
             ack["rawPayload"]["policyRuleDiffValidation"]["impact"]["impactId"],
-            "impact-1"
+            "impact-loopback-1"
+        );
+        assert_eq!(
+            ack["rawPayload"]["policyRuleDiffValidation"]["expectedReceipt"]["proposedPolicyHash"],
+            EXPECTED_PROPOSED_POLICY_HASH
         );
         let config = control_ack_postback_config(&settings, &command.response_action_id)
             .unwrap()
@@ -1147,6 +1320,46 @@ mod tests {
             25
         );
         assert!(raw_payload.get("signedReceipt").is_none());
+    }
+
+    #[test]
+    fn policy_rule_diff_validation_rejects_mismatched_local_policy_identity() {
+        let command = policy_rule_diff_validation_command(
+            &transport_command(),
+            "33333333-3333-4333-8333-333333333333",
+            "agent-1",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+        let mut response = local_policy_rule_diff_response();
+        response["impact"]["proposedPolicy"]["policyHash"] =
+            json!("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+
+        let err = policy_rule_diff_success_payload(&command, &response)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("proposedPolicy.policyHash does not match"));
+    }
+
+    #[test]
+    fn policy_rule_diff_validation_rejects_mismatched_receipt_policy_evidence() {
+        let command = policy_rule_diff_validation_command(
+            &transport_command(),
+            "33333333-3333-4333-8333-333333333333",
+            "agent-1",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+        let mut response = local_policy_rule_diff_response();
+        response["receipt"]["receipt"]["metadata"]["endpointDecision"]["evidence"][0]
+            ["valueHash"] = json!(sha256(b"wrong-policy").to_hex_prefixed());
+
+        let err = policy_rule_diff_success_payload(&command, &response)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("receipt evidence proposedPolicyHash"));
     }
 
     #[tokio::test]

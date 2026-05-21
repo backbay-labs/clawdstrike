@@ -3128,6 +3128,8 @@ async fn build_policy_proposal_fleet_rule_diff_validation_plan(
                     "receiptFamily": POLICY_PROPOSAL_SIMULATION_RECEIPT_FAMILY,
                     "ruleId": POLICY_PROPOSAL_SIMULATION_RULE_ID,
                     "graphProcessNodeId": POLICY_PROPOSAL_SIMULATION_PROCESS_NODE_ID,
+                    "proposedPolicyHash": candidate.checksum_sha256,
+                    "proposedPolicyEpoch": candidate.version,
                     "requiredEvidenceKeys": [
                         "impactId",
                         "eventStreamHash",
