@@ -1031,10 +1031,6 @@ fn cmd_pkg_install(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
-    if is_file_source(source) {
-        return cmd_pkg_install_local(Path::new(source), stdout, stderr);
-    }
-
     // Validate trust level if provided.
     let level = trust_level.unwrap_or("signed");
     if !matches!(level, "unverified" | "signed" | "verified" | "certified") {
@@ -1044,6 +1040,10 @@ fn cmd_pkg_install(
             level
         );
         return ExitCode::ConfigError;
+    }
+
+    if is_file_source(source) {
+        return cmd_pkg_install_local(Path::new(source), allow_unverified, stdout, stderr);
     }
 
     if level == "unverified" && !allow_unverified {
@@ -1074,6 +1074,7 @@ fn cmd_pkg_install(
 
 fn cmd_pkg_install_local(
     source: &Path,
+    allow_unverified: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
@@ -1081,6 +1082,18 @@ fn cmd_pkg_install_local(
         let _ = writeln!(stderr, "Error: file not found: {}", source.display());
         return ExitCode::ConfigError;
     }
+    if !allow_unverified {
+        let _ = writeln!(
+            stderr,
+            "Error: local .cpkg installs are unverified and require --allow-unverified. \
+             Install by package name from a configured registry to enforce signed/verified/certified trust."
+        );
+        return ExitCode::ConfigError;
+    }
+    let _ = writeln!(
+        stderr,
+        "Warning: installing local .cpkg without registry trust verification."
+    );
 
     let store = match PackageStore::new() {
         Ok(s) => s,
@@ -4441,6 +4454,41 @@ sandbox = "native"
 
         assert_eq!(code, ExitCode::ConfigError);
         assert!(stderr.contains("not found"));
+    }
+
+    #[test]
+    fn test_local_install_requires_explicit_unverified_opt_in() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("local-install");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("clawdstrike-pkg.toml"),
+            r#"[package]
+name = "local-install-test"
+version = "0.1.0"
+pkg_type = "guard"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        std::fs::write(src.join("README.md"), "ok").unwrap();
+        let archive_path = tmp.path().join("local-install-test-0.1.0.cpkg");
+        archive::pack(&src, &archive_path).unwrap();
+
+        let (_, stderr, code) = run_cmd(PkgCommands::Install {
+            source: archive_path.to_string_lossy().to_string(),
+            version: None,
+            registry: None,
+            trust_level: Some("signed".to_string()),
+            allow_unverified: false,
+        });
+
+        assert_eq!(code, ExitCode::ConfigError);
+        assert!(stderr.contains("--allow-unverified"));
+        assert!(stderr.contains("registry"));
     }
 
     #[test]
