@@ -94,7 +94,9 @@ execution:
 
 tools:
   allowed:
+    - read
     - read_file
+    - list_dir
     - list_directory
     - search
     - grep

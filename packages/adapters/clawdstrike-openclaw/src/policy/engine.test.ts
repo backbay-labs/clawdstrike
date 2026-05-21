@@ -695,6 +695,62 @@ guards:
     expect(decision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
   });
 
+  it("gates derived command events by exact MCP deny rules before command guards", async () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const event: PolicyEvent = {
+      eventId: "mcp-derived-command-denied-tool",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "ls",
+        args: ["-la"],
+      },
+      metadata: {
+        toolName: "shell_exec",
+        preflight: true,
+      },
+    };
+
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("mcp_tool");
+    expect(decision.reason_code).toBe("OCLAW_TOOL_DENIED");
+  });
+
+  it("gates same-class derived command events by MCP allowlists", async () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const event: PolicyEvent = {
+      eventId: "mcp-derived-command-default-deny",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "npm",
+        args: ["install", "left-pad"],
+      },
+      metadata: {
+        toolName: "npm_install",
+        preflight: true,
+      },
+    };
+
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("mcp_tool");
+    expect(decision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
+  });
+
   it("blocks approval-gated MCP tools until an approval is supplied by the hook layer", async () => {
     const engine = new PolicyEngine({
       policy: "clawdstrike:ai-agent-minimal",

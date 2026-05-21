@@ -1365,6 +1365,12 @@ fn requires_endpoint_ack_signed_receipt(
     action: &ResponseActionRecord,
     ack: &AckSubmission,
 ) -> bool {
+    if action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str()
+        && ack.ack_status != "acknowledged"
+    {
+        return false;
+    }
+
     action.target.kind.as_str() == "endpoint"
         && matches!(
             ack.ack_status,
@@ -2744,7 +2750,7 @@ mod tests {
     }
 
     #[test]
-    fn policy_rule_diff_non_ack_statuses_still_require_endpoint_receipts() {
+    fn policy_rule_diff_non_ack_statuses_use_error_payload_without_endpoint_receipts() {
         let action = test_response_action(
             ResponseTargetKind::Endpoint,
             ResponseActionType::PolicyRuleDiffValidation.as_str(),
@@ -2753,8 +2759,8 @@ mod tests {
         for status in ["failed", "rejected", "expired"] {
             let ack = test_ack(status, "endpoint");
             assert!(
-                requires_endpoint_ack_signed_receipt(&action, &ack),
-                "policy rule-diff {status} acknowledgements must be signed"
+                !requires_endpoint_ack_signed_receipt(&action, &ack),
+                "policy rule-diff {status} acknowledgements use the policyRuleDiffValidationError payload"
             );
         }
     }

@@ -39,6 +39,7 @@ describe('Tool Pre-flight Hook', () => {
     policy: 'clawdstrike:ai-agent-minimal',
     mode: 'deterministic',
     logLevel: 'error',
+    guards: { mcp_tool: false },
   };
 
   beforeEach(() => {
@@ -276,6 +277,14 @@ describe('Tool Pre-flight Hook', () => {
   });
 
   describe('unknown/unclassified tools', () => {
+    beforeEach(() => {
+      initPreflight({
+        policy: 'clawdstrike:ai-agent-minimal',
+        mode: 'deterministic',
+        logLevel: 'error',
+      });
+    });
+
     it('should evaluate and block unknown tools through the policy engine', async () => {
       const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
 
@@ -685,6 +694,14 @@ describe('Tool Pre-flight Hook', () => {
   });
 
   describe('T7 — empty and edge-case tool names', () => {
+    beforeEach(() => {
+      initPreflight({
+        policy: 'clawdstrike:ai-agent-minimal',
+        mode: 'deterministic',
+        logLevel: 'error',
+      });
+    });
+
     it('should handle empty string tool name without crashing', async () => {
       const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
       const event = makeToolCallEvent('', { data: 'test' });

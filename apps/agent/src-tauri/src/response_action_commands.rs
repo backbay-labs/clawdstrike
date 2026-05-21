@@ -667,6 +667,11 @@ fn policy_rule_diff_failure_payload(
             "proposalId": command.proposal_id,
             "validationPlanSha256": command.validation_plan_sha256,
             "endpointAgentId": command.endpoint_agent_id,
+            "request": {
+                "method": "POST",
+                "path": POLICY_RULE_DIFF_IMPACT_PATH,
+                "body": command.request_body.clone(),
+            },
             "message": message,
         }
     })
@@ -1116,6 +1121,32 @@ mod tests {
             "http://127.0.0.1:3000/api/v1/response-actions/11111111-1111-4111-8111-111111111111/agent-acks"
         );
         assert!(config.api_key.is_none());
+    }
+
+    #[test]
+    fn policy_rule_diff_validation_failure_payload_binds_request_context() {
+        let command = policy_rule_diff_validation_command(
+            &transport_command(),
+            "33333333-3333-4333-8333-333333333333",
+            "agent-1",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+        let raw_payload = policy_rule_diff_failure_payload(&command, "local validation failed");
+
+        assert_eq!(
+            raw_payload["policyRuleDiffValidationError"]["proposalId"],
+            "22222222-2222-4222-8222-222222222222"
+        );
+        assert_eq!(
+            raw_payload["policyRuleDiffValidationError"]["request"]["path"],
+            POLICY_RULE_DIFF_IMPACT_PATH
+        );
+        assert_eq!(
+            raw_payload["policyRuleDiffValidationError"]["request"]["body"]["limit"],
+            25
+        );
+        assert!(raw_payload.get("signedReceipt").is_none());
     }
 
     #[tokio::test]
