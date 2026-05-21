@@ -71,7 +71,7 @@ pub(crate) async fn agent_edr_materialize_deception_plan(
     let report = tokio::task::spawn_blocking(move || materialize_plan.materialize())
         .await
         .map_err(|err| internal_error(err.into()))?
-        .map_err(internal_error)?;
+        .map_err(map_deception_materialization_error)?;
     let mut registry = state.edr_honey_registry.lock().await;
     let registered_artifact_count = registry.register(&artifacts).map_err(internal_error)?;
     let registry_path = registry.path().map(|path| path.display().to_string());
@@ -290,7 +290,7 @@ pub(crate) async fn agent_edr_rotate_deception_plan(
         tokio::task::spawn_blocking(move || materialize_plan.materialize())
             .await
             .map_err(|err| internal_error(err.into()))?
-            .map_err(internal_error)?;
+            .map_err(map_deception_materialization_error)?;
     let mut registry = state.edr_honey_registry.lock().await;
     let registered_artifact_count = registry
         .register(&new_plan.artifacts)
@@ -329,4 +329,12 @@ pub(crate) async fn agent_edr_rotate_deception_plan(
         rotation_receipt,
         report,
     }))
+}
+
+fn map_deception_materialization_error(err: anyhow::Error) -> (StatusCode, String) {
+    let message = err.to_string();
+    if message.contains("pre-existing non-honey") {
+        return (StatusCode::CONFLICT, message);
+    }
+    internal_error(err)
 }

@@ -8,6 +8,7 @@ use clawdstrike_policy_event::simulate::SimulationResult;
 
 pub(crate) fn build_policy_event_replay_report(
     policy: EndpointPolicySnapshot,
+    source: &str,
     event_count: usize,
     track_posture: bool,
     event_stream_hash: String,
@@ -17,6 +18,7 @@ pub(crate) fn build_policy_event_replay_report(
     let replay_id = endpoint_policy_event_replay_id(EndpointPolicyEventReplayIdInput {
         policy_hash: policy.policy_hash.as_str(),
         policy_epoch: policy.policy_epoch,
+        event_source: source,
         event_stream_hash: event_stream_hash.as_str(),
         result_hash: result_hash.as_str(),
         event_count: event_count as u64,
@@ -39,6 +41,7 @@ pub(crate) fn build_policy_event_replay_report(
         replay_id,
         replayed_at: chrono::Utc::now(),
         mode: "current_policy_event_stream_replay".to_string(),
+        source: source.to_string(),
         policy,
         event_count: event_count as u64,
         allowed_count: result.summary.allowed,

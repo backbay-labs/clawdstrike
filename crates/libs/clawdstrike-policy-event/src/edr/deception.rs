@@ -211,7 +211,14 @@ impl DeceptionPlan {
             match create_new_honey_file(&path, artifact) {
                 Ok(()) => created.push(path.display().to_string()),
                 Err(err) if err.kind() == ErrorKind::AlreadyExists => {
-                    skipped.push(path.display().to_string());
+                    if existing_honey_file_matches(&path, artifact)? {
+                        skipped.push(path.display().to_string());
+                    } else {
+                        return Err(anyhow!(
+                            "refusing to materialize honey artifact over pre-existing non-honey path: {}",
+                            path.display()
+                        ));
+                    }
                 }
                 Err(err) => {
                     return Err(err)
@@ -222,6 +229,34 @@ impl DeceptionPlan {
 
         Ok(DeceptionMaterializationReport { created, skipped })
     }
+}
+
+fn existing_honey_file_matches(path: &Path, artifact: &HoneyArtifact) -> Result<bool> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("inspect existing honey artifact {}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Ok(false);
+    }
+
+    let contents = fs::read(path)
+        .with_context(|| format!("read existing honey artifact {}", path.display()))?;
+    if contents != artifact.contents.as_bytes() {
+        return Ok(false);
+    }
+
+    honey_file_permissions_match(&metadata, artifact.permissions_octal)
+}
+
+#[cfg(unix)]
+fn honey_file_permissions_match(metadata: &fs::Metadata, permissions_octal: u32) -> Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+
+    Ok(metadata.permissions().mode() & 0o777 == permissions_octal & 0o777)
+}
+
+#[cfg(not(unix))]
+fn honey_file_permissions_match(_metadata: &fs::Metadata, _permissions_octal: u32) -> Result<bool> {
+    Ok(true)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

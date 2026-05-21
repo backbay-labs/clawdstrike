@@ -1405,6 +1405,7 @@ impl EndpointDecisionReceipt {
         let replay_id = endpoint_policy_event_replay_id(EndpointPolicyEventReplayIdInput {
             policy_hash: input.policy.policy_hash.as_str(),
             policy_epoch: input.policy.policy_epoch,
+            event_source: input.event_source,
             event_stream_hash: input.event_stream_hash,
             result_hash: input.result_hash,
             event_count: input.event_count,
@@ -1451,6 +1452,7 @@ impl EndpointDecisionReceipt {
             },
             evidence: vec![
                 EndpointReceiptEvidence::hashed("replayId", replay_id),
+                EndpointReceiptEvidence::hashed("eventSource", input.event_source),
                 EndpointReceiptEvidence::hashed("eventStreamHash", input.event_stream_hash),
                 EndpointReceiptEvidence::hashed("resultHash", input.result_hash),
                 EndpointReceiptEvidence::hashed("eventCount", input.event_count.to_string()),
@@ -1469,6 +1471,7 @@ impl EndpointDecisionReceipt {
             current_policy_epoch: input.policy.policy_epoch,
             proposed_policy_hash: input.proposed_policy_hash,
             proposed_policy_epoch: input.proposed_policy_epoch,
+            event_source: input.event_source,
             event_stream_hash: input.event_stream_hash,
             current_result_hash: input.current_result_hash,
             proposed_result_hash: input.proposed_result_hash,
@@ -1516,6 +1519,7 @@ impl EndpointDecisionReceipt {
             },
             evidence: vec![
                 EndpointReceiptEvidence::hashed("impactId", impact_id),
+                EndpointReceiptEvidence::hashed("eventSource", input.event_source),
                 EndpointReceiptEvidence::hashed("eventStreamHash", input.event_stream_hash),
                 EndpointReceiptEvidence::hashed("currentResultHash", input.current_result_hash),
                 EndpointReceiptEvidence::hashed("proposedResultHash", input.proposed_result_hash),
@@ -5083,6 +5087,11 @@ fn require_policy_event_replay_evidence(
         replay_id,
         "policy event replay id evidence",
     )?;
+    require_policy_event_source_evidence(
+        evidence,
+        "eventSource",
+        "policy event replay source evidence",
+    )?;
     require_nonempty_hashed_evidence(
         evidence,
         "eventStreamHash",
@@ -5137,6 +5146,11 @@ fn require_policy_event_impact_evidence(
         "impactId",
         impact_id,
         "policy event impact id evidence",
+    )?;
+    require_policy_event_source_evidence(
+        evidence,
+        "eventSource",
+        "policy event impact source evidence",
     )?;
     require_nonempty_hashed_evidence(
         evidence,
@@ -5201,6 +5215,11 @@ fn policy_event_replay_id_from_evidence(
             policy_epoch.as_str(),
             evidence_value_hash(
                 evidence,
+                "eventSource",
+                "policy event replay source evidence",
+            )?,
+            evidence_value_hash(
+                evidence,
                 "eventStreamHash",
                 "policy event replay stream hash evidence",
             )?,
@@ -5253,6 +5272,11 @@ fn policy_event_impact_id_from_evidence(
                 evidence,
                 "proposedPolicyEpoch",
                 "policy event impact proposed-policy epoch evidence",
+            )?,
+            evidence_value_hash(
+                evidence,
+                "eventSource",
+                "policy event impact source evidence",
             )?,
             evidence_value_hash(
                 evidence,
@@ -6295,6 +6319,27 @@ fn require_boolean_hashed_evidence(
         && !hex_strings_match(false_hash.as_str(), item.value_hash.as_str())
     {
         return Err(anyhow!("{field_name} must be boolean"));
+    }
+    Ok(())
+}
+
+fn require_policy_event_source_evidence(
+    evidence: &[EndpointReceiptEvidence],
+    key: &str,
+    field_name: &str,
+) -> Result<()> {
+    let Some(item) = evidence.iter().find(|item| item.key == key) else {
+        return Err(anyhow!("{field_name} is required"));
+    };
+    require_evidence_hash_not_empty(item, field_name)?;
+    let submitted_hash = sha256(b"submitted").to_hex_prefixed();
+    let flight_recorder_hash = sha256(b"endpoint_flight_recorder").to_hex_prefixed();
+    if !hex_strings_match(submitted_hash.as_str(), item.value_hash.as_str())
+        && !hex_strings_match(flight_recorder_hash.as_str(), item.value_hash.as_str())
+    {
+        return Err(anyhow!(
+            "{field_name} must be submitted or endpoint_flight_recorder"
+        ));
     }
     Ok(())
 }

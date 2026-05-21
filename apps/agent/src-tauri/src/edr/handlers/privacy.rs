@@ -33,7 +33,9 @@ pub(crate) async fn agent_edr_privacy_report(
 ) -> Result<Json<EdrPrivacyReportResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
     validate_edr_request_sizes(input.observations.len(), 0)?;
-    let raw_artifact_approval = validate_raw_artifact_approval(&input)?;
+    let raw_artifact_approval =
+        validate_resolved_raw_artifact_approval(&state, validate_raw_artifact_approval(&input)?)
+            .await?;
     let requested_privacy_mode = input.privacy_mode.unwrap_or_default();
     let settings = state.settings.read().await.clone();
     let privacy_policy = edr_privacy_policy_decision(

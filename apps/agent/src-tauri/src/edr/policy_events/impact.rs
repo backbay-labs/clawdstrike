@@ -110,6 +110,7 @@ pub(crate) fn build_policy_event_impact_drivers(
 pub(crate) fn build_policy_event_impact_report(
     current_policy: EndpointPolicySnapshot,
     proposed_policy: EndpointPolicySnapshot,
+    source: &str,
     track_posture: bool,
     event_stream_hash: String,
     current_result_hash: String,
@@ -122,6 +123,7 @@ pub(crate) fn build_policy_event_impact_report(
         current_policy_epoch: current_policy.policy_epoch,
         proposed_policy_hash: proposed_policy.policy_hash.as_str(),
         proposed_policy_epoch: proposed_policy.policy_epoch,
+        event_source: source,
         event_stream_hash: event_stream_hash.as_str(),
         current_result_hash: current_result_hash.as_str(),
         proposed_result_hash: proposed_result_hash.as_str(),
@@ -146,6 +148,7 @@ pub(crate) fn build_policy_event_impact_report(
         impact_id,
         analyzed_at: chrono::Utc::now(),
         mode: "current_vs_proposed_policy_event_impact".to_string(),
+        source: source.to_string(),
         current_policy,
         proposed_policy,
         event_count: summary.total,

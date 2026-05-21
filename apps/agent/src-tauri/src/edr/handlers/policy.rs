@@ -37,6 +37,7 @@ pub(crate) async fn agent_edr_policy_events_replay(
     replay_policy_events_under_current_policy(
         &state,
         input.events,
+        "submitted",
         input.track_posture.unwrap_or(false),
     )
     .await
@@ -50,7 +51,7 @@ pub(crate) async fn agent_edr_policy_events_replay_jsonl(
 ) -> Result<Json<EdrPolicyEventReplayResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
     let events = parse_policy_event_jsonl(&body)?;
-    replay_policy_events_under_current_policy(&state, events, false)
+    replay_policy_events_under_current_policy(&state, events, "submitted", false)
         .await
         .map(Json)
 }
@@ -63,8 +64,13 @@ pub(crate) async fn agent_edr_policy_events_replay_history(
     require_auth(&headers, &state)?;
     let track_posture = input.track_posture.unwrap_or(false);
     let selection = select_policy_event_history_from_flight_recorder(&state, input).await?;
-    let replay =
-        replay_policy_events_under_current_policy(&state, selection.events, track_posture).await?;
+    let replay = replay_policy_events_under_current_policy(
+        &state,
+        selection.events,
+        "endpoint_flight_recorder",
+        track_posture,
+    )
+    .await?;
 
     Ok(Json(EdrPolicyEventHistoryReplayResponse {
         history: selection.report,
@@ -83,6 +89,7 @@ pub(crate) async fn agent_edr_policy_events_impact(
     analyze_policy_event_impact_under_proposed_policy(
         &state,
         input.events,
+        "submitted",
         input.proposed_policy_yaml,
         input.track_posture.unwrap_or(false),
     )
@@ -110,6 +117,7 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
     let impact = analyze_policy_event_impact_under_proposed_policy(
         &state,
         selection.events.clone(),
+        "endpoint_flight_recorder",
         input.proposed_policy_yaml,
         track_posture,
     )
@@ -118,9 +126,6 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
     let cross_window_impact = validation_window_seconds.map(|window_seconds| {
         build_policy_event_history_cross_window_impact(&selection, &impact.changes, window_seconds)
     });
-    if let Some(cross_window_impact) = &cross_window_impact {
-        remember_cross_window_promotion_validation(&state, cross_window_impact).await;
-    }
     let promotion_stage = cross_window_impact
         .as_ref()
         .map(|impact| impact.recommended_stage.as_str());
@@ -138,6 +143,10 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
         promotion_stage,
         cross_window_hashes,
     );
+    if let Some(cross_window_impact) = &cross_window_impact {
+        remember_cross_window_promotion_validation(&state, cross_window_impact, &causal_impact)
+            .await;
+    }
     if let Some((receipt_root_node_id, receipt_graph)) = causal_impact_receipt_graph(&causal_impact)
     {
         causal_impact.receipt = Some(
@@ -373,6 +382,8 @@ pub(crate) async fn agent_edr_stage_detection(
     let cross_window_validation = recent_cross_window_promotion_validation(
         state.as_ref(),
         stage,
+        candidate_response.candidate.root_node_id.as_str(),
+        &candidate_response.candidate.action,
         cross_window_impact_hash.as_deref(),
         cross_window_recommendation_hash.as_deref(),
     )
@@ -666,6 +677,7 @@ pub(crate) async fn agent_edr_policy_delta_apply(
                 )
             })?
     };
+    verify_policy_delta_record_before_apply(state.as_ref(), &policy_delta).await?;
     let settings = state.settings.read().await.clone();
     let policy_path = settings.policy_path.clone();
     let current_bytes = fs::read(&policy_path).map_err(|err| {

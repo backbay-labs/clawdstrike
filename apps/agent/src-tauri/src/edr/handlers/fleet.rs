@@ -50,10 +50,14 @@ pub(crate) async fn agent_edr_control_archive_uploads_backfill(
     Json(input): Json<EdrControlArchiveUploadBackfillInput>,
 ) -> Result<Json<EdrControlArchiveUploadBackfillResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
-    let raw_artifact_approval = validate_raw_artifact_approval_fields(
-        input.raw_artifact_approval_id.as_deref(),
-        input.raw_artifact_approval_reason.as_deref(),
-    )?;
+    let raw_artifact_approval = validate_resolved_raw_artifact_approval(
+        &state,
+        validate_raw_artifact_approval_fields(
+            input.raw_artifact_approval_id.as_deref(),
+            input.raw_artifact_approval_reason.as_deref(),
+        )?,
+    )
+    .await?;
     let limit = bounded_request_limit("limit", input.limit, 25, 100)?;
     let bundle_ids = control_archive_backfill_bundle_ids(&state, &input, limit).await?;
     let endpoint_agent_id = local_endpoint_agent_id(&state).await;

@@ -2,7 +2,8 @@
 
 use crate::agent_auth::rotate_local_api_token;
 use crate::approval::{
-    ApprovalQueue, ApprovalRequestInput, ApprovalResolveInput, ApprovalStatusResponse,
+    ApprovalQueue, ApprovalRequestInput, ApprovalResolution, ApprovalResolveInput, ApprovalStatus,
+    ApprovalStatusResponse,
 };
 use crate::daemon::{AuditQueue, DaemonManager, DaemonStatus};
 use crate::macos::status::{
@@ -290,6 +291,8 @@ pub(crate) struct EdrCrossWindowPromotionValidation {
     pub(crate) impact_hash: String,
     pub(crate) recommendation_hash: String,
     pub(crate) recommended_stage: String,
+    pub(crate) root_node_id: String,
+    pub(crate) action: EndpointDecisionAction,
     pub(crate) promotion_ready: bool,
 }
 
@@ -3015,6 +3018,13 @@ async fn update_settings(
             }
         }
 
+        require_enrolled_edr_receipt_signer_for_settings(
+            &state,
+            &next_settings,
+            "settings update enabling cloud/control EDR mode",
+        )
+        .await?;
+
         next_settings
             .save()
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -4758,16 +4768,27 @@ pub(crate) fn normalize_staged_detection_hash(
 pub(crate) async fn remember_cross_window_promotion_validation(
     state: &Arc<AgentApiState>,
     impact: &EdrPolicyEventHistoryCrossWindowImpact,
+    causal_impact: &EdrPolicyEventHistoryCausalImpact,
 ) {
-    let validation = EdrCrossWindowPromotionValidation {
-        recorded_at: chrono::Utc::now(),
-        impact_hash: impact.impact_hash.clone(),
-        recommendation_hash: impact.recommendation_hash.clone(),
-        recommended_stage: impact.recommended_stage.clone(),
-        promotion_ready: impact.promotion_ready,
-    };
+    if !impact.promotion_ready {
+        return;
+    }
+    let recorded_at = chrono::Utc::now();
     let mut validations = state.edr_cross_window_promotion_validations.lock().await;
-    validations.push_back(validation);
+    for suggestion in &causal_impact.promotion_suggestions {
+        if suggestion.selected_stage != impact.recommended_stage {
+            continue;
+        }
+        validations.push_back(EdrCrossWindowPromotionValidation {
+            recorded_at,
+            impact_hash: impact.impact_hash.clone(),
+            recommendation_hash: impact.recommendation_hash.clone(),
+            recommended_stage: impact.recommended_stage.clone(),
+            root_node_id: suggestion.target_node_id.clone(),
+            action: suggestion.action.clone(),
+            promotion_ready: true,
+        });
+    }
     while validations.len() > EDR_CROSS_WINDOW_PROMOTION_VALIDATION_CACHE_LIMIT {
         let _ = validations.pop_front();
     }
@@ -4776,6 +4797,8 @@ pub(crate) async fn remember_cross_window_promotion_validation(
 pub(crate) async fn recent_cross_window_promotion_validation(
     state: &AgentApiState,
     stage: &str,
+    root_node_id: &str,
+    action: &EndpointDecisionAction,
     cross_window_impact_hash: Option<&str>,
     cross_window_recommendation_hash: Option<&str>,
 ) -> Result<Option<EdrCrossWindowPromotionValidation>, (StatusCode, String)> {
@@ -4792,6 +4815,8 @@ pub(crate) async fn recent_cross_window_promotion_validation(
         .find(|validation| {
             validation.promotion_ready
                 && validation.recommended_stage == stage
+                && validation.root_node_id == root_node_id
+                && validation.action == *action
                 && validation.impact_hash == cross_window_impact_hash
                 && validation.recommendation_hash == cross_window_recommendation_hash
                 && now
@@ -5607,6 +5632,90 @@ pub(crate) fn policy_delta_artifact_hash(artifact: &EdrPolicyDeltaArtifact) -> R
     let canonical = canonicalize_json(&value)
         .with_context(|| format!("canonicalize policy delta {}", artifact.policy_delta_id))?;
     Ok(sha256(canonical.as_bytes()).to_hex_prefixed())
+}
+
+pub(crate) async fn verify_policy_delta_record_before_apply(
+    state: &AgentApiState,
+    record: &EdrPolicyDeltaRecord,
+) -> Result<(), (StatusCode, String)> {
+    if record.policy_delta_id != record.artifact.policy_delta_id {
+        return Err((
+            StatusCode::CONFLICT,
+            "policy delta record id does not match artifact id".to_string(),
+        ));
+    }
+    if record.rule_id != record.artifact.candidate.rule_id {
+        return Err((
+            StatusCode::CONFLICT,
+            "policy delta record rule does not match artifact rule".to_string(),
+        ));
+    }
+    if record.stage != record.artifact.rollout.stage
+        || record.action != record.artifact.rollout.action
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "policy delta record rollout does not match artifact rollout".to_string(),
+        ));
+    }
+
+    let computed_artifact_hash =
+        policy_delta_artifact_hash(&record.artifact).map_err(internal_error)?;
+    if computed_artifact_hash != record.artifact_hash {
+        return Err((
+            StatusCode::CONFLICT,
+            format!(
+                "policy delta artifact hash mismatch: expected {}, computed {}",
+                record.artifact_hash, computed_artifact_hash
+            ),
+        ));
+    }
+
+    let signer_public_key = {
+        let ledger = state.edr_receipt_ledger.lock().await;
+        ledger.signer_public_key.clone()
+    };
+    verify_endpoint_receipt_signature(
+        &record.receipt,
+        "policy delta generated receipt",
+        signer_public_key.as_str(),
+    )
+    .map_err(|reason| {
+        (
+            StatusCode::CONFLICT,
+            format!("policy delta generated receipt failed verification: {reason}"),
+        )
+    })?;
+
+    if receipt_family(&record.receipt) != Some("policy_delta") {
+        return Err((
+            StatusCode::CONFLICT,
+            "policy delta generated receipt has wrong family".to_string(),
+        ));
+    }
+    if !receipt_evidence_hash_matches(&record.receipt, "policyDeltaId", &record.policy_delta_id) {
+        return Err((
+            StatusCode::CONFLICT,
+            "policy delta generated receipt does not bind policy delta id".to_string(),
+        ));
+    }
+    if !receipt_evidence_hash_matches(&record.receipt, "artifactHash", &record.artifact_hash) {
+        return Err((
+            StatusCode::CONFLICT,
+            "policy delta generated receipt does not bind artifact hash".to_string(),
+        ));
+    }
+    if !receipt_evidence_hash_matches(
+        &record.receipt,
+        "stagedDetectionId",
+        &record.artifact.staged_detection_id,
+    ) {
+        return Err((
+            StatusCode::CONFLICT,
+            "policy delta generated receipt does not bind staged detection id".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn policy_delta_source_context_evidence_value<T: Serialize>(value: &T) -> String {
@@ -10967,13 +11076,13 @@ pub(crate) async fn evaluate_record_and_receipt_edr_observations(
         ));
     }
 
-    let mut honey_artifacts = state
+    let honey_artifacts = state
         .edr_honey_registry
         .lock()
         .await
         .load()
         .map_err(internal_error)?;
-    honey_artifacts.extend(submitted_honey_artifacts);
+    require_submitted_honey_artifacts_registered(&submitted_honey_artifacts, &honey_artifacts)?;
     validate_edr_request_sizes(recorded_observations.len(), honey_artifacts.len())?;
 
     let guard = SupplyChainRuntimeGuard::with_honey_artifacts(honey_artifacts);
@@ -11005,6 +11114,37 @@ pub(crate) async fn evaluate_record_and_receipt_edr_observations(
     publish_current_agent_secret_touches_to_fleet_best_effort(state, recorded_observations).await;
 
     Ok(EdrEvaluatedFindings { findings, receipts })
+}
+
+fn require_submitted_honey_artifacts_registered(
+    submitted_honey_artifacts: &[HoneyArtifact],
+    registered_honey_artifacts: &[HoneyArtifact],
+) -> Result<(), (StatusCode, String)> {
+    for submitted in submitted_honey_artifacts {
+        let Some(registered) = registered_honey_artifacts
+            .iter()
+            .find(|artifact| artifact.artifact_id == submitted.artifact_id)
+        else {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "submitted honey artifact {} is not a registered honey artifact",
+                    submitted.artifact_id
+                ),
+            ));
+        };
+
+        if registered != submitted {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "submitted honey artifact {} does not match the registered honey artifact",
+                    submitted.artifact_id
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn is_local_only_honey_marker_finding(finding: &DetectionFinding) -> bool {
@@ -12260,6 +12400,7 @@ fn causal_edge_kind_name(kind: &CausalEdgeKind) -> &'static str {
 pub(crate) async fn replay_policy_events_under_current_policy(
     state: &AgentApiState,
     events: Vec<PolicyEvent>,
+    source: &str,
     track_posture: bool,
 ) -> Result<EdrPolicyEventReplayResponse, (StatusCode, String)> {
     validate_policy_event_replay_events(&events)?;
@@ -12283,6 +12424,7 @@ pub(crate) async fn replay_policy_events_under_current_policy(
         canonical_json_hash(&result, "policy event replay result").map_err(internal_error)?;
     let replay = build_policy_event_replay_report(
         policy,
+        source,
         events.len(),
         track_posture,
         event_stream_hash,
@@ -12356,6 +12498,7 @@ pub(crate) fn canonical_json_hash(value: &impl Serialize, label: &str) -> Result
 pub(crate) async fn analyze_policy_event_impact_under_proposed_policy(
     state: &AgentApiState,
     events: Vec<PolicyEvent>,
+    source: &str,
     proposed_policy_yaml: String,
     track_posture: bool,
 ) -> Result<EdrPolicyEventImpactResponse, (StatusCode, String)> {
@@ -12411,6 +12554,7 @@ pub(crate) async fn analyze_policy_event_impact_under_proposed_policy(
     let impact = build_policy_event_impact_report(
         current_policy,
         proposed_policy,
+        source,
         track_posture,
         event_stream_hash,
         current_result_hash,
@@ -13738,6 +13882,35 @@ async fn send_control_receipt_upload_retry(
     state: &AgentApiState,
     retry: &EndpointControlReceiptUploadRetry,
 ) -> ControlReceiptUploadRetryAttemptOutcome {
+    if let Err((_status, message)) =
+        require_cloud_mode_enrolled_receipt_signer(state, "endpoint receipt upload retry").await
+    {
+        let error = truncate_delivery_error(&message);
+        return ControlReceiptUploadRetryAttemptOutcome {
+            accepted: false,
+            http_status: None,
+            response_hash: None,
+            error_hash: Some(sha256(error.as_bytes()).to_hex_prefixed()),
+        };
+    }
+    let settings = state.settings.read().await.clone();
+    if edr_receipt_signer_requires_enrollment(&settings) {
+        let signer_public_key = {
+            let ledger = state.edr_receipt_ledger.lock().await;
+            ledger.signer_public_key.clone()
+        };
+        if retry.payload.public_key != signer_public_key {
+            let error = truncate_delivery_error(
+                "endpoint receipt upload retry payload is not signed by the current enrolled EDR signer",
+            );
+            return ControlReceiptUploadRetryAttemptOutcome {
+                accepted: false,
+                http_status: None,
+                response_hash: None,
+                error_hash: Some(sha256(error.as_bytes()).to_hex_prefixed()),
+            };
+        }
+    }
     let Some(api_key) = resolve_control_receipt_upload_api_key(state, retry).await else {
         let error = truncate_delivery_error(
             "control API key is unavailable or URL no longer matches for endpoint receipt upload retry",
@@ -13815,6 +13988,30 @@ async fn post_control_endpoint_receipts_best_effort(
     }
     let settings = state.settings.read().await.clone();
     if !settings.control_api.enabled {
+        return;
+    }
+    if let Err((_status, err)) =
+        require_cloud_mode_enrolled_receipt_signer(state, "automatic endpoint receipt upload").await
+    {
+        tracing::warn!(
+            error = %err,
+            upload_path,
+            "Skipping automatic endpoint receipt upload because the EDR signer is not enrolled"
+        );
+        return;
+    }
+    if let Err((_status, err)) = require_cloud_mode_receipts_signed_by_current_signer(
+        state,
+        receipts,
+        "automatic endpoint receipt upload",
+    )
+    .await
+    {
+        tracing::warn!(
+            error = %err,
+            upload_path,
+            "Skipping automatic endpoint receipt upload because a receipt is not signed by the current enrolled signer"
+        );
         return;
     }
     let Some(control_api_url) =
@@ -14056,6 +14253,14 @@ pub(crate) async fn post_control_endpoint_evidence_archive(
     if !settings.control_api.enabled {
         return Ok(None);
     }
+    require_cloud_mode_enrolled_receipt_signer(state, "raw endpoint evidence archive upload")
+        .await?;
+    require_cloud_mode_receipts_signed_by_current_signer(
+        state,
+        &archive_response.archive.receipts,
+        "raw endpoint evidence archive upload",
+    )
+    .await?;
 
     let raw_policy = edr_raw_artifact_upload_policy(&settings).map_err(internal_error)?;
     let control_api_url = non_empty(settings.control_api.url.as_deref()).map(ToString::to_string);
@@ -14240,6 +14445,53 @@ pub(crate) async fn send_control_archive_upload_retry(
     state: &AgentApiState,
     retry: &EndpointControlArchiveUploadRetry,
 ) -> ControlArchiveUploadRetryAttemptOutcome {
+    if let Err((_status, message)) =
+        require_cloud_mode_enrolled_receipt_signer(state, "raw endpoint evidence archive retry")
+            .await
+    {
+        let error = truncate_delivery_error(&message);
+        return ControlArchiveUploadRetryAttemptOutcome {
+            accepted: false,
+            http_status: None,
+            response_hash: None,
+            error_hash: Some(sha256(error.as_bytes()).to_hex_prefixed()),
+        };
+    }
+    if let Some(receipts_value) = retry
+        .payload
+        .get("archive")
+        .and_then(|archive| archive.get("receipts"))
+    {
+        let receipts = match serde_json::from_value::<Vec<SignedReceipt>>(receipts_value.clone()) {
+            Ok(receipts) => receipts,
+            Err(err) => {
+                let error = truncate_delivery_error(&format!(
+                    "raw endpoint evidence archive retry payload receipts are invalid: {err}"
+                ));
+                return ControlArchiveUploadRetryAttemptOutcome {
+                    accepted: false,
+                    http_status: None,
+                    response_hash: None,
+                    error_hash: Some(sha256(error.as_bytes()).to_hex_prefixed()),
+                };
+            }
+        };
+        if let Err((_status, message)) = require_cloud_mode_receipts_signed_by_current_signer(
+            state,
+            &receipts,
+            "raw endpoint evidence archive retry",
+        )
+        .await
+        {
+            let error = truncate_delivery_error(&message);
+            return ControlArchiveUploadRetryAttemptOutcome {
+                accepted: false,
+                http_status: None,
+                response_hash: None,
+                error_hash: Some(sha256(error.as_bytes()).to_hex_prefixed()),
+            };
+        }
+    }
     if !control_archive_retry_payload_has_raw_artifact_approval(&retry.payload) {
         let error = truncate_delivery_error(
             "raw endpoint evidence archive retry payload is missing raw artifact approval evidence",
@@ -17055,6 +17307,60 @@ pub(crate) fn validate_raw_artifact_approval_fields(
     }
 }
 
+pub(crate) async fn validate_resolved_raw_artifact_approval(
+    state: &AgentApiState,
+    raw_artifact_approval: Option<EdrRawArtifactApproval>,
+) -> Result<Option<EdrRawArtifactApproval>, (StatusCode, String)> {
+    let Some(raw_artifact_approval) = raw_artifact_approval else {
+        return Ok(None);
+    };
+    let approval_status = state
+        .approval_queue
+        .get_status(&raw_artifact_approval.approval_id)
+        .await
+        .ok_or_else(|| {
+            (
+                StatusCode::CONFLICT,
+                "rawArtifactApprovalId does not reference a local approval request".to_string(),
+            )
+        })?;
+    if approval_status.status != ApprovalStatus::Resolved {
+        return Err((
+            StatusCode::CONFLICT,
+            "rawArtifactApprovalId must reference a resolved local approval request".to_string(),
+        ));
+    }
+    match approval_status.resolution {
+        Some(
+            ApprovalResolution::AllowOnce
+            | ApprovalResolution::AllowSession
+            | ApprovalResolution::AllowAlways,
+        ) => {}
+        Some(ApprovalResolution::Deny) | None => {
+            return Err((
+                StatusCode::CONFLICT,
+                "rawArtifactApprovalId must reference an allowed local approval request"
+                    .to_string(),
+            ));
+        }
+    }
+    if approval_status.guard != "endpoint.telemetry.raw_artifact_upload" {
+        return Err((
+            StatusCode::CONFLICT,
+            "rawArtifactApprovalId must reference an endpoint.telemetry.raw_artifact_upload approval"
+                .to_string(),
+        ));
+    }
+    let expected_reason_hash = sha256(approval_status.reason.as_bytes()).to_hex_prefixed();
+    if raw_artifact_approval.reason_hash != expected_reason_hash {
+        return Err((
+            StatusCode::CONFLICT,
+            "rawArtifactApprovalReason does not match the resolved approval request".to_string(),
+        ));
+    }
+    Ok(Some(raw_artifact_approval))
+}
+
 fn edr_raw_artifact_upload_policy(settings: &Settings) -> Result<EdrRawArtifactUploadPolicy> {
     let bytes = fs::read(&settings.policy_path).with_context(|| {
         format!(
@@ -18675,6 +18981,93 @@ fn edr_receipt_signer_requires_enrollment(settings: &Settings) -> bool {
     settings.enrollment.enrolled || settings.nats.enabled || settings.control_api.enabled
 }
 
+pub(crate) async fn require_cloud_mode_enrolled_receipt_signer(
+    state: &AgentApiState,
+    label: &str,
+) -> Result<(), (StatusCode, String)> {
+    let settings = state.settings.read().await.clone();
+    if !edr_receipt_signer_requires_enrollment(&settings) {
+        return Ok(());
+    }
+    require_enrolled_edr_receipt_signer_for_settings(state, &settings, label).await
+}
+
+async fn require_enrolled_edr_receipt_signer_for_settings(
+    state: &AgentApiState,
+    settings: &Settings,
+    label: &str,
+) -> Result<(), (StatusCode, String)> {
+    if !edr_receipt_signer_requires_enrollment(settings) {
+        return Ok(());
+    }
+    let (signer_identity, signer_public_key) = {
+        let ledger = state.edr_receipt_ledger.lock().await;
+        (
+            ledger.signer_identity.clone(),
+            ledger.signer_public_key.clone(),
+        )
+    };
+    let expected_identity = format!("agent-enrollment:{signer_public_key}");
+    if signer_identity != expected_identity {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("{label} requires an enrolled EDR receipt signer in cloud/control mode"),
+        ));
+    }
+    if let Some(key_hex) = crate::enrollment::load_enrollment_key_hex().map_err(internal_error)? {
+        let enrollment_public_key = Keypair::from_hex(key_hex.trim())
+            .map_err(|err| internal_error(anyhow::anyhow!("parse enrollment key: {err}")))?
+            .public_key()
+            .to_hex();
+        if signer_public_key != enrollment_public_key {
+            return Err((
+                StatusCode::CONFLICT,
+                format!("{label} signer does not match the enrolled agent key"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) async fn require_cloud_mode_receipts_signed_by_current_signer(
+    state: &AgentApiState,
+    receipts: &[SignedReceipt],
+    label: &str,
+) -> Result<(), (StatusCode, String)> {
+    let settings = state.settings.read().await.clone();
+    if !edr_receipt_signer_requires_enrollment(&settings) {
+        return Ok(());
+    }
+    require_enrolled_edr_receipt_signer_for_settings(state, &settings, label).await?;
+    let (signer_identity, signer_public_key) = {
+        let ledger = state.edr_receipt_ledger.lock().await;
+        (
+            ledger.signer_identity.clone(),
+            ledger.signer_public_key.clone(),
+        )
+    };
+    for receipt in receipts {
+        let receipt_id = receipt.receipt.receipt_id.as_deref().unwrap_or("<missing>");
+        if receipt_endpoint_decision_str(receipt, &["signer", "signerIdentity"])
+            != Some(signer_identity.as_str())
+        {
+            return Err((
+                StatusCode::CONFLICT,
+                format!("{label} contains receipt {receipt_id} from a non-current EDR signer"),
+            ));
+        }
+        if receipt_endpoint_decision_str(receipt, &["signer", "signerPublicKey"])
+            != Some(signer_public_key.as_str())
+        {
+            return Err((
+                StatusCode::CONFLICT,
+                format!("{label} contains receipt {receipt_id} from an untrusted EDR signer"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn default_edr_receipt_ledger(
     require_enrolled_receipt_signer: bool,
 ) -> Result<EndpointReceiptLedger> {
@@ -19856,6 +20249,28 @@ mod tests {
         settings.nats.enabled = false;
         settings.control_api.enabled = true;
         assert!(edr_receipt_signer_requires_enrollment(&settings));
+    }
+
+    #[tokio::test]
+    async fn cloud_mode_rejects_local_edr_receipt_signer() {
+        let mut state = test_state();
+        {
+            let mut settings = state.settings.write().await;
+            settings.control_api.enabled = true;
+        }
+        let keypair = Keypair::from_seed(&[222u8; 32]);
+        let signer_public_key = keypair.public_key().to_hex();
+        state.edr_receipt_ledger = Arc::new(Mutex::new(EndpointReceiptLedger::transient(
+            keypair,
+            format!("local-edr:{signer_public_key}"),
+        )));
+        let state = Arc::new(state);
+
+        let err = require_cloud_mode_enrolled_receipt_signer(&state, "test cloud upload")
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, StatusCode::CONFLICT);
+        assert!(err.1.contains("enrolled EDR receipt signer"));
     }
 
     fn assert_unknown_field_rejected<T>(payload: serde_json::Value, field: &str)
@@ -21678,6 +22093,28 @@ mod tests {
             "clawdstrike-agent-api-test-policy-{}-{counter}.yaml",
             std::process::id()
         ))
+    }
+
+    async fn resolve_test_raw_artifact_approval(state: &AgentApiState, reason: &str) -> String {
+        let request = state
+            .approval_queue
+            .submit(ApprovalRequestInput {
+                tool: "clawdstrike-agent".to_string(),
+                resource: "endpoint.telemetry.raw_artifact_upload".to_string(),
+                guard: "endpoint.telemetry.raw_artifact_upload".to_string(),
+                reason: reason.to_string(),
+                severity: "high".to_string(),
+                session_id: Some("raw-artifact-test-session".to_string()),
+                ttl_secs: Some(60),
+            })
+            .await
+            .unwrap_or_else(|err| panic!("failed to submit raw artifact approval: {err}"));
+        state
+            .approval_queue
+            .resolve(&request.id, ApprovalResolution::AllowOnce)
+            .await
+            .unwrap_or_else(|err| panic!("failed to resolve raw artifact approval: {err}"));
+        request.id
     }
 
     fn test_settings_path() -> PathBuf {
@@ -24219,14 +24656,6 @@ mod tests {
     ) {
         let flight_recorder_path = test_flight_recorder_path();
         let _ = std::fs::remove_file(&flight_recorder_path);
-        let mut state = test_state();
-        state.edr_flight_recorder = Arc::new(Mutex::new(
-            EndpointFlightRecorder::open(&flight_recorder_path)
-                .unwrap_or_else(|e| panic!("failed to open test flight recorder: {e}")),
-        ));
-        let app = Router::new()
-            .route("/api/v1/agent/edr/findings", post(agent_edr_findings))
-            .with_state(Arc::new(state));
         let artifact = HoneyArtifact {
             artifact_id: "honey-content-preview-1".to_string(),
             kind: HoneyArtifactKind::ApiTokenFile,
@@ -24238,6 +24667,20 @@ mod tests {
             permissions_octal: 0o600,
             tags: vec!["deception".to_string(), "endpoint".to_string()],
         };
+        let mut state = test_state();
+        state.edr_flight_recorder = Arc::new(Mutex::new(
+            EndpointFlightRecorder::open(&flight_recorder_path)
+                .unwrap_or_else(|e| panic!("failed to open test flight recorder: {e}")),
+        ));
+        {
+            let mut registry = state.edr_honey_registry.lock().await;
+            registry
+                .register(std::slice::from_ref(&artifact))
+                .unwrap_or_else(|e| panic!("failed to register honey artifact: {e}"));
+        }
+        let app = Router::new()
+            .route("/api/v1/agent/edr/findings", post(agent_edr_findings))
+            .with_state(Arc::new(state));
         let observation = EndpointObservation {
             process: EndpointProcess {
                 process_guid: Some("proc-file-preview-honey-1".to_string()),
@@ -24254,7 +24697,7 @@ mod tests {
         };
         let body = serde_json::json!({
             "observations": [observation],
-            "honey_artifacts": [artifact]
+            "honey_artifacts": []
         });
         let req = axum::http::Request::builder()
             .method("POST")
@@ -24302,6 +24745,62 @@ mod tests {
         assert_eq!(content_preview.as_deref(), Some("[REDACTED]"));
 
         let _ = std::fs::remove_file(flight_recorder_path);
+    }
+
+    #[tokio::test]
+    async fn agent_edr_findings_rejects_unregistered_submitted_honey_artifacts() {
+        let state = test_state();
+        let app = Router::new()
+            .route("/api/v1/agent/edr/findings", post(agent_edr_findings))
+            .with_state(Arc::new(state));
+        let artifact = HoneyArtifact {
+            artifact_id: "forged-honey-content-preview-1".to_string(),
+            kind: HoneyArtifactKind::ApiTokenFile,
+            relative_path: PathBuf::from(".clawdstrike/forged-honey.env"),
+            marker: "clawdstrike-forged-honey-marker".to_string(),
+            contents: "CLAWDSTRIKE_PROD_API_TOKEN=cs_live_forged_honey_marker\n".to_string(),
+            permissions_octal: 0o600,
+            tags: vec!["deception".to_string(), "endpoint".to_string()],
+        };
+        let observation = EndpointObservation {
+            process: EndpointProcess {
+                process_guid: Some("proc-forged-honey-1".to_string()),
+                image: Some("/usr/bin/python3".to_string()),
+                ..EndpointProcess::default()
+            },
+            event: EndpointEvent::FileAccess {
+                operation: FileOperation::Read,
+                path: "/tmp/unrelated-forged-honey.txt".to_string(),
+                source_url: None,
+                content_preview: Some(format!("caller planted {}", artifact.marker)),
+            },
+            ..EndpointObservation::default()
+        };
+        let body = serde_json::json!({
+            "observations": [observation],
+            "honey_artifacts": [artifact]
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/findings")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build forged honey request: {e}"));
+
+        let response = app
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("forged honey request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read forged honey response: {e}"));
+        let payload = String::from_utf8_lossy(&bytes);
+        assert!(
+            payload.contains("registered honey artifact"),
+            "unexpected forged honey response: {payload}"
+        );
     }
 
     #[tokio::test]
@@ -27813,10 +28312,63 @@ guards:
         );
         assert!(payload["report"].get("rawArtifactApprovalId").is_none());
 
+        let forged_body = serde_json::json!({
+            "privacyMode": "raw_artifact_permitted",
+            "rawArtifactApprovalId": "approval-raw-privacy-forged",
+            "rawArtifactApprovalReason": "incident ir-privacy-1 raw collection approved",
+            "observations": [observation]
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/privacy-report")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(forged_body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build forged raw privacy report request: {e}"));
+        let response = app
+            .clone()
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("forged raw privacy report request failed: {e}"));
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read forged raw privacy report response: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "unexpected forged raw privacy report response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(String::from_utf8_lossy(&bytes).contains("approval"));
+
+        let approval_reason = "incident ir-privacy-1 raw collection approved";
+        let approval_request = state
+            .approval_queue
+            .submit(ApprovalRequestInput {
+                tool: "clawdstrike-agent".to_string(),
+                resource: "endpoint.telemetry.raw_artifact_upload".to_string(),
+                guard: "endpoint.telemetry.raw_artifact_upload".to_string(),
+                reason: approval_reason.to_string(),
+                severity: "high".to_string(),
+                session_id: Some("raw-privacy-test-session".to_string()),
+                ttl_secs: Some(60),
+            })
+            .await
+            .unwrap_or_else(|err| panic!("failed to submit raw artifact approval: {err}"));
+        state
+            .approval_queue
+            .resolve(
+                &approval_request.id,
+                crate::approval::ApprovalResolution::AllowOnce,
+            )
+            .await
+            .unwrap_or_else(|err| panic!("failed to resolve raw artifact approval: {err}"));
+
         let approved_body = serde_json::json!({
             "privacyMode": "raw_artifact_permitted",
-            "rawArtifactApprovalId": "approval-raw-privacy-1",
-            "rawArtifactApprovalReason": "incident ir-privacy-1 raw collection approved",
+            "rawArtifactApprovalId": approval_request.id,
+            "rawArtifactApprovalReason": approval_reason,
             "observations": [observation]
         });
         let req = axum::http::Request::builder()
@@ -27860,7 +28412,7 @@ guards:
         );
         assert_eq!(
             payload["privacy_policy"]["rawArtifactApprovalId"],
-            "approval-raw-privacy-1"
+            approval_request.id
         );
         assert!(payload["privacy_policy"]["rawArtifactApprovalReasonHash"]
             .as_str()
@@ -27873,7 +28425,7 @@ guards:
         );
         assert_eq!(
             payload["report"]["rawArtifactApprovalId"],
-            "approval-raw-privacy-1"
+            approval_request.id
         );
         assert_eq!(
             payload["report"]["rawArtifactApprovalReasonHash"],
@@ -28325,6 +28877,68 @@ guards:
             .unwrap_or_else(|| panic!("missing evidence array"))
             .iter()
             .any(|item| item["key"] == "matchType" && item["value"] == "network_destination")));
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_file(registry_path);
+    }
+
+    #[tokio::test]
+    async fn agent_edr_materialize_deception_plan_refuses_preexisting_non_honey_files() {
+        let registry_path = test_honey_registry_path();
+        let root = registry_path.with_extension("preexisting-root");
+        let mut state = test_state();
+        state.edr_honey_registry = Arc::new(Mutex::new(
+            EndpointHoneyRegistry::open(&registry_path)
+                .unwrap_or_else(|e| panic!("failed to open honey registry: {e}")),
+        ));
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/edr/deception-plan/materialize",
+                post(agent_edr_materialize_deception_plan),
+            )
+            .with_state(Arc::new(state));
+        let plan = DeceptionPlan::standard(&root, "endpoint-honey-preexisting-test");
+        let artifact = plan
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == HoneyArtifactKind::SshPrivateKey)
+            .cloned()
+            .unwrap_or_else(|| panic!("missing ssh honey artifact"));
+        let preexisting_path = artifact.absolute_path(&root);
+        std::fs::create_dir_all(
+            preexisting_path
+                .parent()
+                .unwrap_or_else(|| panic!("missing preexisting artifact parent")),
+        )
+        .unwrap_or_else(|e| panic!("failed to create preexisting parent: {e}"));
+        std::fs::write(&preexisting_path, "real-user-private-key-material\n")
+            .unwrap_or_else(|e| panic!("failed to write preexisting file: {e}"));
+
+        let body = serde_json::json!({ "plan": plan });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/deception-plan/materialize")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build materialize request: {e}"));
+        let response = app
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("materialize request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read materialize response: {e}"));
+        let payload = String::from_utf8_lossy(&bytes);
+        assert!(
+            payload.contains("pre-existing non-honey"),
+            "unexpected materialize refusal response: {payload}"
+        );
+        let registered = EndpointHoneyRegistry::open(&registry_path)
+            .and_then(|registry| registry.load())
+            .unwrap_or_else(|e| panic!("failed to read honey registry: {e}"));
+        assert!(registered.is_empty());
+
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_file(registry_path);
     }
@@ -30019,7 +30633,7 @@ guards:
             path: Some(receipt_path.clone()),
             next_sequence: 1,
             keypair,
-            signer_identity: "test-edr-receipt-upload-signer".to_string(),
+            signer_identity: format!("agent-enrollment:{signer_public_key}"),
             signer_public_key: signer_public_key.clone(),
         }));
         let state = Arc::new(state);
@@ -30190,7 +30804,7 @@ guards:
             path: Some(receipt_path.clone()),
             next_sequence: 1,
             keypair,
-            signer_identity: "test-edr-auto-receipt-upload-signer".to_string(),
+            signer_identity: format!("agent-enrollment:{signer_public_key}"),
             signer_public_key: signer_public_key.clone(),
         }));
         let app = Router::new()
@@ -30281,7 +30895,7 @@ guards:
             path: Some(receipt_path.clone()),
             next_sequence: 1,
             keypair,
-            signer_identity: "test-provider-policy-decision-upload-signer".to_string(),
+            signer_identity: format!("agent-enrollment:{signer_public_key}"),
             signer_public_key: signer_public_key.clone(),
         }));
         let app = Router::new()
@@ -30326,8 +30940,15 @@ guards:
         assert_eq!(response.status(), StatusCode::OK);
 
         let requests = control_api_state.requests.lock().await;
-        assert_eq!(requests.len(), 1);
-        let request = &requests[0];
+        assert_eq!(requests.len(), 2);
+        let request = requests
+            .iter()
+            .find(|request| {
+                request.body["receipts"][0]["signed_receipt"]["receipt"]["metadata"]
+                    ["endpointDecision"]["receiptFamily"]
+                    == "policy_decision"
+            })
+            .unwrap_or_else(|| panic!("missing provider policy-decision upload request"));
         assert_eq!(
             request.api_key.as_deref(),
             Some("configured-control-api-key")
@@ -30369,7 +30990,7 @@ guards:
             path: Some(receipt_path.clone()),
             next_sequence: 1,
             keypair,
-            signer_identity: "test-edr-auto-receipt-upload-retry-signer".to_string(),
+            signer_identity: format!("agent-enrollment:{signer_public_key}"),
             signer_public_key,
         }));
         state.edr_control_receipt_upload_retry_ledger = Arc::new(Mutex::new(
@@ -30424,7 +31045,7 @@ guards:
         assert_eq!(response.status(), StatusCode::OK);
         {
             let requests = control_api_state.requests.lock().await;
-            assert_eq!(requests.len(), 1);
+            assert_eq!(requests.len(), 2);
         }
         let queued = read_control_receipt_upload_retry_ledger(&retry_path)
             .unwrap_or_else(|err| panic!("failed to read receipt upload retry ledger: {err}"));
@@ -30463,13 +31084,13 @@ guards:
         assert_eq!(retry_payload["attempts"][0]["delivered"], true);
 
         let requests = control_api_state.requests.lock().await;
-        assert_eq!(requests.len(), 2);
+        assert_eq!(requests.len(), 3);
         assert_eq!(
-            requests[1].api_key.as_deref(),
+            requests[2].api_key.as_deref(),
             Some("configured-control-api-key")
         );
         assert_eq!(
-            requests[1].body["receipts"][0]["signed_receipt"]["receipt"]["metadata"]
+            requests[2].body["receipts"][0]["signed_receipt"]["receipt"]["metadata"]
                 ["endpointDecision"]["receiptFamily"],
             "detection"
         );
@@ -34149,7 +34770,7 @@ guards:
             path: Some(receipt_path.clone()),
             next_sequence: 1,
             keypair,
-            signer_identity: "test-edr-control-archive-signer".to_string(),
+            signer_identity: format!("agent-enrollment:{signer_public_key}"),
             signer_public_key,
         }));
         state.edr_evidence_bundle_store = Arc::new(Mutex::new(
@@ -34175,6 +34796,8 @@ guards:
         record_edr_observations(&state, std::slice::from_ref(&observation))
             .await
             .unwrap_or_else(|err| panic!("failed to seed control archive observation: {err:?}"));
+        let state = Arc::new(state);
+        let state = Arc::new(state);
         let app = Router::new()
             .route(
                 "/api/v1/agent/edr/graph-slices/export",
@@ -34188,7 +34811,7 @@ guards:
                 "/api/v1/agent/edr/evidence-bundles/{bundle_id}/archive",
                 get(agent_edr_evidence_bundle_archive),
             )
-            .with_state(Arc::new(state));
+            .with_state(Arc::clone(&state));
 
         let export_body = serde_json::json!({
             "process": {
@@ -34296,10 +34919,45 @@ guards:
             assert_eq!(requests.len(), 0);
         }
 
+        let forged_reason = "incident-control-archive-approved";
         let req = axum::http::Request::builder()
             .method("POST")
             .uri(format!(
-                "/api/v1/agent/edr/evidence-bundles/{bundle_id}/fleet-publish?rawArtifactApprovalId=approval-control-archive-1&rawArtifactApprovalReason=incident-control-archive-approved"
+                "/api/v1/agent/edr/evidence-bundles/{bundle_id}/fleet-publish?rawArtifactApprovalId=approval-control-archive-forged&rawArtifactApprovalReason={forged_reason}"
+            ))
+            .header(AUTHORIZATION, "Bearer test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| {
+                panic!("failed to build forged control archive fleet publish request: {e}")
+            });
+        let response =
+            app.clone().oneshot(req).await.unwrap_or_else(|e| {
+                panic!("forged control archive fleet publish request failed: {e}")
+            });
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 512 * 1024)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("failed to read forged control archive fleet publish response: {e}")
+            });
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "unexpected forged control archive fleet publish response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        {
+            let requests = control_api_state.requests.lock().await;
+            assert_eq!(requests.len(), 0);
+        }
+
+        let approval_reason = "incident-control-archive-approved";
+        let raw_artifact_approval_id =
+            resolve_test_raw_artifact_approval(&state, approval_reason).await;
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/api/v1/agent/edr/evidence-bundles/{bundle_id}/fleet-publish?rawArtifactApprovalId={raw_artifact_approval_id}&rawArtifactApprovalReason={approval_reason}"
             ))
             .header(AUTHORIZATION, "Bearer test-token")
             .body(axum::body::Body::empty())
@@ -34339,7 +34997,7 @@ guards:
         );
         assert_eq!(
             payload["controlUpload"]["rawArtifactApprovalId"],
-            "approval-control-archive-1"
+            raw_artifact_approval_id
         );
         assert!(payload["controlUpload"]["rawArtifactApprovalReasonHash"]
             .as_str()
@@ -34370,7 +35028,7 @@ guards:
         assert_eq!(request.body["verification"]["verified"], true);
         assert_eq!(
             request.body["rawArtifactApprovalId"],
-            "approval-control-archive-1"
+            raw_artifact_approval_id
         );
         assert_eq!(
             request.body["rawArtifactApprovalReasonHash"],
@@ -34380,7 +35038,7 @@ guards:
         assert_eq!(request.body["metadata"]["receiptCount"], 1);
         assert_eq!(
             request.body["metadata"]["rawArtifactApprovalId"],
-            "approval-control-archive-1"
+            raw_artifact_approval_id
         );
 
         control_api_task.abort();
@@ -34417,7 +35075,7 @@ guards:
             path: Some(receipt_path.clone()),
             next_sequence: 1,
             keypair,
-            signer_identity: "test-edr-control-archive-retry-signer".to_string(),
+            signer_identity: format!("agent-enrollment:{signer_public_key}"),
             signer_public_key,
         }));
         state.edr_evidence_bundle_store = Arc::new(Mutex::new(
@@ -34448,6 +35106,7 @@ guards:
         record_edr_observations(&state, std::slice::from_ref(&observation))
             .await
             .unwrap_or_else(|err| panic!("failed to seed retry archive observation: {err:?}"));
+        let state = Arc::new(state);
         let app = Router::new()
             .route(
                 "/api/v1/agent/edr/graph-slices/export",
@@ -34461,7 +35120,7 @@ guards:
                 "/api/v1/agent/edr/control-archive-uploads/retry",
                 post(agent_edr_control_archive_uploads_retry),
             )
-            .with_state(Arc::new(state));
+            .with_state(Arc::clone(&state));
 
         let export_body = serde_json::json!({
             "process": {
@@ -34494,10 +35153,13 @@ guards:
             .unwrap_or_else(|| panic!("missing retry archive bundle id"))
             .to_string();
 
+        let approval_reason = "incident-control-archive-retry-approved";
+        let raw_artifact_approval_id =
+            resolve_test_raw_artifact_approval(&state, approval_reason).await;
         let req = axum::http::Request::builder()
             .method("POST")
             .uri(format!(
-                "/api/v1/agent/edr/evidence-bundles/{bundle_id}/fleet-publish?rawArtifactApprovalId=approval-control-archive-retry-1&rawArtifactApprovalReason=incident-control-archive-retry-approved"
+                "/api/v1/agent/edr/evidence-bundles/{bundle_id}/fleet-publish?rawArtifactApprovalId={raw_artifact_approval_id}&rawArtifactApprovalReason={approval_reason}"
             ))
             .header(AUTHORIZATION, "Bearer test-token")
             .body(axum::body::Body::empty())
@@ -34519,7 +35181,7 @@ guards:
         assert_eq!(publish_payload["controlUpload"]["httpStatus"], 503);
         assert_eq!(
             publish_payload["controlUpload"]["rawArtifactApprovalId"],
-            "approval-control-archive-retry-1"
+            raw_artifact_approval_id
         );
         let retry_id = publish_payload["controlUpload"]["retryId"]
             .as_str()
@@ -34533,7 +35195,7 @@ guards:
                 .as_str()
                 .unwrap_or_else(|| panic!("missing retry archive hash"))
         ));
-        assert!(retry_json.contains("approval-control-archive-retry-1"));
+        assert!(retry_json.contains(&raw_artifact_approval_id));
         let mut shadow_archive_retries: serde_json::Value = serde_json::from_str(&retry_json)
             .unwrap_or_else(|err| panic!("failed to decode retry archive ledger: {err}"));
         {
@@ -34606,7 +35268,7 @@ guards:
         assert_eq!(requests[1].body["archive"]["bundle"]["bundleId"], bundle_id);
         assert_eq!(
             requests[1].body["rawArtifactApprovalId"],
-            "approval-control-archive-retry-1"
+            raw_artifact_approval_id
         );
         let retry_json_after = std::fs::read_to_string(&retry_path)
             .unwrap_or_else(|err| panic!("failed to read delivered retry archive ledger: {err}"));
@@ -34646,7 +35308,7 @@ guards:
             path: Some(receipt_path.clone()),
             next_sequence: 1,
             keypair,
-            signer_identity: "test-edr-control-archive-backfill-signer".to_string(),
+            signer_identity: format!("agent-enrollment:{signer_public_key}"),
             signer_public_key,
         }));
         state.edr_evidence_bundle_store = Arc::new(Mutex::new(
@@ -34673,6 +35335,7 @@ guards:
         record_edr_observations(&state, std::slice::from_ref(&observation))
             .await
             .unwrap_or_else(|err| panic!("failed to seed backfill archive observation: {err:?}"));
+        let state = Arc::new(state);
         let app = Router::new()
             .route(
                 "/api/v1/agent/edr/graph-slices/export",
@@ -34682,7 +35345,7 @@ guards:
                 "/api/v1/agent/edr/control-archive-uploads/backfill",
                 post(agent_edr_control_archive_uploads_backfill),
             )
-            .with_state(Arc::new(state));
+            .with_state(Arc::clone(&state));
 
         let export_body = serde_json::json!({
             "process": {
@@ -34715,6 +35378,7 @@ guards:
             .unwrap_or_else(|| panic!("missing backfill archive bundle id"))
             .to_string();
 
+        let forged_reason = "incident-control-archive-backfill-approved";
         let req = axum::http::Request::builder()
             .method("POST")
             .uri("/api/v1/agent/edr/control-archive-uploads/backfill")
@@ -34724,8 +35388,50 @@ guards:
                 serde_json::json!({
                     "bundleId": bundle_id,
                     "limit": 10,
-                    "rawArtifactApprovalId": "approval-control-archive-backfill-1",
-                    "rawArtifactApprovalReason": "incident-control-archive-backfill-approved"
+                    "rawArtifactApprovalId": "approval-control-archive-backfill-forged",
+                    "rawArtifactApprovalReason": forged_reason
+                })
+                .to_string(),
+            ))
+            .unwrap_or_else(|e| {
+                panic!("failed to build forged control archive backfill request: {e}")
+            });
+        let response = app
+            .clone()
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("forged control archive backfill request failed: {e}"));
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 512 * 1024)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("failed to read forged control archive backfill response: {e}")
+            });
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "unexpected forged control archive backfill response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        {
+            let requests = control_api_state.requests.lock().await;
+            assert_eq!(requests.len(), 0);
+        }
+
+        let approval_reason = "incident-control-archive-backfill-approved";
+        let raw_artifact_approval_id =
+            resolve_test_raw_artifact_approval(&state, approval_reason).await;
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/control-archive-uploads/backfill")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(
+                serde_json::json!({
+                    "bundleId": bundle_id,
+                    "limit": 10,
+                    "rawArtifactApprovalId": raw_artifact_approval_id,
+                    "rawArtifactApprovalReason": approval_reason
                 })
                 .to_string(),
             ))
@@ -34751,7 +35457,7 @@ guards:
         );
         assert_eq!(
             backfill_payload["records"][0]["controlUpload"]["rawArtifactApprovalId"],
-            "approval-control-archive-backfill-1"
+            raw_artifact_approval_id
         );
 
         let requests = control_api_state.requests.lock().await;
@@ -34768,7 +35474,7 @@ guards:
         assert_eq!(requests[0].body["metadata"]["uploadPath"], "local_backfill");
         assert_eq!(
             requests[0].body["rawArtifactApprovalId"],
-            "approval-control-archive-backfill-1"
+            raw_artifact_approval_id
         );
         assert_eq!(
             requests[0].body["rawArtifactApprovalReasonHash"],
@@ -37913,6 +38619,8 @@ guards:
                     "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
                         .to_string(),
                 recommended_stage: "limited_block".to_string(),
+                root_node_id: network_node_id.clone(),
+                action: EndpointDecisionAction::RestrictEgress,
                 promotion_ready: true,
             });
 
@@ -38133,6 +38841,63 @@ guards:
             std::fs::read_to_string(&settings.policy_path)
                 .unwrap_or_else(|e| panic!("failed to read original policy: {e}"))
         };
+        let original_record: EdrPolicyDeltaRecord =
+            serde_json::from_value(payload["record"].clone())
+                .unwrap_or_else(|e| panic!("failed to decode original policy delta record: {e}"));
+        let mut tampered_record = original_record.clone();
+        tampered_record.artifact.policy_patch = serde_json::json!({
+            "endpoint_decision_engine": {
+                "generated_rules": []
+            }
+        });
+        let policy_delta_index =
+            crate::edr::ledger::policy_delta::policy_delta_index_path(&policy_delta_dir);
+        let mut policy_delta_index_contents = std::fs::read_to_string(&policy_delta_index)
+            .unwrap_or_else(|e| panic!("failed to read policy delta index: {e}"));
+        policy_delta_index_contents.push_str(
+            &serde_json::to_string(&tampered_record)
+                .unwrap_or_else(|e| panic!("failed to encode tampered policy delta record: {e}")),
+        );
+        policy_delta_index_contents.push('\n');
+        std::fs::write(&policy_delta_index, policy_delta_index_contents)
+            .unwrap_or_else(|e| panic!("failed to append tampered policy delta record: {e}"));
+        let body = serde_json::json!({
+            "dryRun": true,
+            "appliedBy": "operator:bob"
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/api/v1/agent/edr/policy-deltas/{policy_delta_id}/apply"
+            ))
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build tampered policy delta apply: {e}"));
+        let response = app
+            .clone()
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("tampered policy delta apply failed: {e}"));
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let bytes = axum::body::to_bytes(response.into_body(), 16 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read tampered policy delta apply error: {e}"));
+        let error = String::from_utf8(bytes.to_vec())
+            .unwrap_or_else(|e| panic!("tampered policy delta apply error is not utf8: {e}"));
+        assert!(
+            error.contains("artifact hash mismatch"),
+            "unexpected tampered policy delta error: {error}"
+        );
+        let mut policy_delta_index_contents = std::fs::read_to_string(&policy_delta_index)
+            .unwrap_or_else(|e| panic!("failed to reread policy delta index: {e}"));
+        policy_delta_index_contents.push_str(
+            &serde_json::to_string(&original_record)
+                .unwrap_or_else(|e| panic!("failed to encode original policy delta record: {e}")),
+        );
+        policy_delta_index_contents.push('\n');
+        std::fs::write(&policy_delta_index, policy_delta_index_contents)
+            .unwrap_or_else(|e| panic!("failed to restore original policy delta record: {e}"));
         let body = serde_json::json!({
             "dryRun": true,
             "appliedBy": "operator:bob"
