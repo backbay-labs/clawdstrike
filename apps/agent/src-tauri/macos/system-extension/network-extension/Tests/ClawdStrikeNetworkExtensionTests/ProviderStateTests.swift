@@ -220,7 +220,7 @@ final class ProviderStateTests: XCTestCase {
                   "actionId": "action_test",
                   "target": "egress.example.invalid:443",
                   "active": true,
-                  "expiresAt": "2026-05-15T15:10:00Z"
+                  "expiresAt": "2099-05-15T15:10:00Z"
                 }
               ]
             }
@@ -370,7 +370,8 @@ final class ProviderStateTests: XCTestCase {
             installState: .installed,
             approval: .approved,
             backendHint: nil,
-            filterRunning: true
+            filterRunning: true,
+            now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
         ))
 
         let snapshot = try store.loadSnapshot()
@@ -465,7 +466,8 @@ final class ProviderStateTests: XCTestCase {
             installState: .installed,
             approval: .approved,
             backendHint: nil,
-            filterRunning: true
+            filterRunning: true,
+            now: evaluationTime
         )
         XCTAssertEqual(snapshot.counters.remediationRequests, 2)
         XCTAssertTrue(snapshot.policySynced)
@@ -509,7 +511,8 @@ final class ProviderStateTests: XCTestCase {
             installState: .installed,
             approval: .approved,
             backendHint: nil,
-            filterRunning: true
+            filterRunning: true,
+            now: now
         )
         XCTAssertFalse(snapshot.policySynced)
         XCTAssertFalse(snapshot.enforcementReady)
@@ -537,7 +540,8 @@ final class ProviderStateTests: XCTestCase {
             installState: .installed,
             approval: .approved,
             backendHint: nil,
-            filterRunning: true
+            filterRunning: true,
+            now: now
         )
         XCTAssertTrue(snapshot.policySynced)
         XCTAssertFalse(snapshot.enforcementReady)
@@ -573,10 +577,11 @@ final class ProviderStateTests: XCTestCase {
             installState: .installed,
             approval: .approved,
             backendHint: nil,
-            filterRunning: true
+            filterRunning: true,
+            now: now
         )
         XCTAssertTrue(snapshot.policySynced)
-        XCTAssertTrue(snapshot.enforcementReady)
+        XCTAssertFalse(snapshot.enforcementReady)
         XCTAssertEqual(snapshot.counters.flowsObserved, 1)
         XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
         XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
@@ -606,7 +611,8 @@ final class ProviderStateTests: XCTestCase {
             installState: .installed,
             approval: .approved,
             backendHint: nil,
-            filterRunning: true
+            filterRunning: true,
+            now: now
         )
         XCTAssertTrue(snapshot.policySynced)
         XCTAssertTrue(snapshot.enforcementReady)
@@ -658,7 +664,8 @@ final class ProviderStateTests: XCTestCase {
         try writePolicySnapshot(
             to: url,
             target: "first.example.invalid:443",
-            generatedAt: "2026-05-15T15:00:00Z"
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
         )
         let runtime = NetworkExtensionContentFilterRuntime()
         let context = NetworkExtensionProviderCommandContext(
@@ -703,7 +710,7 @@ final class ProviderStateTests: XCTestCase {
                 actionID: "action_test",
                 executionID: "execution_test",
                 target: "first.example.invalid:443",
-                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+                expiresAt: ISO8601DateFormatter().date(from: "2099-05-15T15:10:00Z")!
             ))
         )
 
@@ -711,7 +718,8 @@ final class ProviderStateTests: XCTestCase {
         try writePolicySnapshot(
             to: url,
             target: "second.example.invalid:443",
-            generatedAt: "2026-05-15T15:00:01Z"
+            generatedAt: "2026-05-15T15:00:01Z",
+            expiresAt: "2099-05-15T15:10:00Z"
         )
 
         let secondResponseData = try NetworkExtensionProviderCommand.handle(
@@ -747,7 +755,7 @@ final class ProviderStateTests: XCTestCase {
                 actionID: "action_test",
                 executionID: "execution_test",
                 target: "second.example.invalid:443",
-                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+                expiresAt: ISO8601DateFormatter().date(from: "2099-05-15T15:10:00Z")!
             ))
         )
     }
@@ -915,7 +923,8 @@ final class ProviderStateTests: XCTestCase {
         try writePolicySnapshot(
             to: url,
             target: "late-source.example.invalid:443",
-            generatedAt: "2026-05-15T15:00:00Z"
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
         )
         let runtime = NetworkExtensionContentFilterRuntime()
         let context = NetworkExtensionProviderCommandContext(
@@ -1145,7 +1154,12 @@ final class ProviderStateTests: XCTestCase {
         }
     }
 
-    private func writePolicySnapshot(to url: URL, target: String, generatedAt: String) throws {
+    private func writePolicySnapshot(
+        to url: URL,
+        target: String,
+        generatedAt: String,
+        expiresAt: String = "2026-05-15T15:10:00Z"
+    ) throws {
         let data = Data(
             """
             {
@@ -1158,7 +1172,7 @@ final class ProviderStateTests: XCTestCase {
                   "actionId": "action_test",
                   "target": "\(target)",
                   "active": true,
-                  "expiresAt": "2026-05-15T15:10:00Z"
+                  "expiresAt": "\(expiresAt)"
                 }
               ]
             }

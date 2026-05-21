@@ -20,20 +20,20 @@ use std::os::unix::fs::OpenOptionsExt;
 use anyhow::{Context, Result};
 use clawdstrike_policy_event::edr::{
     CausalGraph, DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan,
-    DeceptionRotationReport, DetectionFinding, EndpointDecisionActor, EndpointDecisionReceipt,
-    EndpointDeceptionCleanupReceiptInput, EndpointDeceptionMaterializationReceiptInput,
-    EndpointDeceptionRotationReceiptInput, EndpointDetectionReceiptInput,
+    DeceptionRotationReport, DetectionFinding, EndpointDeceptionCleanupReceiptInput,
+    EndpointDeceptionMaterializationReceiptInput, EndpointDeceptionRotationReceiptInput,
+    EndpointDecisionActor, EndpointDecisionReceipt, EndpointDetectionReceiptInput,
     EndpointEvidenceBundleManifestReceiptInput, EndpointGraphSliceReceiptInput,
-    EndpointObservation, EndpointObservationReceiptInput,
-    EndpointPolicyDecisionReceiptInput, EndpointPolicyDeltaReceiptInput,
-    EndpointPolicyEventImpactReceiptInput, EndpointPolicyEventReplayReceiptInput,
-    EndpointPolicySimulationReport, EndpointPolicySnapshot, EndpointProviderDegradationReceiptInput,
-    EndpointReceiptEvidence, EndpointResponseAcknowledgementReceiptInput,
-    EndpointResponseAcknowledgementReport, EndpointResponseExecutionReceiptInput,
-    EndpointResponseExecutionReport, EndpointResponsePlan, EndpointResponseReceiptInput,
-    EndpointResponseRollbackReceiptInput, EndpointResponseRollbackReport,
-    EndpointSensorState, EndpointSensorStateReceiptInput, EndpointSimulationReceiptInput,
-    EndpointTelemetryPrivacyReceiptInput, EndpointTelemetryPrivacyReport,
+    EndpointObservation, EndpointObservationReceiptInput, EndpointPolicyDecisionReceiptInput,
+    EndpointPolicyDeltaReceiptInput, EndpointPolicyEventImpactReceiptInput,
+    EndpointPolicyEventReplayReceiptInput, EndpointPolicySimulationReport, EndpointPolicySnapshot,
+    EndpointProviderDegradationReceiptInput, EndpointReceiptEvidence,
+    EndpointResponseAcknowledgementReceiptInput, EndpointResponseAcknowledgementReport,
+    EndpointResponseExecutionReceiptInput, EndpointResponseExecutionReport, EndpointResponsePlan,
+    EndpointResponseReceiptInput, EndpointResponseRollbackReceiptInput,
+    EndpointResponseRollbackReport, EndpointSensorState, EndpointSensorStateReceiptInput,
+    EndpointSimulationReceiptInput, EndpointTelemetryPrivacyReceiptInput,
+    EndpointTelemetryPrivacyReport,
 };
 use hush_core::{Keypair, SignedReceipt};
 
@@ -918,20 +918,14 @@ impl EndpointReceiptLedger {
                 )
             })?;
             index_file.write_all(b"\n").with_context(|| {
-                format!(
-                    "write endpoint receipt index {}",
-                    index_path.display()
-                )
+                format!("write endpoint receipt index {}", index_path.display())
             })?;
         }
         file.flush()
             .with_context(|| format!("flush endpoint receipt ledger {}", path.display()))?;
-        index_file.flush().with_context(|| {
-            format!(
-                "flush endpoint receipt index {}",
-                index_path.display()
-            )
-        })?;
+        index_file
+            .flush()
+            .with_context(|| format!("flush endpoint receipt index {}", index_path.display()))?;
         Ok(())
     }
 
@@ -942,7 +936,6 @@ impl EndpointReceiptLedger {
         rebuild_endpoint_receipt_index(path)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -986,8 +979,8 @@ mod tests {
             EndpointTelemetryPrivacyMode::HashesFeatures,
         );
         let keypair = Keypair::from_seed(&[17u8; 32]);
-        let mut receipt = EndpointDecisionReceipt::for_telemetry_privacy(
-            EndpointTelemetryPrivacyReceiptInput {
+        let mut receipt =
+            EndpointDecisionReceipt::for_telemetry_privacy(EndpointTelemetryPrivacyReceiptInput {
                 local_sequence: 1,
                 endpoint_id: "endpoint-test",
                 signer_identity: "local-edr:endpoint-test",
@@ -998,8 +991,7 @@ mod tests {
                 },
                 sensor_state: EndpointSensorState::single_active_agent("agent-api:test"),
                 report: &report,
-            },
-        );
+            });
         receipt.signer.signer_public_key = Some(keypair.public_key().to_hex());
         receipt.sign_with(&keypair).expect("signed receipt")
     }

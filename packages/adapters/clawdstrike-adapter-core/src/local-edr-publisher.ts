@@ -1551,13 +1551,21 @@ function isSensitivePositionalKey(value: string): boolean {
 }
 
 function redactCommandPart(value: string): string {
-  const redacted = value.replace(
+  const withoutUrlUserinfo = redactUrlUserinfo(value);
+  const redacted = withoutUrlUserinfo.replace(
     /((?:token|secret|password|passwd|api[_-]?key|authorization|cookie)=)[^\s&]+/gi,
     `$1${REDACTED}`,
   );
   if (redacted !== value) return redacted;
-  if (SECRET_LIKE_VALUE.test(value)) return REDACTED;
-  return value;
+  if (SECRET_LIKE_VALUE.test(withoutUrlUserinfo)) return REDACTED;
+  return withoutUrlUserinfo;
+}
+
+function redactUrlUserinfo(value: string): string {
+  return value.replace(
+    /\b([a-z][a-z0-9+.-]*:\/\/)([^/\s@]+)@/gi,
+    `$1${REDACTED}@`,
+  );
 }
 
 function redactCommandLine(value: string): string {
@@ -3020,7 +3028,7 @@ function packageNameFromPackageCommand(
 }
 
 function packageNameFromArgs(args: string[]): string | undefined {
-  return args.find((arg) => {
+  const packageArg = args.find((arg) => {
     const lower = arg.toLowerCase();
     return (
       !arg.startsWith("-") &&
@@ -3030,6 +3038,7 @@ function packageNameFromArgs(args: string[]): string | undefined {
       !packageLifecyclePhase(lower)
     );
   });
+  return packageArg ? redactCommandPart(packageArg) : undefined;
 }
 
 function cloudCliArgsAreSensitive(provider: string, args: string[]): boolean {

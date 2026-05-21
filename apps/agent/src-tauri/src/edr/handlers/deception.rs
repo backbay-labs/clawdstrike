@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -19,6 +17,8 @@ use hush_core::SignedReceipt;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
+#[allow(unused_imports)]
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::sync::Arc;
 
@@ -49,7 +49,6 @@ pub(crate) async fn agent_edr_deception_plan(
         plan,
     }))
 }
-
 
 pub(crate) async fn agent_edr_materialize_deception_plan(
     State(state): State<Arc<AgentApiState>>,
@@ -93,7 +92,6 @@ pub(crate) async fn agent_edr_materialize_deception_plan(
         receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_cleanup_deception_plan(
     State(state): State<Arc<AgentApiState>>,
@@ -164,7 +162,6 @@ pub(crate) async fn agent_edr_cleanup_deception_plan(
         receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_rotate_deception_plan(
     State(state): State<Arc<AgentApiState>>,
@@ -333,4 +330,3 @@ pub(crate) async fn agent_edr_rotate_deception_plan(
         report,
     }))
 }
-

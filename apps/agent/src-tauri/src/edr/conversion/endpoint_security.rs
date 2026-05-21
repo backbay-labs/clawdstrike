@@ -11,8 +11,8 @@ use crate::api_server::{
 use crate::edr::dto::{EdrEndpointSecurityEvent, EdrEndpointSecurityEventKind};
 use axum::http::StatusCode;
 use clawdstrike_policy_event::edr::{
-    EndpointEvent, EndpointObservation, EndpointProcess, EndpointProviderKind, EndpointProviderState,
-    EndpointSensorState, FileOperation,
+    EndpointEvent, EndpointObservation, EndpointProcess, EndpointProviderKind,
+    EndpointProviderState, EndpointSensorState, FileOperation,
 };
 use std::collections::BTreeMap;
 
@@ -415,7 +415,6 @@ pub(crate) fn bad_endpoint_security_event_request(
     )
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,16 +455,12 @@ mod tests {
 
     #[test]
     fn fallback_observation_id_includes_durable_timestamp() {
-        let first = endpoint_security_event_observation(
-            &process_exec_event("2026-05-20T12:00:00Z"),
-            0,
-        )
-        .expect("first observation");
-        let second = endpoint_security_event_observation(
-            &process_exec_event("2026-05-20T12:00:01Z"),
-            0,
-        )
-        .expect("second observation");
+        let first =
+            endpoint_security_event_observation(&process_exec_event("2026-05-20T12:00:00Z"), 0)
+                .expect("first observation");
+        let second =
+            endpoint_security_event_observation(&process_exec_event("2026-05-20T12:00:01Z"), 0)
+                .expect("second observation");
 
         assert_ne!(first.observation_id, second.observation_id);
     }

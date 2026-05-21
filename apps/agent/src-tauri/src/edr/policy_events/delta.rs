@@ -120,7 +120,10 @@ pub(crate) fn build_edr_policy_delta_patch(
     Ok(overlay)
 }
 
-pub(crate) fn policy_delta_stage_is_enforcing(stage: &str, action: &EndpointDecisionAction) -> bool {
+pub(crate) fn policy_delta_stage_is_enforcing(
+    stage: &str,
+    action: &EndpointDecisionAction,
+) -> bool {
     matches!(stage, "limited_block" | "full_block")
         && policy_delta_enforcement_action_supported(action)
 }

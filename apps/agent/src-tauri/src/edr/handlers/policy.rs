@@ -873,7 +873,30 @@ pub(crate) async fn agent_edr_policy_delta_apply(
         record.apply_status = Some("complete".to_string());
         record.failure_reason = None;
         record.applied = true;
-        append_policy_delta_apply_record(state.as_ref(), &record).await?;
+        if let Err((status, message)) =
+            append_policy_delta_apply_record(state.as_ref(), &record).await
+        {
+            let rollback_reason = "complete apply record append failed";
+            return match rollback_policy_delta_apply_after_failure(
+                state.as_ref(),
+                &mut record,
+                &policy_path,
+                rollback_reason,
+            )
+            .await
+            {
+                Ok(()) => Err((
+                    status,
+                    format!("{message}; policy rollback completed after durable apply record failure"),
+                )),
+                Err((rollback_status, rollback_message)) => Err((
+                    rollback_status,
+                    format!(
+                        "{message}; rollback after durable apply record failure failed: {rollback_message}"
+                    ),
+                )),
+            };
+        }
     }
 
     Ok(Json(EdrPolicyDeltaApplyResponse {

@@ -127,6 +127,40 @@ describe("tool-preflight handler", () => {
     });
   });
 
+  it("redacts URL userinfo from package-manager preflight activity", () => {
+    const event = {
+      eventId: "preflight-package-url-1",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      sessionId: "sess-test",
+      data: {
+        type: "command",
+        command: "npm",
+        args: ["install", "https://user:MY_RAW_SECRET@git.example/repo.git"],
+      },
+      metadata: { toolName: "shell", preflight: true },
+    } as any;
+
+    const activity = buildPreflightDeveloperActivityForCommand(
+      event,
+      "shell",
+      { status: "allow", guard: "allow", severity: "info" } as any,
+      {
+        agentId: "agent:openclaw",
+        workloadId: "openclaw-tool-preflight",
+        toolCallId: "tool-call-package-url-1",
+      },
+    );
+
+    expect(activity).toMatchObject({
+      kind: "package_script",
+      package: "https://[REDACTED]@git.example/repo.git",
+      script: "npm install https://[REDACTED]@git.example/repo.git",
+    });
+    expect(JSON.stringify(activity)).not.toContain("MY_RAW_SECRET");
+    expect(JSON.stringify(activity)).not.toContain("user:MY_RAW_SECRET");
+  });
+
   it("maps additional language package-manager preflight commands to package-script developer activity", () => {
     const cases = [
       {

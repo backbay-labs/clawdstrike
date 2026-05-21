@@ -1,7 +1,9 @@
 //! Pure helpers for endpoint response execution effect extraction.
 
 use anyhow::{Context, Result};
-use clawdstrike_policy_event::edr::{EndpointResponseExecutionEffect, EndpointResponseExecutionReport};
+use clawdstrike_policy_event::edr::{
+    EndpointResponseExecutionEffect, EndpointResponseExecutionReport,
+};
 use hush_core::sha256;
 
 pub(crate) fn quarantine_file_effect(
@@ -34,7 +36,9 @@ pub(crate) fn suspend_process_tree_effect(
         .ok_or_else(|| anyhow::anyhow!("execution has no suspend_process_tree effect"))
 }
 
-pub(crate) fn process_tree_effect_pids(effect: &EndpointResponseExecutionEffect) -> Result<Vec<u32>> {
+pub(crate) fn process_tree_effect_pids(
+    effect: &EndpointResponseExecutionEffect,
+) -> Result<Vec<u32>> {
     let artifact = effect
         .artifact
         .as_deref()

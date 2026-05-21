@@ -277,9 +277,69 @@ impl EndpointResponseExecutionLedger {
                 EndpointResponseExecutionStatus::Expired
                     | EndpointResponseExecutionStatus::Cancelled
                     | EndpointResponseExecutionStatus::RolledBack
+                    | EndpointResponseExecutionStatus::Failed
             ) && candidate.action_id == execution.action_id
                 && candidate.rollback_ref == execution.rollback_ref
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use clawdstrike_policy_event::edr::{
+        EndpointDecisionAction, EndpointEvidenceBundleReference, EndpointResponseExecutionReport,
+        EndpointResponseExecutionStatus,
+    };
+
+    fn execution(
+        execution_id: &str,
+        status: EndpointResponseExecutionStatus,
+    ) -> EndpointResponseExecutionReport {
+        let now = Utc::now();
+        EndpointResponseExecutionReport {
+            execution_id: execution_id.to_string(),
+            action_id: "response-action-1".to_string(),
+            action: EndpointDecisionAction::QuarantineFile,
+            status,
+            dry_run: false,
+            root_node_id: "node-1".to_string(),
+            graph_slice_id: "graph-slice-1".to_string(),
+            ttl_seconds: 60,
+            rollback_ref: "rollback:response-action-1".to_string(),
+            reason: "test response execution".to_string(),
+            started_at: now,
+            completed_at: now,
+            evidence_bundle: EndpointEvidenceBundleReference {
+                bundle_id: format!("bundle-{execution_id}"),
+                graph_slice_id: "graph-slice-1".to_string(),
+                content_hash: "0xabc".to_string(),
+                node_count: 1,
+                edge_count: 0,
+                created_at: now,
+            },
+            actor: None,
+            effects: Vec::new(),
+            summary: "test response execution".to_string(),
+        }
+    }
+
+    #[test]
+    fn failed_execution_terminates_prior_partial_intent() {
+        let partial = execution(
+            "response_execution_partial:1",
+            EndpointResponseExecutionStatus::Partial,
+        );
+        let failed = execution(
+            "response_execution_failed:1",
+            EndpointResponseExecutionStatus::Failed,
+        );
+
+        assert!(EndpointResponseExecutionLedger::has_terminal_transition(
+            &[partial.clone(), failed],
+            &partial,
+        ));
     }
 }
 

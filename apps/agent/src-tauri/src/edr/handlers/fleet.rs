@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -19,6 +17,8 @@ use hush_core::SignedReceipt;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
+#[allow(unused_imports)]
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::sync::Arc;
 
@@ -43,7 +43,6 @@ pub(crate) async fn agent_edr_fleet_hunt_events_retry(
         .await
         .map(Json)
 }
-
 
 pub(crate) async fn agent_edr_control_archive_uploads_backfill(
     State(state): State<Arc<AgentApiState>>,
@@ -123,7 +122,6 @@ pub(crate) async fn agent_edr_control_archive_uploads_backfill(
         records,
     }))
 }
-
 
 pub(crate) async fn agent_edr_control_archive_uploads_retry(
     State(state): State<Arc<AgentApiState>>,
@@ -214,7 +212,6 @@ pub(crate) async fn agent_edr_control_archive_uploads_retry(
     }))
 }
 
-
 pub(crate) async fn agent_edr_control_receipt_uploads_retry(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -227,7 +224,6 @@ pub(crate) async fn agent_edr_control_receipt_uploads_retry(
         .map(Json)
 }
 
-
 pub(crate) async fn agent_edr_control_ack_postbacks_retry(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -239,4 +235,3 @@ pub(crate) async fn agent_edr_control_ack_postbacks_retry(
         .await
         .map(Json)
 }
-

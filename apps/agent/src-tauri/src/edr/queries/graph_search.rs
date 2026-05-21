@@ -71,7 +71,10 @@ impl GraphSearchIndex {
         index
     }
 
-    pub(crate) fn candidate_node_ids(&self, input: &EdrGraphSearchInput) -> GraphSearchCandidatePlan {
+    pub(crate) fn candidate_node_ids(
+        &self,
+        input: &EdrGraphSearchInput,
+    ) -> GraphSearchCandidatePlan {
         let mut candidate_ids: Option<BTreeSet<String>> = None;
         let mut indexed_keys = Vec::new();
 
@@ -294,16 +297,16 @@ pub(crate) fn build_graph_search_matches(
     downstream_depth: usize,
     limit: usize,
 ) -> (Vec<PendingGraphSearchMatch>, usize, EdrGraphSearchQueryPlan) {
-    let (index, index_source, index_path) =
-        if let Some((index_path, entries)) = durable_graph_index {
-            (
-                GraphSearchIndex::from_graph_node_index(entries),
-                "durable_graph_sidecar",
-                Some(index_path.to_path_buf()),
-            )
-        } else {
-            (GraphSearchIndex::from_graph(graph), "in_memory_graph", None)
-        };
+    let (index, index_source, index_path) = if let Some((index_path, entries)) = durable_graph_index
+    {
+        (
+            GraphSearchIndex::from_graph_node_index(entries),
+            "durable_graph_sidecar",
+            Some(index_path.to_path_buf()),
+        )
+    } else {
+        (GraphSearchIndex::from_graph(graph), "in_memory_graph", None)
+    };
     let candidate_plan = index.candidate_node_ids(input);
     let candidate_node_ids = candidate_plan
         .node_ids

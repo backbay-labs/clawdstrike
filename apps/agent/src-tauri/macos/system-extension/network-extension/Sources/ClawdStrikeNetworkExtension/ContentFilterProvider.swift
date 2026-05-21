@@ -96,17 +96,20 @@ public enum NetworkExtensionProviderCommand {
                 policySnapshotPath: request.policySnapshotPath,
                 generation: request.generation
             )
+            let snapshotTime = Date()
             let snapshot = runtime.snapshot(
                 installState: context.installState,
                 approval: context.approval,
                 backendHint: context.backendHint,
-                filterRunning: context.filterRunning
+                filterRunning: context.filterRunning,
+                now: snapshotTime
             )
             runtime.persistSnapshot(
                 installState: context.installState,
                 approval: context.approval,
                 backendHint: context.backendHint,
-                filterRunning: context.filterRunning
+                filterRunning: context.filterRunning,
+                now: snapshotTime
             )
             response = NetworkExtensionProviderCommandResponse(
                 requestID: request.requestID,
@@ -541,7 +544,8 @@ public final class NetworkExtensionContentFilterRuntime {
         approval: SystemExtensionApproval,
         providerKind: NetworkExtensionProviderKind = .contentFilter,
         backendHint: MediationBackendHint?,
-        filterRunning: Bool
+        filterRunning: Bool,
+        now: Date = Date()
     ) -> NetworkExtensionProviderSnapshot {
         lock.lock()
         let inputs = NetworkExtensionProviderInputs(
@@ -551,7 +555,7 @@ public final class NetworkExtensionContentFilterRuntime {
             backendHint: backendHint,
             filterRunning: filterRunning,
             policySynced: policySynced,
-            enforcementReady: policy?.enforcementReady ?? false,
+            enforcementReady: policy?.enforcementReady(now: now) ?? false,
             degradedReasons: degradedReasons,
             lastHealthyAt: lastHealthyAt,
             counters: counters,
@@ -569,7 +573,8 @@ public final class NetworkExtensionContentFilterRuntime {
         approval: SystemExtensionApproval,
         providerKind: NetworkExtensionProviderKind = .contentFilter,
         backendHint: MediationBackendHint?,
-        filterRunning: Bool
+        filterRunning: Bool,
+        now: Date = Date()
     ) -> Bool {
         guard let runtimeSnapshotStore else {
             return false
@@ -579,7 +584,8 @@ public final class NetworkExtensionContentFilterRuntime {
             approval: approval,
             providerKind: providerKind,
             backendHint: backendHint,
-            filterRunning: filterRunning
+            filterRunning: filterRunning,
+            now: now
         )
         do {
             try runtimeSnapshotStore.saveSnapshot(currentSnapshot)

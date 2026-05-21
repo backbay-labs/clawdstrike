@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -16,15 +14,17 @@ use clawdstrike_policy_event::event::PolicyEvent;
 #[allow(unused_imports)]
 use hush_core::SignedReceipt;
 #[allow(unused_imports)]
+use hush_core::{canonicalize_json, sha256};
+#[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
 #[allow(unused_imports)]
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::fs;
 #[allow(unused_imports)]
-use hush_core::{sha256, canonicalize_json};
+use std::sync::Arc;
 
 pub(crate) async fn agent_edr_privacy_report(
     State(state): State<Arc<AgentApiState>>,
@@ -58,7 +58,6 @@ pub(crate) async fn agent_edr_privacy_report(
         receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_network_extension_egress_policy_proof(
     State(state): State<Arc<AgentApiState>>,
@@ -253,7 +252,6 @@ pub(crate) async fn agent_edr_network_extension_egress_policy_proof(
     }))
 }
 
-
 pub(crate) async fn agent_edr_protection_state(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -298,4 +296,3 @@ pub(crate) async fn agent_edr_protection_state(
         provider_recoveries,
     }))
 }
-

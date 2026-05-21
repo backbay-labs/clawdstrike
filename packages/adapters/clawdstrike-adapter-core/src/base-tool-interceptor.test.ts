@@ -728,6 +728,55 @@ describe("BaseToolInterceptor", () => {
     expect(JSON.stringify(payload)).not.toContain("MY_RAW_SECRET");
   });
 
+  it("redacts URL userinfo from package-manager command telemetry", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: "allow" }),
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {
+      edr: {
+        enabled: true,
+        token: "local-token",
+        policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
+      },
+    });
+    const context = createSecurityContext({
+      contextId: "ctx-edr-package-url-1",
+      sessionId: "sess-edr-package-url-1",
+      metadata: { framework: "claude", agentId: "agent-package-url-1" },
+    });
+
+    await interceptor.beforeExecute(
+      "bash",
+      {
+        cmd: "npm install https://user:MY_RAW_SECRET@git.example/repo.git",
+      },
+      context,
+    );
+
+    const developerActivityCall = fetchMock.mock.calls.find(
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
+    );
+    expect(developerActivityCall).toBeDefined();
+
+    const payload = JSON.parse(String(developerActivityCall?.[1]?.body)) as {
+      activities: any[];
+    };
+    expect(payload.activities[0]).toMatchObject({
+      kind: "package_script",
+      package: "https://[REDACTED]@git.example/repo.git",
+      commandLine: "npm install https://[REDACTED]@git.example/repo.git",
+    });
+    expect(JSON.stringify(payload)).not.toContain("MY_RAW_SECRET");
+    expect(JSON.stringify(payload)).not.toContain("user:MY_RAW_SECRET");
+  });
+
   it("publishes additional language package-manager commands to local EDR", async () => {
     const fetchMock = vi.fn(async () => ({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
