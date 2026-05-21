@@ -328,12 +328,15 @@ pub(crate) async fn agent_edr_evidence_bundle_fleet_publish(
     Query(input): Query<EdrRawArtifactApprovalInput>,
 ) -> Result<(StatusCode, Json<EdrEvidenceBundleFleetPublishResponse>), (StatusCode, String)> {
     require_auth(&headers, &state)?;
+    let approval_resource =
+        raw_artifact_approval_resource_for_evidence_bundle_fleet_publish(&bundle_id);
     let raw_artifact_approval = validate_resolved_raw_artifact_approval(
         &state,
         validate_raw_artifact_approval_fields(
             input.raw_artifact_approval_id.as_deref(),
             input.raw_artifact_approval_reason.as_deref(),
         )?,
+        &approval_resource,
     )
     .await?;
     let publish_identity = fleet_hunt_event_identity(state.as_ref()).await?;

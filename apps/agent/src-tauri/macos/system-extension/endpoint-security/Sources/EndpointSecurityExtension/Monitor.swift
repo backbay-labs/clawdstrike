@@ -828,6 +828,25 @@ public struct EndpointSecurityAuthorizationRequest: Equatable {
         context.metadata["authorizationDeadlineMs"] = String(deadlineMs)
         return .deny
     }
+
+    public mutating func failClosedDecisionForDecisionHandlerTimeout(
+        waitedMs: UInt64,
+        minRemainingMs: UInt64
+    ) -> EndpointSecurityAuthorizationDecision {
+        context.metadata["authorizationDecisionSource"] = "decision_handler_timeout_fail_closed"
+        context.metadata["authorizationDecisionHandlerTimedOut"] = "true"
+        context.metadata["authorizationDecisionHandlerWaitedMs"] = String(waitedMs)
+        context.metadata["authorizationDeadlineRemainingMs"] = String(remainingDeadlineBudgetMs)
+        context.metadata["authorizationDeadlineMinimumRemainingMs"] = String(minRemainingMs)
+        context.metadata["authorizationDeadlineLatencyMs"] = String(latencyMs)
+        context.metadata["authorizationDeadlineMs"] = String(deadlineMs)
+        return .deny
+    }
+
+    public mutating func addAuthorizationLatency(ms: UInt64) {
+        let sum = latencyMs.addingReportingOverflow(ms)
+        latencyMs = sum.overflow ? UInt64.max : sum.partialValue
+    }
 }
 
 public enum EndpointSecurityRuntimeClientError: Error, LocalizedError, Equatable {
@@ -981,6 +1000,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
     private let publisher: EndpointSecurityAgentEventPublisher<Transport>
     private let adapter: EndpointSecurityAuthOpenMessageAdapter
     private let decisionHandler: DecisionHandler
+    private let decisionQueue: DispatchQueue
     private let publishErrorHandler: PublishErrorHandler?
     private var client: OpaquePointer?
 
@@ -995,6 +1015,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         self.publisher = publisher
         self.adapter = adapter
         self.decisionHandler = decisionHandler
+        self.decisionQueue = DispatchQueue(label: "com.clawdstrike.endpoint-security.auth-open-decision", attributes: .concurrent)
         self.publishErrorHandler = publishErrorHandler
     }
 
@@ -1079,7 +1100,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
                     ?? request.failClosedDecisionForInsufficientDeadlineBudget(
                         minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
                     )
-                    ?? decisionHandler(request)
+                    ?? evaluateDecisionHandlerWithinDeadline(request: &request)
             let decision =
                 request.failClosedDecisionForExpiredDeadline()
                     ?? request.failClosedDecisionForInsufficientDeadlineBudget(
@@ -1120,6 +1141,59 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
             }
             publishErrorHandler?(error)
         }
+    }
+
+    private func evaluateDecisionHandlerWithinDeadline(
+        request: inout EndpointSecurityAuthorizationRequest
+    ) -> EndpointSecurityAuthorizationDecision {
+        let remainingMs = request.remainingDeadlineBudgetMs
+        let waitBudgetMs = remainingMs > endpointSecurityMinimumAuthOpenDecisionBudgetMs
+            ? remainingMs - endpointSecurityMinimumAuthOpenDecisionBudgetMs
+            : 0
+        guard waitBudgetMs > 0 else {
+            return request.failClosedDecisionForDecisionHandlerTimeout(
+                waitedMs: 0,
+                minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
+            )
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        let decisionLock = NSLock()
+        var handlerDecision: EndpointSecurityAuthorizationDecision?
+        let requestSnapshot = request
+        let started = DispatchTime.now().uptimeNanoseconds
+        decisionQueue.async { [decisionHandler] in
+            let decision = decisionHandler(requestSnapshot)
+            decisionLock.lock()
+            handlerDecision = decision
+            decisionLock.unlock()
+            semaphore.signal()
+        }
+
+        let cappedWaitMs = min(waitBudgetMs, UInt64(Int.max))
+        let timeout = DispatchTime.now() + .milliseconds(Int(cappedWaitMs))
+        let result = semaphore.wait(timeout: timeout)
+        let elapsedMs = Self.elapsedMilliseconds(since: started)
+        request.addAuthorizationLatency(ms: elapsedMs)
+        guard result == .success else {
+            return request.failClosedDecisionForDecisionHandlerTimeout(
+                waitedMs: elapsedMs,
+                minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
+            )
+        }
+
+        decisionLock.lock()
+        let decision = handlerDecision ?? .deny
+        decisionLock.unlock()
+        return decision
+    }
+
+    private static func elapsedMilliseconds(since started: UInt64) -> UInt64 {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now > started else {
+            return 0
+        }
+        return (now - started) / 1_000_000
     }
 
     private static func issueFailClosedAuthOpenResponse(

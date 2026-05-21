@@ -653,7 +653,6 @@ public final class ClawdStrikeContentFilterDataProvider: NEFilterDataProvider {
     }
 
     public override func handleNewFlow(_ flow: NEFilterFlow) -> NEFilterNewFlowVerdict {
-        applyCurrentVendorConfiguration()
         let decision = runtime.recordFlow(target: Self.target(from: flow))
         switch decision {
         case .allow:
@@ -737,12 +736,14 @@ public final class ClawdStrikeContentFilterDataProvider: NEFilterDataProvider {
             vendorConfigurationLock.unlock()
         }
         do {
-            _ = try vendorConfigurationHandler.handleIfChanged(
+            let response = try vendorConfigurationHandler.handleIfChanged(
                 filterConfiguration.vendorConfiguration ?? [:],
                 runtime: runtime,
                 context: providerCommandContext()
             )
-            persistRuntimeSnapshot()
+            if response != nil {
+                persistRuntimeSnapshot()
+            }
         } catch {
             runtime.markDegraded(reason: "vendor_configuration_command_failed")
             persistRuntimeSnapshot()

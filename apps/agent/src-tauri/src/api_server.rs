@@ -131,6 +131,7 @@ pub(crate) const EDR_MAX_RESPONSE_REASON_BYTES: usize = 1024;
 pub(crate) const EDR_MAX_RESPONSE_ACTOR_FIELD_BYTES: usize = 256;
 pub(crate) const EDR_MAX_RAW_ARTIFACT_APPROVAL_ID_BYTES: usize = 128;
 pub(crate) const EDR_MAX_RAW_ARTIFACT_APPROVAL_REASON_BYTES: usize = 1024;
+pub(crate) const EDR_RAW_ARTIFACT_UPLOAD_GUARD: &str = "endpoint.telemetry.raw_artifact_upload";
 pub(crate) const EDR_DEFAULT_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 100;
 pub(crate) const EDR_MAX_RESPONSE_EXECUTION_QUERY_LIMIT: usize = 1_000;
 pub(crate) const EDR_NETWORK_EXTENSION_EGRESS_POLICY_SCHEMA_VERSION: u32 = 1;
@@ -4852,7 +4853,7 @@ pub(crate) async fn recent_cross_window_promotion_validation(
                 && !validation.proposed_result_hash.is_empty()
                 && !validation.history_selector_hash.is_empty()
                 && validation.newest_event_at.is_some()
-                && validation.max_age_seconds.map_or(true, |max_age_seconds| {
+                && validation.max_age_seconds.is_some_and(|max_age_seconds| {
                     validation.newest_event_at.is_some_and(|newest_event_at| {
                         now.signed_duration_since(newest_event_at)
                             .num_seconds()
@@ -12690,7 +12691,7 @@ pub(crate) fn validate_policy_event_submission(
     })
 }
 
-async fn record_edr_observations(
+pub(crate) async fn record_edr_observations(
     state: &AgentApiState,
     observations: &[EndpointObservation],
 ) -> Result<(), (StatusCode, String)> {
@@ -17500,9 +17501,34 @@ pub(crate) fn validate_raw_artifact_approval_fields(
     }
 }
 
+pub(crate) fn raw_artifact_approval_resource_for_privacy_report() -> String {
+    format!("{EDR_RAW_ARTIFACT_UPLOAD_GUARD}:privacy_report")
+}
+
+pub(crate) fn raw_artifact_approval_resource_for_evidence_bundle_fleet_publish(
+    bundle_id: &str,
+) -> String {
+    format!(
+        "{EDR_RAW_ARTIFACT_UPLOAD_GUARD}:evidence_bundle_fleet_publish:{}",
+        bundle_id.trim()
+    )
+}
+
+pub(crate) fn raw_artifact_approval_resource_for_control_archive_backfill(
+    bundle_id: Option<&str>,
+) -> String {
+    match bundle_id.and_then(|value| trimmed_owned(Some(value))) {
+        Some(bundle_id) => {
+            format!("{EDR_RAW_ARTIFACT_UPLOAD_GUARD}:control_archive_backfill:{bundle_id}")
+        }
+        None => format!("{EDR_RAW_ARTIFACT_UPLOAD_GUARD}:control_archive_backfill_batch"),
+    }
+}
+
 pub(crate) async fn validate_resolved_raw_artifact_approval(
     state: &AgentApiState,
     raw_artifact_approval: Option<EdrRawArtifactApproval>,
+    expected_resource: &str,
 ) -> Result<Option<EdrRawArtifactApproval>, (StatusCode, String)> {
     let Some(raw_artifact_approval) = raw_artifact_approval else {
         return Ok(None);
@@ -17537,11 +17563,19 @@ pub(crate) async fn validate_resolved_raw_artifact_approval(
             ));
         }
     }
-    if approval_status.guard != "endpoint.telemetry.raw_artifact_upload" {
+    if approval_status.guard != EDR_RAW_ARTIFACT_UPLOAD_GUARD {
         return Err((
             StatusCode::CONFLICT,
             "rawArtifactApprovalId must reference an endpoint.telemetry.raw_artifact_upload approval"
                 .to_string(),
+        ));
+    }
+    if approval_status.resource != expected_resource {
+        return Err((
+            StatusCode::CONFLICT,
+            format!(
+                "rawArtifactApprovalId must reference resource {expected_resource} for this raw artifact upload"
+            ),
         ));
     }
     let expected_reason_hash = sha256(approval_status.reason.as_bytes()).to_hex_prefixed();
@@ -17551,6 +17585,16 @@ pub(crate) async fn validate_resolved_raw_artifact_approval(
             "rawArtifactApprovalReason does not match the resolved approval request".to_string(),
         ));
     }
+    state
+        .approval_queue
+        .consume_allow_once(&raw_artifact_approval.approval_id)
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::CONFLICT,
+                format!("rawArtifactApprovalId could not be consumed: {err}"),
+            )
+        })?;
     Ok(Some(raw_artifact_approval))
 }
 
@@ -17643,7 +17687,9 @@ fn endpoint_policy_snapshot_from_memory_policy_bytes(
     let policy_hash = sha256(bytes).to_hex_prefixed();
     let policy_version =
         policy_version_from_yaml(bytes).unwrap_or_else(|| format!("local-policy:{policy_hash}"));
-    let policy_epoch = policy_epoch_from_yaml(bytes).unwrap_or(1).max(1);
+    let policy_epoch = policy_epoch_from_yaml(bytes).ok_or_else(|| {
+        anyhow::anyhow!("proposedPolicyYaml must declare a positive policy_epoch")
+    })?;
     Ok(EndpointPolicySnapshot {
         policy_version,
         policy_hash,
@@ -17661,7 +17707,7 @@ fn policy_version_from_yaml(bytes: &[u8]) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn policy_epoch_from_yaml(bytes: &[u8]) -> Option<u64> {
+pub(crate) fn policy_epoch_from_yaml(bytes: &[u8]) -> Option<u64> {
     let value = serde_yaml::from_slice::<serde_yaml::Value>(bytes).ok()?;
     EDR_POLICY_EPOCH_YAML_PATHS
         .iter()
@@ -22288,13 +22334,17 @@ mod tests {
         ))
     }
 
-    async fn resolve_test_raw_artifact_approval(state: &AgentApiState, reason: &str) -> String {
+    async fn resolve_test_raw_artifact_approval(
+        state: &AgentApiState,
+        resource: &str,
+        reason: &str,
+    ) -> String {
         let request = state
             .approval_queue
             .submit(ApprovalRequestInput {
                 tool: "clawdstrike-agent".to_string(),
-                resource: "endpoint.telemetry.raw_artifact_upload".to_string(),
-                guard: "endpoint.telemetry.raw_artifact_upload".to_string(),
+                resource: resource.to_string(),
+                guard: EDR_RAW_ARTIFACT_UPLOAD_GUARD.to_string(),
                 reason: reason.to_string(),
                 severity: "high".to_string(),
                 session_id: Some("raw-artifact-test-session".to_string()),
@@ -23424,6 +23474,22 @@ mod tests {
         assert_eq!(snapshot.policy_epoch, 5150);
 
         let _ = std::fs::remove_file(policy_path);
+    }
+
+    #[test]
+    fn proposed_policy_snapshot_requires_explicit_policy_epoch() {
+        let err =
+            endpoint_policy_snapshot_from_memory_policy_bytes(b"version: no-epoch\n").unwrap_err();
+        assert!(
+            err.to_string().contains("policy_epoch"),
+            "unexpected proposed policy snapshot error: {err}"
+        );
+        let snapshot = endpoint_policy_snapshot_from_memory_policy_bytes(
+            b"version: proposed-epoch\npolicy_epoch: 6161\n",
+        )
+        .unwrap_or_else(|err| panic!("failed to build proposed policy snapshot: {err}"));
+        assert_eq!(snapshot.policy_version, "proposed-epoch");
+        assert_eq!(snapshot.policy_epoch, 6161);
     }
 
     fn read_json_file(path: &FsPath) -> serde_json::Value {
@@ -28130,8 +28196,45 @@ guards:
             String::from_utf8_lossy(&bytes)
         );
         assert!(
-            String::from_utf8_lossy(&bytes).contains("maxAgeSeconds or since"),
+            String::from_utf8_lossy(&bytes).contains("maxAgeSeconds"),
             "unfresh cross-window impact response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+
+        let stale_since_body = serde_json::json!({
+            "limit": 10,
+            "eventKinds": ["network-flow"],
+            "validationWindowSeconds": 300,
+            "since": older_timestamp.to_rfc3339(),
+            "proposedPolicyYaml": proposed_policy_yaml
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/policy-events/impact/history")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(stale_since_body.to_string()))
+            .unwrap_or_else(|e| {
+                panic!("failed to build since-only cross-window history impact request: {e}")
+            });
+        let response = app.clone().oneshot(req).await.unwrap_or_else(|e| {
+            panic!("since-only cross-window history impact request failed: {e}")
+        });
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 256 * 1024)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("failed to read since-only cross-window impact response: {e}")
+            });
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(
+            String::from_utf8_lossy(&bytes).contains("maxAgeSeconds"),
+            "since-only cross-window impact response: {}",
             String::from_utf8_lossy(&bytes)
         );
 
@@ -28571,13 +28674,74 @@ guards:
         );
         assert!(String::from_utf8_lossy(&bytes).contains("approval"));
 
+        let wrong_resource_reason = "incident ir-privacy-1 raw collection approved";
+        let wrong_resource_request = state
+            .approval_queue
+            .submit(ApprovalRequestInput {
+                tool: "clawdstrike-agent".to_string(),
+                resource: raw_artifact_approval_resource_for_evidence_bundle_fleet_publish(
+                    "bundle-not-this-privacy-report",
+                ),
+                guard: EDR_RAW_ARTIFACT_UPLOAD_GUARD.to_string(),
+                reason: wrong_resource_reason.to_string(),
+                severity: "high".to_string(),
+                session_id: Some("raw-privacy-test-session".to_string()),
+                ttl_secs: Some(60),
+            })
+            .await
+            .unwrap_or_else(|err| {
+                panic!("failed to submit wrong-resource raw artifact approval: {err}")
+            });
+        state
+            .approval_queue
+            .resolve(
+                &wrong_resource_request.id,
+                crate::approval::ApprovalResolution::AllowOnce,
+            )
+            .await
+            .unwrap_or_else(|err| {
+                panic!("failed to resolve wrong-resource raw artifact approval: {err}")
+            });
+        let wrong_resource_body = serde_json::json!({
+            "privacyMode": "raw_artifact_permitted",
+            "rawArtifactApprovalId": wrong_resource_request.id,
+            "rawArtifactApprovalReason": wrong_resource_reason,
+            "observations": [observation]
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/privacy-report")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(wrong_resource_body.to_string()))
+            .unwrap_or_else(|e| {
+                panic!("failed to build wrong-resource raw privacy report request: {e}")
+            });
+        let response =
+            app.clone().oneshot(req).await.unwrap_or_else(|e| {
+                panic!("wrong-resource raw privacy report request failed: {e}")
+            });
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("failed to read wrong-resource raw privacy report response: {e}")
+            });
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "unexpected wrong-resource raw privacy report response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(String::from_utf8_lossy(&bytes).contains("resource"));
+
         let approval_reason = "incident ir-privacy-1 raw collection approved";
         let approval_request = state
             .approval_queue
             .submit(ApprovalRequestInput {
                 tool: "clawdstrike-agent".to_string(),
-                resource: "endpoint.telemetry.raw_artifact_upload".to_string(),
-                guard: "endpoint.telemetry.raw_artifact_upload".to_string(),
+                resource: raw_artifact_approval_resource_for_privacy_report(),
+                guard: EDR_RAW_ARTIFACT_UPLOAD_GUARD.to_string(),
                 reason: approval_reason.to_string(),
                 severity: "high".to_string(),
                 session_id: Some("raw-privacy-test-session".to_string()),
@@ -35181,8 +35345,12 @@ guards:
         }
 
         let approval_reason = "incident-control-archive-approved";
-        let raw_artifact_approval_id =
-            resolve_test_raw_artifact_approval(&state, approval_reason).await;
+        let raw_artifact_approval_id = resolve_test_raw_artifact_approval(
+            &state,
+            &raw_artifact_approval_resource_for_evidence_bundle_fleet_publish(&bundle_id),
+            approval_reason,
+        )
+        .await;
         let req = axum::http::Request::builder()
             .method("POST")
             .uri(format!(
@@ -35383,8 +35551,12 @@ guards:
             .to_string();
 
         let approval_reason = "incident-control-archive-retry-approved";
-        let raw_artifact_approval_id =
-            resolve_test_raw_artifact_approval(&state, approval_reason).await;
+        let raw_artifact_approval_id = resolve_test_raw_artifact_approval(
+            &state,
+            &raw_artifact_approval_resource_for_evidence_bundle_fleet_publish(&bundle_id),
+            approval_reason,
+        )
+        .await;
         let req = axum::http::Request::builder()
             .method("POST")
             .uri(format!(
@@ -35648,8 +35820,12 @@ guards:
         }
 
         let approval_reason = "incident-control-archive-backfill-approved";
-        let raw_artifact_approval_id =
-            resolve_test_raw_artifact_approval(&state, approval_reason).await;
+        let raw_artifact_approval_id = resolve_test_raw_artifact_approval(
+            &state,
+            &raw_artifact_approval_resource_for_control_archive_backfill(Some(&bundle_id)),
+            approval_reason,
+        )
+        .await;
         let req = axum::http::Request::builder()
             .method("POST")
             .uri("/api/v1/agent/edr/control-archive-uploads/backfill")
@@ -36929,9 +37105,13 @@ guards:
         assert_eq!(payload["eventCount"], 1);
         assert_eq!(payload["observationCount"], 1);
         assert_eq!(payload["findingCount"], 1);
-        assert_eq!(payload["receiptCount"], 2);
+        assert_eq!(payload["receiptCount"], 3);
         assert_eq!(
             payload["observationReceipts"].as_array().map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            payload["policyDecisionReceipts"].as_array().map(Vec::len),
             Some(1)
         );
         let observation = &payload["observations"][0];
@@ -37015,6 +37195,40 @@ guards:
                 "missing package-manager signed evidence {key}"
             );
         }
+        let policy_receipt: SignedReceipt =
+            serde_json::from_value(payload["policyDecisionReceipts"][0].clone()).unwrap_or_else(
+                |e| panic!("failed to decode package-manager policy decision receipt: {e}"),
+            );
+        let policy_endpoint_decision = policy_receipt
+            .receipt
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("endpointDecision"))
+            .unwrap_or_else(|| panic!("missing package-manager policy decision endpoint metadata"));
+        assert_eq!(policy_endpoint_decision["receiptFamily"], "policy_decision");
+        assert_eq!(policy_endpoint_decision["decision"]["action"], "allow");
+        assert_eq!(
+            policy_endpoint_decision["decision"]["ruleId"],
+            "endpoint.policy_decision.endpoint.package_script"
+        );
+        assert_eq!(
+            policy_endpoint_decision["sensorState"]["providers"][0]["providerId"],
+            "package_manager.npm"
+        );
+        assert!(
+            policy_endpoint_decision["decision"]["observationId"]
+                .as_str()
+                .is_some_and(
+                    |value| value.starts_with("package_manager_policy_decision_observation-")
+                )
+        );
+        assert!(receipt_evidence_hash_matches(
+            &policy_receipt,
+            "observationId",
+            policy_endpoint_decision["decision"]["observationId"]
+                .as_str()
+                .unwrap_or_default()
+        ));
         assert!(!payload.to_string().contains("MY_RAW_SECRET"));
 
         let body = serde_json::json!({ "observations": [] });
@@ -37041,6 +37255,9 @@ guards:
         assert!(graph_nodes
             .values()
             .any(|node| node["kind"] == "package_script"));
+        assert!(graph_nodes
+            .values()
+            .any(|node| node["kind"] == "policy_decision"));
         assert!(graph_nodes.values().any(|node| node["kind"] == "process"));
         assert!(graph_nodes
             .values()
@@ -39228,6 +39445,41 @@ guards:
             std::fs::write(&settings.policy_path, original_policy.as_bytes())
                 .unwrap_or_else(|e| panic!("failed to restore original policy: {e}"));
         }
+        let body = serde_json::json!({
+            "dryRun": false,
+            "verifyProtectionState": false,
+            "reloadDaemonPolicy": false,
+            "restartDaemon": false,
+            "appliedBy": "operator:bob"
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/api/v1/agent/edr/policy-deltas/{policy_delta_id}/apply"
+            ))
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| {
+                panic!("failed to build unverified live policy delta apply request: {e}")
+            });
+        let response =
+            app.clone().oneshot(req).await.unwrap_or_else(|e| {
+                panic!("unverified live policy delta apply request failed: {e}")
+            });
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 16 * 1024)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("failed to read unverified live policy delta apply response: {e}")
+            });
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "unexpected unverified live policy delta apply response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(String::from_utf8_lossy(&bytes).contains("verifyProtectionState"));
         let (provider_reload_tx, mut provider_reload_rx) =
             tokio::sync::mpsc::channel::<crate::macos::host::MacosNetworkExtensionReloadRequest>(1);
         state

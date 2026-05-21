@@ -111,13 +111,10 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
     )?;
     let validation_window_seconds =
         normalize_policy_event_history_validation_window_seconds(input.validation_window_seconds)?;
-    if validation_window_seconds.is_some()
-        && input.max_age_seconds.is_none()
-        && input.since.is_none()
-    {
+    if validation_window_seconds.is_some() && input.max_age_seconds.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
-            "history impact validationWindowSeconds requires maxAgeSeconds or since so promotion evidence is tied to recent endpoint history".to_string(),
+            "history impact validationWindowSeconds requires maxAgeSeconds so promotion evidence is tied to recent endpoint history".to_string(),
         ));
     }
     let selector = input.replay_selector_input();
@@ -661,6 +658,18 @@ pub(crate) async fn agent_edr_policy_delta_apply(
             "providerAckTimeoutMs cannot be set for dryRun".to_string(),
         ));
     }
+    if !dry_run && !verify_protection_state {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "verifyProtectionState must be true for live policy delta apply".to_string(),
+        ));
+    }
+    if !dry_run && !reload_daemon_policy && !restart_daemon {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "live policy delta apply requires reloadDaemonPolicy or restartDaemon".to_string(),
+        ));
+    }
     let applied_by = input
         .applied_by
         .as_deref()
@@ -710,6 +719,13 @@ pub(crate) async fn agent_edr_policy_delta_apply(
     let previous_snapshot =
         endpoint_policy_snapshot_from_policy_bytes(&current_bytes, &policy_path)
             .map_err(internal_error)?;
+    if !dry_run && policy_epoch_from_yaml(&current_bytes).is_none() {
+        return Err((
+            StatusCode::CONFLICT,
+            "live policy delta apply requires the current policy to declare a positive policy_epoch"
+                .to_string(),
+        ));
+    }
     let expected_base_policy_hash = policy_delta.artifact.target_policy.base_policy_hash.clone();
     if previous_snapshot.policy_hash != expected_base_policy_hash && !allow_base_policy_drift {
         return Err((
@@ -726,6 +742,13 @@ pub(crate) async fn agent_edr_policy_delta_apply(
             .map_err(internal_error)?;
     let new_snapshot = endpoint_policy_snapshot_from_policy_bytes(&new_bytes, &policy_path)
         .map_err(internal_error)?;
+    if !dry_run && policy_epoch_from_yaml(&new_bytes).is_none() {
+        return Err((
+            StatusCode::CONFLICT,
+            "live policy delta apply requires the target policy to declare a positive policy_epoch"
+                .to_string(),
+        ));
+    }
     if new_snapshot.policy_epoch <= previous_snapshot.policy_epoch {
         return Err((
             StatusCode::CONFLICT,

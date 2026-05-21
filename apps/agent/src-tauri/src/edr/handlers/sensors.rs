@@ -12,7 +12,7 @@ use clawdstrike_policy_event::edr::*;
 #[allow(unused_imports)]
 use clawdstrike_policy_event::event::PolicyEvent;
 #[allow(unused_imports)]
-use hush_core::SignedReceipt;
+use hush_core::{sha256, SignedReceipt};
 #[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
@@ -125,7 +125,20 @@ pub(crate) async fn agent_edr_package_manager_events(
     )
     .await
     .map_err(internal_error)?;
-    let receipt_count = evaluated.receipts.len() + observation_receipts.len();
+    let policy_decision_observations =
+        package_manager_policy_decision_observations(&recorded_observations, &evaluated.findings);
+    if !policy_decision_observations.is_empty() {
+        record_edr_observations(&state, &policy_decision_observations).await?;
+    }
+    let policy_decision_receipts = emit_edr_provider_policy_decision_receipts(
+        &state,
+        &policy_decision_observations,
+        "package_manager_policy_decision",
+    )
+    .await
+    .map_err(internal_error)?;
+    let receipt_count =
+        evaluated.receipts.len() + observation_receipts.len() + policy_decision_receipts.len();
 
     Ok(Json(EdrPackageManagerEventsResponse {
         event_count: input.events.len(),
@@ -136,7 +149,116 @@ pub(crate) async fn agent_edr_package_manager_events(
         findings: evaluated.findings,
         receipts: evaluated.receipts,
         observation_receipts,
+        policy_decision_receipts,
     }))
+}
+
+fn package_manager_policy_decision_observations(
+    observations: &[EndpointObservation],
+    findings: &[DetectionFinding],
+) -> Vec<EndpointObservation> {
+    observations
+        .iter()
+        .filter_map(|observation| {
+            let EndpointEvent::PackageScript {
+                manager,
+                phase,
+                script,
+                package,
+                working_directory,
+            } = &observation.event
+            else {
+                return None;
+            };
+            let finding = findings
+                .iter()
+                .find(|finding| finding.observation_id == observation.observation_id);
+            let script_hash = sha256(script.as_bytes()).to_hex_prefixed();
+            let package_name = package.as_deref().unwrap_or("unknown-package");
+            let target = format!(
+                "endpoint.package_script:{}:{}:{}:{}",
+                manager.as_str(),
+                package_name,
+                phase,
+                script_hash
+            );
+            let guard = finding
+                .map(|finding| finding.rule_id.clone())
+                .or_else(|| Some("supply_chain.package_script.audit".to_string()));
+            let severity = finding
+                .map(|finding| format!("{:?}", finding.severity).to_ascii_lowercase())
+                .or_else(|| Some("info".to_string()));
+            let observation_id = local_stable_id(
+                "package_manager_policy_decision_observation",
+                [
+                    observation.observation_id.as_str(),
+                    manager.as_str(),
+                    package_name,
+                    phase.as_str(),
+                    script_hash.as_str(),
+                ],
+            );
+            let mut metadata = observation.metadata.clone();
+            metadata.insert(
+                "receiptSource".to_string(),
+                serde_json::json!("package_manager_policy_decision"),
+            );
+            metadata.insert(
+                "collectorKind".to_string(),
+                serde_json::json!("package_manager"),
+            );
+            metadata.insert(
+                "providerId".to_string(),
+                serde_json::json!(format!("package_manager.{}", manager.as_str())),
+            );
+            metadata.insert(
+                "policyDecisionMode".to_string(),
+                serde_json::json!("audit_allow"),
+            );
+            metadata.insert(
+                "packageManager".to_string(),
+                serde_json::json!(manager.as_str()),
+            );
+            metadata.insert("packageManagerPhase".to_string(), serde_json::json!(phase));
+            metadata.insert("scriptHash".to_string(), serde_json::json!(script_hash));
+            if let Some(package) = package {
+                metadata.insert("packageName".to_string(), serde_json::json!(package));
+            }
+            if let Some(working_directory) = working_directory {
+                metadata.insert(
+                    "workingDirectoryHash".to_string(),
+                    serde_json::json!(sha256(working_directory.as_bytes()).to_hex_prefixed()),
+                );
+            }
+            if let Some(finding) = finding {
+                metadata.insert(
+                    "detectionFindingId".to_string(),
+                    serde_json::json!(finding.finding_id.as_str()),
+                );
+                metadata.insert(
+                    "detectionRuleId".to_string(),
+                    serde_json::json!(finding.rule_id.as_str()),
+                );
+            }
+
+            Some(EndpointObservation {
+                observation_id,
+                timestamp: observation.timestamp,
+                host_id: observation.host_id.clone(),
+                user_id: observation.user_id.clone(),
+                session_id: observation.session_id.clone(),
+                process: observation.process.clone(),
+                event: EndpointEvent::PolicyDecision {
+                    action: "endpoint.package_script".to_string(),
+                    target: Some(target),
+                    decision: "allowed".to_string(),
+                    guard,
+                    severity,
+                },
+                metadata,
+            })
+        })
+        .collect()
 }
 
 pub(crate) async fn agent_edr_endpoint_security_events(

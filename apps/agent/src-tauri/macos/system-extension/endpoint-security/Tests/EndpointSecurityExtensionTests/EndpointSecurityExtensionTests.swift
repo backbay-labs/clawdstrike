@@ -470,6 +470,47 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(request.context.metadata["authorizationDeadlineMinimumRemainingMs"], "25")
     }
 
+    func testAuthorizationRequestFailsClosedWhenDecisionHandlerTimesOut() throws {
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open:handler-timeout",
+            process: EndpointSecurityAgentProcess(
+                pid: 501,
+                ppid: 1,
+                processGuid: "macos:501:10",
+                image: "/bin/cat",
+                commandLine: "/bin/cat"
+            ),
+            metadata: [
+                "endpointSecurityEventType": "AUTH_OPEN",
+                "endpointSecurityRespondApi": "es_respond_flags_result"
+            ]
+        )
+        var request = EndpointSecurityAuthorizationRequest(
+            path: "/tmp/clawdstrike-es-auth-open.txt",
+            fflag: 1,
+            latencyMs: 100,
+            deadlineMs: 200,
+            context: context
+        )
+        request.addAuthorizationLatency(ms: 80)
+
+        let decision = request.failClosedDecisionForDecisionHandlerTimeout(
+            waitedMs: 80,
+            minRemainingMs: 25
+        )
+        let event = request.authorizationEvent(decision: decision)
+
+        XCTAssertEqual(decision, .deny)
+        XCTAssertEqual(event.decision, .deny)
+        XCTAssertFalse(event.exceededDeadline)
+        XCTAssertEqual(request.latencyMs, 180)
+        XCTAssertEqual(request.context.metadata["authorizationDecisionSource"], "decision_handler_timeout_fail_closed")
+        XCTAssertEqual(request.context.metadata["authorizationDecisionHandlerTimedOut"], "true")
+        XCTAssertEqual(request.context.metadata["authorizationDecisionHandlerWaitedMs"], "80")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineRemainingMs"], "20")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineMinimumRemainingMs"], "25")
+    }
+
     func testStatusToolRejectsUnsupportedScenarioInsteadOfFallingBackToHealthy() {
         XCTAssertThrowsError(
             try EndpointSecurityFixtureScenario.resolve(commandLineArgument: "definitely-not-real")

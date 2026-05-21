@@ -267,6 +267,34 @@ impl ApprovalQueue {
         Some(ApprovalStatusResponse::from(&*request))
     }
 
+    /// Consume a resolved one-shot approval. Session and always approvals remain reusable.
+    pub async fn consume_allow_once(&self, id: &str) -> Result<bool, ApprovalError> {
+        let mut requests = self.requests.lock().await;
+        let should_remove = {
+            let request = requests.get_mut(id).ok_or(ApprovalError::NotFound)?;
+
+            if request.status == ApprovalStatus::Pending && Utc::now() >= request.expires_at {
+                request.status = ApprovalStatus::Expired;
+                request.resolution = Some(ApprovalResolution::Deny);
+                request.resolved_at = Some(Utc::now());
+                let _ = self
+                    .event_tx
+                    .send(ApprovalEvent::Expired { id: id.to_string() });
+                return Err(ApprovalError::Expired);
+            }
+
+            if request.status != ApprovalStatus::Resolved {
+                return Ok(false);
+            }
+            request.resolution == Some(ApprovalResolution::AllowOnce)
+        };
+        if should_remove {
+            requests.remove(id);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     /// Resolve an approval request.
     pub async fn resolve(
         &self,
