@@ -5071,6 +5071,9 @@ mod tests {
             .unwrap();
         assert_eq!(recorder.observation_count(), 2);
         assert!(path.is_file());
+        let log_contents = fs::read_to_string(&path).unwrap();
+        assert!(log_contents.contains("\"recordHash\""));
+        assert!(log_contents.contains("\"previousRecordHash\""));
         assert!(recorder
             .graph()
             .edges
@@ -5083,6 +5086,71 @@ mod tests {
         assert_eq!(reopened.graph().edges.len(), recorder.graph().edges.len());
         assert_eq!(reopened.path(), Some(path.as_path()));
         assert!(endpoint_flight_recorder_index_path(&path).is_file());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn endpoint_flight_recorder_detects_hash_chain_rewrite() {
+        let root = temp_root();
+        let path = root.join("flight-recorder-tamper.jsonl");
+        let mut recorder = EndpointFlightRecorder::open(&path).unwrap();
+        let file = observation(EndpointEvent::FileAccess {
+            operation: FileOperation::Read,
+            path: "/Users/alice/.npmrc".to_string(),
+            source_url: None,
+            content_preview: None,
+        });
+        recorder.append_observations(&[file]).unwrap();
+
+        let mut line: serde_json::Value =
+            serde_json::from_str(fs::read_to_string(&path).unwrap().trim()).unwrap();
+        line["observation"]["hostId"] = serde_json::Value::String("tampered-host".to_string());
+        fs::write(
+            &path,
+            format!("{}\n", serde_json::to_string(&line).unwrap()),
+        )
+        .unwrap();
+
+        let err = EndpointFlightRecorder::open(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("observation hash mismatch"),
+            "expected observation hash mismatch, got {err}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn endpoint_flight_recorder_detects_hash_chain_line_deletion() {
+        let root = temp_root();
+        let path = root.join("flight-recorder-deletion.jsonl");
+        let mut recorder = EndpointFlightRecorder::open(&path).unwrap();
+        let file = observation(EndpointEvent::FileAccess {
+            operation: FileOperation::Read,
+            path: "/Users/alice/.npmrc".to_string(),
+            source_url: None,
+            content_preview: None,
+        });
+        let mut network = observation(EndpointEvent::NetworkFlow {
+            host: "evil.example".to_string(),
+            port: 443,
+            protocol: Some("tcp".to_string()),
+            url: Some("https://evil.example/collect".to_string()),
+        });
+        network.observation_id = "network-delete-1".to_string();
+        recorder.append_observations(&[file, network]).unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        let second_line = contents.lines().nth(1).unwrap().to_string();
+        fs::write(&path, format!("{second_line}\n")).unwrap();
+
+        let err = EndpointFlightRecorder::open(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("sequence mismatch")
+                || err.to_string().contains("previous hash mismatch"),
+            "expected hash-chain deletion mismatch, got {err}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }

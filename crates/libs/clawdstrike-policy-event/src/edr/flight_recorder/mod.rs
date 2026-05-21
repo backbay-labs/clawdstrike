@@ -14,6 +14,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
+use hush_core::sha256;
 use serde::{Deserialize, Serialize};
 
 use self::compaction::{
@@ -39,6 +40,7 @@ use super::{
 
 #[cfg(unix)]
 const ENDPOINT_PRIVATE_FILE_MODE: u32 = 0o600;
+const ENDPOINT_FLIGHT_RECORDER_LOG_RECORD_SCHEMA_VERSION: u32 = 1;
 
 fn endpoint_private_open_options() -> OpenOptions {
     let mut options = OpenOptions::new();
@@ -98,6 +100,44 @@ pub struct EndpointFlightRecorderHistoryWindow {
     pub total_observation_count: usize,
     pub matched_observation_count: usize,
     pub selected_observations: Vec<EndpointObservation>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EndpointFlightRecorderLogRecord {
+    schema_version: u32,
+    sequence: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_record_hash: Option<String>,
+    observation_hash: String,
+    record_hash: String,
+    observation: EndpointObservation,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EndpointFlightRecorderLogRecordBody<'a> {
+    schema_version: u32,
+    sequence: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_record_hash: Option<&'a str>,
+    observation_hash: &'a str,
+    observation: &'a EndpointObservation,
+}
+
+#[derive(Clone, Debug)]
+struct EndpointFlightRecorderLogChainState {
+    next_sequence: u64,
+    previous_record_hash: Option<String>,
+}
+
+impl Default for EndpointFlightRecorderLogChainState {
+    fn default() -> Self {
+        Self {
+            next_sequence: 1,
+            previous_record_hash: None,
+        }
+    }
 }
 
 impl EndpointFlightRecorder {
@@ -266,9 +306,17 @@ impl EndpointFlightRecorder {
                 .seek(SeekFrom::End(0))
                 .with_context(|| format!("seek endpoint flight recorder log {}", path.display()))?;
             let mut index_entries = Vec::with_capacity(observations.len());
+            let mut chain_state = read_endpoint_flight_recorder_log_chain_state(path)?;
 
             for observation in observations {
-                let mut bytes = serde_json::to_vec(observation).with_context(|| {
+                let record = endpoint_flight_recorder_log_record(observation, &chain_state)
+                    .with_context(|| {
+                        format!(
+                            "hash-chain endpoint observation {}",
+                            observation.observation_id
+                        )
+                    })?;
+                let mut bytes = serde_json::to_vec(&record).with_context(|| {
                     format!(
                         "serialize endpoint observation {}",
                         observation.observation_id
@@ -289,6 +337,7 @@ impl EndpointFlightRecorder {
                     byte_len,
                 ));
                 byte_offset = byte_offset.saturating_add(byte_len);
+                chain_state.advance_hashed_record(record.record_hash);
             }
 
             file.flush().with_context(|| {
@@ -424,6 +473,7 @@ impl EndpointFlightRecorder {
         let tmp_path = path.with_extension("jsonl.tmp");
         let mut byte_offset = 0u64;
         let mut index_entries = Vec::with_capacity(observations.len());
+        let mut chain_state = EndpointFlightRecorderLogChainState::default();
         {
             let mut file = OpenOptions::new()
                 .create(true)
@@ -437,36 +487,35 @@ impl EndpointFlightRecorder {
                     )
                 })?;
             for observation in observations {
-                serde_json::to_writer(&mut file, observation).with_context(|| {
+                let record = endpoint_flight_recorder_log_record(observation, &chain_state)
+                    .with_context(|| {
+                        format!(
+                            "hash-chain endpoint observation {}",
+                            observation.observation_id
+                        )
+                    })?;
+                let mut bytes = serde_json::to_vec(&record).with_context(|| {
                     format!(
                         "serialize endpoint observation {}",
                         observation.observation_id
                     )
                 })?;
-                file.write_all(b"\n").with_context(|| {
+                bytes.push(b'\n');
+                file.write_all(&bytes).with_context(|| {
                     format!(
                         "write endpoint observation {} to {}",
                         observation.observation_id,
                         tmp_path.display()
                     )
                 })?;
-                let byte_len = serde_json::to_vec(observation)
-                    .map(|mut bytes| {
-                        bytes.push(b'\n');
-                        bytes.len() as u64
-                    })
-                    .with_context(|| {
-                        format!(
-                            "serialize endpoint observation {} for index",
-                            observation.observation_id
-                        )
-                    })?;
+                let byte_len = bytes.len() as u64;
                 index_entries.push(endpoint_observation_index_entry(
                     observation,
                     byte_offset,
                     byte_len,
                 ));
                 byte_offset = byte_offset.saturating_add(byte_len);
+                chain_state.advance_hashed_record(record.record_hash);
             }
             file.flush().with_context(|| {
                 format!(
@@ -510,22 +559,217 @@ fn read_endpoint_observations(path: &Path) -> Result<Vec<EndpointObservation>> {
     };
 
     let mut observations = Vec::new();
+    let mut chain_state = EndpointFlightRecorderLogChainState::default();
     for (idx, line) in contents.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-        let observation: EndpointObservation =
-            serde_json::from_str(trimmed).with_context(|| {
-                format!(
-                    "invalid endpoint observation JSONL at {}:{}",
-                    path.display(),
-                    idx + 1
-                )
-            })?;
+        let observation = parse_endpoint_flight_recorder_log_line(
+            path,
+            idx + 1,
+            trimmed,
+            Some(&mut chain_state),
+        )?
+        .ok_or_else(|| {
+            anyhow!(
+                "invalid empty endpoint observation JSONL at {}:{}",
+                path.display(),
+                idx + 1
+            )
+        })?;
         observations.push(observation);
     }
     Ok(observations)
+}
+
+fn read_endpoint_flight_recorder_log_chain_state(
+    path: &Path,
+) -> Result<EndpointFlightRecorderLogChainState> {
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            return Ok(EndpointFlightRecorderLogChainState::default())
+        }
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("read endpoint flight recorder log {}", path.display()))
+        }
+    };
+    let reader = BufReader::new(file);
+    let mut chain_state = EndpointFlightRecorderLogChainState::default();
+    for (idx, line) in reader.lines().enumerate() {
+        let line = line.with_context(|| {
+            format!(
+                "read endpoint observation JSONL line at {}:{}",
+                path.display(),
+                idx + 1
+            )
+        })?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let _ = parse_endpoint_flight_recorder_log_line(
+            path,
+            idx + 1,
+            trimmed,
+            Some(&mut chain_state),
+        )?;
+    }
+    Ok(chain_state)
+}
+
+fn endpoint_flight_recorder_log_record(
+    observation: &EndpointObservation,
+    chain_state: &EndpointFlightRecorderLogChainState,
+) -> Result<EndpointFlightRecorderLogRecord> {
+    let observation_hash = endpoint_flight_recorder_observation_hash(observation)?;
+    let body = EndpointFlightRecorderLogRecordBody {
+        schema_version: ENDPOINT_FLIGHT_RECORDER_LOG_RECORD_SCHEMA_VERSION,
+        sequence: chain_state.next_sequence,
+        previous_record_hash: chain_state.previous_record_hash.as_deref(),
+        observation_hash: observation_hash.as_str(),
+        observation,
+    };
+    let record_hash = endpoint_flight_recorder_record_hash(&body)?;
+    Ok(EndpointFlightRecorderLogRecord {
+        schema_version: body.schema_version,
+        sequence: body.sequence,
+        previous_record_hash: chain_state.previous_record_hash.clone(),
+        observation_hash,
+        record_hash,
+        observation: observation.clone(),
+    })
+}
+
+fn endpoint_flight_recorder_observation_hash(observation: &EndpointObservation) -> Result<String> {
+    let bytes = serde_json::to_vec(observation).with_context(|| {
+        format!(
+            "serialize endpoint observation {}",
+            observation.observation_id
+        )
+    })?;
+    Ok(sha256(&bytes).to_hex_prefixed())
+}
+
+fn endpoint_flight_recorder_record_hash(
+    body: &EndpointFlightRecorderLogRecordBody<'_>,
+) -> Result<String> {
+    let bytes = serde_json::to_vec(body).context("serialize endpoint flight recorder hash body")?;
+    Ok(sha256(&bytes).to_hex_prefixed())
+}
+
+fn parse_endpoint_flight_recorder_log_line(
+    path: &Path,
+    line_number: usize,
+    trimmed: &str,
+    chain_state: Option<&mut EndpointFlightRecorderLogChainState>,
+) -> Result<Option<EndpointObservation>> {
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    match serde_json::from_str::<EndpointFlightRecorderLogRecord>(trimmed) {
+        Ok(record) => {
+            validate_endpoint_flight_recorder_log_record(path, line_number, &record, chain_state)?;
+            Ok(Some(record.observation))
+        }
+        Err(record_err) => {
+            let observation: EndpointObservation =
+                serde_json::from_str(trimmed).with_context(|| {
+                    format!(
+                        "invalid endpoint observation JSONL at {}:{}; hash-chain record parse error: {record_err}",
+                        path.display(),
+                        line_number
+                    )
+                })?;
+            if let Some(chain_state) = chain_state {
+                if chain_state.previous_record_hash.is_some() {
+                    return Err(anyhow!(
+                        "legacy endpoint observation JSONL at {}:{} cannot appear after hash-chained records",
+                        path.display(),
+                        line_number
+                    ));
+                }
+                chain_state.advance_legacy_record();
+            }
+            Ok(Some(observation))
+        }
+    }
+}
+
+fn validate_endpoint_flight_recorder_log_record(
+    path: &Path,
+    line_number: usize,
+    record: &EndpointFlightRecorderLogRecord,
+    chain_state: Option<&mut EndpointFlightRecorderLogChainState>,
+) -> Result<()> {
+    if record.schema_version != ENDPOINT_FLIGHT_RECORDER_LOG_RECORD_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "endpoint flight recorder hash-chain schema mismatch at {}:{}: expected {}, found {}",
+            path.display(),
+            line_number,
+            ENDPOINT_FLIGHT_RECORDER_LOG_RECORD_SCHEMA_VERSION,
+            record.schema_version
+        ));
+    }
+    let observation_hash = endpoint_flight_recorder_observation_hash(&record.observation)?;
+    if record.observation_hash != observation_hash {
+        return Err(anyhow!(
+            "endpoint flight recorder observation hash mismatch at {}:{} for {}",
+            path.display(),
+            line_number,
+            record.observation.observation_id
+        ));
+    }
+    let body = EndpointFlightRecorderLogRecordBody {
+        schema_version: record.schema_version,
+        sequence: record.sequence,
+        previous_record_hash: record.previous_record_hash.as_deref(),
+        observation_hash: record.observation_hash.as_str(),
+        observation: &record.observation,
+    };
+    let record_hash = endpoint_flight_recorder_record_hash(&body)?;
+    if record.record_hash != record_hash {
+        return Err(anyhow!(
+            "endpoint flight recorder record hash mismatch at {}:{} for {}",
+            path.display(),
+            line_number,
+            record.observation.observation_id
+        ));
+    }
+    if let Some(chain_state) = chain_state {
+        if record.sequence != chain_state.next_sequence {
+            return Err(anyhow!(
+                "endpoint flight recorder sequence mismatch at {}:{}: expected {}, found {}",
+                path.display(),
+                line_number,
+                chain_state.next_sequence,
+                record.sequence
+            ));
+        }
+        if record.previous_record_hash != chain_state.previous_record_hash {
+            return Err(anyhow!(
+                "endpoint flight recorder previous hash mismatch at {}:{} for {}",
+                path.display(),
+                line_number,
+                record.observation.observation_id
+            ));
+        }
+        chain_state.advance_hashed_record(record.record_hash.clone());
+    }
+    Ok(())
+}
+
+impl EndpointFlightRecorderLogChainState {
+    fn advance_legacy_record(&mut self) {
+        self.next_sequence = self.next_sequence.saturating_add(1);
+    }
+
+    fn advance_hashed_record(&mut self, record_hash: String) {
+        self.previous_record_hash = Some(record_hash);
+        self.next_sequence = self.next_sequence.saturating_add(1);
+    }
 }
 
 fn read_endpoint_observation_window<F>(
@@ -554,6 +798,7 @@ where
     let mut selected = VecDeque::new();
     let mut total_observation_count = 0usize;
     let mut matched_observation_count = 0usize;
+    let mut chain_state = EndpointFlightRecorderLogChainState::default();
 
     for (idx, line) in reader.lines().enumerate() {
         let line = line.with_context(|| {
@@ -567,14 +812,19 @@ where
         if trimmed.is_empty() {
             continue;
         }
-        let observation: EndpointObservation =
-            serde_json::from_str(trimmed).with_context(|| {
-                format!(
-                    "invalid endpoint observation JSONL at {}:{}",
-                    path.display(),
-                    idx + 1
-                )
-            })?;
+        let observation = parse_endpoint_flight_recorder_log_line(
+            path,
+            idx + 1,
+            trimmed,
+            Some(&mut chain_state),
+        )?
+        .ok_or_else(|| {
+            anyhow!(
+                "invalid empty endpoint observation JSONL at {}:{}",
+                path.display(),
+                idx + 1
+            )
+        })?;
         total_observation_count = total_observation_count.saturating_add(1);
         if predicate(&observation) {
             matched_observation_count = matched_observation_count.saturating_add(1);
@@ -715,10 +965,17 @@ fn read_endpoint_observations_at_index_entries(
                 path.display()
             )
         })?;
-        let observation: EndpointObservation =
-            serde_json::from_str(text.trim()).with_context(|| {
+        let observation = parse_endpoint_flight_recorder_log_line(path, 0, text.trim(), None)
+            .with_context(|| {
                 format!(
                     "invalid indexed endpoint observation {} in {}",
+                    entry.observation_id,
+                    path.display()
+                )
+            })?
+            .ok_or_else(|| {
+                anyhow!(
+                    "empty indexed endpoint observation {} in {}",
                     entry.observation_id,
                     path.display()
                 )
@@ -900,6 +1157,7 @@ fn read_or_rebuild_endpoint_observation_index(
     let index_path = endpoint_flight_recorder_index_path(path);
     if let Ok(entries) = read_endpoint_observation_index(&index_path) {
         if endpoint_observation_index_covers_log(path, &entries)? {
+            let _ = read_endpoint_flight_recorder_log_chain_state(path)?;
             return Ok((index_path, entries));
         }
     }
@@ -925,6 +1183,7 @@ fn rebuild_endpoint_observation_index(
     let mut byte_offset = 0u64;
     let mut line = String::new();
     let mut line_number = 0usize;
+    let mut chain_state = EndpointFlightRecorderLogChainState::default();
 
     loop {
         line.clear();
@@ -941,14 +1200,19 @@ fn rebuild_endpoint_observation_index(
         line_number = line_number.saturating_add(1);
         let trimmed = line.trim();
         if !trimmed.is_empty() {
-            let observation: EndpointObservation =
-                serde_json::from_str(trimmed).with_context(|| {
-                    format!(
-                        "invalid endpoint observation JSONL at {}:{}",
-                        path.display(),
-                        line_number
-                    )
-                })?;
+            let observation = parse_endpoint_flight_recorder_log_line(
+                path,
+                line_number,
+                trimmed,
+                Some(&mut chain_state),
+            )?
+            .ok_or_else(|| {
+                anyhow!(
+                    "invalid empty endpoint observation JSONL at {}:{}",
+                    path.display(),
+                    line_number
+                )
+            })?;
             entries.push(endpoint_observation_index_entry(
                 &observation,
                 byte_offset,
