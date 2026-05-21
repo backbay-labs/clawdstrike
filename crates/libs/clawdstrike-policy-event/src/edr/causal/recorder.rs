@@ -899,17 +899,18 @@ mod tests {
             Some("guid:parent-1")
         );
 
-        let child_node_id = graph
+        let child_nodes = graph
             .nodes
             .values()
-            .find(|node| {
+            .filter(|node| {
                 node.attributes
                     .get("processGuid")
                     .and_then(|value| value.as_str())
                     == Some("child-1")
             })
-            .map(|node| node.node_id.as_str())
-            .expect("child process node");
+            .collect::<Vec<_>>();
+        assert_eq!(child_nodes.len(), 1, "child process node must exist once");
+        let child_node_id = child_nodes[0].node_id.as_str();
         assert!(graph.edges.iter().any(|edge| {
             edge.kind == CausalEdgeKind::Spawned
                 && edge.from == parent_node.node_id

@@ -1376,6 +1376,10 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         [
             ("impactId", impact["impactId"].as_str().unwrap().to_string()),
             (
+                "eventSource",
+                impact["source"].as_str().unwrap().to_string(),
+            ),
+            (
                 "eventStreamHash",
                 impact["eventStreamHash"].as_str().unwrap().to_string(),
             ),

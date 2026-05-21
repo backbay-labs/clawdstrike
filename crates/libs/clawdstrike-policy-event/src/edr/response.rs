@@ -327,9 +327,14 @@ mod tests {
             ),
         );
 
-        let rollback =
-            EndpointResponseRollbackReport::quarantine_file(&execution, "ttl rollback", Utc::now())
-                .expect("partial quarantine rollback report");
+        let rollback = match EndpointResponseRollbackReport::quarantine_file(
+            &execution,
+            "ttl rollback",
+            Utc::now(),
+        ) {
+            Ok(report) => report,
+            Err(error) => panic!("partial quarantine rollback report: {error}"),
+        };
 
         assert_eq!(rollback.effects[0].effect_type, "restore_quarantine_file");
     }
@@ -342,12 +347,14 @@ mod tests {
             EndpointResponseExecutionEffect::suspend_process_tree(42, &[42, 43]),
         );
 
-        let rollback = EndpointResponseRollbackReport::suspend_process_tree(
+        let rollback = match EndpointResponseRollbackReport::suspend_process_tree(
             &execution,
             "ttl rollback",
             Utc::now(),
-        )
-        .expect("partial suspend rollback report");
+        ) {
+            Ok(report) => report,
+            Err(error) => panic!("partial suspend rollback report: {error}"),
+        };
 
         assert_eq!(rollback.effects[0].effect_type, "resume_process_tree");
     }
