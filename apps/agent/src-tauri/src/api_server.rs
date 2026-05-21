@@ -36358,7 +36358,11 @@ guards:
                     "url": "https://collector.example.invalid/ingest",
                     "commandLine": "network_egress POST https://collector.example.invalid/ingest",
                     "metadata": {
-                        "rawPayloadOmitted": true
+                        "rawPayloadOmitted": true,
+                        "policyAllowed": false,
+                        "policyGuard": "network_egress",
+                        "policySeverity": "high",
+                        "policyActionType": "network_egress"
                     }
                 },
                 {
@@ -36487,6 +36491,28 @@ guards:
                     == "/Users/alice/Library/LaunchAgents/com.example.agent.plist"
                 && observation["metadata"]["mechanism"] == "launch_agent"
         }));
+        let policy_decision_receipts = payload["policyDecisionReceipts"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing developer activity policy decision receipts"));
+        assert_eq!(policy_decision_receipts.len(), 1);
+        let endpoint_decision =
+            &policy_decision_receipts[0]["receipt"]["metadata"]["endpointDecision"];
+        assert_eq!(endpoint_decision["receiptFamily"], "policy_decision");
+        assert_eq!(
+            endpoint_decision["decision"]["ruleId"],
+            "endpoint.policy_decision.network_egress"
+        );
+        assert_eq!(endpoint_decision["decision"]["action"], "block");
+        assert_eq!(endpoint_decision["decision"]["passed"], false);
+        assert_eq!(
+            endpoint_decision["sensorState"]["providers"][0]["providerId"],
+            "developer_activity.policy_check"
+        );
+        assert!(endpoint_decision["evidence"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing developer policy decision receipt evidence"))
+            .iter()
+            .any(|item| item["key"] == "allowed"));
     }
 
     #[tokio::test]

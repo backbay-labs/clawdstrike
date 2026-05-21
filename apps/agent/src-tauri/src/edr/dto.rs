@@ -277,6 +277,7 @@ pub(crate) struct EdrDeveloperActivityResponse {
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
     pub(crate) observation_receipts: Vec<SignedReceipt>,
+    pub(crate) policy_decision_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
