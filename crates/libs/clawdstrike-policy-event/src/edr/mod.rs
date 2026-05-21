@@ -653,9 +653,10 @@ pub(crate) struct FindingRule<'a> {
 
 fn finding(
     observation: &EndpointObservation,
-    evidence: Vec<DetectionEvidence>,
+    mut evidence: Vec<DetectionEvidence>,
     rule: FindingRule<'_>,
 ) -> DetectionFinding {
+    append_observation_identity_evidence(observation, &mut evidence);
     DetectionFinding {
         finding_id: stable_id(
             "finding",
@@ -677,6 +678,56 @@ fn finding(
         tags: rule.tags.into_iter().map(ToString::to_string).collect(),
         remediation: rule.remediation.to_string(),
     }
+}
+
+fn append_observation_identity_evidence(
+    observation: &EndpointObservation,
+    evidence: &mut Vec<DetectionEvidence>,
+) {
+    push_optional_identity_evidence(evidence, "hostId", observation.host_id.clone());
+    push_optional_identity_evidence(evidence, "userId", observation.user_id.clone());
+    push_optional_identity_evidence(evidence, "sessionId", observation.session_id.clone());
+    push_optional_identity_evidence(
+        evidence,
+        "processGuid",
+        normalized_identity_value(observation.process.process_guid.as_deref()),
+    );
+    push_optional_identity_evidence(
+        evidence,
+        "parentProcessGuid",
+        normalized_identity_value(observation.process.parent_process_guid.as_deref()),
+    );
+    push_optional_identity_evidence(evidence, "agentId", agent_id_field(&observation.metadata));
+    push_optional_identity_evidence(
+        evidence,
+        "workloadId",
+        workload_id_field(&observation.metadata),
+    );
+    push_optional_identity_evidence(
+        evidence,
+        "approvalId",
+        approval_id_field(&observation.metadata),
+    );
+    push_optional_identity_evidence(evidence, "toolName", tool_name_field(observation));
+    push_optional_identity_evidence(
+        evidence,
+        "toolCallId",
+        tool_call_id_field(&observation.metadata),
+    );
+}
+
+fn push_optional_identity_evidence(
+    evidence: &mut Vec<DetectionEvidence>,
+    key: &'static str,
+    value: Option<String>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    if evidence.iter().any(|item| item.key == key) {
+        return;
+    }
+    evidence.push(ev(key, value));
 }
 
 fn ev(key: impl Into<String>, value: impl Into<String>) -> DetectionEvidence {

