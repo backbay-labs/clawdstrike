@@ -4229,6 +4229,50 @@ mod tests {
     }
 
     #[test]
+    fn causal_graph_links_network_policy_decision_to_target_flow() {
+        let mut recorder = CausalGraphRecorder::new();
+        let decision = observation(EndpointEvent::PolicyDecision {
+            action: "network_extension_egress".to_string(),
+            target: Some("malware.example.invalid:443".to_string()),
+            decision: "blocked".to_string(),
+            guard: Some("network_extension_content_filter".to_string()),
+            severity: Some("high".to_string()),
+        });
+
+        recorder.record_observation(&decision);
+        let graph = recorder.graph();
+
+        let network_node_id = graph
+            .nodes
+            .iter()
+            .find_map(|(node_id, node)| {
+                (node.kind == CausalNodeKind::Network
+                    && node.label == "malware.example.invalid:443")
+                    .then_some(node_id)
+            })
+            .unwrap_or_else(|| panic!("missing network target node"));
+        let decision_node_id = graph
+            .nodes
+            .iter()
+            .find_map(|(node_id, node)| {
+                (node.kind == CausalNodeKind::PolicyDecision).then_some(node_id)
+            })
+            .unwrap_or_else(|| panic!("missing policy decision node"));
+
+        assert!(graph.edges.iter().any(|edge| {
+            edge.kind == CausalEdgeKind::Connected
+                && edge.to == network_node_id.as_str()
+                && edge.observation_id == decision.observation_id
+        }));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.kind == CausalEdgeKind::Related
+                && edge.from == network_node_id.as_str()
+                && edge.to == decision_node_id.as_str()
+                && edge.observation_id == decision.observation_id
+        }));
+    }
+
+    #[test]
     fn causal_graph_links_process_to_dns_lookup() {
         let mut recorder = CausalGraphRecorder::new();
         let dns = observation(EndpointEvent::DnsLookup {
@@ -9563,6 +9607,7 @@ mod tests {
                 local_sequence: 31,
                 endpoint_id: "endpoint-1",
                 signer_identity: "local-edr:endpoint-1",
+                actor: None,
                 policy: EndpointPolicySnapshot {
                     policy_version: "test-policy@1".to_string(),
                     policy_hash: sha256(b"test-policy").to_hex_prefixed(),
@@ -9611,6 +9656,7 @@ mod tests {
                 local_sequence: 33,
                 endpoint_id: "endpoint-1",
                 signer_identity: "local-edr:endpoint-1",
+                actor: None,
                 policy: EndpointPolicySnapshot {
                     policy_version: "test-policy@2".to_string(),
                     policy_hash: prepared_policy_hash.clone(),
@@ -9660,6 +9706,7 @@ mod tests {
                 local_sequence: 32,
                 endpoint_id: "endpoint-1",
                 signer_identity: "local-edr:endpoint-1",
+                actor: None,
                 policy: EndpointPolicySnapshot {
                     policy_version: "test-policy@1".to_string(),
                     policy_hash: sha256(b"test-policy").to_hex_prefixed(),

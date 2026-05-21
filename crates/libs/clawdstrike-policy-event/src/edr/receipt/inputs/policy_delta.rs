@@ -1,11 +1,13 @@
 use super::super::super::{
-    action::EndpointDecisionAction, actor::EndpointPolicySnapshot,
+    action::EndpointDecisionAction,
+    actor::{EndpointDecisionActor, EndpointPolicySnapshot},
     sensor_state::EndpointSensorState,
 };
 pub struct EndpointPolicyDeltaReceiptInput<'a> {
     pub local_sequence: u64,
     pub endpoint_id: &'a str,
     pub signer_identity: &'a str,
+    pub actor: Option<EndpointDecisionActor>,
     pub policy: EndpointPolicySnapshot,
     pub sensor_state: EndpointSensorState,
     pub operation: &'a str,

@@ -1154,11 +1154,100 @@ async fn validate_policy_rule_diff_ack_receipt(
             "policyRuleDiffValidation impactId must match the signed receipt findingId".to_string(),
         ));
     }
-    require_endpoint_ack_receipt_evidence_hash(
-        &verified.endpoint_decision_value,
+    validate_policy_rule_diff_ack_impact_evidence(payload, &verified)
+}
+
+fn validate_policy_rule_diff_ack_impact_evidence(
+    payload: &Value,
+    verified: &VerifiedEndpointDecisionReceipt,
+) -> Result<(), ApiError> {
+    let impact = payload.get("impact").ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include impact".to_string(),
+        )
+    })?;
+    for key in [
         "impactId",
-        impact_id,
-    )
+        "eventStreamHash",
+        "currentResultHash",
+        "proposedResultHash",
+        "impactHash",
+        "proposedPolicyHash",
+        "proposedPolicyEpoch",
+        "eventCount",
+        "changedCount",
+        "allowToBlockCount",
+        "trackPosture",
+    ] {
+        let raw_value = policy_rule_diff_ack_impact_evidence_value(impact, key)?;
+        require_policy_rule_diff_ack_receipt_evidence_hash(
+            &verified.endpoint_decision_value,
+            key,
+            &raw_value,
+        )?;
+    }
+    Ok(())
+}
+
+fn policy_rule_diff_ack_impact_evidence_value(
+    impact: &Value,
+    key: &str,
+) -> Result<String, ApiError> {
+    let value = match key {
+        "proposedPolicyHash" => impact
+            .pointer("/proposedPolicy/policyHash")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        "proposedPolicyEpoch" => impact
+            .pointer("/proposedPolicy/policyEpoch")
+            .and_then(Value::as_u64)
+            .map(|value| value.to_string()),
+        "eventCount" | "changedCount" | "allowToBlockCount" => impact
+            .get(key)
+            .and_then(Value::as_u64)
+            .map(|value| value.to_string()),
+        "trackPosture" => impact
+            .get(key)
+            .and_then(Value::as_bool)
+            .map(|value| value.to_string()),
+        _ => impact.get(key).and_then(Value::as_str).map(str::to_string),
+    };
+    value.ok_or_else(|| {
+        ApiError::BadRequest(format!(
+            "policyRuleDiffValidation impact must include {key}"
+        ))
+    })
+}
+
+fn require_policy_rule_diff_ack_receipt_evidence_hash(
+    endpoint_decision: &Value,
+    key: &str,
+    raw_value: &str,
+) -> Result<(), ApiError> {
+    let expected_hash = sha256(raw_value.as_bytes()).to_hex_prefixed();
+    let evidence_hash = endpoint_decision
+        .get("evidence")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                if item.get("key").and_then(Value::as_str) == Some(key) {
+                    item.get("valueHash").and_then(Value::as_str)
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation receipt evidence is missing {key}"
+            ))
+        })?;
+    if evidence_hash != expected_hash {
+        return Err(ApiError::BadRequest(format!(
+            "policyRuleDiffValidation impact {key} does not match signed receipt evidence"
+        )));
+    }
+    Ok(())
 }
 
 fn policy_rule_diff_ack_payload_value(ack: &AckSubmission) -> Result<&Value, ApiError> {

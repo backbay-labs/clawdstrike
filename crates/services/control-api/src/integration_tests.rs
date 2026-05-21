@@ -7080,6 +7080,24 @@ fn policy_rule_diff_simulation_receipt_fixture(
     (signed_value, receipt_id, impact_id)
 }
 
+fn policy_rule_diff_impact_payload_fixture(impact_id: &str) -> Value {
+    serde_json::json!({
+        "impactId": impact_id,
+        "eventStreamHash": hush_core::sha256(b"events").to_hex_prefixed(),
+        "currentResultHash": hush_core::sha256(b"current-results").to_hex_prefixed(),
+        "proposedResultHash": hush_core::sha256(b"proposed-results").to_hex_prefixed(),
+        "impactHash": hush_core::sha256(b"impact").to_hex_prefixed(),
+        "proposedPolicy": {
+            "policyHash": hush_core::sha256(b"proposed-policy").to_hex_prefixed(),
+            "policyEpoch": 2
+        },
+        "eventCount": 2,
+        "changedCount": 1,
+        "allowToBlockCount": 1,
+        "trackPosture": true
+    })
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn response_action_acks_reject_duplicate_delivery_acks() {
     if !docker_available() {
@@ -7113,6 +7131,7 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
     .await;
     let (signed_receipt, _receipt_id, impact_id) =
         policy_rule_diff_simulation_receipt_fixture(&keypair, "endpoint-1");
+    let impact_payload = policy_rule_diff_impact_payload_fixture(&impact_id);
 
     let first_ack = request_json(
         &harness.app,
@@ -7129,9 +7148,7 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
                     "proposalId": "proposal-test",
                     "validationPlanSha256": "sha256:plan",
                     "endpointAgentId": "endpoint-1",
-                    "impact": {
-                        "impactId": &impact_id
-                    },
+                    "impact": impact_payload.clone(),
                     "receipt": signed_receipt
                 }
             }
@@ -7193,6 +7210,7 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
     .await;
     let (signed_receipt, receipt_id, impact_id) =
         policy_rule_diff_simulation_receipt_fixture(&keypair, "endpoint-1");
+    let impact_payload = policy_rule_diff_impact_payload_fixture(&impact_id);
 
     let missing_receipt_resp = request_json(
         &harness.app,
@@ -7261,6 +7279,38 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
         .expect("invalid policy rule-diff receipt error")
         .contains("policyRuleDiffValidation receipt is invalid"));
 
+    let under_bound_impact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/agent-acks"),
+        None,
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "acknowledged",
+            "ackToken": &ack_token,
+            "message": "under-bound impact must be rejected before ack persistence",
+            "resultingState": "collect_evidence:succeeded",
+            "rawPayload": {
+                "policyRuleDiffValidation": {
+                    "proposalId": "proposal-test",
+                    "validationPlanSha256": "sha256:plan",
+                    "endpointAgentId": "endpoint-1",
+                    "impact": {
+                        "impactId": &impact_id
+                    },
+                    "receipt": signed_receipt.clone()
+                }
+            }
+        })),
+    )
+    .await;
+    assert_eq!(under_bound_impact_resp.0, StatusCode::BAD_REQUEST);
+    assert!(under_bound_impact_resp.1["error"]
+        .as_str()
+        .expect("under-bound policy rule-diff impact error")
+        .contains("policyRuleDiffValidation impact must include eventStreamHash"));
+
     let ack_resp = request_json(
         &harness.app,
         Method::POST,
@@ -7278,9 +7328,7 @@ async fn response_action_agent_acks_accept_delivery_token_without_api_key() {
                     "proposalId": "proposal-test",
                     "validationPlanSha256": "sha256:plan",
                     "endpointAgentId": "endpoint-1",
-                    "impact": {
-                        "impactId": &impact_id
-                    },
+                    "impact": impact_payload,
                     "receipt": signed_receipt
                 }
             }

@@ -564,7 +564,7 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertEqual(snapshot.lastError, "policy_not_enforcing")
     }
 
-    func testContentFilterRuntimeFailsClosedWithSyncedEmptyPolicy() throws {
+    func testContentFilterRuntimeAllowsWithSyncedEmptyPolicy() throws {
         let runtime = NetworkExtensionContentFilterRuntime()
         let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
         runtime.updatePolicy(NetworkExtensionEgressPolicy(restrictions: []))
@@ -574,10 +574,9 @@ final class ProviderStateTests: XCTestCase {
             now: now
         )
 
-        guard case .block(let restriction) = decision else {
-            return XCTFail("synced empty policy must fail closed")
+        guard case .allow = decision else {
+            return XCTFail("synced empty policy must allow because no containment is active")
         }
-        XCTAssertEqual(restriction.target, "allowed-empty-policy.example.invalid:443")
         let snapshot = runtime.snapshot(
             installState: .installed,
             approval: .approved,
@@ -588,12 +587,12 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertTrue(snapshot.policySynced)
         XCTAssertFalse(snapshot.enforcementReady)
         XCTAssertEqual(snapshot.counters.flowsObserved, 1)
-        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
-        XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
-        XCTAssertEqual(snapshot.lastError, "policy_not_enforcing")
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 0)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 0)
+        XCTAssertNil(snapshot.lastError)
     }
 
-    func testContentFilterRuntimeFailsClosedAfterAllRestrictionsExpire() throws {
+    func testContentFilterRuntimeAllowsAfterAllRestrictionsExpire() throws {
         let runtime = NetworkExtensionContentFilterRuntime()
         let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
         runtime.updatePolicy(NetworkExtensionEgressPolicy(restrictions: [
@@ -611,10 +610,9 @@ final class ProviderStateTests: XCTestCase {
             now: now
         )
 
-        guard case .block(let restriction) = decision else {
-            return XCTFail("expired-only policy must fail closed")
+        guard case .allow = decision else {
+            return XCTFail("expired-only policy must allow because rollback/TTL removed containment")
         }
-        XCTAssertEqual(restriction.target, "expired.example.invalid:443")
         let snapshot = runtime.snapshot(
             installState: .installed,
             approval: .approved,
@@ -625,9 +623,9 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertTrue(snapshot.policySynced)
         XCTAssertFalse(snapshot.enforcementReady)
         XCTAssertEqual(snapshot.counters.flowsObserved, 1)
-        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
-        XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
-        XCTAssertEqual(snapshot.lastError, "policy_not_enforcing")
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 0)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 0)
+        XCTAssertNil(snapshot.lastError)
     }
 
     func testContentFilterRuntimeFailsClosedForUnresolvedTarget() throws {

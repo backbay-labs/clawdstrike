@@ -672,6 +672,23 @@ impl CausalGraphRecorder {
         if target.is_empty() {
             return None;
         }
+        if let Some((host, port, url)) = policy_decision_network_target(target) {
+            let mut attributes = BTreeMap::new();
+            insert_json(&mut attributes, "host", &host);
+            insert_json(&mut attributes, "port", port);
+            insert_json(&mut attributes, "target", target);
+            insert_json(&mut attributes, "url", url);
+            return Some((
+                self.ensure_node(
+                    CausalNodeKind::Network,
+                    format!("net:{host}:{port}"),
+                    format!("{host}:{port}"),
+                    timestamp,
+                    attributes,
+                ),
+                CausalEdgeKind::Connected,
+            ));
+        }
         if !target.starts_with('/') && !target.starts_with("~/") {
             return None;
         }
@@ -815,6 +832,67 @@ impl CausalGraphRecorder {
             attributes,
         });
     }
+}
+
+fn policy_decision_network_target(target: &str) -> Option<(String, u16, Option<String>)> {
+    let trimmed = target.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some((scheme, rest)) = trimmed.split_once("://") {
+        let scheme = scheme.to_ascii_lowercase();
+        let default_port = match scheme.as_str() {
+            "http" => 80,
+            "https" => 443,
+            _ => return None,
+        };
+        let authority = rest
+            .split(['/', '?', '#'])
+            .next()
+            .unwrap_or(rest)
+            .rsplit('@')
+            .next()
+            .unwrap_or(rest);
+        let (host, port) = policy_decision_authority_host_port(authority, Some(default_port))?;
+        return Some((host, port, Some(trimmed.to_string())));
+    }
+
+    policy_decision_authority_host_port(trimmed, None).map(|(host, port)| (host, port, None))
+}
+
+fn policy_decision_authority_host_port(
+    authority: &str,
+    default_port: Option<u16>,
+) -> Option<(String, u16)> {
+    let authority = authority.trim();
+    if authority.is_empty() {
+        return None;
+    }
+
+    let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
+        let end = rest.find(']')?;
+        let host = &rest[..end];
+        let suffix = &rest[end + 1..];
+        let port = if let Some(port_text) = suffix.strip_prefix(':') {
+            port_text.parse::<u16>().ok()?
+        } else {
+            default_port?
+        };
+        (host, port)
+    } else if let Some((host, port_text)) = authority.rsplit_once(':') {
+        if host.contains(':') {
+            return None;
+        }
+        (host, port_text.parse::<u16>().ok()?)
+    } else {
+        (authority, default_port?)
+    };
+
+    let host = normalize_hostname(host);
+    if host.is_empty() || port == 0 {
+        return None;
+    }
+    Some((host, port))
 }
 
 fn credential_kind_from_path(path: &str) -> Option<CredentialKind> {

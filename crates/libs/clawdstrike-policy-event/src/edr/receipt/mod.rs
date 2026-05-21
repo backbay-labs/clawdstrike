@@ -1575,6 +1575,10 @@ impl EndpointDecisionReceipt {
             source_affected_identity_context: input.source_affected_identity_context,
             source_affected_tool_context: input.source_affected_tool_context,
         });
+        let has_actor = input.actor.is_some();
+        let mut actor = input.actor.unwrap_or_default();
+        actor.endpoint_id = input.endpoint_id.to_string();
+        let actor_hash = endpoint_decision_actor_content_hash(&actor);
         let mut evidence = vec![
             EndpointReceiptEvidence::hashed("operation", input.operation),
             EndpointReceiptEvidence::hashed("policyDeltaId", &policy_delta_id),
@@ -1594,6 +1598,9 @@ impl EndpointDecisionReceipt {
                 input.source_affected_tool_context,
             ),
         ];
+        if has_actor {
+            evidence.push(EndpointReceiptEvidence::hashed("actorHash", actor_hash));
+        }
         if let Some(previous_policy_hash) = input.previous_policy_hash {
             evidence.push(EndpointReceiptEvidence::hashed(
                 "previousPolicyHash",
@@ -1631,10 +1638,7 @@ impl EndpointDecisionReceipt {
                 signer_identity: input.signer_identity.to_string(),
                 signer_public_key: None,
             },
-            actor: EndpointDecisionActor {
-                endpoint_id: input.endpoint_id.to_string(),
-                ..EndpointDecisionActor::default()
-            },
+            actor,
             policy: input.policy,
             sensor_state: input.sensor_state,
             decision: EndpointDecisionRecord {

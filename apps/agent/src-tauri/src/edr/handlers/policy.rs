@@ -561,6 +561,7 @@ pub(crate) async fn agent_edr_policy_delta(
                     artifact: &artifact,
                     artifact_hash: &artifact_hash,
                     operation: "generated",
+                    actor: None,
                     previous_policy_hash: None,
                     new_policy_hash: None,
                     backup_path: None,
@@ -670,6 +671,10 @@ pub(crate) async fn agent_edr_policy_delta_apply(
             "live policy delta apply requires reloadDaemonPolicy or restartDaemon".to_string(),
         ));
     }
+    validate_response_action_actor_fields(input.actor.as_ref())?;
+    if !dry_run {
+        validate_response_action_actor(input.actor.as_ref())?;
+    }
     let applied_by = input
         .applied_by
         .as_deref()
@@ -709,6 +714,20 @@ pub(crate) async fn agent_edr_policy_delta_apply(
     };
     verify_policy_delta_record_before_apply(state.as_ref(), &policy_delta).await?;
     let settings = state.settings.read().await.clone();
+    let local_endpoint_id = endpoint_id_for_settings(&settings);
+    let policy_delta_actor = if input.actor.is_some() || !dry_run {
+        let session_state = state.session_manager.state().await;
+        let mut actor = endpoint_response_actor_from_action_input(
+            &settings,
+            &session_state,
+            "agent-api",
+            input.actor.as_ref(),
+        );
+        actor.endpoint_id = local_endpoint_id;
+        Some(actor)
+    } else {
+        None
+    };
     let policy_path = settings.policy_path.clone();
     let current_bytes = fs::read(&policy_path).map_err(|err| {
         (
@@ -790,6 +809,7 @@ pub(crate) async fn agent_edr_policy_delta_apply(
         apply_status: Some(if dry_run { "dry_run" } else { "prepared" }.to_string()),
         failure_reason: None,
         applied_by: applied_by.to_string(),
+        actor: policy_delta_actor.clone(),
         note,
         dry_run,
         applied: false,
@@ -829,6 +849,7 @@ pub(crate) async fn agent_edr_policy_delta_apply(
                         artifact: &policy_delta.artifact,
                         artifact_hash: &policy_delta.artifact_hash,
                         operation: "prepared",
+                        actor: policy_delta_actor.clone(),
                         previous_policy_hash: Some(previous_snapshot.policy_hash.as_str()),
                         new_policy_hash: Some(new_snapshot.policy_hash.as_str()),
                         backup_path: backup_path.as_deref(),
@@ -867,6 +888,7 @@ pub(crate) async fn agent_edr_policy_delta_apply(
                 artifact: &policy_delta.artifact,
                 artifact_hash: &policy_delta.artifact_hash,
                 operation: "applied",
+                actor: policy_delta_actor.clone(),
                 previous_policy_hash: Some(previous_snapshot.policy_hash.as_str()),
                 new_policy_hash: Some(new_snapshot.policy_hash.as_str()),
                 backup_path: backup_path.as_deref(),

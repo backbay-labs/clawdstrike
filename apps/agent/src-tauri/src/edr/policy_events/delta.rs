@@ -99,9 +99,19 @@ pub(crate) fn build_edr_policy_delta_patch(
     });
 
     if policy_delta_stage_is_enforcing(&staged.stage, &stage_entry.action) {
-        if let Some(guard_patch) = conventional_policy_guard_patch(staged, &stage_entry.action) {
-            merge_json_values(&mut overlay, guard_patch);
-        }
+        let guard_patch =
+            conventional_policy_guard_patch(staged, &stage_entry.action).ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!(
+                        "{} cannot be promoted to {} for {} roots because this policy delta would not materialize a concrete local guard",
+                        stage_entry.action.as_str(),
+                        staged.stage,
+                        crate::api_server::causal_node_kind_name(&staged.candidate.root_kind)
+                    ),
+                )
+            })?;
+        merge_json_values(&mut overlay, guard_patch);
     }
     if let Some(rule) = overlay
         .get_mut("endpoint_decision_engine")
@@ -137,6 +147,22 @@ pub(crate) fn policy_delta_enforcement_action_supported(action: &EndpointDecisio
             | EndpointDecisionAction::QuarantineFile
             | EndpointDecisionAction::RevokeGrant
             | EndpointDecisionAction::DisablePersistence
+    )
+}
+
+pub(crate) fn policy_delta_stage_materializes_guard(
+    root_kind: &CausalNodeKind,
+    action: &EndpointDecisionAction,
+) -> bool {
+    matches!(
+        (root_kind, action),
+        (
+            CausalNodeKind::Network,
+            EndpointDecisionAction::RestrictEgress | EndpointDecisionAction::Block
+        ) | (
+            CausalNodeKind::File | CausalNodeKind::Credential,
+            EndpointDecisionAction::QuarantineFile | EndpointDecisionAction::Block
+        )
     )
 }
 

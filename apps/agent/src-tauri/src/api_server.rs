@@ -4632,8 +4632,9 @@ pub(crate) async fn build_edr_detection_candidate(
     let receipt = emit_edr_simulation_receipt(state, &simulation, &subgraph)
         .await
         .map_err(internal_error)?;
-    let recommended_stage = recommended_detection_stage(&simulation);
-    let stage_plan = detection_candidate_stage_plan(&simulation, &recommended_stage);
+    let recommended_stage = recommended_detection_stage(&simulation, &root_node.kind);
+    let stage_plan =
+        detection_candidate_stage_plan(&simulation, &root_node.kind, &recommended_stage);
     let candidate = EdrDetectionCandidate {
         rule_id,
         action,
@@ -5919,6 +5920,7 @@ fn detection_candidate_description(
 
 fn detection_candidate_stage_plan(
     simulation: &EndpointPolicySimulationReport,
+    root_kind: &CausalNodeKind,
     recommended_stage: &str,
 ) -> Vec<EdrDetectionCandidateStage> {
     let mut stages = vec![
@@ -5938,7 +5940,7 @@ fn detection_candidate_stage_plan(
             "warn affected users when developer breakage score is acceptable for workflow testing",
         ),
     ];
-    if policy_delta_enforcement_action_supported(&simulation.action) {
+    if policy_delta_stage_materializes_guard(root_kind, &simulation.action) {
         stages.push((
             "limited_block",
             simulation.action.clone(),
@@ -5958,11 +5960,14 @@ fn detection_candidate_stage_plan(
         .collect()
 }
 
-fn recommended_detection_stage(simulation: &EndpointPolicySimulationReport) -> String {
+fn recommended_detection_stage(
+    simulation: &EndpointPolicySimulationReport,
+    root_kind: &CausalNodeKind,
+) -> String {
     if !simulation.would_block {
         return "observe".to_string();
     }
-    if !policy_delta_enforcement_action_supported(&simulation.action) {
+    if !policy_delta_stage_materializes_guard(root_kind, &simulation.action) {
         return "audit".to_string();
     }
     match simulation.developer_breakage_score {
@@ -37028,15 +37033,36 @@ guards:
         let graph_nodes = payload["graph"]["nodes"]
             .as_object()
             .unwrap_or_else(|| panic!("missing NetworkExtension graph nodes"));
+        let network_node_id = graph_nodes
+            .iter()
+            .find_map(|(node_id, node)| {
+                (node["kind"] == "network" && node["label"] == "malware.example.invalid:443")
+                    .then_some(node_id.as_str())
+            })
+            .unwrap_or_else(|| panic!("missing NetworkExtension network node"));
+        let policy_decision_node_id = graph_nodes
+            .iter()
+            .find_map(|(node_id, node)| {
+                (node["kind"] == "policy_decision").then_some(node_id.as_str())
+            })
+            .unwrap_or_else(|| panic!("missing NetworkExtension policy decision node"));
         assert!(graph_nodes.values().any(|node| {
             node["kind"] == "network" && node["label"] == "malware.example.invalid:443"
         }));
         assert!(graph_nodes.values().any(|node| {
             node["kind"] == "dns_name" && node["label"] == "malware.example.invalid"
         }));
-        assert!(graph_nodes
-            .values()
-            .any(|node| node["kind"] == "policy_decision"));
+        let graph_edges = payload["graph"]["edges"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing NetworkExtension graph edges"));
+        assert!(graph_edges
+            .iter()
+            .any(|edge| { edge["kind"] == "connected" && edge["to"] == network_node_id }));
+        assert!(graph_edges.iter().any(|edge| {
+            edge["kind"] == "related"
+                && edge["from"] == network_node_id
+                && edge["to"] == policy_decision_node_id
+        }));
     }
 
     #[tokio::test]
@@ -38545,8 +38571,12 @@ guards:
         assert!(supported_edr_simulation_action(
             &EndpointDecisionAction::TerminateProcessTree
         ));
-        assert_eq!(recommended_detection_stage(&simulation), "audit");
-        let stage_plan = detection_candidate_stage_plan(&simulation, "audit");
+        assert_eq!(
+            recommended_detection_stage(&simulation, &CausalNodeKind::Process),
+            "audit"
+        );
+        let stage_plan =
+            detection_candidate_stage_plan(&simulation, &CausalNodeKind::Process, "audit");
         assert!(stage_plan.iter().any(|stage| {
             stage.stage == "audit"
                 && stage.action == EndpointDecisionAction::Alert
@@ -38559,6 +38589,21 @@ guards:
             "limited_block",
             &EndpointDecisionAction::TerminateProcessTree
         ));
+        assert!(!policy_delta_stage_materializes_guard(
+            &CausalNodeKind::Process,
+            &EndpointDecisionAction::SuspendProcessTree
+        ));
+        let mut suspend_simulation = simulation.clone();
+        suspend_simulation.action = EndpointDecisionAction::SuspendProcessTree;
+        assert_eq!(
+            recommended_detection_stage(&suspend_simulation, &CausalNodeKind::Process),
+            "audit"
+        );
+        let suspend_stage_plan =
+            detection_candidate_stage_plan(&suspend_simulation, &CausalNodeKind::Process, "audit");
+        assert!(!suspend_stage_plan
+            .iter()
+            .any(|stage| stage.stage == "limited_block" || stage.stage == "full_block"));
 
         let error = validate_policy_delta_stage_action(
             "limited_block",
@@ -39480,6 +39525,44 @@ guards:
             String::from_utf8_lossy(&bytes)
         );
         assert!(String::from_utf8_lossy(&bytes).contains("verifyProtectionState"));
+        let body = serde_json::json!({
+            "dryRun": false,
+            "appliedBy": "operator:bob",
+            "note": "missing approval-bound actor must be rejected",
+            "providerAckTimeoutMs": 1000
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/api/v1/agent/edr/policy-deltas/{policy_delta_id}/apply"
+            ))
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| {
+                panic!("failed to build unauthored live policy delta apply request: {e}")
+            });
+        let response =
+            app.clone().oneshot(req).await.unwrap_or_else(|e| {
+                panic!("unauthored live policy delta apply request failed: {e}")
+            });
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 16 * 1024)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("failed to read unauthored live policy delta apply response: {e}")
+            });
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "unexpected unauthored live policy delta apply response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(
+            String::from_utf8_lossy(&bytes).contains("requires actor identity"),
+            "unexpected unauthored live policy delta apply response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
         let (provider_reload_tx, mut provider_reload_rx) =
             tokio::sync::mpsc::channel::<crate::macos::host::MacosNetworkExtensionReloadRequest>(1);
         state
@@ -39545,6 +39628,13 @@ guards:
         let body = serde_json::json!({
             "dryRun": false,
             "appliedBy": "operator:bob",
+            "actor": {
+                "endpointId": "endpoint-policy-delta-1",
+                "userId": "operator:bob",
+                "sessionId": "session-policy-delta-apply-1",
+                "agentId": "agent-api",
+                "approvalId": "approval-policy-delta-1"
+            },
             "note": "apply generated egress overlay",
             "providerAckTimeoutMs": 1000
         });
@@ -39562,10 +39652,16 @@ guards:
             .oneshot(req)
             .await
             .unwrap_or_else(|e| panic!("policy delta apply failed: {e}"));
-        assert_eq!(response.status(), StatusCode::OK);
+        let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), 512 * 1024)
             .await
             .unwrap_or_else(|e| panic!("failed to read policy delta apply: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "policy delta apply response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
         let apply_payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode policy delta apply: {e}"));
         assert_eq!(apply_payload["record"]["dryRun"], false);
@@ -39587,6 +39683,32 @@ guards:
                 ["receiptFamily"],
             "policy_delta"
         );
+        let applied_endpoint_decision =
+            &apply_payload["receipt"]["receipt"]["metadata"]["endpointDecision"];
+        let prepared_endpoint_decision =
+            &apply_payload["preparedReceipt"]["receipt"]["metadata"]["endpointDecision"];
+        assert_eq!(
+            apply_payload["record"]["actor"]["approvalId"],
+            "approval-policy-delta-1"
+        );
+        assert_eq!(
+            applied_endpoint_decision["actor"]["approvalId"],
+            "approval-policy-delta-1"
+        );
+        assert_eq!(
+            prepared_endpoint_decision["actor"]["approvalId"],
+            "approval-policy-delta-1"
+        );
+        assert!(applied_endpoint_decision["evidence"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing applied policy delta receipt evidence"))
+            .iter()
+            .any(|item| item["key"] == "actorHash"));
+        assert!(prepared_endpoint_decision["evidence"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing prepared policy delta receipt evidence"))
+            .iter()
+            .any(|item| item["key"] == "actorHash"));
         assert_eq!(
             apply_payload["preparedReceipt"]["receipt"]["metadata"]["endpointDecision"]["decision"]
                 ["title"],

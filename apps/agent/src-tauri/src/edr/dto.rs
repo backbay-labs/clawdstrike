@@ -16,7 +16,7 @@ use serde_json::Value;
 use clawdstrike_policy_event::edr::{
     CausalGraph, CausalNodeKind, CredentialKind, DeceptionCleanupReport,
     DeceptionMaterializationReport, DeceptionPlan, DeceptionRotationReport, DetectionFinding,
-    EndpointDecisionAction, EndpointEvidenceBundleReference,
+    EndpointDecisionAction, EndpointDecisionActor, EndpointEvidenceBundleReference,
     EndpointFlightRecorderCompactionRecord, EndpointObservation,
     EndpointPolicySimulationIdentityContext, EndpointPolicySimulationReport,
     EndpointPolicySimulationToolContext, EndpointPolicySnapshot, EndpointProcess,
@@ -1981,6 +1981,8 @@ pub(crate) struct EdrPolicyDeltaApplyInput {
     #[serde(default, alias = "appliedBy", alias = "promotedBy")]
     pub(crate) applied_by: Option<String>,
     #[serde(default)]
+    pub(crate) actor: Option<EdrResponseActionActorInput>,
+    #[serde(default)]
     pub(crate) note: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -2063,6 +2065,8 @@ pub(crate) struct EdrPolicyDeltaApplyRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) failure_reason: Option<String>,
     pub(crate) applied_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) actor: Option<EndpointDecisionActor>,
     pub(crate) note: Option<String>,
     pub(crate) dry_run: bool,
     pub(crate) applied: bool,
