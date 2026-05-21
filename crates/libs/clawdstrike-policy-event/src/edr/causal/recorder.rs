@@ -608,17 +608,25 @@ impl CausalGraphRecorder {
                 tool_name,
                 parameters,
             } => {
+                let tool_call_id = tool_call_id_field(&observation.metadata);
+                let event_key = observation_scoped_event_key(
+                    observation,
+                    "tool_call",
+                    tool_call_id.as_deref().unwrap_or(tool_name),
+                );
                 let mut attributes = BTreeMap::new();
                 insert_json(&mut attributes, "parameters", parameters);
+                insert_json(&mut attributes, "toolCallId", &tool_call_id);
                 insert_json(
                     &mut attributes,
-                    "toolCallId",
-                    tool_call_id_field(&observation.metadata),
+                    "eventOccurrenceId",
+                    &observation.observation_id,
                 );
+                insert_json(&mut attributes, "nodeScope", "event_occurrence");
                 Some((
                     self.ensure_node(
                         CausalNodeKind::Tool,
-                        format!("tool:{tool_name}"),
+                        event_key,
                         tool_name.clone(),
                         observation.timestamp,
                         attributes,
@@ -633,20 +641,25 @@ impl CausalGraphRecorder {
                 guard,
                 severity,
             } => {
+                let target_text = target.as_deref().unwrap_or_default();
+                let guard_text = guard.as_deref().unwrap_or_default();
+                let semantic_key = format!("{action}:{target_text}:{decision}:{guard_text}");
                 let mut attributes = BTreeMap::new();
+                insert_json(&mut attributes, "action", action);
                 insert_json(&mut attributes, "target", target);
                 insert_json(&mut attributes, "decision", decision);
                 insert_json(&mut attributes, "guard", guard);
                 insert_json(&mut attributes, "severity", severity);
+                insert_json(
+                    &mut attributes,
+                    "eventOccurrenceId",
+                    &observation.observation_id,
+                );
+                insert_json(&mut attributes, "nodeScope", "event_occurrence");
                 Some((
                     self.ensure_node(
                         CausalNodeKind::PolicyDecision,
-                        format!(
-                            "decision:{}:{}:{}",
-                            action,
-                            target.as_deref().unwrap_or_default(),
-                            decision
-                        ),
+                        observation_scoped_event_key(observation, "policy_decision", &semantic_key),
                         format!("{action} {decision}"),
                         observation.timestamp,
                         attributes,
@@ -941,6 +954,21 @@ fn credential_kind_from_path(path: &str) -> Option<CredentialKind> {
     None
 }
 
+fn observation_scoped_event_key(
+    observation: &EndpointObservation,
+    namespace: &str,
+    semantic_key: &str,
+) -> String {
+    let host_id = normalized_identity_value(observation.host_id.as_deref())
+        .unwrap_or_else(|| "unknown-host".to_string());
+    let session_id = normalized_identity_value(observation.session_id.as_deref())
+        .unwrap_or_else(|| "unknown-session".to_string());
+    format!(
+        "{namespace}:{host_id}:{session_id}:{}:{semantic_key}",
+        observation.observation_id
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
@@ -1179,6 +1207,106 @@ mod tests {
                 "https://api.example.invalid/v2".to_string(),
             ])
         );
+    }
+
+    #[test]
+    fn tool_call_event_nodes_are_observation_scoped_across_sessions() {
+        let mut recorder = CausalGraphRecorder::new();
+        let mut first = observation_with_event(
+            "obs-tool-1",
+            EndpointEvent::ToolCall {
+                tool_name: "mcp.shell".to_string(),
+                parameters: serde_json::json!({"cmd": "id"}),
+            },
+        );
+        first.session_id = Some("session-a".to_string());
+        first.metadata.insert(
+            "toolCallId".to_string(),
+            serde_json::Value::String("tool-call-shared".to_string()),
+        );
+        let mut second = observation_with_event(
+            "obs-tool-2",
+            EndpointEvent::ToolCall {
+                tool_name: "mcp.shell".to_string(),
+                parameters: serde_json::json!({"cmd": "id"}),
+            },
+        );
+        second.session_id = Some("session-b".to_string());
+        second.metadata.insert(
+            "toolCallId".to_string(),
+            serde_json::Value::String("tool-call-shared".to_string()),
+        );
+
+        recorder.record_observation(&first);
+        recorder.record_observation(&second);
+
+        let tool_nodes = recorder
+            .graph()
+            .nodes
+            .values()
+            .filter(|node| node.kind == CausalNodeKind::Tool && node.label == "mcp.shell")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tool_nodes.len(),
+            2,
+            "same tool name and call id in different sessions must remain distinct occurrences"
+        );
+        assert!(tool_nodes.iter().all(|node| {
+            node.attributes
+                .get("nodeScope")
+                .and_then(|value| value.as_str())
+                == Some("event_occurrence")
+        }));
+    }
+
+    #[test]
+    fn policy_decision_event_nodes_are_observation_scoped_across_sessions() {
+        let mut recorder = CausalGraphRecorder::new();
+        let mut first = observation_with_event(
+            "obs-decision-1",
+            EndpointEvent::PolicyDecision {
+                action: "tool_call".to_string(),
+                target: Some("mcp.shell".to_string()),
+                decision: "blocked".to_string(),
+                guard: Some("classified.openclaw".to_string()),
+                severity: Some("high".to_string()),
+            },
+        );
+        first.session_id = Some("session-a".to_string());
+        let mut second = observation_with_event(
+            "obs-decision-2",
+            EndpointEvent::PolicyDecision {
+                action: "tool_call".to_string(),
+                target: Some("mcp.shell".to_string()),
+                decision: "blocked".to_string(),
+                guard: Some("classified.openclaw".to_string()),
+                severity: Some("high".to_string()),
+            },
+        );
+        second.session_id = Some("session-b".to_string());
+
+        recorder.record_observation(&first);
+        recorder.record_observation(&second);
+
+        let decision_nodes = recorder
+            .graph()
+            .nodes
+            .values()
+            .filter(|node| {
+                node.kind == CausalNodeKind::PolicyDecision && node.label == "tool_call blocked"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            decision_nodes.len(),
+            2,
+            "same policy decision in different sessions must remain distinct occurrences"
+        );
+        assert!(decision_nodes.iter().all(|node| {
+            node.attributes
+                .get("nodeScope")
+                .and_then(|value| value.as_str())
+                == Some("event_occurrence")
+        }));
     }
 
     fn observation_with_process(
