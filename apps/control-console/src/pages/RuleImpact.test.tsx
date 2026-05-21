@@ -296,6 +296,9 @@ describe("RuleImpact", () => {
     fireEvent.change(screen.getByLabelText("Operator"), {
       target: { value: "operator:alice" },
     });
+    fireEvent.change(screen.getByLabelText("Approval ID"), {
+      target: { value: "approval-delta-apply-1" },
+    });
     fireEvent.change(screen.getByLabelText("Note"), {
       target: { value: "stage generated npm guard" },
     });
@@ -305,7 +308,7 @@ describe("RuleImpact", () => {
       expect(createDetectionCandidate).toHaveBeenCalledWith({
         process: { processGuid: "proc-impact-1" },
         action: "block",
-        maxDepth: 8,
+        maxDepth: 64,
       });
     });
     expect(await screen.findByText("endpoint.generated.block.process.npm")).toBeTruthy();
@@ -323,7 +326,7 @@ describe("RuleImpact", () => {
       expect(createStagedDetection).toHaveBeenCalledWith({
         process: { processGuid: "proc-impact-1" },
         action: "block",
-        maxDepth: 8,
+        maxDepth: 64,
         selectedStage: "audit",
         stagedBy: "operator:alice",
         note: "stage generated npm guard",
@@ -366,6 +369,7 @@ describe("RuleImpact", () => {
         appliedBy: "operator:alice",
         note: "stage generated npm guard",
         verifyProtectionState: true,
+        actor: { userId: "operator:alice", approvalId: "approval-delta-apply-1" },
       });
     });
     expect(await screen.findByText("Dry run: false")).toBeTruthy();

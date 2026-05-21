@@ -7,6 +7,7 @@ import type { PolicyEngineLike as CanonicalPolicyEngineLike } from "@clawdstrike
 import { parseNetworkTarget } from "@clawdstrike/adapter-core";
 import { type Policy as CanonicalPolicy, createPolicyEngineFromPolicy } from "@clawdstrike/policy";
 
+import { inferEventTypeFromName } from "../classification.js";
 import { mergeConfig, resolveBuiltinPolicy, type ResolvedClawdstrikeConfig } from "../config.js";
 import {
   EgressGuard,
@@ -460,6 +461,9 @@ export class PolicyEngine {
         ? event.metadata.toolName.trim()
         : "";
     if (!toolName) {
+      return allowed;
+    }
+    if (inferEventTypeFromName(toolName) === event.eventType) {
       return allowed;
     }
 

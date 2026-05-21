@@ -87,7 +87,7 @@ export const DESTRUCTIVE_EVENT_MAP: ReadonlyArray<{ tokens: Set<string>; eventTy
   },
   { tokens: new Set(["delete", "remove", "unlink", "rm"]), eventType: "file_write" },
   {
-    tokens: new Set(["shell", "bash", "exec", "command", "terminal", "run"]),
+    tokens: new Set(["shell", "bash", "exec", "command", "terminal", "run", "install", "uninstall"]),
     eventType: "command_exec",
   },
   { tokens: new Set(["patch", "diff"]), eventType: "patch_apply" },
