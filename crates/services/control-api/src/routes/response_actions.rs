@@ -920,7 +920,9 @@ async fn validate_endpoint_ack_signed_receipt(
     context: &AckContext,
     ack: &AckSubmission,
 ) -> Result<(), ApiError> {
-    if context.action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str() {
+    if context.action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str()
+        && ack.ack_status == "acknowledged"
+    {
         return validate_policy_rule_diff_ack_receipt(tx, context, ack).await;
     }
 
@@ -928,6 +930,14 @@ async fn validate_endpoint_ack_signed_receipt(
         return Ok(());
     }
 
+    validate_response_ack_signed_receipt(tx, context, ack).await
+}
+
+async fn validate_response_ack_signed_receipt(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
     let public_key =
         load_endpoint_ack_public_key(tx, context.action.tenant_id, &ack.target_id).await?;
 
@@ -1167,7 +1177,10 @@ fn requires_endpoint_ack_signed_receipt(
     ack: &AckSubmission,
 ) -> bool {
     action.target.kind.as_str() == "endpoint"
-        && matches!(ack.ack_status, "acknowledged" | "rolled_back")
+        && matches!(
+            ack.ack_status,
+            "acknowledged" | "rolled_back" | "failed" | "rejected" | "expired"
+        )
 }
 
 fn validate_policy_rule_diff_ack_payload(ack: &AckSubmission) -> Result<(), ApiError> {
@@ -2475,6 +2488,98 @@ async fn link_action_to_source_detection(
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    fn test_response_action(
+        target_kind: ResponseTargetKind,
+        action_type: &str,
+    ) -> ResponseActionRecord {
+        ResponseActionRecord {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            action_type: action_type.to_string(),
+            target: ResponseTarget {
+                kind: target_kind,
+                id: "endpoint-1".to_string(),
+            },
+            requested_by: RequestedBy {
+                actor_type: "user".to_string(),
+                actor_id: "alice".to_string(),
+            },
+            requested_at: Utc::now(),
+            expires_at: None,
+            reason: "test".to_string(),
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: true,
+            payload: json!({}),
+            status: "published".to_string(),
+            metadata: json!({}),
+        }
+    }
+
+    fn test_ack(status: &str, target_kind: &str) -> AckSubmission {
+        parse_ack_submission(RecordResponseAckRequest {
+            target_kind: target_kind.to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: status.to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: Some(json!({ "status": status })),
+        })
+        .expect("test acknowledgement parses")
+    }
+
+    #[test]
+    fn endpoint_terminal_ack_statuses_require_signed_receipts() {
+        let action = test_response_action(
+            ResponseTargetKind::Endpoint,
+            ResponseActionType::TerminateSession.as_str(),
+        );
+
+        for status in [
+            "acknowledged",
+            "rolled_back",
+            "failed",
+            "rejected",
+            "expired",
+        ] {
+            let ack = test_ack(status, "endpoint");
+            assert!(
+                requires_endpoint_ack_signed_receipt(&action, &ack),
+                "endpoint {status} acknowledgements must be signed"
+            );
+        }
+    }
+
+    #[test]
+    fn policy_rule_diff_non_ack_statuses_still_require_endpoint_receipts() {
+        let action = test_response_action(
+            ResponseTargetKind::Endpoint,
+            ResponseActionType::PolicyRuleDiffValidation.as_str(),
+        );
+
+        for status in ["failed", "rejected", "expired"] {
+            let ack = test_ack(status, "endpoint");
+            assert!(
+                requires_endpoint_ack_signed_receipt(&action, &ack),
+                "policy rule-diff {status} acknowledgements must be signed"
+            );
+        }
+    }
+
+    #[test]
+    fn cloud_only_targets_do_not_require_endpoint_receipts() {
+        let action = test_response_action(
+            ResponseTargetKind::Principal,
+            ResponseActionType::RevokePrincipal.as_str(),
+        );
+        let ack = test_ack("acknowledged", "principal");
+
+        assert!(!requires_endpoint_ack_signed_receipt(&action, &ack));
+    }
 
     #[test]
     fn delivery_plan_uses_response_subject_for_supported_endpoint_actions() {
