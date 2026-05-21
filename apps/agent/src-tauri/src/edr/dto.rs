@@ -1000,6 +1000,14 @@ pub(crate) struct EdrPolicyEventHistoryCrossWindowImpact {
     pub(crate) total_changed_count: u64,
     pub(crate) total_blocking_change_count: u64,
     pub(crate) impact_hash: String,
+    pub(crate) event_stream_hash: String,
+    pub(crate) current_policy_hash: String,
+    pub(crate) current_policy_epoch: u64,
+    pub(crate) proposed_policy_hash: String,
+    pub(crate) proposed_policy_epoch: u64,
+    pub(crate) current_result_hash: String,
+    pub(crate) proposed_result_hash: String,
+    pub(crate) history_selector_hash: String,
     pub(crate) repeatability: String,
     pub(crate) recommended_stage: String,
     pub(crate) promotion_ready: bool,
@@ -2357,6 +2365,8 @@ pub(crate) struct EdrResponseExecutionExpireResponse {
     pub(crate) rollback_count: usize,
     pub(crate) rollbacks: Vec<EndpointResponseRollbackReport>,
     pub(crate) rollback_receipts: Vec<SignedReceipt>,
+    pub(crate) rollback_transitions: Vec<EdrResponseExecutionRecord>,
+    pub(crate) rollback_transition_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

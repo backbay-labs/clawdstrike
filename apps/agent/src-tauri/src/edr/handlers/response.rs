@@ -447,6 +447,8 @@ pub(crate) async fn expire_edr_response_executions(
 
     let mut rollbacks = Vec::new();
     let mut rollback_receipts = Vec::new();
+    let mut rollback_transitions = Vec::new();
+    let mut rollback_transition_receipts = Vec::new();
     for execution in pending
         .iter()
         .filter(|execution| response_execution_expires_with_rollback(&execution.action))
@@ -504,8 +506,36 @@ pub(crate) async fn expire_edr_response_executions(
         let receipt = emit_edr_response_rollback_receipt(state, &rollback, graph)
             .await
             .map_err(internal_error)?;
+        let rollback_transition = {
+            let mut ledger = state.edr_response_execution_ledger.lock().await;
+            ledger
+                .roll_back(execution, &reason, rollback.completed_at)
+                .map_err(internal_error)?
+                .ok_or_else(|| {
+                    (
+                        StatusCode::CONFLICT,
+                        format!(
+                            "response execution {} already has a terminal transition",
+                            execution.execution_id
+                        ),
+                    )
+                })?
+        };
+        let transition_receipt = emit_edr_response_execution_receipt(
+            state,
+            &rollback_transition,
+            graph,
+            rollback_transition.actor.clone(),
+            &[],
+        )
+        .await
+        .map_err(internal_error)?;
         rollbacks.push(rollback);
         rollback_receipts.push(receipt);
+        rollback_transitions.push(EdrResponseExecutionRecord::from_execution(
+            rollback_transition,
+        ));
+        rollback_transition_receipts.push(transition_receipt);
     }
 
     let expired = {
@@ -549,6 +579,8 @@ pub(crate) async fn expire_edr_response_executions(
         rollback_count: rollbacks.len(),
         rollbacks,
         rollback_receipts,
+        rollback_transitions,
+        rollback_transition_receipts,
     })
 }
 

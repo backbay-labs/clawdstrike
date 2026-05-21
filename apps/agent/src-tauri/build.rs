@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 const REQUIRED_MACOS_PACKAGING_FILES: &[&str] = &[
@@ -185,6 +186,66 @@ fn validate_concrete_system_extension_bundle(manifest_dir: &Path) -> Result<(), 
         ));
     }
 
+    validate_system_extension_codesign(&bundle_path)?;
+
+    Ok(())
+}
+
+fn validate_system_extension_codesign(bundle_path: &Path) -> Result<(), String> {
+    let verify = Command::new("/usr/bin/codesign")
+        .arg("--verify")
+        .arg("--strict")
+        .arg("--deep")
+        .arg(bundle_path)
+        .output()
+        .map_err(|error| format!("failed to run codesign verification: {error}"))?;
+    if !verify.status.success() {
+        return Err(format!(
+            "prebuilt system extension codesign verification failed: {}",
+            String::from_utf8_lossy(&verify.stderr).trim()
+        ));
+    }
+
+    let details = Command::new("/usr/bin/codesign")
+        .arg("-dvv")
+        .arg(bundle_path)
+        .output()
+        .map_err(|error| format!("failed to inspect system extension signature: {error}"))?;
+    let details_text = String::from_utf8_lossy(&details.stderr);
+    if details_text.contains("Signature=adhoc") || !details_text.contains("TeamIdentifier=") {
+        return Err(
+            "prebuilt system extension must be signed with a team identity, not an ad-hoc signature"
+                .to_string(),
+        );
+    }
+
+    let entitlements = Command::new("/usr/bin/codesign")
+        .arg("-d")
+        .arg("--entitlements")
+        .arg(":-")
+        .arg(bundle_path)
+        .output()
+        .map_err(|error| format!("failed to inspect system extension entitlements: {error}"))?;
+    let mut entitlement_text = String::from_utf8_lossy(&entitlements.stdout).to_string();
+    entitlement_text.push_str(String::from_utf8_lossy(&entitlements.stderr).as_ref());
+    validate_system_extension_entitlements_output(&entitlement_text)
+}
+
+fn validate_system_extension_entitlements_output(contents: &str) -> Result<(), String> {
+    if !contents.contains("com.apple.developer.endpoint-security.client") {
+        return Err(
+            "prebuilt system extension is missing com.apple.developer.endpoint-security.client"
+                .to_string(),
+        );
+    }
+    if !contents.contains("com.apple.developer.networking.networkextension")
+        || !contents.contains("content-filter-provider-systemextension")
+    {
+        return Err(
+            "prebuilt system extension is missing content-filter-provider-systemextension NetworkExtension entitlement"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
@@ -303,7 +364,10 @@ fn array_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a [Value]> {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_release_placeholder, validate_tauri_config};
+    use super::{
+        contains_release_placeholder, validate_system_extension_entitlements_output,
+        validate_tauri_config,
+    };
 
     #[test]
     fn validates_tauri_config_structurally() -> Result<(), String> {
@@ -350,5 +414,36 @@ mod tests {
         assert!(!contains_release_placeholder("____"));
         assert!(!contains_release_placeholder("__TEAM_ID_"));
         assert!(!contains_release_placeholder("__TEAM-id__"));
+    }
+
+    #[test]
+    fn validates_required_system_extension_entitlements() -> Result<(), String> {
+        validate_system_extension_entitlements_output(
+            r#"
+            <dict>
+              <key>com.apple.developer.endpoint-security.client</key>
+              <true/>
+              <key>com.apple.developer.networking.networkextension</key>
+              <array>
+                <string>content-filter-provider-systemextension</string>
+              </array>
+            </dict>
+            "#,
+        )
+    }
+
+    #[test]
+    fn rejects_system_extension_entitlements_without_es_or_ne() {
+        let Err(error) = validate_system_extension_entitlements_output(
+            r#"
+            <dict>
+              <key>com.apple.security.app-sandbox</key>
+              <true/>
+            </dict>
+            "#,
+        ) else {
+            panic!("expected entitlement validation to reject missing ES/NE entitlements");
+        };
+        assert!(error.contains("endpoint-security"));
     }
 }

@@ -111,6 +111,15 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
     )?;
     let validation_window_seconds =
         normalize_policy_event_history_validation_window_seconds(input.validation_window_seconds)?;
+    if validation_window_seconds.is_some()
+        && input.max_age_seconds.is_none()
+        && input.since.is_none()
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "history impact validationWindowSeconds requires maxAgeSeconds or since so promotion evidence is tied to recent endpoint history".to_string(),
+        ));
+    }
     let selector = input.replay_selector_input();
     let track_posture = input.track_posture.unwrap_or(false);
     let selection = select_policy_event_history_from_flight_recorder(&state, selector).await?;
@@ -124,7 +133,12 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
     .await?;
     let graph = state.edr_flight_recorder.lock().await.graph().clone();
     let cross_window_impact = validation_window_seconds.map(|window_seconds| {
-        build_policy_event_history_cross_window_impact(&selection, &impact.changes, window_seconds)
+        build_policy_event_history_cross_window_impact(
+            &selection,
+            &impact.impact,
+            &impact.changes,
+            window_seconds,
+        )
     });
     let promotion_stage = cross_window_impact
         .as_ref()
@@ -144,8 +158,14 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
         cross_window_hashes,
     );
     if let Some(cross_window_impact) = &cross_window_impact {
-        remember_cross_window_promotion_validation(&state, cross_window_impact, &causal_impact)
-            .await;
+        remember_cross_window_promotion_validation(
+            &state,
+            cross_window_impact,
+            &causal_impact,
+            &impact.impact,
+            &selection.report,
+        )
+        .await;
     }
     if let Some((receipt_root_node_id, receipt_graph)) = causal_impact_receipt_graph(&causal_impact)
     {
@@ -379,11 +399,14 @@ pub(crate) async fn agent_edr_stage_detection(
         "crossWindowRecommendationHash",
         input.cross_window_recommendation_hash,
     )?;
+    let settings = state.settings.read().await.clone();
+    let policy = endpoint_policy_snapshot_from_settings(&settings).map_err(internal_error)?;
     let cross_window_validation = recent_cross_window_promotion_validation(
         state.as_ref(),
         stage,
         candidate_response.candidate.root_node_id.as_str(),
         &candidate_response.candidate.action,
+        &policy,
         cross_window_impact_hash.as_deref(),
         cross_window_recommendation_hash.as_deref(),
     )
@@ -394,8 +417,6 @@ pub(crate) async fn agent_edr_stage_detection(
         cross_window_validation.as_ref(),
     )?;
 
-    let settings = state.settings.read().await.clone();
-    let policy = endpoint_policy_snapshot_from_settings(&settings).map_err(internal_error)?;
     let staged_at = chrono::Utc::now();
     let staged_at_text = staged_at.to_rfc3339();
     let staged_detection_id = local_stable_id(

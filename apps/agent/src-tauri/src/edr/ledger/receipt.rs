@@ -75,6 +75,17 @@ pub(crate) struct ResponseExecutionReceiptSigningInput<'a> {
     pub(crate) additional_evidence: &'a [EndpointReceiptEvidence],
 }
 
+pub(crate) struct PolicyDecisionReceiptSigningInput<'a> {
+    pub(crate) actor: EndpointDecisionActor,
+    pub(crate) policy: EndpointPolicySnapshot,
+    pub(crate) sensor_state: EndpointSensorState,
+    pub(crate) observation: &'a EndpointObservation,
+    pub(crate) graph: &'a CausalGraph,
+    pub(crate) action_type: &'a str,
+    pub(crate) target: &'a str,
+    pub(crate) decision: &'a PolicyCheckOutput,
+}
+
 pub(crate) struct EdrPolicyDeltaReceiptSigningInput<'a> {
     pub(crate) artifact: &'a EdrPolicyDeltaArtifact,
     pub(crate) artifact_hash: &'a str,
@@ -333,28 +344,25 @@ impl EndpointReceiptLedger {
 
     pub(crate) fn sign_policy_decision_receipt(
         &mut self,
-        actor: EndpointDecisionActor,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        action_type: &str,
-        target: &str,
-        decision: &PolicyCheckOutput,
+        input: PolicyDecisionReceiptSigningInput<'_>,
     ) -> Result<SignedReceipt> {
         let mut receipt =
             EndpointDecisionReceipt::for_policy_decision(EndpointPolicyDecisionReceiptInput {
                 local_sequence: self.next_sequence,
                 signer_identity: self.signer_identity.as_str(),
-                actor,
-                policy,
-                sensor_state,
-                action_type,
-                target,
-                allowed: decision.allowed,
-                guard: decision.guard.as_deref(),
-                severity: detection_severity_from_policy_label(decision.severity.as_deref()),
-                severity_label: decision.severity.as_deref(),
-                message: decision.message.as_deref(),
-                details: decision.details.as_ref(),
+                actor: input.actor,
+                policy: input.policy,
+                sensor_state: input.sensor_state,
+                observation: input.observation,
+                graph: input.graph,
+                action_type: input.action_type,
+                target: input.target,
+                allowed: input.decision.allowed,
+                guard: input.decision.guard.as_deref(),
+                severity: detection_severity_from_policy_label(input.decision.severity.as_deref()),
+                severity_label: input.decision.severity.as_deref(),
+                message: input.decision.message.as_deref(),
+                details: input.decision.details.as_ref(),
             });
         receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
         let signed = receipt.sign_with(&self.keypair)?;

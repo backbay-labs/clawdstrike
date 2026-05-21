@@ -1,6 +1,8 @@
 use super::super::super::{
     actor::{EndpointDecisionActor, EndpointPolicySnapshot},
+    causal::graph::CausalGraph,
     detection::DetectionSeverity,
+    event::EndpointObservation,
     sensor_state::EndpointSensorState,
 };
 pub struct EndpointPolicyDecisionReceiptInput<'a> {
@@ -9,6 +11,8 @@ pub struct EndpointPolicyDecisionReceiptInput<'a> {
     pub actor: EndpointDecisionActor,
     pub policy: EndpointPolicySnapshot,
     pub sensor_state: EndpointSensorState,
+    pub observation: &'a EndpointObservation,
+    pub graph: &'a CausalGraph,
     pub action_type: &'a str,
     pub target: &'a str,
     pub allowed: bool,

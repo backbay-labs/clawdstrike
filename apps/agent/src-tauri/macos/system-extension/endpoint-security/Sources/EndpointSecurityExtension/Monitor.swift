@@ -792,12 +792,38 @@ public struct EndpointSecurityAuthorizationRequest: Equatable {
         latencyMs >= deadlineMs
     }
 
+    public var remainingDeadlineBudgetMs: UInt64 {
+        guard deadlineMs > latencyMs else {
+            return 0
+        }
+        return deadlineMs - latencyMs
+    }
+
     public mutating func failClosedDecisionForExpiredDeadline() -> EndpointSecurityAuthorizationDecision? {
         guard responseDeadlineExpired else {
             return nil
         }
         context.metadata["authorizationDecisionSource"] = "deadline_fail_closed"
         context.metadata["authorizationDeadlineExceededBeforeDecision"] = "true"
+        context.metadata["authorizationDeadlineLatencyMs"] = String(latencyMs)
+        context.metadata["authorizationDeadlineMs"] = String(deadlineMs)
+        return .deny
+    }
+
+    public mutating func failClosedDecisionForInsufficientDeadlineBudget(
+        minRemainingMs: UInt64
+    ) -> EndpointSecurityAuthorizationDecision? {
+        guard !responseDeadlineExpired else {
+            return nil
+        }
+        let remainingMs = remainingDeadlineBudgetMs
+        guard remainingMs < minRemainingMs else {
+            return nil
+        }
+        context.metadata["authorizationDecisionSource"] = "deadline_budget_fail_closed"
+        context.metadata["authorizationDeadlineBudgetTooSmall"] = "true"
+        context.metadata["authorizationDeadlineRemainingMs"] = String(remainingMs)
+        context.metadata["authorizationDeadlineMinimumRemainingMs"] = String(minRemainingMs)
         context.metadata["authorizationDeadlineLatencyMs"] = String(latencyMs)
         context.metadata["authorizationDeadlineMs"] = String(deadlineMs)
         return .deny
@@ -944,6 +970,9 @@ public struct EndpointSecurityAuthOpenMessageAdapter {
 }
 
 @available(macOS 10.15, *)
+private let endpointSecurityMinimumAuthOpenDecisionBudgetMs: UInt64 = 25
+
+@available(macOS 10.15, *)
 public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAgentEventTransport> {
     public typealias DecisionHandler = (EndpointSecurityAuthorizationRequest) -> EndpointSecurityAuthorizationDecision
     public typealias PublishErrorHandler = (Error) -> Void
@@ -1046,8 +1075,17 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         do {
             var request = try adapter.authorizationRequest(from: message)
             let evaluatedDecision =
-                request.failClosedDecisionForExpiredDeadline() ?? decisionHandler(request)
-            let decision = request.failClosedDecisionForExpiredDeadline() ?? evaluatedDecision
+                request.failClosedDecisionForExpiredDeadline()
+                    ?? request.failClosedDecisionForInsufficientDeadlineBudget(
+                        minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
+                    )
+                    ?? decisionHandler(request)
+            let decision =
+                request.failClosedDecisionForExpiredDeadline()
+                    ?? request.failClosedDecisionForInsufficientDeadlineBudget(
+                        minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
+                    )
+                    ?? evaluatedDecision
             try adapter.respondAuthorizationOpen(client: client, message: message, decision: decision)
             responseAttempted = true
             let event = request.authorizationEvent(decision: decision)

@@ -290,6 +290,16 @@ pub(crate) struct EdrCrossWindowPromotionValidation {
     pub(crate) recorded_at: chrono::DateTime<chrono::Utc>,
     pub(crate) impact_hash: String,
     pub(crate) recommendation_hash: String,
+    pub(crate) current_policy_hash: String,
+    pub(crate) current_policy_epoch: u64,
+    pub(crate) proposed_policy_hash: String,
+    pub(crate) proposed_policy_epoch: u64,
+    pub(crate) event_stream_hash: String,
+    pub(crate) current_result_hash: String,
+    pub(crate) proposed_result_hash: String,
+    pub(crate) history_selector_hash: String,
+    pub(crate) newest_event_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) max_age_seconds: Option<u64>,
     pub(crate) recommended_stage: String,
     pub(crate) root_node_id: String,
     pub(crate) action: EndpointDecisionAction,
@@ -4769,11 +4779,14 @@ pub(crate) async fn remember_cross_window_promotion_validation(
     state: &Arc<AgentApiState>,
     impact: &EdrPolicyEventHistoryCrossWindowImpact,
     causal_impact: &EdrPolicyEventHistoryCausalImpact,
+    policy_impact: &EdrPolicyEventImpactReport,
+    history: &EdrPolicyEventHistoryReport,
 ) {
     if !impact.promotion_ready {
         return;
     }
     let recorded_at = chrono::Utc::now();
+    let history_selector_hash = policy_event_history_selector_hash(history);
     let mut validations = state.edr_cross_window_promotion_validations.lock().await;
     for suggestion in &causal_impact.promotion_suggestions {
         if suggestion.selected_stage != impact.recommended_stage {
@@ -4783,6 +4796,16 @@ pub(crate) async fn remember_cross_window_promotion_validation(
             recorded_at,
             impact_hash: impact.impact_hash.clone(),
             recommendation_hash: impact.recommendation_hash.clone(),
+            current_policy_hash: policy_impact.current_policy.policy_hash.clone(),
+            current_policy_epoch: policy_impact.current_policy.policy_epoch,
+            proposed_policy_hash: policy_impact.proposed_policy.policy_hash.clone(),
+            proposed_policy_epoch: policy_impact.proposed_policy.policy_epoch,
+            event_stream_hash: policy_impact.event_stream_hash.clone(),
+            current_result_hash: policy_impact.current_result_hash.clone(),
+            proposed_result_hash: policy_impact.proposed_result_hash.clone(),
+            history_selector_hash: history_selector_hash.clone(),
+            newest_event_at: history.newest_timestamp,
+            max_age_seconds: history.max_age_seconds,
             recommended_stage: impact.recommended_stage.clone(),
             root_node_id: suggestion.target_node_id.clone(),
             action: suggestion.action.clone(),
@@ -4799,6 +4822,7 @@ pub(crate) async fn recent_cross_window_promotion_validation(
     stage: &str,
     root_node_id: &str,
     action: &EndpointDecisionAction,
+    current_policy: &EndpointPolicySnapshot,
     cross_window_impact_hash: Option<&str>,
     cross_window_recommendation_hash: Option<&str>,
 ) -> Result<Option<EdrCrossWindowPromotionValidation>, (StatusCode, String)> {
@@ -4819,6 +4843,23 @@ pub(crate) async fn recent_cross_window_promotion_validation(
                 && validation.action == *action
                 && validation.impact_hash == cross_window_impact_hash
                 && validation.recommendation_hash == cross_window_recommendation_hash
+                && validation.current_policy_hash == current_policy.policy_hash
+                && validation.current_policy_epoch == current_policy.policy_epoch
+                && !validation.proposed_policy_hash.is_empty()
+                && validation.proposed_policy_epoch > 0
+                && !validation.event_stream_hash.is_empty()
+                && !validation.current_result_hash.is_empty()
+                && !validation.proposed_result_hash.is_empty()
+                && !validation.history_selector_hash.is_empty()
+                && validation.newest_event_at.is_some()
+                && validation.max_age_seconds.map_or(true, |max_age_seconds| {
+                    validation.newest_event_at.is_some_and(|newest_event_at| {
+                        now.signed_duration_since(newest_event_at)
+                            .num_seconds()
+                            .max(0) as u64
+                            <= max_age_seconds
+                    })
+                })
                 && now
                     .signed_duration_since(validation.recorded_at)
                     .num_seconds()
@@ -5897,16 +5938,10 @@ fn detection_candidate_stage_plan(
         ),
     ];
     if policy_delta_enforcement_action_supported(&simulation.action) {
-        let enforcement_action = simulation.action.clone();
         stages.push((
             "limited_block",
-            enforcement_action.clone(),
+            simulation.action.clone(),
             "enable bounded enforcement for matching graph roots with rollback or recovery path",
-        ));
-        stages.push((
-            "full_block",
-            enforcement_action,
-            "promote only after repeated simulations show low breakage and receipts prove coverage",
         ));
     }
     stages
@@ -5930,8 +5965,7 @@ fn recommended_detection_stage(simulation: &EndpointPolicySimulationReport) -> S
         return "audit".to_string();
     }
     match simulation.developer_breakage_score {
-        0..=20 => "full_block",
-        21..=45 => "limited_block",
+        0..=45 => "limited_block",
         46..=70 => "warn",
         _ => "audit",
     }
@@ -11519,6 +11553,7 @@ fn normalize_history_identity_filter(
 
 pub(crate) fn build_policy_event_history_cross_window_impact(
     selection: &EdrPolicyEventHistorySelection,
+    policy_impact: &EdrPolicyEventImpactReport,
     changes: &[EdrPolicyEventImpactEntry],
     window_seconds: u64,
 ) -> EdrPolicyEventHistoryCrossWindowImpact {
@@ -11599,14 +11634,24 @@ pub(crate) fn build_policy_event_history_cross_window_impact(
             blocking_window_count,
             total_blocking_change_count,
         );
-    let impact_hash = cross_window_impact_hash(
+    let history_selector_hash = policy_event_history_selector_hash(&selection.report);
+    let impact_hash = cross_window_impact_hash(CrossWindowImpactHashInput {
         window_seconds,
         total_event_count,
         total_changed_count,
         total_blocking_change_count,
-        &windows,
-    );
+        windows: &windows,
+        event_stream_hash: selection.report.event_stream_hash.as_str(),
+        current_policy_hash: policy_impact.current_policy.policy_hash.as_str(),
+        current_policy_epoch: policy_impact.current_policy.policy_epoch,
+        proposed_policy_hash: policy_impact.proposed_policy.policy_hash.as_str(),
+        proposed_policy_epoch: policy_impact.proposed_policy.policy_epoch,
+        current_result_hash: policy_impact.current_result_hash.as_str(),
+        proposed_result_hash: policy_impact.proposed_result_hash.as_str(),
+        history_selector_hash: history_selector_hash.as_str(),
+    });
     let recommendation_hash = cross_window_recommendation_hash(
+        impact_hash.as_str(),
         repeatability.as_str(),
         recommended_stage.as_str(),
         promotion_ready,
@@ -11622,6 +11667,14 @@ pub(crate) fn build_policy_event_history_cross_window_impact(
         total_changed_count,
         total_blocking_change_count,
         impact_hash,
+        event_stream_hash: selection.report.event_stream_hash.clone(),
+        current_policy_hash: policy_impact.current_policy.policy_hash.clone(),
+        current_policy_epoch: policy_impact.current_policy.policy_epoch,
+        proposed_policy_hash: policy_impact.proposed_policy.policy_hash.clone(),
+        proposed_policy_epoch: policy_impact.proposed_policy.policy_epoch,
+        current_result_hash: policy_impact.current_result_hash.clone(),
+        proposed_result_hash: policy_impact.proposed_result_hash.clone(),
+        history_selector_hash,
         repeatability,
         recommended_stage,
         promotion_ready,
@@ -11631,17 +11684,39 @@ pub(crate) fn build_policy_event_history_cross_window_impact(
     }
 }
 
-pub(crate) fn cross_window_impact_hash(
-    window_seconds: u64,
-    total_event_count: u64,
-    total_changed_count: u64,
-    total_blocking_change_count: u64,
-    windows: &[EdrPolicyEventHistoryImpactWindow],
-) -> String {
+pub(crate) struct CrossWindowImpactHashInput<'a> {
+    pub(crate) window_seconds: u64,
+    pub(crate) total_event_count: u64,
+    pub(crate) total_changed_count: u64,
+    pub(crate) total_blocking_change_count: u64,
+    pub(crate) windows: &'a [EdrPolicyEventHistoryImpactWindow],
+    pub(crate) event_stream_hash: &'a str,
+    pub(crate) current_policy_hash: &'a str,
+    pub(crate) current_policy_epoch: u64,
+    pub(crate) proposed_policy_hash: &'a str,
+    pub(crate) proposed_policy_epoch: u64,
+    pub(crate) current_result_hash: &'a str,
+    pub(crate) proposed_result_hash: &'a str,
+    pub(crate) history_selector_hash: &'a str,
+}
+
+pub(crate) fn cross_window_impact_hash(input: CrossWindowImpactHashInput<'_>) -> String {
     let mut material = format!(
-        "window_seconds={window_seconds}\ntotal_event_count={total_event_count}\ntotal_changed_count={total_changed_count}\ntotal_blocking_change_count={total_blocking_change_count}\n"
+        "window_seconds={}\ntotal_event_count={}\ntotal_changed_count={}\ntotal_blocking_change_count={}\nevent_stream_hash={}\ncurrent_policy_hash={}\ncurrent_policy_epoch={}\nproposed_policy_hash={}\nproposed_policy_epoch={}\ncurrent_result_hash={}\nproposed_result_hash={}\nhistory_selector_hash={}\n",
+        input.window_seconds,
+        input.total_event_count,
+        input.total_changed_count,
+        input.total_blocking_change_count,
+        input.event_stream_hash,
+        input.current_policy_hash,
+        input.current_policy_epoch,
+        input.proposed_policy_hash,
+        input.proposed_policy_epoch,
+        input.current_result_hash,
+        input.proposed_result_hash,
+        input.history_selector_hash,
     );
-    for window in windows {
+    for window in input.windows {
         material.push_str(&format!(
             "window_index={};start={};end={};events={};changed={};blocking={};samples={}\n",
             window.window_index,
@@ -11657,15 +11732,37 @@ pub(crate) fn cross_window_impact_hash(
 }
 
 pub(crate) fn cross_window_recommendation_hash(
+    impact_hash: &str,
     repeatability: &str,
     recommended_stage: &str,
     promotion_ready: bool,
     recommendation_reason: &str,
 ) -> String {
     let material = format!(
-        "repeatability={repeatability}\nrecommended_stage={recommended_stage}\npromotion_ready={promotion_ready}\nrecommendation_reason={recommendation_reason}\n"
+        "impact_hash={impact_hash}\nrepeatability={repeatability}\nrecommended_stage={recommended_stage}\npromotion_ready={promotion_ready}\nrecommendation_reason={recommendation_reason}\n"
     );
     sha256(material.as_bytes()).to_hex_prefixed()
+}
+
+fn policy_event_history_selector_hash(history: &EdrPolicyEventHistoryReport) -> String {
+    let selector = serde_json::json!({
+        "source": &history.source,
+        "projectionMode": &history.projection_mode,
+        "selectionMode": &history.selection_mode,
+        "limit": history.limit,
+        "since": history.since,
+        "until": history.until,
+        "maxAgeSeconds": history.max_age_seconds,
+        "eventKinds": &history.event_kinds,
+        "identityFilters": &history.identity_filters,
+        "processFilters": &history.process_filters,
+        "targetFilters": &history.target_filters,
+        "oldestTimestamp": history.oldest_timestamp,
+        "newestTimestamp": history.newest_timestamp,
+        "eventStreamHash": &history.event_stream_hash,
+    });
+    canonical_json_hash(&selector, "policy event history selector")
+        .unwrap_or_else(|_| sha256(history.event_stream_hash.as_bytes()).to_hex_prefixed())
 }
 
 fn cross_window_impact_recommendation(
@@ -12391,6 +12488,7 @@ fn causal_edge_kind_name(kind: &CausalEdgeKind) -> &'static str {
         CausalEdgeKind::Downloaded => "downloaded",
         CausalEdgeKind::AccessedCredential => "accessed_credential",
         CausalEdgeKind::MadeDecision => "made_decision",
+        CausalEdgeKind::InvokedTool => "invoked_tool",
         CausalEdgeKind::TemporalNext => "temporal_next",
         CausalEdgeKind::TouchedHoney => "touched_honey",
         CausalEdgeKind::Related => "related",
@@ -15237,7 +15335,8 @@ pub(crate) async fn drain_control_ack_postback_retries(
 
 pub(crate) use crate::edr::ledger::{
     DeceptionCleanupReceiptSigningInput, DeceptionRotationReceiptSigningInput,
-    EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger, ResponseExecutionReceiptSigningInput,
+    EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger, PolicyDecisionReceiptSigningInput,
+    ResponseExecutionReceiptSigningInput,
 };
 
 pub(crate) async fn emit_edr_detection_receipts(
@@ -15381,11 +15480,17 @@ async fn emit_edr_policy_decision_receipt(
     let session_state = state.session_manager.state().await;
     let policy = endpoint_policy_snapshot_from_settings(&settings)?;
     let sensor_state = EndpointSensorState::single_active_agent("agent-api");
+    let receipt_observation =
+        policy_check_receipt_observation(&settings, input, decision, &session_state, session_id);
+    record_edr_observations(state, std::slice::from_ref(&receipt_observation))
+        .await
+        .map_err(|(_, err)| anyhow::anyhow!(err))?;
+    let graph = state.edr_flight_recorder.lock().await.graph().clone();
     let actor = EndpointDecisionActor {
         endpoint_id: endpoint_id_for_settings(&settings),
         session_id: session_id
             .map(ToString::to_string)
-            .or(session_state.session_id),
+            .or_else(|| session_state.session_id.clone()),
         posture: Some(session_state.posture),
         agent_id: input
             .runtime_agent_id
@@ -15396,14 +15501,16 @@ async fn emit_edr_policy_decision_receipt(
         ..EndpointDecisionActor::default()
     };
     let mut ledger = state.edr_receipt_ledger.lock().await;
-    let receipt = ledger.sign_policy_decision_receipt(
+    let receipt = ledger.sign_policy_decision_receipt(PolicyDecisionReceiptSigningInput {
         actor,
         policy,
         sensor_state,
-        input.action_type.as_str(),
-        input.target.as_str(),
+        observation: &receipt_observation,
+        graph: &graph,
+        action_type: input.action_type.as_str(),
+        target: input.target.as_str(),
         decision,
-    )?;
+    })?;
     drop(ledger);
     post_control_endpoint_receipts_best_effort(
         state,
@@ -15414,9 +15521,89 @@ async fn emit_edr_policy_decision_receipt(
     Ok(receipt)
 }
 
+fn policy_check_receipt_observation(
+    settings: &Settings,
+    input: &PolicyCheckInput,
+    decision: &PolicyCheckOutput,
+    session_state: &SessionState,
+    session_id: Option<&str>,
+) -> EndpointObservation {
+    let now = chrono::Utc::now();
+    let endpoint_id = endpoint_id_for_settings(settings);
+    let allowed_text = if decision.allowed {
+        "allowed"
+    } else {
+        "blocked"
+    };
+    let observed_at = now.to_rfc3339();
+    let observation_id = local_stable_id(
+        "policy_decision_observation",
+        [
+            endpoint_id.as_str(),
+            input.action_type.as_str(),
+            input.target.as_str(),
+            allowed_text,
+            observed_at.as_str(),
+        ],
+    );
+    let process_guid = local_stable_id("process", [endpoint_id.as_str(), "agent-api-policy-check"]);
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "receiptSource".to_string(),
+        serde_json::json!("agent_policy_check"),
+    );
+    metadata.insert(
+        "policyCheckActionType".to_string(),
+        serde_json::json!(input.action_type),
+    );
+    metadata.insert(
+        "policyCheckTargetHash".to_string(),
+        serde_json::json!(sha256(input.target.as_bytes()).to_hex_prefixed()),
+    );
+    if let Some(runtime_agent_id) = input
+        .runtime_agent_id
+        .as_deref()
+        .or(input.endpoint_agent_id.as_deref())
+        .or(input.agent_id.as_deref())
+    {
+        metadata.insert("agentId".to_string(), serde_json::json!(runtime_agent_id));
+    }
+    if let Some(runtime_agent_kind) = input.runtime_agent_kind.as_deref() {
+        metadata.insert(
+            "workloadId".to_string(),
+            serde_json::json!(runtime_agent_kind),
+        );
+    }
+
+    EndpointObservation {
+        observation_id,
+        timestamp: now,
+        host_id: Some(endpoint_id),
+        user_id: None,
+        session_id: session_id
+            .map(ToString::to_string)
+            .or_else(|| session_state.session_id.clone()),
+        process: EndpointProcess {
+            process_guid: Some(process_guid),
+            image: Some("agent-api".to_string()),
+            command_line: Some("agent-api policy-check".to_string()),
+            ..EndpointProcess::default()
+        },
+        event: EndpointEvent::PolicyDecision {
+            action: input.action_type.clone(),
+            target: Some(input.target.clone()),
+            decision: allowed_text.to_string(),
+            guard: decision.guard.clone(),
+            severity: decision.severity.clone(),
+        },
+        metadata,
+    }
+}
+
 pub(crate) struct ProviderPolicyDecisionReceiptCandidate {
     actor: EndpointDecisionActor,
     sensor_state: EndpointSensorState,
+    observation: EndpointObservation,
     action_type: String,
     target: String,
     decision: PolicyCheckOutput,
@@ -15469,6 +15656,7 @@ pub(crate) async fn emit_edr_provider_policy_decision_receipts(
             sensor_state: EndpointSensorState {
                 providers: vec![provider],
             },
+            observation: observation.clone(),
             action_type,
             target,
             decision: PolicyCheckOutput {
@@ -15494,16 +15682,21 @@ pub(crate) async fn emit_edr_provider_policy_decision_receipts(
     }
 
     let mut receipts = Vec::with_capacity(candidates.len());
+    let graph = state.edr_flight_recorder.lock().await.graph().clone();
     let mut ledger = state.edr_receipt_ledger.lock().await;
     for candidate in candidates {
-        receipts.push(ledger.sign_policy_decision_receipt(
-            candidate.actor,
-            policy.clone(),
-            candidate.sensor_state,
-            candidate.action_type.as_str(),
-            candidate.target.as_str(),
-            &candidate.decision,
-        )?);
+        receipts.push(
+            ledger.sign_policy_decision_receipt(PolicyDecisionReceiptSigningInput {
+                actor: candidate.actor,
+                policy: policy.clone(),
+                sensor_state: candidate.sensor_state,
+                observation: &candidate.observation,
+                graph: &graph,
+                action_type: candidate.action_type.as_str(),
+                target: candidate.target.as_str(),
+                decision: &candidate.decision,
+            })?,
+        );
     }
     drop(ledger);
     post_control_endpoint_receipts_best_effort(state, &receipts, upload_path).await;
@@ -27919,6 +28112,42 @@ guards:
             .header(AUTHORIZATION, "Bearer test-token")
             .header(CONTENT_TYPE, "application/json")
             .body(axum::body::Body::from(impact_body.to_string()))
+            .unwrap_or_else(|e| {
+                panic!("failed to build unfresh cross-window history impact request: {e}")
+            });
+        let response =
+            app.clone().oneshot(req).await.unwrap_or_else(|e| {
+                panic!("unfresh cross-window history impact request failed: {e}")
+            });
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 256 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read unfresh cross-window impact response: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(
+            String::from_utf8_lossy(&bytes).contains("maxAgeSeconds or since"),
+            "unfresh cross-window impact response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+
+        let impact_body = serde_json::json!({
+            "limit": 10,
+            "eventKinds": ["network-flow"],
+            "validationWindowSeconds": 300,
+            "maxAgeSeconds": 1800,
+            "proposedPolicyYaml": proposed_policy_yaml
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/policy-events/impact/history")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(impact_body.to_string()))
             .unwrap_or_else(|e| panic!("failed to build cross-window history impact request: {e}"));
         let response = app
             .oneshot(req)
@@ -38606,6 +38835,12 @@ guards:
             String::from_utf8_lossy(&bytes)
         );
 
+        let current_policy = {
+            let settings = state.settings.read().await.clone();
+            endpoint_policy_snapshot_from_settings(&settings)
+                .unwrap_or_else(|e| panic!("failed to snapshot current policy: {e}"))
+        };
+
         state
             .edr_cross_window_promotion_validations
             .lock()
@@ -38618,6 +38853,16 @@ guards:
                 recommendation_hash:
                     "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
                         .to_string(),
+                current_policy_hash: current_policy.policy_hash,
+                current_policy_epoch: current_policy.policy_epoch,
+                proposed_policy_hash: sha256(b"test-proposed-policy").to_hex_prefixed(),
+                proposed_policy_epoch: 2,
+                event_stream_hash: sha256(b"test-event-stream").to_hex_prefixed(),
+                current_result_hash: sha256(b"test-current-result").to_hex_prefixed(),
+                proposed_result_hash: sha256(b"test-proposed-result").to_hex_prefixed(),
+                history_selector_hash: sha256(b"test-history-selector").to_hex_prefixed(),
+                newest_event_at: Some(chrono::Utc::now()),
+                max_age_seconds: Some(1800),
                 recommended_stage: "limited_block".to_string(),
                 root_node_id: network_node_id.clone(),
                 action: EndpointDecisionAction::RestrictEgress,
@@ -41181,14 +41426,24 @@ guards:
             serde_json::from_slice(&bytes).unwrap_or_else(|e| {
                 panic!("failed to decode restrict-egress expiration response: {e}")
             });
-        assert_eq!(expiration_payload["expired_count"], 1);
+        assert_eq!(expiration_payload["expired_count"], 0);
         assert_eq!(
-            expiration_payload["executions"][0]["execution"]["action"],
+            expiration_payload["rollback_transitions"][0]["execution"]["action"],
             "restrict_egress"
         );
         assert_eq!(
-            expiration_payload["executions"][0]["execution"]["status"],
-            "expired"
+            expiration_payload["rollback_transitions"][0]["execution"]["status"],
+            "rolled_back"
+        );
+        assert_eq!(
+            expiration_payload["rollback_transition_receipts"][0]["receipt"]["metadata"]
+                ["endpointDecision"]["receiptFamily"],
+            "response_execution"
+        );
+        assert_eq!(
+            expiration_payload["rollback_transition_receipts"][0]["receipt"]["metadata"]
+                ["endpointDecision"]["decision"]["title"],
+            "Endpoint response action rolled back"
         );
         {
             let ledger = state.edr_egress_restriction_ledger.lock().await;
@@ -45363,8 +45618,22 @@ guards:
             .unwrap_or_else(|e| panic!("failed to read quarantine expiration response: {e}"));
         let expiration_payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode quarantine expiration response: {e}"));
-        assert_eq!(expiration_payload["expired_count"], 1);
+        assert_eq!(expiration_payload["expired_count"], 0);
         assert_eq!(expiration_payload["rollback_count"], 1);
+        assert_eq!(
+            expiration_payload["rollback_transitions"][0]["execution"]["status"],
+            "rolled_back"
+        );
+        assert_eq!(
+            expiration_payload["rollback_transition_receipts"][0]["receipt"]["metadata"]
+                ["endpointDecision"]["receiptFamily"],
+            "response_execution"
+        );
+        assert_eq!(
+            expiration_payload["rollback_transition_receipts"][0]["receipt"]["metadata"]
+                ["endpointDecision"]["decision"]["title"],
+            "Endpoint response action rolled back"
+        );
         assert_eq!(
             expiration_payload["rollbacks"][0]["effects"][0]["effectType"],
             "restore_quarantine_file"
@@ -45416,7 +45685,7 @@ guards:
         assert_eq!(transition_decision["receiptFamily"], "response_execution");
         assert_eq!(
             transition_decision["decision"]["title"],
-            "Endpoint response action expired"
+            "Endpoint response action rolled back"
         );
         assert_eq!(
             transition_decision["decision"]["rollbackRef"],
@@ -45605,7 +45874,7 @@ guards:
             serde_json::from_slice(&bytes).unwrap_or_else(|e| {
                 panic!("failed to decode disable persistence expiration response: {e}")
             });
-        assert_eq!(expiration_payload["expired_count"], 1);
+        assert_eq!(expiration_payload["expired_count"], 0);
         assert_eq!(expiration_payload["rollback_count"], 1);
         assert_eq!(
             expiration_payload["rollbacks"][0]["effects"][0]["effectType"],
@@ -45669,7 +45938,7 @@ guards:
         assert_eq!(transition_decision["receiptFamily"], "response_execution");
         assert_eq!(
             transition_decision["decision"]["title"],
-            "Endpoint response action expired"
+            "Endpoint response action rolled back"
         );
         assert_eq!(
             transition_decision["decision"]["action"],
@@ -49253,7 +49522,14 @@ guards:
 
     #[tokio::test]
     async fn settings_roundtrip_includes_dashboard_url() {
-        let state = Arc::new(test_state());
+        let mut state = test_state();
+        let keypair = Keypair::from_seed(&[219u8; 32]);
+        let signer_public_key = keypair.public_key().to_hex();
+        state.edr_receipt_ledger = Arc::new(Mutex::new(EndpointReceiptLedger::transient(
+            keypair,
+            format!("agent-enrollment:{signer_public_key}"),
+        )));
+        let state = Arc::new(state);
 
         let app = Router::new()
             .route(

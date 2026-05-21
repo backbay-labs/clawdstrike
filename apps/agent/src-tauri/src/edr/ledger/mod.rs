@@ -44,7 +44,8 @@ pub(crate) use honey_registry::EndpointHoneyRegistry;
 pub(crate) use policy_delta::EndpointPolicyDeltaStore;
 pub(crate) use receipt::{
     DeceptionCleanupReceiptSigningInput, DeceptionRotationReceiptSigningInput,
-    EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger, ResponseExecutionReceiptSigningInput,
+    EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger, PolicyDecisionReceiptSigningInput,
+    ResponseExecutionReceiptSigningInput,
 };
 pub(crate) use response_acknowledgement::EndpointResponseAcknowledgementLedger;
 pub(crate) use response_execution::EndpointResponseExecutionLedger;

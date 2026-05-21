@@ -399,6 +399,7 @@ impl EndpointDecisionReceipt {
     pub fn for_policy_decision(input: EndpointPolicyDecisionReceiptInput<'_>) -> Self {
         let allowed_text = input.allowed.to_string();
         let guard = input.guard.unwrap_or("none");
+        let graph_ref = EndpointGraphReference::for_observation(input.observation, input.graph);
         let decision_id = policy_decision_id_from_fields(
             input.actor.endpoint_id.as_str(),
             input.policy.policy_hash.as_str(),
@@ -412,7 +413,26 @@ impl EndpointDecisionReceipt {
             EndpointReceiptEvidence::hashed("target", input.target),
             EndpointReceiptEvidence::hashed("allowed", allowed_text),
             EndpointReceiptEvidence::hashed("guard", guard),
+            EndpointReceiptEvidence::hashed(
+                "observationId",
+                input.observation.observation_id.clone(),
+            ),
         ];
+        if let Some(graph_slice_id) = graph_ref.graph_slice_id.as_deref() {
+            evidence.push(EndpointReceiptEvidence::hashed(
+                "graphSliceId",
+                graph_slice_id,
+            ));
+        }
+        if let Some(content_hash) = graph_ref.content_hash.as_deref() {
+            evidence.push(EndpointReceiptEvidence::hashed("contentHash", content_hash));
+        }
+        if let Some(process_node_id) = graph_ref.process_node_id.as_deref() {
+            evidence.push(EndpointReceiptEvidence::hashed(
+                "processNodeId",
+                process_node_id,
+            ));
+        }
         if let Some(severity_label) = input.severity_label {
             evidence.push(EndpointReceiptEvidence::hashed("severity", severity_label));
         }
@@ -441,7 +461,7 @@ impl EndpointDecisionReceipt {
             policy: input.policy,
             sensor_state: input.sensor_state,
             decision: EndpointDecisionRecord {
-                observation_id: None,
+                observation_id: Some(input.observation.observation_id.clone()),
                 finding_id: Some(decision_id),
                 rule_id: Some(format!("endpoint.policy_decision.{}", input.action_type)),
                 title: Some(if input.allowed {
@@ -460,7 +480,7 @@ impl EndpointDecisionReceipt {
                 ttl_seconds: None,
                 rollback_ref: None,
             },
-            graph: EndpointGraphReference::default(),
+            graph: graph_ref,
             evidence,
         }
     }
@@ -1797,6 +1817,7 @@ impl EndpointDecisionReceipt {
                 &self.decision,
                 &self.actor,
                 &self.policy,
+                &self.graph,
             )?;
         }
         if self.receipt_family == EndpointDecisionReceiptFamily::PolicyDelta {
@@ -4873,7 +4894,12 @@ fn require_policy_decision_evidence(
     decision: &EndpointDecisionRecord,
     actor: &EndpointDecisionActor,
     policy: &EndpointPolicySnapshot,
+    graph: &EndpointGraphReference,
 ) -> Result<()> {
+    let observation_id = decision
+        .observation_id
+        .as_deref()
+        .ok_or_else(|| anyhow!("policy decision observation id is required"))?;
     let signed_id = decision
         .finding_id
         .as_deref()
@@ -4893,6 +4919,49 @@ fn require_policy_decision_evidence(
         "policy decision action type evidence",
     )?;
     require_nonempty_hashed_evidence(evidence, "target", "policy decision target evidence")?;
+    require_evidence_value_hash(
+        evidence,
+        "observationId",
+        observation_id,
+        "policy decision observation id evidence",
+    )?;
+    let graph_slice_id = graph
+        .graph_slice_id
+        .as_deref()
+        .ok_or_else(|| anyhow!("policy decision graph slice id is required"))?;
+    let graph_content_hash = graph
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| anyhow!("policy decision graph content hash is required"))?;
+    let process_node_id = graph
+        .process_node_id
+        .as_deref()
+        .ok_or_else(|| anyhow!("policy decision process node id is required"))?;
+    require_detection_graph_reference(
+        graph,
+        observation_id,
+        graph_slice_id,
+        graph_content_hash,
+        process_node_id,
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "graphSliceId",
+        graph_slice_id,
+        "policy decision graph slice evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "contentHash",
+        graph_content_hash,
+        "policy decision graph content hash evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "processNodeId",
+        process_node_id,
+        "policy decision process node evidence",
+    )?;
     require_evidence_value_hash(
         evidence,
         "allowed",

@@ -494,6 +494,48 @@ final class ProviderStateTests: XCTestCase {
         )
     }
 
+    func testContentFilterRuntimeFlowVerdictDoesNotSynchronouslyReloadWatchedPolicy() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-hot-path-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+        try writePolicySnapshot(
+            to: url,
+            target: "first.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
+        let evaluationTime = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        XCTAssertTrue(runtime.requestPolicyReloadFromHostApp())
+
+        Thread.sleep(forTimeInterval: 0.01)
+        try writePolicySnapshot(
+            to: url,
+            target: "second.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:01Z"
+        )
+
+        XCTAssertEqual(
+            runtime.recordFlow(
+                target: NetworkExtensionFlowTarget(host: "second.example.invalid", port: 443),
+                now: evaluationTime
+            ),
+            .allow
+        )
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true,
+            now: evaluationTime
+        )
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.remediationRequests, 1)
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertTrue(snapshot.enforcementReady)
+    }
+
     func testContentFilterRuntimeFailsClosedWithoutPolicy() throws {
         let runtime = NetworkExtensionContentFilterRuntime()
         let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!

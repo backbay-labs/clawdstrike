@@ -4202,6 +4202,33 @@ mod tests {
     }
 
     #[test]
+    fn causal_graph_links_auth_open_policy_decision_to_target_file() {
+        let mut recorder = CausalGraphRecorder::new();
+        let auth_open = observation(EndpointEvent::PolicyDecision {
+            action: "endpoint_security_auth_open".to_string(),
+            target: Some("/Users/alice/.ssh/id_rsa".to_string()),
+            decision: "blocked".to_string(),
+            guard: Some("endpoint_security_auth".to_string()),
+            severity: Some("high".to_string()),
+        });
+
+        recorder.record_observation(&auth_open);
+        let graph = recorder.graph();
+
+        assert!(graph.nodes.values().any(|node| {
+            node.kind == CausalNodeKind::Credential && node.label == "/Users/alice/.ssh/id_rsa"
+        }));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.kind == CausalEdgeKind::AccessedCredential
+                && edge.observation_id == auth_open.observation_id
+        }));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.kind == CausalEdgeKind::MadeDecision
+                && edge.observation_id == auth_open.observation_id
+        }));
+    }
+
+    #[test]
     fn causal_graph_links_process_to_dns_lookup() {
         let mut recorder = CausalGraphRecorder::new();
         let dns = observation(EndpointEvent::DnsLookup {
@@ -7357,6 +7384,24 @@ mod tests {
         let details = serde_json::json!({
             "reason": "developer_tool_allowed"
         });
+        let allowed_observation = observation(EndpointEvent::PolicyDecision {
+            action: "mcp_tool".to_string(),
+            target: Some("openclaw.list".to_string()),
+            decision: "allowed".to_string(),
+            guard: Some("developer_tool_allowlist".to_string()),
+            severity: Some("info".to_string()),
+        });
+        let blocked_observation = observation(EndpointEvent::PolicyDecision {
+            action: "egress".to_string(),
+            target: Some("evil.example:443".to_string()),
+            decision: "blocked".to_string(),
+            guard: Some("deny_unknown_egress".to_string()),
+            severity: Some("high".to_string()),
+        });
+        let mut graph_recorder = CausalGraphRecorder::new();
+        graph_recorder.record_observation(&allowed_observation);
+        graph_recorder.record_observation(&blocked_observation);
+        let graph = graph_recorder.graph();
         let mut allowed_receipt =
             EndpointDecisionReceipt::for_policy_decision(EndpointPolicyDecisionReceiptInput {
                 local_sequence: 17,
@@ -7364,6 +7409,8 @@ mod tests {
                 actor: actor.clone(),
                 policy: policy.clone(),
                 sensor_state: sensor_state.clone(),
+                observation: &allowed_observation,
+                graph,
                 action_type: "mcp_tool",
                 target: "openclaw.list",
                 allowed: true,
@@ -7429,6 +7476,14 @@ mod tests {
             .to_string()
             .contains("policy decision target evidence"));
 
+        let mut missing_graph = allowed_receipt.clone();
+        missing_graph.graph = EndpointGraphReference::default();
+        assert!(missing_graph
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("policy decision graph slice"));
+
         let mut relabeled_policy_decision_id = allowed_receipt.clone();
         relabeled_policy_decision_id.decision.finding_id =
             Some("policy_decision:other".to_string());
@@ -7445,6 +7500,8 @@ mod tests {
                 actor,
                 policy,
                 sensor_state,
+                observation: &blocked_observation,
+                graph,
                 action_type: "egress",
                 target: "evil.example:443",
                 allowed: false,

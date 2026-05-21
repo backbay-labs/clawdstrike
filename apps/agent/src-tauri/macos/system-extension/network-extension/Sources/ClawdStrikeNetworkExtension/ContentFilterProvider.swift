@@ -502,8 +502,6 @@ public final class NetworkExtensionContentFilterRuntime {
         target: NetworkExtensionFlowTarget?,
         now: Date = Date()
     ) -> NetworkExtensionFlowDecision {
-        reloadWatchedPolicy()
-
         lock.lock()
         counters.flowsObserved += 1
         let decision: NetworkExtensionFlowDecision
@@ -657,7 +655,6 @@ public final class ClawdStrikeContentFilterDataProvider: NEFilterDataProvider {
     public override func handleNewFlow(_ flow: NEFilterFlow) -> NEFilterNewFlowVerdict {
         applyCurrentVendorConfiguration()
         let decision = runtime.recordFlow(target: Self.target(from: flow))
-        persistRuntimeSnapshot()
         switch decision {
         case .allow:
             return .allow()

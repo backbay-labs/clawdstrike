@@ -67,12 +67,42 @@ impl CausalGraphRecorder {
 
         if let Some((event_node, edge_kind)) = self.event_node(observation) {
             self.add_edge(
-                process_node,
+                process_node.clone(),
                 event_node.clone(),
                 edge_kind,
                 observation,
                 BTreeMap::new(),
             );
+            if let EndpointEvent::PolicyDecision {
+                action,
+                target: Some(target),
+                decision,
+                ..
+            } = &observation.event
+            {
+                if let Some((target_node, target_edge_kind)) =
+                    self.policy_decision_target_node(target, observation.timestamp)
+                {
+                    let mut edge_attributes = BTreeMap::new();
+                    insert_json(&mut edge_attributes, "policyAction", action);
+                    insert_json(&mut edge_attributes, "policyDecision", decision);
+                    self.add_edge(
+                        process_node.clone(),
+                        target_node.clone(),
+                        target_edge_kind,
+                        observation,
+                        edge_attributes,
+                    );
+                    self.add_edge(
+                        target_node.clone(),
+                        event_node.clone(),
+                        CausalEdgeKind::Related,
+                        observation,
+                        BTreeMap::new(),
+                    );
+                    touched.push(target_node);
+                }
+            }
             self.add_temporal_edge(observation, &event_node);
             touched.push(event_node);
         } else {
@@ -585,7 +615,7 @@ impl CausalGraphRecorder {
                         observation.timestamp,
                         attributes,
                     ),
-                    CausalEdgeKind::Related,
+                    CausalEdgeKind::InvokedTool,
                 ))
             }
             EndpointEvent::PolicyDecision {
@@ -631,6 +661,47 @@ impl CausalGraphRecorder {
                 ))
             }
         }
+    }
+
+    fn policy_decision_target_node(
+        &mut self,
+        target: &str,
+        timestamp: DateTime<Utc>,
+    ) -> Option<(String, CausalEdgeKind)> {
+        let target = target.trim();
+        if target.is_empty() {
+            return None;
+        }
+        if !target.starts_with('/') && !target.starts_with("~/") {
+            return None;
+        }
+
+        if let Some(kind) = credential_kind_from_path(target) {
+            let mut attributes = BTreeMap::new();
+            insert_json(&mut attributes, "credentialKind", kind.as_str());
+            insert_json(&mut attributes, "path", target);
+            return Some((
+                self.ensure_node(
+                    CausalNodeKind::Credential,
+                    format!("credential:{target}"),
+                    target.to_string(),
+                    timestamp,
+                    attributes,
+                ),
+                CausalEdgeKind::AccessedCredential,
+            ));
+        }
+
+        Some((
+            self.ensure_node(
+                CausalNodeKind::File,
+                format!("file:{}", normalize_path_string(target)),
+                target.to_string(),
+                timestamp,
+                BTreeMap::new(),
+            ),
+            CausalEdgeKind::Read,
+        ))
     }
 
     fn add_temporal_edge(&mut self, observation: &EndpointObservation, node_id: &str) {
@@ -744,6 +815,36 @@ impl CausalGraphRecorder {
             attributes,
         });
     }
+}
+
+fn credential_kind_from_path(path: &str) -> Option<CredentialKind> {
+    let lower = path.to_ascii_lowercase();
+    if lower.contains("/.ssh/")
+        || lower.ends_with("/id_rsa")
+        || lower.ends_with("/id_ed25519")
+        || lower.ends_with("/id_ecdsa")
+    {
+        return Some(CredentialKind::SshKey);
+    }
+    if lower.ends_with("/.npmrc") || lower.contains("/.config/yarn/") {
+        return Some(CredentialKind::PackageRegistryToken);
+    }
+    if lower.contains("/.aws/credentials")
+        || lower.contains("/.config/gcloud/")
+        || lower.contains("/.azure/")
+    {
+        return Some(CredentialKind::CloudCredential);
+    }
+    if lower.contains("cookies") || lower.contains("cookie") {
+        return Some(CredentialKind::BrowserCookie);
+    }
+    if lower.contains("signing") && (lower.ends_with(".pem") || lower.ends_with(".key")) {
+        return Some(CredentialKind::SigningKey);
+    }
+    if lower.contains("token") || lower.contains("api_key") || lower.contains("apikey") {
+        return Some(CredentialKind::ApiToken);
+    }
+    None
 }
 
 #[cfg(test)]
