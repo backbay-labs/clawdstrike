@@ -1061,6 +1061,61 @@ jobs:
             --password "$APPLE_PASSWORD" \
             --team-id "$APPLE_TEAM_ID"
 
+      - name: Provision prebuilt system extension bundle
+        shell: bash
+        env:
+          SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64: ${{ secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64 }}
+        run: |
+          set -euo pipefail
+          sysext_path="${CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH:-}"
+          if [[ -n "$sysext_path" && "$sysext_path" != /* ]]; then
+            sysext_path="${GITHUB_WORKSPACE}/${sysext_path}"
+          fi
+
+          if [[ -z "$sysext_path" ]]; then
+            if [[ -z "$SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64" ]]; then
+              {
+                echo "A signed prebuilt .systemextension bundle is required before notarization."
+                echo "Set vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH to a checked-out bundle path"
+                echo "or set secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64 to a base64-encoded zip containing exactly one .systemextension directory."
+              } >&2
+              exit 1
+            fi
+            sysext_zip="${RUNNER_TEMP}/clawdstrike-system-extension.zip"
+            sysext_unpack_dir="${RUNNER_TEMP}/clawdstrike-system-extension"
+            mkdir -p "$sysext_unpack_dir"
+            ZIP_PATH="$sysext_zip" python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["ZIP_PATH"]).write_bytes(
+              base64.b64decode(os.environ["SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64"])
+          )
+          PY
+            unzip -q "$sysext_zip" -d "$sysext_unpack_dir"
+            candidates_file="${RUNNER_TEMP}/clawdstrike-system-extension-candidates.txt"
+            find "$sysext_unpack_dir" -type d -name '*.systemextension' | sort > "$candidates_file"
+            candidate_count="$(wc -l < "$candidates_file" | tr -d '[:space:]')"
+            if [[ "$candidate_count" != "1" ]]; then
+              echo "Expected exactly one .systemextension in CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64, found ${candidate_count}." >&2
+              cat "$candidates_file" >&2
+              exit 1
+            fi
+            sysext_path="$(sed -n '1p' "$candidates_file")"
+          fi
+
+          if [[ ! -d "$sysext_path" ]]; then
+            echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH does not exist on this runner: $sysext_path" >&2
+            exit 1
+          fi
+          if [[ "$sysext_path" != *.systemextension ]]; then
+            echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH must end in .systemextension: $sysext_path" >&2
+            exit 1
+          fi
+          echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH=$sysext_path" >> "$GITHUB_ENV"
+          echo "Using prebuilt system extension bundle: $sysext_path"
+
       - name: Build and notarize agent app bundle
         run: bash scripts/notarize-agent-macos.sh
 
