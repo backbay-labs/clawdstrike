@@ -37129,6 +37129,10 @@ guards:
                     },
                     "metadata": {
                         "installToken": "MY_RAW_SECRET",
+                        "policyAllowed": false,
+                        "policyGuard": "package_script_policy",
+                        "policySeverity": "high",
+                        "policyActionType": "endpoint.package_script",
                         "headers": {
                             "authorization": "Bearer MY_RAW_SECRET"
                         }
@@ -37258,7 +37262,7 @@ guards:
             .and_then(|metadata| metadata.get("endpointDecision"))
             .unwrap_or_else(|| panic!("missing package-manager policy decision endpoint metadata"));
         assert_eq!(policy_endpoint_decision["receiptFamily"], "policy_decision");
-        assert_eq!(policy_endpoint_decision["decision"]["action"], "allow");
+        assert_eq!(policy_endpoint_decision["decision"]["action"], "block");
         assert_eq!(
             policy_endpoint_decision["decision"]["ruleId"],
             "endpoint.policy_decision.endpoint.package_script"

@@ -187,6 +187,10 @@ fn package_manager_policy_decision_observations(
             let finding = findings
                 .iter()
                 .find(|finding| finding.observation_id == observation.observation_id);
+            let explicit_allowed = developer_activity_policy_allowed(observation);
+            let action_type = developer_activity_metadata_string(observation, "policyActionType")
+                .or_else(|| developer_activity_metadata_string(observation, "actionType"))
+                .unwrap_or_else(|| "endpoint.package_script".to_string());
             let script_hash = sha256(script.as_bytes()).to_hex_prefixed();
             let package_name = package.as_deref().unwrap_or("unknown-package");
             let target = format!(
@@ -196,12 +200,30 @@ fn package_manager_policy_decision_observations(
                 phase,
                 script_hash
             );
-            let guard = finding
-                .map(|finding| finding.rule_id.clone())
-                .or_else(|| Some("supply_chain.package_script.audit".to_string()));
-            let severity = finding
-                .map(|finding| format!("{:?}", finding.severity).to_ascii_lowercase())
-                .or_else(|| Some("info".to_string()));
+            let policy_guard = developer_activity_metadata_string(observation, "policyGuard");
+            let policy_severity = developer_activity_metadata_string(observation, "policySeverity");
+            let guard = if explicit_allowed.is_some() {
+                policy_guard.or_else(|| finding.map(|finding| finding.rule_id.clone()))
+            } else {
+                finding
+                    .map(|finding| finding.rule_id.clone())
+                    .or(policy_guard)
+            }
+            .or_else(|| Some("supply_chain.package_script.audit".to_string()));
+            let severity = if explicit_allowed.is_some() {
+                policy_severity.or_else(|| {
+                    finding.map(|finding| format!("{:?}", finding.severity).to_ascii_lowercase())
+                })
+            } else {
+                finding
+                    .map(|finding| format!("{:?}", finding.severity).to_ascii_lowercase())
+                    .or(policy_severity)
+            }
+            .or_else(|| Some("info".to_string()));
+            let decision = explicit_allowed
+                .map(|allowed| if allowed { "allowed" } else { "blocked" })
+                .unwrap_or("allowed")
+                .to_string();
             let observation_id = local_stable_id(
                 "package_manager_policy_decision_observation",
                 [
@@ -210,6 +232,7 @@ fn package_manager_policy_decision_observations(
                     package_name,
                     phase.as_str(),
                     script_hash.as_str(),
+                    decision.as_str(),
                 ],
             );
             let mut metadata = observation.metadata.clone();
@@ -227,7 +250,11 @@ fn package_manager_policy_decision_observations(
             );
             metadata.insert(
                 "policyDecisionMode".to_string(),
-                serde_json::json!("audit_allow"),
+                serde_json::json!(if explicit_allowed.is_some() {
+                    "policy_check"
+                } else {
+                    "audit_allow"
+                }),
             );
             metadata.insert(
                 "packageManager".to_string(),
@@ -263,9 +290,9 @@ fn package_manager_policy_decision_observations(
                 session_id: observation.session_id.clone(),
                 process: observation.process.clone(),
                 event: EndpointEvent::PolicyDecision {
-                    action: "endpoint.package_script".to_string(),
+                    action: action_type,
                     target: Some(target),
-                    decision: "allowed".to_string(),
+                    decision,
                     guard,
                     severity,
                 },
