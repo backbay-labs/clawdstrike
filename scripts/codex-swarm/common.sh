@@ -24,6 +24,9 @@ swarm_repo_name() {
   parent_name="$(basename "$repo_parent")"
 
   case "$parent_name" in
+    .worktrees)
+      basename "$(dirname "$repo_parent")"
+      ;;
     *-worktrees)
       printf '%s\n' "${parent_name%-worktrees}"
       ;;
@@ -96,6 +99,28 @@ swarm_orchestrator_lane() {
   ' "$(swarm_lane_table "$repo_root")"
 }
 
+swarm_orchestrator_lane_count() {
+  local repo_root="${1:-$(swarm_repo_root)}"
+
+  awk -F '\t' '
+    NR == 1 {
+      for (i = 1; i <= NF; i++) {
+        idx[$i] = i
+      }
+      next
+    }
+    (("role" in idx) && $(idx["role"]) == "workstream_orchestrator") ||
+    (("profile" in idx) && $(idx["profile"]) == "swarm-orchestrator") ||
+    tolower($1) == "orch" ||
+    (("brief_id" in idx) && toupper($(idx["brief_id"])) == "ORCH") {
+      count++
+    }
+    END {
+      print count + 0
+    }
+  ' "$(swarm_lane_table "$repo_root")"
+}
+
 swarm_namespace() {
   local repo_root
   local namespace
@@ -127,23 +152,25 @@ swarm_namespace() {
     printf '%s\n' "$namespace"
     return
   fi
-  orch_lane="$(swarm_orchestrator_lane "$repo_root")"
-  orch_worktree="$(swarm_lane_field "$orch_lane" worktree "$repo_root")"
-  if [[ "$orch_worktree" == *-orch ]]; then
-    namespace="${orch_worktree%-orch}"
-    swarm_assert_safe_namespace_name "$namespace"
-    printf '%s\n' "$namespace"
-    return
-  fi
-  orch_branch="$(swarm_lane_field "$orch_lane" branch "$repo_root")"
-  if [[ -n "$orch_branch" ]]; then
-    namespace="${orch_branch##*/}"
-    namespace="${namespace%-orchestrator}"
-    namespace="${namespace%-orch}"
-    if [[ -n "$namespace" ]] && [[ "${namespace,,}" != "orch" ]]; then
+  if [[ "$(swarm_orchestrator_lane_count "$repo_root")" == "1" ]]; then
+    orch_lane="$(swarm_orchestrator_lane "$repo_root")"
+    orch_worktree="$(swarm_lane_field "$orch_lane" worktree "$repo_root")"
+    if [[ "$orch_worktree" == *-orch ]]; then
+      namespace="${orch_worktree%-orch}"
       swarm_assert_safe_namespace_name "$namespace"
       printf '%s\n' "$namespace"
       return
+    fi
+    orch_branch="$(swarm_lane_field "$orch_lane" branch "$repo_root")"
+    if [[ -n "$orch_branch" ]]; then
+      namespace="${orch_branch##*/}"
+      namespace="${namespace%-orchestrator}"
+      namespace="${namespace%-orch}"
+      if [[ -n "$namespace" ]] && [[ "${namespace,,}" != "orch" ]]; then
+        swarm_assert_safe_namespace_name "$namespace"
+        printf '%s\n' "$namespace"
+        return
+      fi
     fi
   fi
   namespace="$(swarm_repo_name "$repo_root")"

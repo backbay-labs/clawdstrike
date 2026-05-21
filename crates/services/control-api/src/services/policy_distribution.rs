@@ -371,13 +371,14 @@ pub async fn put_effective_policy_for_agent(
     nats: &async_nats::Client,
     policy: &EffectiveAgentPolicy,
 ) -> Result<(), String> {
-    put_policy_yaml_for_agent(
+    reconcile_effective_policy_yaml_for_agent(
         nats,
         &policy.tenant_slug,
         &policy.agent_id,
         &policy.policy_yaml,
     )
     .await
+    .map(|_| ())
 }
 
 async fn put_policy_yaml_for_agent(

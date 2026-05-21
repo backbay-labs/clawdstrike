@@ -752,6 +752,7 @@ pub struct PolicyCache {
     cache_path: PathBuf,
     manifest_path: PathBuf,
     http_client: reqwest::Client,
+    sync_lock: Mutex<()>,
     cached_policy: Mutex<Option<String>>,
     cached_manifest: Mutex<Option<PolicyCacheManifest>>,
 }
@@ -771,6 +772,7 @@ impl PolicyCache {
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
+            sync_lock: Mutex::new(()),
             cached_policy: Mutex::new(cached),
             cached_manifest: Mutex::new(manifest),
         }
@@ -800,6 +802,7 @@ impl PolicyCache {
         let content_hash = hush_core::sha256(body.as_bytes()).to_hex_prefixed();
         let policy_version = parse_cached_policy_version(&body);
         let policy_epoch = parse_cached_policy_epoch(&body);
+        let _sync_guard = self.sync_lock.lock().await;
         let current_manifest = self.cached_manifest.lock().await.clone();
         let current_policy = self.cached_policy.lock().await.clone();
         enforce_policy_cache_distribution_rules(

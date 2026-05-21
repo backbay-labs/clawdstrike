@@ -1277,6 +1277,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         "impactId": "policy-impact-int-1",
         "analyzedAt": now,
         "mode": "current_vs_proposed_policy_event_impact",
+        "source": "submitted",
         "currentPolicy": {
             "policyVersion": "proposal-test-current",
             "policyHash": "d".repeat(64),
@@ -1301,6 +1302,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         "impactId": "policy-impact-int-2",
         "analyzedAt": now,
         "mode": "current_vs_proposed_policy_event_impact",
+        "source": "submitted",
         "currentPolicy": {
             "policyVersion": "proposal-test-current",
             "policyHash": "d".repeat(64),
@@ -1339,6 +1341,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             proposed_policy_epoch: impact["proposedPolicy"]["policyEpoch"]
                 .as_u64()
                 .expect("proposed policy epoch"),
+            event_source: impact["source"].as_str().expect("event source"),
             event_stream_hash: impact["eventStreamHash"]
                 .as_str()
                 .expect("event stream hash"),
@@ -7043,6 +7046,7 @@ fn policy_rule_diff_simulation_receipt_fixture(
                 "agent-api:{target_id}"
             )),
             impact_id: "ignored-by-builder",
+            event_source: "submitted",
             event_stream_hash: &event_stream_hash,
             current_result_hash: &current_result_hash,
             proposed_result_hash: &proposed_result_hash,

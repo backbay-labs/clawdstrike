@@ -326,7 +326,9 @@ echo "[notarize] verify codesign"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH" | tee "$OUT_DIR/codesign-verify.txt"
 codesign -dv --verbose=4 "$APP_PATH" 2>&1 | tee "$OUT_DIR/codesign-details.txt"
 validate_embedded_system_extension "$APP_PATH" "$OUT_DIR"
-spctl -a -vv "$APP_PATH" 2>&1 | tee "$OUT_DIR/spctl-before.txt"
+if ! spctl -a -vv "$APP_PATH" 2>&1 | tee "$OUT_DIR/spctl-before.txt"; then
+  echo "[notarize] pre-submit Gatekeeper assessment did not accept the unstapled app; continuing to notarization" >&2
+fi
 
 echo "[notarize] creating signed dmg"
 DMG_PATH="$(create_signed_dmg "$APP_PATH" "$OUT_DIR" "$SIGNING_IDENTITY")"

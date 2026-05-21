@@ -239,7 +239,6 @@ pub fn start_status_collector<R: Runtime + 'static>(
                         &mut active_status_probe,
                         &mut active_status_probe_generation,
                         &mut status_rx,
-                        &mut pending_refresh_replies,
                     );
                     let Some(request) = request else {
                         break;
@@ -249,6 +248,17 @@ pub fn start_status_collector<R: Runtime + 'static>(
                         network_tool.clone(),
                         request,
                     ));
+                    retain_open_refresh_replies(&mut pending_refresh_replies);
+                    if !pending_refresh_replies.is_empty() {
+                        status_poll_generation = status_poll_generation.wrapping_add(1);
+                        active_status_probe_generation = Some(status_poll_generation);
+                        active_status_probe = Some(spawn_status_probe(
+                            endpoint_tool.clone(),
+                            network_tool.clone(),
+                            status_tx.clone(),
+                            status_poll_generation,
+                        ));
+                    }
                     next_poll.as_mut().reset(Instant::now() + STATUS_POLL_INTERVAL);
                 }
                 request = refresh_rx.recv() => {
@@ -330,13 +340,11 @@ fn abort_status_probe(
     active_status_probe: &mut Option<JoinHandle<()>>,
     active_status_probe_generation: &mut Option<u64>,
     status_rx: &mut mpsc::Receiver<(u64, CombinedSystemExtensionStatus)>,
-    pending_refresh_replies: &mut Vec<MacosHostRefreshRequest>,
 ) {
     if let Some(handle) = active_status_probe.take() {
         handle.abort();
     }
     *active_status_probe_generation = None;
-    pending_refresh_replies.clear();
     while status_rx.try_recv().is_ok() {}
 }
 
@@ -901,7 +909,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn abort_status_probe_cancels_refresh_waiters_and_drains_results() {
+    async fn abort_status_probe_preserves_refresh_waiters_and_drains_results() {
         let handle = tokio::spawn(async {
             tokio::time::sleep(Duration::from_secs(30)).await;
         });
@@ -910,21 +918,17 @@ mod tests {
             .send((7, CombinedSystemExtensionStatus::default()))
             .await
             .expect("queue stale status");
-        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<CombinedSystemExtensionStatus>();
         let mut active_probe = Some(handle);
         let mut active_generation = Some(7);
-        let mut pending_replies = vec![reply_tx];
+        let pending_replies = vec![reply_tx];
 
-        abort_status_probe(
-            &mut active_probe,
-            &mut active_generation,
-            &mut status_rx,
-            &mut pending_replies,
-        );
+        abort_status_probe(&mut active_probe, &mut active_generation, &mut status_rx);
 
         assert!(active_probe.is_none());
         assert_eq!(active_generation, None);
-        assert!(pending_replies.is_empty());
+        assert_eq!(pending_replies.len(), 1);
+        drop(pending_replies);
         assert!(reply_rx.await.is_err());
         assert!(status_rx.try_recv().is_err());
     }
