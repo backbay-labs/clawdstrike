@@ -55,7 +55,7 @@ export class McpToolGuard implements Guard {
     this.allowSet = new Set(config.allow ?? []);
     this.blockSet = new Set(config.block ?? DEFAULT_BLOCKED_TOOLS);
     this.confirmSet = new Set(config.requireConfirmation ?? DEFAULT_REQUIRE_CONFIRMATION);
-    this.defaultAction = config.defaultAction ?? "allow";
+    this.defaultAction = config.defaultAction ?? "block";
     this.maxArgsSize = config.maxArgsSize ?? 1024 * 1024; // 1MB default
   }
 

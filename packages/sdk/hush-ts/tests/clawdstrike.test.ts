@@ -131,6 +131,27 @@ guards:
     expect(egressDecision.guard).toBe("egress_allowlist");
   });
 
+  it("fromPolicy fails closed for MCP tools when the policy omits mcp_tool config", async () => {
+    const policy = `
+version: "1.2.0"
+name: "implicit mcp fail closed"
+guards:
+  egress_allowlist:
+    allow:
+      - "*"
+    default_action: allow
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const decision = await cs.check("mcp_tool", {
+      tool: "mcp__blender__execute_blender_code",
+      args: { code: "print(1)" },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("mcp_tool");
+  });
+
   it("fromPolicy wires secret_leak config into SecretLeakGuard", async () => {
     const policy = `
 version: "1.2.0"
