@@ -427,7 +427,7 @@ async fn request_network_extension_reload(
         }
         Err(_) => return Err(MacosNetworkExtensionReloadError::TimedOut),
     };
-    parse_network_extension_reload_response(&stdout, generation)
+    parse_network_extension_reload_response(&stdout, policy_snapshot_path, generation)
 }
 
 fn network_extension_reload_args(policy_snapshot_path: &Path, generation: u64) -> [OsString; 3] {
@@ -440,6 +440,7 @@ fn network_extension_reload_args(policy_snapshot_path: &Path, generation: u64) -
 
 fn parse_network_extension_reload_response(
     stdout: &[u8],
+    expected_policy_snapshot_path: &Path,
     expected_generation: u64,
 ) -> Result<MacosNetworkExtensionReloadResult, MacosNetworkExtensionReloadError> {
     let response = serde_json::from_slice::<NetworkExtensionReloadToolResponse>(stdout)
@@ -454,6 +455,13 @@ fn parse_network_extension_reload_response(
         return Err(MacosNetworkExtensionReloadError::InvalidResponse(format!(
             "generation mismatch: requested {expected_generation}, helper returned {}",
             response.generation
+        )));
+    }
+    let expected_policy_snapshot_path = expected_policy_snapshot_path.display().to_string();
+    if response.policy_snapshot_path != expected_policy_snapshot_path {
+        return Err(MacosNetworkExtensionReloadError::InvalidResponse(format!(
+            "policy snapshot path mismatch: requested {expected_policy_snapshot_path}, helper returned {}",
+            response.policy_snapshot_path
         )));
     }
 
@@ -1022,8 +1030,10 @@ mod tests {
 
     #[test]
     fn network_extension_reload_response_parser_validates_command_and_generation() {
+        let expected_path = Path::new("/tmp/clawdstrike-network-policy.json");
         let result = parse_network_extension_reload_response(
             br#"{"requestId":"reload-test","command":"reload_policy","policySnapshotPath":"/tmp/clawdstrike-network-policy.json","generation":5150,"saved":true}"#,
+            expected_path,
             5150,
         )
         .expect("valid reload helper response should parse");
@@ -1042,6 +1052,7 @@ mod tests {
         assert_eq!(
             parse_network_extension_reload_response(
                 br#"{"requestId":"reload-test","command":"other","policySnapshotPath":"/tmp/clawdstrike-network-policy.json","generation":5150,"saved":true}"#,
+                expected_path,
                 5150,
             ),
             Err(MacosNetworkExtensionReloadError::InvalidResponse(
@@ -1051,10 +1062,21 @@ mod tests {
         assert_eq!(
             parse_network_extension_reload_response(
                 br#"{"requestId":"reload-test","command":"reload_policy","policySnapshotPath":"/tmp/clawdstrike-network-policy.json","generation":5151,"saved":true}"#,
+                expected_path,
                 5150,
             ),
             Err(MacosNetworkExtensionReloadError::InvalidResponse(
                 "generation mismatch: requested 5150, helper returned 5151".to_string()
+            ))
+        );
+        assert_eq!(
+            parse_network_extension_reload_response(
+                br#"{"requestId":"reload-test","command":"reload_policy","policySnapshotPath":"/tmp/other-policy.json","generation":5150,"saved":true}"#,
+                expected_path,
+                5150,
+            ),
+            Err(MacosNetworkExtensionReloadError::InvalidResponse(
+                "policy snapshot path mismatch: requested /tmp/clawdstrike-network-policy.json, helper returned /tmp/other-policy.json".to_string()
             ))
         );
     }
