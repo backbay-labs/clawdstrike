@@ -271,7 +271,7 @@ pub(crate) async fn agent_edr_response_execution_proof(
         ));
     }
 
-    let (execution_path, execution) = {
+    let (execution_path, execution, has_terminal_transition) = {
         let ledger = state.edr_response_execution_ledger.lock().await;
         let path = ledger.path().map(|path| path.display().to_string());
         let execution = ledger
@@ -283,8 +283,17 @@ pub(crate) async fn agent_edr_response_execution_proof(
                     format!("response execution not found: {execution_id}"),
                 )
             })?;
-        (path, execution)
+        let has_terminal_transition = ledger
+            .has_terminal_transition_for(&execution)
+            .map_err(internal_error)?;
+        (path, execution, has_terminal_transition)
     };
+    ensure_response_execution_proof_ttl_state(
+        execution.execution_id.as_str(),
+        execution.expires_at(),
+        has_terminal_transition,
+        chrono::Utc::now(),
+    )?;
 
     let (
         receipt_path,
@@ -400,6 +409,60 @@ pub(crate) async fn agent_edr_response_execution_proof(
         rollback_receipts,
         acknowledgement_receipts,
     }))
+}
+
+fn ensure_response_execution_proof_ttl_state(
+    execution_id: &str,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    has_terminal_transition: bool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), (StatusCode, String)> {
+    if now > expires_at && !has_terminal_transition {
+        return Err((
+            StatusCode::CONFLICT,
+            format!(
+                "response execution {execution_id} TTL expired without terminal expiry or rollback receipt"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod response_proof_ttl_tests {
+    use super::*;
+
+    fn utc(seconds: u64) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::<chrono::Utc>::from(
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds),
+        )
+    }
+
+    #[test]
+    fn response_execution_proof_rejects_expired_execution_without_terminal_transition() {
+        let err = match ensure_response_execution_proof_ttl_state(
+            "exec-expired",
+            utc(100),
+            false,
+            utc(101),
+        ) {
+            Ok(()) => panic!("expired unswept execution proof unexpectedly succeeded"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.0, StatusCode::CONFLICT);
+        assert!(err
+            .1
+            .contains("TTL expired without terminal expiry or rollback receipt"));
+    }
+
+    #[test]
+    fn response_execution_proof_allows_unexpired_or_terminal_executions() {
+        ensure_response_execution_proof_ttl_state("exec-active", utc(100), false, utc(100))
+            .unwrap_or_else(|err| panic!("unexpired proof should be accepted: {err:?}"));
+        ensure_response_execution_proof_ttl_state("exec-terminal", utc(100), true, utc(101))
+            .unwrap_or_else(|err| panic!("terminal proof should be accepted: {err:?}"));
+    }
 }
 
 pub(crate) async fn agent_edr_response_execution_expire(
