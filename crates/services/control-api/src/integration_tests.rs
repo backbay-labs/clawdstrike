@@ -1273,7 +1273,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         .as_str()
         .expect("fleet validation proposed policy hash")
         .to_string();
-    let impact_report = serde_json::json!({
+    let mut impact_report = serde_json::json!({
         "impactId": "policy-impact-int-1",
         "analyzedAt": now,
         "mode": "current_vs_proposed_policy_event_impact",
@@ -1297,7 +1297,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         "impactHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
         "summary": "endpoint-policy-1 changed two verdicts"
     });
-    let impact_report_two = serde_json::json!({
+    let mut impact_report_two = serde_json::json!({
         "impactId": "policy-impact-int-2",
         "analyzedAt": now,
         "mode": "current_vs_proposed_policy_event_impact",
@@ -1321,6 +1321,54 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         "impactHash": "0x8888888888888888888888888888888888888888888888888888888888888888",
         "summary": "endpoint-policy-2 changed no verdicts"
     });
+    let policy_event_impact_id_for = |impact: &Value| {
+        use clawdstrike_policy_event::edr::{
+            endpoint_policy_event_impact_id, EndpointPolicyEventImpactIdInput,
+        };
+
+        endpoint_policy_event_impact_id(EndpointPolicyEventImpactIdInput {
+            current_policy_hash: impact["currentPolicy"]["policyHash"]
+                .as_str()
+                .expect("current policy hash"),
+            current_policy_epoch: impact["currentPolicy"]["policyEpoch"]
+                .as_u64()
+                .expect("current policy epoch"),
+            proposed_policy_hash: impact["proposedPolicy"]["policyHash"]
+                .as_str()
+                .expect("proposed policy hash"),
+            proposed_policy_epoch: impact["proposedPolicy"]["policyEpoch"]
+                .as_u64()
+                .expect("proposed policy epoch"),
+            event_stream_hash: impact["eventStreamHash"]
+                .as_str()
+                .expect("event stream hash"),
+            current_result_hash: impact["currentResultHash"]
+                .as_str()
+                .expect("current result hash"),
+            proposed_result_hash: impact["proposedResultHash"]
+                .as_str()
+                .expect("proposed result hash"),
+            impact_hash: impact["impactHash"].as_str().expect("impact hash"),
+            event_count: impact["eventCount"].as_u64().expect("event count"),
+            changed_count: impact["changedCount"].as_u64().expect("changed count"),
+            allow_to_block_count: impact["allowToBlockCount"]
+                .as_u64()
+                .expect("allow-to-block count"),
+            track_posture: impact["trackPosture"].as_bool().expect("track posture"),
+        })
+    };
+    let impact_id = policy_event_impact_id_for(&impact_report);
+    let impact_id_two = policy_event_impact_id_for(&impact_report_two);
+    impact_report["impactId"] = serde_json::json!(impact_id);
+    impact_report_two["impactId"] = serde_json::json!(impact_id_two);
+    let impact_id = impact_report["impactId"]
+        .as_str()
+        .expect("policy impact id")
+        .to_string();
+    let impact_id_two = impact_report_two["impactId"]
+        .as_str()
+        .expect("second policy impact id")
+        .to_string();
     let impact_evidence_for = |impact: &Value| {
         [
             ("impactId", impact["impactId"].as_str().unwrap().to_string()),
@@ -1383,6 +1431,23 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         .collect::<Vec<_>>()
     };
     let impact_evidence = impact_evidence_for(&impact_report);
+    let endpoint_sensor_state = |endpoint_agent_id: &str| {
+        serde_json::json!({
+            "providers": [{
+                "providerId": format!("agent-api:{endpoint_agent_id}"),
+                "providerKind": "agent_api",
+                "installed": true,
+                "active": true,
+                "healthy": true,
+                "degraded": false,
+                "degradationReasons": [],
+                "droppedEventCount": 0,
+                "deadlineMissCount": 0,
+                "fullDiskAccess": null,
+                "lastSeen": now
+            }]
+        })
+    };
     let endpoint_decision = serde_json::json!({
         "schemaVersion": "clawdstrike.endpoint_decision.v1",
         "receiptFamily": "simulation",
@@ -1400,54 +1465,57 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             "policyHash": "d".repeat(64),
             "policyEpoch": 1
         },
-        "sensorState": {},
+        "sensorState": endpoint_sensor_state("endpoint-policy-1"),
         "decision": {
-            "findingId": "policy-impact-int-1",
+            "findingId": impact_id.clone(),
             "ruleId": "endpoint.policy_event_impact",
             "action": "observe",
             "passed": true
         },
         "graph": {
-            "graphSliceId": "policy-impact-int-1",
+            "graphSliceId": impact_id,
             "processNodeId": "policy_event_stream",
             "nodeIds": ["policy_event_stream"],
             "edgeIds": []
         },
         "evidence": impact_evidence
     });
-    let impact_receipt = hush_core::Receipt::new(
-        hush_core::Hash::from_bytes([7u8; 32]),
-        hush_core::Verdict::pass(),
-    )
-    .with_id("receipt-policy-impact-1")
-    .with_metadata(serde_json::json!({
-        "endpointDecision": endpoint_decision
-    }));
-    let signed_impact_receipt =
-        hush_core::SignedReceipt::sign(impact_receipt, &impact_receipt_keypair)
-            .expect("sign policy impact receipt");
-    let signed_impact_receipt_value =
-        serde_json::to_value(&signed_impact_receipt).expect("signed receipt to json");
+    let signed_endpoint_decision_receipt_value =
+        |keypair: &hush_core::Keypair, receipt_id: &str, endpoint_decision: Value| {
+            let canonical_endpoint_decision = hush_core::canonicalize_json(&endpoint_decision)
+                .expect("canonicalize endpoint decision receipt metadata");
+            let impact_receipt = hush_core::Receipt::new(
+                hush_core::sha256(canonical_endpoint_decision.as_bytes()),
+                hush_core::Verdict::pass(),
+            )
+            .with_id(receipt_id)
+            .with_metadata(serde_json::json!({
+                "endpointDecision": endpoint_decision
+            }));
+            let signed_receipt = hush_core::SignedReceipt::sign(impact_receipt, keypair)
+                .expect("sign policy impact receipt");
+            serde_json::to_value(&signed_receipt).expect("signed receipt to json")
+        };
+    let signed_impact_receipt_value = signed_endpoint_decision_receipt_value(
+        &impact_receipt_keypair,
+        "receipt-policy-impact-1",
+        endpoint_decision.clone(),
+    );
     let mut endpoint_decision_two = endpoint_decision.clone();
     endpoint_decision_two["signer"]["signerPublicKey"] =
         serde_json::json!(impact_receipt_keypair_two.public_key().to_hex());
+    endpoint_decision_two["signer"]["signerIdentity"] =
+        serde_json::json!("endpoint-policy-proposal-int-2");
     endpoint_decision_two["actor"]["endpointId"] = serde_json::json!("endpoint-policy-2");
-    endpoint_decision_two["decision"]["findingId"] = serde_json::json!("policy-impact-int-2");
-    endpoint_decision_two["graph"]["graphSliceId"] = serde_json::json!("policy-impact-int-2");
+    endpoint_decision_two["sensorState"] = endpoint_sensor_state("endpoint-policy-2");
+    endpoint_decision_two["decision"]["findingId"] = serde_json::json!(impact_id_two.clone());
+    endpoint_decision_two["graph"]["graphSliceId"] = serde_json::json!(impact_id_two);
     endpoint_decision_two["evidence"] = serde_json::json!(impact_evidence_for(&impact_report_two));
-    let impact_receipt_two = hush_core::Receipt::new(
-        hush_core::Hash::from_bytes([8u8; 32]),
-        hush_core::Verdict::pass(),
-    )
-    .with_id("receipt-policy-impact-2")
-    .with_metadata(serde_json::json!({
-        "endpointDecision": endpoint_decision_two
-    }));
-    let signed_impact_receipt_two =
-        hush_core::SignedReceipt::sign(impact_receipt_two, &impact_receipt_keypair_two)
-            .expect("sign second policy impact receipt");
-    let signed_impact_receipt_value_two =
-        serde_json::to_value(&signed_impact_receipt_two).expect("second signed receipt to json");
+    let signed_impact_receipt_value_two = signed_endpoint_decision_receipt_value(
+        &impact_receipt_keypair_two,
+        "receipt-policy-impact-2",
+        endpoint_decision_two,
+    );
     let subject_prefix = tenant_subject_prefix(&harness.tenant_slug);
     let mut endpoint_one_validation_subscriber = harness
         .nats
@@ -1579,7 +1647,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             })),
         )
         .await;
-        assert_eq!(ack_resp.0, StatusCode::OK);
+        assert_eq!(ack_resp.0, StatusCode::OK, "{:?}", ack_resp.1);
         assert_eq!(ack_resp.1["accepted"], true);
     }
 
