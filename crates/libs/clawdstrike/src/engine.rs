@@ -4167,6 +4167,12 @@ posture:
         let posture_yaml = r#"
 version: "1.2.0"
 name: "posture-origin-wrapper"
+guards:
+  mcp_tool:
+    allow: [safe_tool]
+    block: []
+    require_confirmation: []
+    default_action: block
 posture:
   initial: standard
   states:
