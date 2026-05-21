@@ -270,7 +270,7 @@ public struct AuthorizationEvent: Codable, Equatable {
     }
 
     public var exceededDeadline: Bool {
-        latencyMs >= deadlineMs
+        deadlineMs > 0 && latencyMs >= deadlineMs
     }
 
     enum CodingKeys: String, CodingKey {

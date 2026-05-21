@@ -789,10 +789,13 @@ public struct EndpointSecurityAuthorizationRequest: Equatable {
     }
 
     public var responseDeadlineExpired: Bool {
-        latencyMs >= deadlineMs
+        deadlineMs > 0 && latencyMs >= deadlineMs
     }
 
     public var remainingDeadlineBudgetMs: UInt64 {
+        guard deadlineMs > 0 else {
+            return UInt64.max
+        }
         guard deadlineMs > latencyMs else {
             return 0
         }

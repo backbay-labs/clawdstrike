@@ -1029,8 +1029,22 @@ jobs:
             -k "$keychain_password" \
             "$KEYCHAIN_PATH"
 
+      - name: Validate notarytool profile credentials
+        if: ${{ env.NOTARYTOOL_PROFILE != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$APPLE_ID" ]] || missing+=(APPLE_ID)
+          [[ -n "$APPLE_PASSWORD" ]] || missing+=(APPLE_PASSWORD)
+          [[ -n "$APPLE_TEAM_ID" ]] || missing+=(APPLE_TEAM_ID)
+          if (( ${#missing[@]} > 0 )); then
+            printf 'NOTARYTOOL_PROFILE requires %s so this fresh runner can create the keychain profile.\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
       - name: Store notarytool credentials
-        if: ${{ env.NOTARYTOOL_PROFILE != '' && env.APPLE_ID != '' && env.APPLE_PASSWORD != '' && env.APPLE_TEAM_ID != '' }}
+        if: ${{ env.NOTARYTOOL_PROFILE != '' }}
         shell: bash
         run: |
           set -euo pipefail

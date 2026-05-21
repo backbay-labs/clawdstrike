@@ -70,6 +70,32 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(report.providerState.availability, .degraded)
     }
 
+    func testZeroDeadlineDoesNotCountAsMiss() {
+        let monitor = EndpointSecurityMonitor(
+            installState: .installed,
+            approval: .approved,
+            providerActive: true,
+            fullDiskAccessGranted: true
+        )
+        monitor.recordAuthorization(
+            AuthorizationEvent(
+                path: "/tmp/clawdstrike-es-zero-deadline.txt",
+                decision: .allow,
+                latencyMs: 0,
+                deadlineMs: 0,
+                notifyObserved: true,
+                observedAt: Date(timeIntervalSince1970: 1_778_824_802)
+            )
+        )
+
+        let report = monitor.snapshot()
+
+        XCTAssertEqual(report.counters.authOpenAllowCount, 1)
+        XCTAssertEqual(report.counters.deadlineMissCount, 0)
+        XCTAssertFalse(report.degradedReasons.contains("authorization_deadline_missed"))
+        XCTAssertEqual(report.providerState.availability, .active)
+    }
+
     func testDroppedEventsCarryEvidencePathAndDegradeProvider() throws {
         let report = EndpointSecurityMonitor.fixtureScenario(.droppedEvents)
 
@@ -431,6 +457,38 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         )
         XCTAssertEqual(request.context.metadata["authorizationDeadlineLatencyMs"], "200")
         XCTAssertEqual(request.context.metadata["authorizationDeadlineMs"], "200")
+    }
+
+    func testAuthorizationRequestZeroDeadlineDoesNotFailClosed() {
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open:no-deadline",
+            process: EndpointSecurityAgentProcess(
+                pid: 501,
+                ppid: 1,
+                processGuid: "macos:501:11",
+                image: "/bin/cat",
+                commandLine: "/bin/cat"
+            ),
+            metadata: [
+                "endpointSecurityEventType": "AUTH_OPEN",
+                "endpointSecurityRespondApi": "es_respond_flags_result"
+            ]
+        )
+        var request = EndpointSecurityAuthorizationRequest(
+            path: "/tmp/clawdstrike-es-auth-open.txt",
+            fflag: 1,
+            latencyMs: 0,
+            deadlineMs: 0,
+            context: context
+        )
+        let event = request.authorizationEvent(decision: .allow)
+
+        XCTAssertFalse(event.exceededDeadline)
+        XCTAssertFalse(request.responseDeadlineExpired)
+        XCTAssertEqual(request.remainingDeadlineBudgetMs, UInt64.max)
+        XCTAssertNil(request.failClosedDecisionForExpiredDeadline())
+        XCTAssertNil(request.failClosedDecisionForInsufficientDeadlineBudget(minRemainingMs: 25))
+        XCTAssertNil(request.context.metadata["authorizationDecisionSource"])
     }
 
     func testAuthorizationRequestFailsClosedWhenDeadlineBudgetIsTooSmallForPolicyWork() throws {
