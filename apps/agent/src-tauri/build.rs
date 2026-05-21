@@ -1,7 +1,10 @@
 #![cfg_attr(test, allow(dead_code))]
 
 use serde_json::Value;
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 const REQUIRED_MACOS_PACKAGING_FILES: &[&str] = &[
     "macos/system-extension/entitlements/agent-app.entitlements",
@@ -19,12 +22,14 @@ const REQUIRED_MACOS_ENTITLEMENTS: &str =
     "macos/system-extension/entitlements/agent-app.entitlements";
 const VALIDATE_MACOS_PACKAGING_ENV: &str = "CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING";
 const REQUIRE_CONCRETE_MACOS_PACKAGING_ENV: &str = "CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING";
+const SYSTEM_EXTENSION_BUNDLE_PATH_ENV: &str = "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH";
 
 #[cfg(not(test))]
 fn main() {
     println!("cargo:rerun-if-changed={TAURI_CONFIG_PATH}");
     println!("cargo:rerun-if-env-changed={VALIDATE_MACOS_PACKAGING_ENV}");
     println!("cargo:rerun-if-env-changed={REQUIRE_CONCRETE_MACOS_PACKAGING_ENV}");
+    println!("cargo:rerun-if-env-changed={SYSTEM_EXTENSION_BUNDLE_PATH_ENV}");
     for relative_path in REQUIRED_MACOS_PACKAGING_FILES {
         println!("cargo:rerun-if-changed={relative_path}");
     }
@@ -97,9 +102,101 @@ fn validate_macos_packaging() -> Result<(), String> {
                 files_with_scaffold_marker.join(", ")
             ));
         }
+
+        validate_concrete_system_extension_bundle(&manifest_dir)?;
     }
 
     Ok(())
+}
+
+fn validate_concrete_system_extension_bundle(manifest_dir: &Path) -> Result<(), String> {
+    let bundle_path = env::var(SYSTEM_EXTENSION_BUNDLE_PATH_ENV)
+        .map(|value| value.trim().to_string())
+        .ok()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "{SYSTEM_EXTENSION_BUNDLE_PATH_ENV} must point to a prebuilt signed .systemextension bundle when {REQUIRE_CONCRETE_MACOS_PACKAGING_ENV}=1"
+            )
+        })?;
+    let bundle_path = resolve_bundle_path(manifest_dir, &bundle_path);
+    if bundle_path.extension().and_then(|value| value.to_str()) != Some("systemextension") {
+        return Err(format!(
+            "{SYSTEM_EXTENSION_BUNDLE_PATH_ENV} must point to a .systemextension directory: {}",
+            bundle_path.display()
+        ));
+    }
+    if !bundle_path.is_dir() {
+        return Err(format!(
+            "{SYSTEM_EXTENSION_BUNDLE_PATH_ENV} does not reference an existing directory: {}",
+            bundle_path.display()
+        ));
+    }
+
+    let info_path = bundle_path.join("Contents").join("Info.plist");
+    let info = fs::read_to_string(&info_path)
+        .map_err(|error| format!("failed to read system extension Info.plist: {error}"))?;
+    let template = fs::read_to_string(
+        manifest_dir.join("macos/system-extension/plists/combined-system-extension-template.plist"),
+    )
+    .map_err(|error| format!("failed to read system extension plist template: {error}"))?;
+
+    let expected_bundle_id =
+        plist_string_value(&template, "CFBundleIdentifier").ok_or_else(|| {
+            "system extension plist template is missing CFBundleIdentifier".to_string()
+        })?;
+    let expected_bundle_version = plist_string_value(&template, "CFBundleVersion")
+        .ok_or_else(|| "system extension plist template is missing CFBundleVersion".to_string())?;
+    let actual_bundle_id = plist_string_value(&info, "CFBundleIdentifier").ok_or_else(|| {
+        "prebuilt system extension Info.plist is missing CFBundleIdentifier".to_string()
+    })?;
+    let actual_bundle_version = plist_string_value(&info, "CFBundleVersion").ok_or_else(|| {
+        "prebuilt system extension Info.plist is missing CFBundleVersion".to_string()
+    })?;
+    if actual_bundle_id != expected_bundle_id {
+        return Err(format!(
+            "prebuilt system extension bundle id {actual_bundle_id} does not match template {expected_bundle_id}"
+        ));
+    }
+    if actual_bundle_version != expected_bundle_version {
+        return Err(format!(
+            "prebuilt system extension version {actual_bundle_version} does not match template {expected_bundle_version}"
+        ));
+    }
+
+    let usage =
+        plist_string_value(&info, "NSSystemExtensionUsageDescription").ok_or_else(|| {
+            "prebuilt system extension Info.plist is missing NSSystemExtensionUsageDescription"
+                .to_string()
+        })?;
+    if usage.trim().is_empty() {
+        return Err(
+            "prebuilt system extension Info.plist has an empty NSSystemExtensionUsageDescription"
+                .to_string(),
+        );
+    }
+
+    let executable = plist_string_value(&info, "CFBundleExecutable").ok_or_else(|| {
+        "prebuilt system extension Info.plist is missing CFBundleExecutable".to_string()
+    })?;
+    let executable_path = bundle_path.join("Contents").join("MacOS").join(executable);
+    if !executable_path.is_file() {
+        return Err(format!(
+            "prebuilt system extension executable is missing: {}",
+            executable_path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+fn resolve_bundle_path(manifest_dir: &Path, value: &str) -> PathBuf {
+    let path = PathBuf::from(value);
+    if path.is_absolute() {
+        path
+    } else {
+        manifest_dir.join(path)
+    }
 }
 
 fn manifest_dir() -> Result<PathBuf, String> {
@@ -183,6 +280,14 @@ fn contains_release_placeholder(contents: &str) -> bool {
     }
 
     false
+}
+
+fn plist_string_value(contents: &str, key: &str) -> Option<String> {
+    let key_marker = format!("<key>{key}</key>");
+    let after_key = contents.split_once(&key_marker)?.1;
+    let after_string = after_key.split_once("<string>")?.1;
+    let value = after_string.split_once("</string>")?.0.trim();
+    Some(value.to_string())
 }
 
 fn string_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
