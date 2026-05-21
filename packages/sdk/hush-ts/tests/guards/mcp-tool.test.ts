@@ -30,6 +30,27 @@ describe("McpToolGuard", () => {
     ).toBe(true);
   });
 
+  it("blocks confirmation-gated tools until an external approval is supplied", () => {
+    const guard = new McpToolGuard({
+      defaultAction: "allow",
+      block: [],
+      requireConfirmation: ["file_write"],
+    });
+
+    const result = guard.check(
+      GuardAction.mcpTool("file_write", { path: "/tmp/out.txt" }),
+      new GuardContext(),
+    );
+
+    expect(guard.isAllowed("file_write")).toBe(ToolDecision.RequireConfirmation);
+    expect(result.allowed).toBe(false);
+    expect(result.guard).toBe("mcp_tool");
+    expect(result.details).toMatchObject({
+      requiresConfirmation: true,
+      reason: "confirmation_required",
+    });
+  });
+
   it("fails closed when an MCP action omits the tool name", () => {
     const guard = new McpToolGuard({ defaultAction: "allow", block: [], requireConfirmation: [] });
 

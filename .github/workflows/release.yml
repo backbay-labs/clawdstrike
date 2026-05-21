@@ -104,6 +104,9 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Verify vendored offline Rust dependency graph
+        run: CARGO_NET_OFFLINE=true scripts/cargo-offline.sh metadata --locked --format-version 1
+
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -992,7 +995,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --locked --version '^2'
+        run: cargo install tauri-cli --locked --version '2.0.0'
 
       - name: Import Apple signing certificate
         if: ${{ env.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}

@@ -1591,6 +1591,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         .as_str()
         .expect("endpoint-policy-1 action id")
         .to_string();
+    let endpoint_one_request = endpoint_one_envelope["fact"]["payload"]["request"].clone();
     let endpoint_one_ack_token = endpoint_one_envelope["fact"]["delivery"]["ackToken"]
         .as_str()
         .expect("endpoint-policy-1 ack token")
@@ -1611,16 +1612,18 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         .as_str()
         .expect("endpoint-policy-2 action id")
         .to_string();
+    let endpoint_two_request = endpoint_two_envelope["fact"]["payload"]["request"].clone();
     let endpoint_two_ack_token = endpoint_two_envelope["fact"]["delivery"]["ackToken"]
         .as_str()
         .expect("endpoint-policy-2 ack token")
         .to_string();
 
-    for (action_id, endpoint_agent_id, ack_token, impact, receipt) in [
+    for (action_id, endpoint_agent_id, ack_token, request, impact, receipt) in [
         (
             endpoint_one_action_id.clone(),
             "endpoint-policy-1",
             endpoint_one_ack_token,
+            endpoint_one_request,
             impact_report.clone(),
             signed_impact_receipt_value.clone(),
         ),
@@ -1628,6 +1631,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             endpoint_two_action_id.clone(),
             "endpoint-policy-2",
             endpoint_two_ack_token,
+            endpoint_two_request,
             impact_report_two.clone(),
             signed_impact_receipt_value_two.clone(),
         ),
@@ -1647,6 +1651,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
                         "proposalId": proposal_id,
                         "validationPlanSha256": validation_plan_sha256,
                         "endpointAgentId": endpoint_agent_id,
+                        "request": request,
                         "impact": impact,
                         "receipt": receipt
                     }

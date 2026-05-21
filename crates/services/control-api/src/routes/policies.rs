@@ -1324,6 +1324,12 @@ fn validate_policy_rule_diff_impact_against_receipt(
                     .to_string(),
             )
         })?;
+    let proposed_policy_hash =
+        normalize_policy_impact_sha256("proposedPolicy.policyHash", proposed_policy_hash)?;
+    let expected_proposed_policy_sha256 = normalize_policy_impact_sha256(
+        "policy proposal proposedPolicy.policyHash",
+        expected_proposed_policy_sha256,
+    )?;
     if proposed_policy_hash != expected_proposed_policy_sha256 {
         return Err(ApiError::BadRequest(
             "policyRuleDiffValidation proposedPolicy.policyHash does not match the policy proposal"

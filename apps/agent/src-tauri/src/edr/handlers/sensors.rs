@@ -220,10 +220,8 @@ fn package_manager_policy_decision_observations(
                     .or(policy_severity)
             }
             .or_else(|| Some("info".to_string()));
-            let decision = explicit_allowed
-                .map(|allowed| if allowed { "allowed" } else { "blocked" })
-                .unwrap_or("allowed")
-                .to_string();
+            let allowed = explicit_allowed.unwrap_or_else(|| finding.is_none());
+            let decision = if allowed { "allowed" } else { "blocked" }.to_string();
             let observation_id = local_stable_id(
                 "package_manager_policy_decision_observation",
                 [
@@ -252,6 +250,8 @@ fn package_manager_policy_decision_observations(
                 "policyDecisionMode".to_string(),
                 serde_json::json!(if explicit_allowed.is_some() {
                     "policy_check"
+                } else if finding.is_some() {
+                    "derived_finding_block"
                 } else {
                     "audit_allow"
                 }),

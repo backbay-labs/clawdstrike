@@ -80,10 +80,10 @@ impl CausalGraphRecorder {
                 ..
             } = &observation.event
             {
-                if let Some((target_node, target_edge_kind)) =
+                if let Some((target_node, target_edge_kind, target_edge_attributes)) =
                     self.policy_decision_target_node(target, observation.timestamp)
                 {
-                    let mut edge_attributes = BTreeMap::new();
+                    let mut edge_attributes = target_edge_attributes;
                     insert_json(&mut edge_attributes, "policyAction", action);
                     insert_json(&mut edge_attributes, "policyDecision", decision);
                     self.add_edge(
@@ -91,14 +91,14 @@ impl CausalGraphRecorder {
                         target_node.clone(),
                         target_edge_kind,
                         observation,
-                        edge_attributes,
+                        edge_attributes.clone(),
                     );
                     self.add_edge(
                         target_node.clone(),
                         event_node.clone(),
                         CausalEdgeKind::Related,
                         observation,
-                        BTreeMap::new(),
+                        edge_attributes,
                     );
                     touched.push(target_node);
                 }
@@ -442,14 +442,22 @@ impl CausalGraphRecorder {
                 protocol,
                 url,
             } => {
+                let normalized_host = normalize_hostname(host);
+                let node_host = if normalized_host.is_empty() {
+                    host.clone()
+                } else {
+                    normalized_host
+                };
                 let mut attributes = BTreeMap::new();
+                insert_json(&mut attributes, "host", &node_host);
+                insert_json(&mut attributes, "port", port);
                 insert_json(&mut attributes, "protocol", protocol);
                 insert_json(&mut attributes, "url", url);
                 Some((
                     self.ensure_node(
                         CausalNodeKind::Network,
-                        format!("net:{host}:{port}"),
-                        format!("{host}:{port}"),
+                        format!("net:{node_host}:{port}"),
+                        format!("{node_host}:{port}"),
                         observation.timestamp,
                         attributes,
                     ),
@@ -667,32 +675,38 @@ impl CausalGraphRecorder {
         &mut self,
         target: &str,
         timestamp: DateTime<Utc>,
-    ) -> Option<(String, CausalEdgeKind)> {
+    ) -> Option<(String, CausalEdgeKind, BTreeMap<String, serde_json::Value>)> {
         let target = target.trim();
         if target.is_empty() {
             return None;
         }
         if let Some((host, port, url)) = policy_decision_network_target(target) {
-            let mut attributes = BTreeMap::new();
-            insert_json(&mut attributes, "host", &host);
-            insert_json(&mut attributes, "port", port);
-            insert_json(&mut attributes, "target", target);
-            insert_json(&mut attributes, "url", url);
+            let mut node_attributes = BTreeMap::new();
+            insert_json(&mut node_attributes, "host", &host);
+            insert_json(&mut node_attributes, "port", port);
+            let mut edge_attributes = BTreeMap::new();
+            insert_json(&mut edge_attributes, "host", &host);
+            insert_json(&mut edge_attributes, "port", port);
+            insert_json(&mut edge_attributes, "target", target);
+            insert_json(&mut edge_attributes, "url", url);
             return Some((
                 self.ensure_node(
                     CausalNodeKind::Network,
                     format!("net:{host}:{port}"),
                     format!("{host}:{port}"),
                     timestamp,
-                    attributes,
+                    node_attributes,
                 ),
                 CausalEdgeKind::Connected,
+                edge_attributes,
             ));
         }
         if !target.starts_with('/') && !target.starts_with("~/") {
             return None;
         }
 
+        let mut edge_attributes = BTreeMap::new();
+        insert_json(&mut edge_attributes, "target", target);
         if let Some(kind) = credential_kind_from_path(target) {
             let mut attributes = BTreeMap::new();
             insert_json(&mut attributes, "credentialKind", kind.as_str());
@@ -706,6 +720,7 @@ impl CausalGraphRecorder {
                     attributes,
                 ),
                 CausalEdgeKind::AccessedCredential,
+                edge_attributes,
             ));
         }
 
@@ -718,6 +733,7 @@ impl CausalGraphRecorder {
                 BTreeMap::new(),
             ),
             CausalEdgeKind::Read,
+            edge_attributes,
         ))
     }
 
@@ -1097,6 +1113,74 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn shared_network_nodes_keep_policy_targets_on_edges() {
+        let mut recorder = CausalGraphRecorder::new();
+        let first = observation_with_event(
+            "obs-network-decision-1",
+            EndpointEvent::PolicyDecision {
+                action: "network_extension_egress".to_string(),
+                target: Some("https://API.Example.Invalid/v1".to_string()),
+                decision: "blocked".to_string(),
+                guard: Some("network_extension_content_filter".to_string()),
+                severity: Some("high".to_string()),
+            },
+        );
+        let second = observation_with_event(
+            "obs-network-decision-2",
+            EndpointEvent::PolicyDecision {
+                action: "network_extension_egress".to_string(),
+                target: Some("https://api.example.invalid/v2".to_string()),
+                decision: "blocked".to_string(),
+                guard: Some("network_extension_content_filter".to_string()),
+                severity: Some("high".to_string()),
+            },
+        );
+
+        recorder.record_observation(&first);
+        recorder.record_observation(&second);
+
+        let graph = recorder.graph();
+        let network_nodes = graph
+            .nodes
+            .values()
+            .filter(|node| {
+                node.kind == CausalNodeKind::Network && node.label == "api.example.invalid:443"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(network_nodes.len(), 1);
+        let network_node = network_nodes[0];
+        assert!(
+            !network_node.attributes.contains_key("target"),
+            "shared network nodes must not retain a stale per-decision target"
+        );
+        assert!(
+            !network_node.attributes.contains_key("url"),
+            "shared network nodes must not retain a stale per-decision URL"
+        );
+
+        let edge_targets = graph
+            .edges
+            .iter()
+            .filter(|edge| {
+                edge.kind == CausalEdgeKind::Connected && edge.to == network_node.node_id
+            })
+            .filter_map(|edge| {
+                edge.attributes
+                    .get("target")
+                    .and_then(|value| value.as_str())
+                    .map(ToString::to_string)
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            edge_targets,
+            BTreeSet::from([
+                "https://API.Example.Invalid/v1".to_string(),
+                "https://api.example.invalid/v2".to_string(),
+            ])
+        );
+    }
+
     fn observation_with_process(
         observation_id: &str,
         process: EndpointProcess,
@@ -1113,6 +1197,23 @@ mod tests {
                 args: vec!["-c".to_string(), "make".to_string()],
                 env: BTreeMap::new(),
             },
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    fn observation_with_event(observation_id: &str, event: EndpointEvent) -> EndpointObservation {
+        EndpointObservation {
+            observation_id: observation_id.to_string(),
+            timestamp: Utc::now(),
+            host_id: Some("host-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            process: EndpointProcess {
+                process_guid: Some("proc-1".to_string()),
+                image: Some("/bin/sh".to_string()),
+                ..EndpointProcess::default()
+            },
+            event,
             metadata: BTreeMap::new(),
         }
     }

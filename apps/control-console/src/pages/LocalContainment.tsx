@@ -25,7 +25,6 @@ const CONTAINMENT_ACTIONS: EndpointDecisionAction[] = [
   "quarantine_file",
   "disable_persistence",
   "revoke_grant",
-  "terminate_process_tree",
 ];
 
 export function LocalContainment(_props: { windowId?: string }) {
@@ -34,6 +33,7 @@ export function LocalContainment(_props: { windowId?: string }) {
   const [action, setAction] = useState<EndpointDecisionAction>("suspend_process_tree");
   const [ttlSeconds, setTtlSeconds] = useState(DEFAULT_TTL_SECONDS);
   const [actorUser, setActorUser] = useState("local-operator");
+  const [actorApprovalId, setActorApprovalId] = useState("");
   const [reason, setReason] = useState("");
   const [planResponse, setPlanResponse] = useState<ResponseActionResponse | null>(null);
   const [executions, setExecutions] = useState<ResponseExecutionsResponse | null>(null);
@@ -112,6 +112,10 @@ export function LocalContainment(_props: { windowId?: string }) {
       setError("Root Node ID or Process GUID is required");
       return;
     }
+    if (!dryRun && !actorApprovalId.trim()) {
+      setError("Approval ID is required for live containment");
+      return;
+    }
 
     setLoading(dryRun ? "plan" : "execute");
     try {
@@ -121,7 +125,12 @@ export function LocalContainment(_props: { windowId?: string }) {
         ttlSeconds,
         dryRun,
         ...(reason.trim() && { reason: reason.trim() }),
-        ...(!dryRun && { actor: { userId: actorUser.trim() || "local-operator" } }),
+        ...(!dryRun && {
+          actor: {
+            userId: actorUser.trim() || "local-operator",
+            approvalId: actorApprovalId.trim(),
+          },
+        }),
       });
       setPlanResponse(response);
       setRollback(null);
@@ -257,6 +266,11 @@ export function LocalContainment(_props: { windowId?: string }) {
               onChange={setTtlSeconds}
             />
             <TextField label="Actor User" value={actorUser} onChange={setActorUser} />
+            <TextField
+              label="Approval ID"
+              value={actorApprovalId}
+              onChange={setActorApprovalId}
+            />
             <TextField label="Reason" value={reason} onChange={setReason} />
           </div>
         </Plate>

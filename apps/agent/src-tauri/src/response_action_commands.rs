@@ -647,6 +647,11 @@ fn policy_rule_diff_success_payload(
             "proposalId": command.proposal_id,
             "validationPlanSha256": command.validation_plan_sha256,
             "endpointAgentId": command.endpoint_agent_id,
+            "request": {
+                "method": "POST",
+                "path": POLICY_RULE_DIFF_IMPACT_PATH,
+                "body": command.request_body.clone(),
+            },
             "impact": impact,
             "receipt": receipt,
         }

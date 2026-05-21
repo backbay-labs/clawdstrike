@@ -417,6 +417,11 @@ export class PolicyEngine {
       };
     }
 
+    const derivedToolDecision = this.checkDerivedToolCall(event);
+    if (derivedToolDecision.status === "deny" || derivedToolDecision.status === "warn") {
+      return derivedToolDecision;
+    }
+
     switch (event.eventType) {
       case "file_read":
       case "file_write":
@@ -443,6 +448,33 @@ export class PolicyEngine {
       default:
         return allowed;
     }
+  }
+
+  private checkDerivedToolCall(event: PolicyEvent): Decision {
+    const allowed: Decision = { status: "allow" };
+    if (event.eventType === "tool_call" || !this.config.guards.mcp_tool) {
+      return allowed;
+    }
+    const toolName =
+      typeof event.metadata?.toolName === "string"
+        ? event.metadata.toolName.trim()
+        : "";
+    if (!toolName) {
+      return allowed;
+    }
+
+    return this.checkToolCall({
+      eventId: `${event.eventId}:tool`,
+      eventType: "tool_call",
+      timestamp: event.timestamp,
+      sessionId: event.sessionId,
+      data: {
+        type: "tool",
+        toolName,
+        parameters: {},
+      },
+      metadata: { ...event.metadata, derivedFrom: event.eventType },
+    });
   }
 
   private checkCua(event: PolicyEvent): Decision {

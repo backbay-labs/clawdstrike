@@ -707,7 +707,7 @@ final class ProviderStateTests: XCTestCase {
             generatedAt: "2026-05-15T15:00:00Z",
             expiresAt: "2099-05-15T15:10:00Z"
         )
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -800,6 +800,79 @@ final class ProviderStateTests: XCTestCase {
         )
     }
 
+    func testProviderCommandDoesNotRedirectWatchedSnapshotPath() throws {
+        let trustedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-trusted-\(UUID().uuidString).json")
+        let untrustedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-untrusted-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: trustedURL)
+            try? FileManager.default.removeItem(at: untrustedURL)
+        }
+        try writePolicySnapshot(
+            to: trustedURL,
+            target: "trusted.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
+        )
+        try writePolicySnapshot(
+            to: untrustedURL,
+            target: "untrusted.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: trustedURL)
+        let context = NetworkExtensionProviderCommandContext(
+            installState: .installed,
+            approval: .approved,
+            backendHint: .legacyProxyOnlyRuntime,
+            filterRunning: true
+        )
+
+        let responseData = try NetworkExtensionProviderCommand.handle(
+            Data(
+                """
+                {
+                  "command": "reload_policy",
+                  "requestId": "reload-untrusted-path",
+                  "policySnapshotPath": "\(untrustedURL.path)",
+                  "generation": 4242
+                }
+                """.utf8
+            ),
+            runtime: runtime,
+            context: context
+        )
+        let response = try JSONDecoder().decode(
+            NetworkExtensionProviderCommandResponse.self,
+            from: responseData
+        )
+
+        XCTAssertTrue(response.accepted)
+        XCTAssertTrue(response.reloaded)
+        XCTAssertEqual(response.snapshot?.lastReloadObservation?.policySnapshotPath, untrustedURL.path)
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "trusted.example.invalid", port: 443),
+                now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+            ),
+            .block(NetworkExtensionEgressRestriction(
+                restrictionID: "egress_restriction_test",
+                actionID: "action_test",
+                executionID: "execution_test",
+                target: "trusted.example.invalid:443",
+                expiresAt: ISO8601DateFormatter().date(from: "2099-05-15T15:10:00Z")!
+            ))
+        )
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "untrusted.example.invalid", port: 443),
+                now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+            ),
+            .allow
+        )
+    }
+
     func testProviderVendorConfigurationBuildsReloadPolicyCommandEnvelope() throws {
         let vendorConfiguration = NetworkExtensionProviderVendorConfiguration.reloadPolicy(
             requestID: "reload-vendor-test",
@@ -849,7 +922,7 @@ final class ProviderStateTests: XCTestCase {
             target: "vendor-handler.example.invalid:443",
             generatedAt: "2026-05-15T15:00:00Z"
         )
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -916,7 +989,7 @@ final class ProviderStateTests: XCTestCase {
             target: "reload-observed.example.invalid:443",
             generatedAt: "2026-05-15T15:00:00Z"
         )
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -952,7 +1025,7 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertEqual(observation["reloaded"] as? Bool, true)
     }
 
-    func testProviderCommandPersistsRuntimeSnapshotForLatePolicySource() throws {
+    func testProviderCommandPersistsRuntimeSnapshotForWatchedPolicySource() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("clawdstrike-ne-provider-late-source-\(UUID().uuidString).json")
         let runtimeURL = NetworkExtensionStatusTool.runtimeSnapshotURL(for: url)
@@ -966,7 +1039,7 @@ final class ProviderStateTests: XCTestCase {
             generatedAt: "2026-05-15T15:00:00Z",
             expiresAt: "2099-05-15T15:10:00Z"
         )
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -1007,7 +1080,7 @@ final class ProviderStateTests: XCTestCase {
         defer {
             try? FileManager.default.removeItem(at: url)
         }
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,

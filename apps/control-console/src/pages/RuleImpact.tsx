@@ -18,7 +18,7 @@ import {
 import { GlassButton, NoiseGrain, Plate } from "../components/ui";
 import { exportAsJSON } from "../utils/exportData";
 
-const DEFAULT_MAX_DEPTH = 8;
+const DEFAULT_MAX_DEPTH = 64;
 const RULE_ACTIONS: EndpointDecisionAction[] = [
   "block",
   "warn",
@@ -36,6 +36,7 @@ export function RuleImpact(_props: { windowId?: string }) {
   const [selectedStage, setSelectedStage] = useState("audit");
   const [maxDepth, setMaxDepth] = useState(DEFAULT_MAX_DEPTH);
   const [operator, setOperator] = useState("local-agent");
+  const [approvalId, setApprovalId] = useState("");
   const [note, setNote] = useState("");
   const [candidate, setCandidate] = useState<DetectionCandidateResponse | null>(null);
   const [staged, setStaged] = useState<StageDetectionResponse | null>(null);
@@ -187,6 +188,10 @@ export function RuleImpact(_props: { windowId?: string }) {
       setError("Dry-run the policy delta before live apply");
       return;
     }
+    if (!approvalId.trim()) {
+      setError("Approval ID is required for live policy delta apply");
+      return;
+    }
 
     setLoading("live-apply");
     try {
@@ -194,6 +199,10 @@ export function RuleImpact(_props: { windowId?: string }) {
         dryRun: false,
         appliedBy: operator.trim() || "local-agent",
         verifyProtectionState: true,
+        actor: {
+          userId: operator.trim() || "local-agent",
+          approvalId: approvalId.trim(),
+        },
         ...(note.trim() && { note: note.trim() }),
       });
       setApplyResult(response);
@@ -278,7 +287,7 @@ export function RuleImpact(_props: { windowId?: string }) {
                 label="Max Depth"
                 value={maxDepth}
                 min={1}
-                max={8}
+                max={64}
                 onChange={setMaxDepth}
               />
             </div>
@@ -289,6 +298,7 @@ export function RuleImpact(_props: { windowId?: string }) {
               onChange={setSelectedStage}
             />
             <TextField label="Operator" value={operator} onChange={setOperator} />
+            <TextField label="Approval ID" value={approvalId} onChange={setApprovalId} />
             <TextField label="Note" value={note} onChange={setNote} />
           </div>
         </Plate>

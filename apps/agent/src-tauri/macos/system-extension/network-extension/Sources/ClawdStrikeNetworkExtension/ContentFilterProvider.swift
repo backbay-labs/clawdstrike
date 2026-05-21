@@ -86,10 +86,6 @@ public enum NetworkExtensionProviderCommand {
 
         switch request.command {
         case reloadPolicyCommand:
-            if let policySnapshotPath = request.policySnapshotPath,
-               !policySnapshotPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                runtime.setPolicySnapshotSource(at: URL(fileURLWithPath: policySnapshotPath))
-            }
             let reloaded = runtime.requestPolicyReloadFromHostApp(
                 requestID: request.requestID,
                 command: request.command,
@@ -362,6 +358,11 @@ public final class NetworkExtensionContentFilterRuntime {
         runtimeSnapshotStore: NetworkExtensionProviderRuntimeSnapshotStore? = nil
     ) {
         self.runtimeSnapshotStore = runtimeSnapshotStore
+            ?? policySnapshotURL.map { snapshotURL in
+                FileNetworkExtensionProviderRuntimeSnapshotStore(
+                    snapshotURL: NetworkExtensionStatusTool.runtimeSnapshotURL(for: snapshotURL)
+                )
+            }
         self.policySynced = policySynced
         self.policy = nil
         self.policyReloader = policySnapshotURL.map(NetworkExtensionEgressPolicyReloader.init(snapshotURL:))
@@ -405,6 +406,9 @@ public final class NetworkExtensionContentFilterRuntime {
     public func reloadWatchedPolicy() -> Bool {
         lock.lock()
         guard var reloader = policyReloader else {
+            policySynced = false
+            degradedReasons = ["policy_reload_source_unconfigured"]
+            lastError = "policy_reload_source_unconfigured"
             lock.unlock()
             return false
         }

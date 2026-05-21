@@ -80,6 +80,8 @@ pub struct ApprovalRequest {
     pub status: ApprovalStatus,
     pub resolution: Option<ApprovalResolution>,
     pub resolved_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub resolved_by_trusted_authority: bool,
 }
 
 /// Input for creating an approval request.
@@ -109,6 +111,7 @@ pub struct ApprovalStatusResponse {
     pub id: String,
     pub status: ApprovalStatus,
     pub resolution: Option<ApprovalResolution>,
+    pub resolved_by_trusted_authority: bool,
     pub tool: String,
     pub resource: String,
     pub guard: String,
@@ -125,6 +128,7 @@ impl From<&ApprovalRequest> for ApprovalStatusResponse {
             id: req.id.clone(),
             status: req.status.clone(),
             resolution: req.resolution.clone(),
+            resolved_by_trusted_authority: req.resolved_by_trusted_authority,
             tool: req.tool.clone(),
             resource: req.resource.clone(),
             guard: req.guard.clone(),
@@ -193,6 +197,7 @@ impl ApprovalQueue {
             status: ApprovalStatus::Pending,
             resolution: None,
             resolved_at: None,
+            resolved_by_trusted_authority: false,
         };
 
         {
@@ -301,6 +306,26 @@ impl ApprovalQueue {
         id: &str,
         resolution: ApprovalResolution,
     ) -> Result<ApprovalStatusResponse, ApprovalError> {
+        self.resolve_with_trust(id, resolution, true).await
+    }
+
+    /// Resolve an approval request through the local API. These resolutions are
+    /// intentionally not trusted for gates that require an independent operator
+    /// or signed-control-plane decision.
+    pub async fn resolve_local_api(
+        &self,
+        id: &str,
+        resolution: ApprovalResolution,
+    ) -> Result<ApprovalStatusResponse, ApprovalError> {
+        self.resolve_with_trust(id, resolution, false).await
+    }
+
+    async fn resolve_with_trust(
+        &self,
+        id: &str,
+        resolution: ApprovalResolution,
+        resolved_by_trusted_authority: bool,
+    ) -> Result<ApprovalStatusResponse, ApprovalError> {
         let mut requests = self.requests.lock().await;
 
         let request = requests.get_mut(id).ok_or(ApprovalError::NotFound)?;
@@ -328,6 +353,7 @@ impl ApprovalQueue {
         request.status = ApprovalStatus::Resolved;
         request.resolution = Some(resolution);
         request.resolved_at = Some(Utc::now());
+        request.resolved_by_trusted_authority = resolved_by_trusted_authority;
 
         let response = ApprovalStatusResponse::from(&*request);
         let _ = self.event_tx.send(ApprovalEvent::Resolved {

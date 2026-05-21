@@ -1032,6 +1032,7 @@ export interface PolicyDeltaApplyInput {
   verifyProtectionState?: boolean;
   providerAckTimeoutMs?: number;
   appliedBy?: string;
+  actor?: ResponseExecutionActor;
   note?: string;
 }
 

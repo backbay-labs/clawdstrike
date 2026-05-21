@@ -4910,12 +4910,9 @@ pub(crate) async fn build_policy_delta_apply_enforcement_proof(
     let daemon_policy_reload =
         request_daemon_policy_reload(state.as_ref(), settings, daemon_policy_reload_requested)
             .await;
-    let network_extension_policy_reload = request_policy_delta_network_extension_reload(
-        state.as_ref(),
-        settings,
-        provider_ack_timeout_ms,
-    )
-    .await;
+    let network_extension_policy_reload =
+        request_policy_delta_network_extension_reload(state.as_ref(), provider_ack_timeout_ms)
+            .await;
     let daemon = state.daemon_manager.status().await;
     let daemon_policy_version = tokio::time::timeout(
         POLICY_VERSION_FETCH_TIMEOUT,
@@ -5701,7 +5698,6 @@ pub(crate) async fn verify_policy_delta_record_before_apply(
             "policy delta record rollout does not match artifact rollout".to_string(),
         ));
     }
-
     let computed_artifact_hash =
         policy_delta_artifact_hash(&record.artifact).map_err(internal_error)?;
     if computed_artifact_hash != record.artifact_hash {
@@ -5713,6 +5709,7 @@ pub(crate) async fn verify_policy_delta_record_before_apply(
             ),
         ));
     }
+    validate_policy_delta_artifact_materializes_required_guard(&record.artifact)?;
 
     let signer_public_key = {
         let ledger = state.edr_receipt_ledger.lock().await;
@@ -7416,40 +7413,30 @@ async fn request_network_extension_egress_policy_reload(
 
 async fn request_policy_delta_network_extension_reload(
     state: &AgentApiState,
-    settings: &Settings,
-    timeout_ms: u64,
+    _timeout_ms: u64,
 ) -> NetworkExtensionReloadRequestProof {
-    let timeout_ms = effective_macos_provider_ack_timeout_ms(timeout_ms);
     let generation = network_extension_reload_generation(chrono::Utc::now());
-    let policy_path = settings.policy_path.clone();
-    if timeout_ms == 0 {
-        return NetworkExtensionReloadRequestProof {
-            requested: false,
-            saved: false,
-            request_id: None,
-            policy_snapshot_path: policy_path.display().to_string(),
-            generation,
-            provider_reload_observed: false,
-            provider_reload_matched: false,
-            provider_reload_request_id_matches: false,
-            provider_reload_generation_matches: false,
-            provider_reload_policy_snapshot_path_matches: false,
-            provider_reloaded: None,
-            provider_policy_synced: None,
-            provider_enforcement_ready: None,
-            provider_reload_elapsed_ms: 0,
-            provider_reload_attempts: 0,
-            error: None,
-        };
-    }
-    request_network_extension_reload_for_path(
-        state,
-        policy_path,
+    NetworkExtensionReloadRequestProof {
+        requested: false,
+        saved: false,
+        request_id: None,
+        policy_snapshot_path: state
+            .edr_network_extension_egress_policy_path
+            .display()
+            .to_string(),
         generation,
-        Duration::from_millis(timeout_ms),
-        "policy delta apply",
-    )
-    .await
+        provider_reload_observed: false,
+        provider_reload_matched: false,
+        provider_reload_request_id_matches: false,
+        provider_reload_generation_matches: false,
+        provider_reload_policy_snapshot_path_matches: false,
+        provider_reloaded: None,
+        provider_policy_synced: None,
+        provider_enforcement_ready: None,
+        provider_reload_elapsed_ms: 0,
+        provider_reload_attempts: 0,
+        error: None,
+    }
 }
 
 async fn request_network_extension_reload_for_path(
@@ -17568,6 +17555,13 @@ pub(crate) async fn validate_resolved_raw_artifact_approval(
             ));
         }
     }
+    if !approval_status.resolved_by_trusted_authority {
+        return Err((
+            StatusCode::CONFLICT,
+            "rawArtifactApprovalId must be resolved by a trusted UI or signed control-plane authority"
+                .to_string(),
+        ));
+    }
     if approval_status.guard != EDR_RAW_ARTIFACT_UPLOAD_GUARD {
         return Err((
             StatusCode::CONFLICT,
@@ -19932,7 +19926,7 @@ async fn resolve_approval(
 
     let result = state
         .approval_queue
-        .resolve(&id, input.resolution)
+        .resolve_local_api(&id, input.resolution)
         .await
         .map_err(|err| match err {
             crate::approval::ApprovalError::NotFound => (
@@ -28583,6 +28577,8 @@ guards:
                 "/api/v1/agent/edr/privacy-report",
                 post(agent_edr_privacy_report),
             )
+            .route("/api/v1/approval/request", post(create_approval_request))
+            .route("/api/v1/approval/{id}/resolve", post(resolve_approval))
             .with_state(Arc::clone(&state));
         let observation = EndpointObservation {
             event: EndpointEvent::ToolCall {
@@ -28739,6 +28735,88 @@ guards:
             String::from_utf8_lossy(&bytes)
         );
         assert!(String::from_utf8_lossy(&bytes).contains("resource"));
+
+        let self_approval_reason = "incident ir-privacy-1 local self approval must not release raw";
+        let self_approval_body = serde_json::json!({
+            "tool": "clawdstrike-agent",
+            "resource": raw_artifact_approval_resource_for_privacy_report(),
+            "guard": EDR_RAW_ARTIFACT_UPLOAD_GUARD,
+            "reason": self_approval_reason,
+            "severity": "high",
+            "session_id": "raw-privacy-test-session",
+            "ttl_secs": 60
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/approval/request")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(self_approval_body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build local raw approval request: {e}"));
+        let response = app
+            .clone()
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("local raw approval request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read local raw approval response: {e}"));
+        let self_approval_payload: serde_json::Value = serde_json::from_slice(&bytes)
+            .unwrap_or_else(|e| panic!("failed to decode local raw approval response: {e}"));
+        let self_approval_id = self_approval_payload["id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("local raw approval response missing id"))
+            .to_string();
+
+        let resolve_body = serde_json::json!({ "resolution": "allow-once" });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(format!("/api/v1/approval/{self_approval_id}/resolve"))
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(resolve_body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build local raw approval resolve: {e}"));
+        let response = app
+            .clone()
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("local raw approval resolve failed: {e}"));
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let self_approved_body = serde_json::json!({
+            "privacyMode": "raw_artifact_permitted",
+            "rawArtifactApprovalId": self_approval_id,
+            "rawArtifactApprovalReason": self_approval_reason,
+            "observations": [observation]
+        });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/privacy-report")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(self_approved_body.to_string()))
+            .unwrap_or_else(|e| {
+                panic!("failed to build self-approved raw privacy report request: {e}")
+            });
+        let response = app
+            .clone()
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("self-approved raw privacy report request failed: {e}"));
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("failed to read self-approved raw privacy report response: {e}")
+            });
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "unexpected self-approved raw privacy report response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(String::from_utf8_lossy(&bytes).contains("trusted"));
 
         let approval_reason = "incident ir-privacy-1 raw collection approved";
         let approval_request = state
@@ -37129,7 +37207,6 @@ guards:
                     },
                     "metadata": {
                         "installToken": "MY_RAW_SECRET",
-                        "policyAllowed": false,
                         "policyGuard": "package_script_policy",
                         "policySeverity": "high",
                         "policyActionType": "endpoint.package_script",
@@ -37263,6 +37340,7 @@ guards:
             .unwrap_or_else(|| panic!("missing package-manager policy decision endpoint metadata"));
         assert_eq!(policy_endpoint_decision["receiptFamily"], "policy_decision");
         assert_eq!(policy_endpoint_decision["decision"]["action"], "block");
+        assert_eq!(policy_endpoint_decision["decision"]["severity"], "high");
         assert_eq!(
             policy_endpoint_decision["decision"]["ruleId"],
             "endpoint.policy_decision.endpoint.package_script"
@@ -37285,6 +37363,12 @@ guards:
                 .as_str()
                 .unwrap_or_default()
         ));
+        assert_eq!(policy_endpoint_decision["decision"]["passed"], false);
+        assert!(policy_endpoint_decision["evidence"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing package-manager policy decision receipt evidence"))
+            .iter()
+            .any(|item| item["key"] == "allowed"));
         assert!(!payload.to_string().contains("MY_RAW_SECRET"));
 
         let body = serde_json::json!({ "observations": [] });
@@ -39593,44 +39677,10 @@ guards:
             "unexpected unauthored live policy delta apply response: {}",
             String::from_utf8_lossy(&bytes)
         );
-        let (provider_reload_tx, mut provider_reload_rx) =
-            tokio::sync::mpsc::channel::<crate::macos::host::MacosNetworkExtensionReloadRequest>(1);
-        state
-            .macos_host
-            .install_network_extension_reload_channel(provider_reload_tx)
-            .await;
-        let policy_delta_reload_generation =
-            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let policy_delta_reload_path = {
-            let settings = state.settings.read().await;
-            settings.policy_path.display().to_string()
-        };
-        {
-            let policy_delta_reload_generation = policy_delta_reload_generation.clone();
-            let policy_delta_reload_path = policy_delta_reload_path.clone();
-            tokio::spawn(async move {
-                let request = provider_reload_rx
-                    .recv()
-                    .await
-                    .unwrap_or_else(|| panic!("missing policy-delta provider reload request"));
-                assert_eq!(
-                    request.policy_snapshot_path.display().to_string(),
-                    policy_delta_reload_path
-                );
-                policy_delta_reload_generation
-                    .store(request.generation, std::sync::atomic::Ordering::SeqCst);
-                request
-                    .reply_tx
-                    .send(Ok(crate::macos::host::MacosNetworkExtensionReloadResult {
-                        requested: true,
-                        saved: true,
-                        request_id: "policy-delta-provider-reload-1".to_string(),
-                        policy_snapshot_path: policy_delta_reload_path,
-                        generation: request.generation,
-                    }))
-                    .unwrap_or_else(|_| panic!("failed to send policy-delta reload response"));
-            });
-        }
+        let policy_delta_reload_path = state
+            .edr_network_extension_egress_policy_path
+            .display()
+            .to_string();
         let macos_host_for_ack = state.macos_host.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -39798,15 +39848,15 @@ guards:
         );
         assert_eq!(
             apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]["requested"],
-            true
+            false
         );
         assert_eq!(
             apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]["saved"],
-            true
+            false
         );
-        assert_eq!(
-            apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]["requestId"],
-            "policy-delta-provider-reload-1"
+        assert!(
+            apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]["requestId"]
+                .is_null()
         );
         assert_eq!(
             apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]
@@ -39882,15 +39932,8 @@ guards:
         let false_hash = sha256(b"false").to_hex_prefixed();
         let expected_epoch_hash =
             sha256(expected_new_epoch.to_string().as_bytes()).to_hex_prefixed();
-        let policy_delta_reload_generation =
-            policy_delta_reload_generation.load(std::sync::atomic::Ordering::SeqCst);
-        assert!(policy_delta_reload_generation > 0);
-        let policy_delta_reload_generation_hash =
-            sha256(policy_delta_reload_generation.to_string().as_bytes()).to_hex_prefixed();
         let policy_delta_reload_path_hash =
             sha256(policy_delta_reload_path.as_bytes()).to_hex_prefixed();
-        let policy_delta_reload_request_id_hash =
-            sha256(b"policy-delta-provider-reload-1").to_hex_prefixed();
         assert!(enforcement_receipt_evidence.iter().any(|item| {
             item["key"] == "policyDeltaApplyProviderAckPollSatisfied"
                 && item["valueHash"].as_str() == Some(true_hash.as_str())
@@ -39905,23 +39948,15 @@ guards:
         }));
         assert!(enforcement_receipt_evidence.iter().any(|item| {
             item["key"] == "policyDeltaApplyNetworkExtensionReloadRequested"
-                && item["valueHash"].as_str() == Some(true_hash.as_str())
+                && item["valueHash"].as_str() == Some(false_hash.as_str())
         }));
         assert!(enforcement_receipt_evidence.iter().any(|item| {
             item["key"] == "policyDeltaApplyNetworkExtensionReloadSaved"
-                && item["valueHash"].as_str() == Some(true_hash.as_str())
-        }));
-        assert!(enforcement_receipt_evidence.iter().any(|item| {
-            item["key"] == "policyDeltaApplyNetworkExtensionReloadGeneration"
-                && item["valueHash"].as_str() == Some(policy_delta_reload_generation_hash.as_str())
+                && item["valueHash"].as_str() == Some(false_hash.as_str())
         }));
         assert!(enforcement_receipt_evidence.iter().any(|item| {
             item["key"] == "policyDeltaApplyNetworkExtensionReloadPolicySnapshotPath"
                 && item["valueHash"].as_str() == Some(policy_delta_reload_path_hash.as_str())
-        }));
-        assert!(enforcement_receipt_evidence.iter().any(|item| {
-            item["key"] == "policyDeltaApplyNetworkExtensionReloadRequestId"
-                && item["valueHash"].as_str() == Some(policy_delta_reload_request_id_hash.as_str())
         }));
         assert!(enforcement_receipt_evidence.iter().any(|item| {
             item["key"] == "policyDeltaApplyCrossWindowImpactHash"

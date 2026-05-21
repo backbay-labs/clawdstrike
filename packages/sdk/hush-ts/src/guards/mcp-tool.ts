@@ -109,9 +109,14 @@ export class McpToolGuard implements Guard {
         });
 
       case ToolDecision.RequireConfirmation:
-        return GuardResult.warn(this.name, `Tool '${toolName}' requires confirmation`).withDetails({
+        return GuardResult.block(
+          this.name,
+          Severity.ERROR,
+          `Tool '${toolName}' requires confirmation before execution`,
+        ).withDetails({
           tool: toolName,
           requiresConfirmation: true,
+          reason: "confirmation_required",
         });
     }
   }

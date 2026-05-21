@@ -15,7 +15,7 @@ ensure_node_modules() {
   local pkg="$1"
   if [[ ! -d "$pkg/node_modules" ]]; then
     echo "[test-platform] installing deps: $pkg"
-    npm --prefix "$pkg" install
+    npm --prefix "$pkg" ci
   fi
 }
 

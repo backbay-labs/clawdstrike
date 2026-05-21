@@ -666,6 +666,35 @@ guards:
     expect(decision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
   });
 
+  it("gates derived network events by the original MCP tool name", async () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const event: PolicyEvent = {
+      eventId: "mcp-derived-network-default-deny",
+      eventType: "network_egress",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "network",
+        host: "api.github.com",
+        port: 443,
+        url: "https://api.github.com/repos/backbay-labs/clawdstrike",
+      },
+      metadata: {
+        toolName: "unknown_fetcher",
+        preflight: true,
+      },
+    };
+
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("mcp_tool");
+    expect(decision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
+  });
+
   it("blocks approval-gated MCP tools until an approval is supplied by the hook layer", async () => {
     const engine = new PolicyEngine({
       policy: "clawdstrike:ai-agent-minimal",

@@ -1011,7 +1011,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         monitor: EndpointSecurityMonitor,
         publisher: EndpointSecurityAgentEventPublisher<Transport>,
         adapter: EndpointSecurityAuthOpenMessageAdapter = EndpointSecurityAuthOpenMessageAdapter(),
-        decisionHandler: @escaping DecisionHandler = { _ in .deny },
+        decisionHandler: @escaping DecisionHandler = { _ in .allow },
         publishErrorHandler: PublishErrorHandler? = nil
     ) {
         self.monitor = monitor

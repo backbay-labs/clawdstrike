@@ -2314,6 +2314,7 @@ fn telemetry_privacy_report_id_from_values(
     raw_artifact_upload_permitted: bool,
     raw_artifact_approval_id: Option<&str>,
     raw_artifact_approval_reason_hash: Option<&str>,
+    projection_content_hash: &str,
     count_values: [&str; 7],
 ) -> String {
     let privacy_mode_hash = sha256(privacy_mode.as_bytes()).to_hex_prefixed();
@@ -2326,9 +2327,11 @@ fn telemetry_privacy_report_id_from_values(
     let redacted_count_hash = sha256(count_values[4].as_bytes()).to_hex_prefixed();
     let raw_suppressed_count_hash = sha256(count_values[5].as_bytes()).to_hex_prefixed();
     let local_only_count_hash = sha256(count_values[6].as_bytes()).to_hex_prefixed();
+    let projection_content_hash_hash = sha256(projection_content_hash.as_bytes()).to_hex_prefixed();
     let mut evidence_hashes = vec![
         privacy_mode_hash.as_str(),
         raw_permitted_hash.as_str(),
+        projection_content_hash_hash.as_str(),
         observation_count_hash.as_str(),
         field_count_hash.as_str(),
         hash_only_count_hash.as_str(),
@@ -2823,6 +2826,10 @@ mod tests {
         assert!(receipt
             .evidence
             .iter()
+            .any(|item| item.key == "projectionContentHash"));
+        assert!(receipt
+            .evidence
+            .iter()
             .any(|item| item.key == "rawSuppressedCount"));
         assert!(receipt.evidence.iter().all(|item| item.raw_value.is_none()));
 
@@ -2880,6 +2887,16 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("privacy report raw suppressed count evidence"));
+
+        let mut missing_projection_content_hash = receipt.clone();
+        missing_projection_content_hash
+            .evidence
+            .retain(|item| item.key != "projectionContentHash");
+        assert!(missing_projection_content_hash
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("privacy report projection content hash evidence"));
 
         let mut mismatched_raw_receipt = receipt;
         mismatched_raw_receipt.evidence[0].redaction_class =
