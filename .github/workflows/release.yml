@@ -107,6 +107,11 @@ jobs:
       - name: Verify vendored offline Rust dependency graph
         run: CARGO_NET_OFFLINE=true scripts/cargo-offline.sh metadata --locked --format-version 1
 
+      - name: Test vendored offline Rust workspace
+        run: scripts/cargo-offline.sh test --workspace --all-targets
+        env:
+          CARGO_NET_OFFLINE: "true"
+
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
