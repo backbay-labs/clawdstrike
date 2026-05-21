@@ -996,7 +996,7 @@ async fn run_agent<R: Runtime>(
     });
 
     let response_action_local_api_token = agent_api_token.clone();
-    let api_server = AgentApiServer::new(
+    let api_server = match AgentApiServer::try_new(
         api_port,
         AgentApiServerDeps {
             settings: settings.clone(),
@@ -1010,7 +1010,17 @@ async fn run_agent<R: Runtime>(
             fleet_hunt_publisher,
             auth_token: agent_api_token,
         },
-    );
+    ) {
+        Ok(api_server) => api_server,
+        Err(err) => {
+            tracing::error!(
+                error = %err,
+                "Failed to initialize durable Agent API EDR state; exiting instead of running with transient evidence"
+            );
+            app.exit(1);
+            return;
+        }
+    };
     let control_ack_retry_sink = api_server.control_ack_postback_retry_sink();
     let api_shutdown = shutdown_tx.subscribe();
     tokio::spawn(async move {

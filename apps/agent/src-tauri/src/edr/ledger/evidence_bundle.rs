@@ -55,6 +55,7 @@ impl EndpointEvidenceBundleStore {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient() -> Self {
         Self {
             root: None,

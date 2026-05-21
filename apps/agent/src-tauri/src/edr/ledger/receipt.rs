@@ -117,6 +117,7 @@ impl EndpointReceiptLedger {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient(keypair: Keypair, signer_identity: impl Into<String>) -> Self {
         let signer_public_key = keypair.public_key().to_hex();
         Self {

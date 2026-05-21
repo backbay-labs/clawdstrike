@@ -464,13 +464,13 @@ pub(crate) async fn expire_edr_response_executions(
             })?;
         let reason = format!("response execution {} TTL expired", execution.execution_id);
         let (_rollback_intent, _rollback_intent_receipt) =
-            record_edr_response_rollback_intent(&state, execution, &reason, graph).await?;
-        let rollback = match execute_response_expiration_rollback(&state, execution).await {
+            record_edr_response_rollback_intent(state, execution, &reason, graph).await?;
+        let rollback = match execute_response_expiration_rollback(state, execution).await {
             Ok(rollback) => rollback,
             Err((status, err)) => {
                 let record_message = sanitize_response_execution_failure(&err);
                 let record_result = record_edr_response_rollback_failure(
-                    &state,
+                    state,
                     execution,
                     &reason,
                     record_message.as_str(),
@@ -501,7 +501,7 @@ pub(crate) async fn expire_edr_response_executions(
                 ));
             }
         };
-        let receipt = emit_edr_response_rollback_receipt(&state, &rollback, graph)
+        let receipt = emit_edr_response_rollback_receipt(state, &rollback, graph)
             .await
             .map_err(internal_error)?;
         rollbacks.push(rollback);
@@ -512,7 +512,7 @@ pub(crate) async fn expire_edr_response_executions(
         let mut ledger = state.edr_response_execution_ledger.lock().await;
         ledger.expire_due(now).map_err(internal_error)?
     };
-    deactivate_expired_egress_restrictions(&state, &expired, now).await?;
+    deactivate_expired_egress_restrictions(state, &expired, now).await?;
 
     let mut records = Vec::with_capacity(expired.len());
     let mut receipts = Vec::with_capacity(expired.len());
@@ -529,7 +529,7 @@ pub(crate) async fn expire_edr_response_executions(
                 )
             })?;
         let receipt = emit_edr_response_execution_receipt(
-            &state,
+            state,
             &execution,
             graph,
             execution.actor.clone(),

@@ -30,6 +30,7 @@ impl EndpointStagedDetectionLedger {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient() -> Self {
         Self {
             path: None,

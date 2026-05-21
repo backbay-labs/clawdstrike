@@ -42,6 +42,7 @@ pub(crate) fn suspend_process_tree_effect(
         .ok_or_else(|| anyhow::anyhow!("execution has no suspend_process_tree effect"))
 }
 
+#[cfg(test)]
 pub(crate) fn process_tree_effect_pids(
     effect: &EndpointResponseExecutionEffect,
 ) -> Result<Vec<u32>> {

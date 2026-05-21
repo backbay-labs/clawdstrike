@@ -13,8 +13,6 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use chrono;
-
 use clawdstrike_policy_event::edr::{
     CausalGraph, CausalNodeKind, CredentialKind, DeceptionCleanupReport,
     DeceptionMaterializationReport, DeceptionPlan, DeceptionRotationReport, DetectionFinding,

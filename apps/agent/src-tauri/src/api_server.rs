@@ -457,13 +457,37 @@ impl RouteRateLimiter {
 }
 
 impl AgentApiServer {
-    pub fn new(port: u16, deps: AgentApiServerDeps) -> Self {
+    pub fn try_new(port: u16, deps: AgentApiServerDeps) -> Result<Self> {
         let token_grace_minutes = deps
             .settings
             .try_read()
             .map(|settings| settings.local_api_security.token_grace_minutes.max(1))
             .unwrap_or(15);
-        Self {
+        let edr_flight_recorder = Arc::new(Mutex::new(default_edr_flight_recorder()?));
+        let edr_receipt_ledger = Arc::new(Mutex::new(default_edr_receipt_ledger()?));
+        let edr_honey_registry = Arc::new(Mutex::new(default_edr_honey_registry()?));
+        let edr_evidence_bundle_store = Arc::new(Mutex::new(default_edr_evidence_bundle_store()?));
+        let edr_response_execution_ledger =
+            Arc::new(Mutex::new(default_edr_response_execution_ledger()?));
+        let edr_response_acknowledgement_ledger =
+            Arc::new(Mutex::new(default_edr_response_acknowledgement_ledger()?));
+        let edr_control_ack_postback_retry_ledger =
+            Arc::new(Mutex::new(default_edr_control_ack_postback_retry_ledger()?));
+        let edr_control_archive_upload_retry_ledger = Arc::new(Mutex::new(
+            default_edr_control_archive_upload_retry_ledger()?,
+        ));
+        let edr_control_receipt_upload_retry_ledger = Arc::new(Mutex::new(
+            default_edr_control_receipt_upload_retry_ledger()?,
+        ));
+        let edr_fleet_hunt_event_outbox =
+            Arc::new(Mutex::new(default_edr_fleet_hunt_event_outbox()?));
+        let edr_egress_restriction_ledger =
+            Arc::new(Mutex::new(default_edr_egress_restriction_ledger()?));
+        let edr_staged_detection_ledger =
+            Arc::new(Mutex::new(default_edr_staged_detection_ledger()?));
+        let edr_policy_delta_store = Arc::new(Mutex::new(default_edr_policy_delta_store()?));
+
+        Ok(Self {
             port,
             state: Arc::new(AgentApiState {
                 settings: deps.settings,
@@ -487,37 +511,19 @@ impl AgentApiServer {
                 integration_test_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
                 openclaw_request_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
                 ui_bootstrap_sessions: Arc::new(Mutex::new(HashMap::new())),
-                edr_flight_recorder: Arc::new(Mutex::new(default_edr_flight_recorder())),
-                edr_receipt_ledger: Arc::new(Mutex::new(default_edr_receipt_ledger())),
-                edr_honey_registry: Arc::new(Mutex::new(default_edr_honey_registry())),
-                edr_evidence_bundle_store: Arc::new(
-                    Mutex::new(default_edr_evidence_bundle_store()),
-                ),
-                edr_response_execution_ledger: Arc::new(Mutex::new(
-                    default_edr_response_execution_ledger(),
-                )),
-                edr_response_acknowledgement_ledger: Arc::new(Mutex::new(
-                    default_edr_response_acknowledgement_ledger(),
-                )),
-                edr_control_ack_postback_retry_ledger: Arc::new(Mutex::new(
-                    default_edr_control_ack_postback_retry_ledger(),
-                )),
-                edr_control_archive_upload_retry_ledger: Arc::new(Mutex::new(
-                    default_edr_control_archive_upload_retry_ledger(),
-                )),
-                edr_control_receipt_upload_retry_ledger: Arc::new(Mutex::new(
-                    default_edr_control_receipt_upload_retry_ledger(),
-                )),
-                edr_fleet_hunt_event_outbox: Arc::new(Mutex::new(
-                    default_edr_fleet_hunt_event_outbox(),
-                )),
-                edr_egress_restriction_ledger: Arc::new(Mutex::new(
-                    default_edr_egress_restriction_ledger(),
-                )),
-                edr_staged_detection_ledger: Arc::new(Mutex::new(
-                    default_edr_staged_detection_ledger(),
-                )),
-                edr_policy_delta_store: Arc::new(Mutex::new(default_edr_policy_delta_store())),
+                edr_flight_recorder,
+                edr_receipt_ledger,
+                edr_honey_registry,
+                edr_evidence_bundle_store,
+                edr_response_execution_ledger,
+                edr_response_acknowledgement_ledger,
+                edr_control_ack_postback_retry_ledger,
+                edr_control_archive_upload_retry_ledger,
+                edr_control_receipt_upload_retry_ledger,
+                edr_fleet_hunt_event_outbox,
+                edr_egress_restriction_ledger,
+                edr_staged_detection_ledger,
+                edr_policy_delta_store,
                 edr_cross_window_promotion_validations: Arc::new(Mutex::new(VecDeque::new())),
                 edr_network_extension_egress_policy_path: Arc::new(
                     default_edr_network_extension_egress_policy_path(),
@@ -526,7 +532,7 @@ impl AgentApiServer {
                 edr_recent_findings: Arc::new(Mutex::new(VecDeque::new())),
                 edr_auto_published_agent_secret_touch_keys: Arc::new(Mutex::new(BTreeSet::new())),
             }),
-        }
+        })
     }
 
     pub fn control_ack_postback_retry_sink(&self) -> ControlAckPostbackRetrySink {
@@ -18554,19 +18560,10 @@ fn default_edr_flight_recorder_path() -> PathBuf {
         .join("flight-recorder.jsonl")
 }
 
-fn default_edr_flight_recorder() -> EndpointFlightRecorder {
+fn default_edr_flight_recorder() -> Result<EndpointFlightRecorder> {
     let path = default_edr_flight_recorder_path();
-    match EndpointFlightRecorder::open(&path) {
-        Ok(recorder) => recorder,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                path = %path.display(),
-                "failed to open endpoint flight recorder, using transient recorder"
-            );
-            EndpointFlightRecorder::transient()
-        }
-    }
+    EndpointFlightRecorder::open(&path)
+        .with_context(|| format!("open durable endpoint flight recorder {}", path.display()))
 }
 
 fn default_edr_receipt_ledger_path() -> PathBuf {
@@ -18659,168 +18656,119 @@ fn default_edr_receipt_signing_key_path() -> PathBuf {
         .join("receipt-signing.key")
 }
 
-fn default_edr_receipt_ledger() -> EndpointReceiptLedger {
-    match EndpointReceiptLedger::open(default_edr_receipt_ledger_path()) {
-        Ok(ledger) => ledger,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint receipt ledger; using transient EDR receipt signer"
-            );
-            EndpointReceiptLedger::transient(Keypair::generate(), "transient-edr")
-        }
-    }
+fn default_edr_receipt_ledger() -> Result<EndpointReceiptLedger> {
+    let path = default_edr_receipt_ledger_path();
+    EndpointReceiptLedger::open(&path)
+        .with_context(|| format!("open durable endpoint receipt ledger {}", path.display()))
 }
 
-fn default_edr_honey_registry() -> EndpointHoneyRegistry {
-    match EndpointHoneyRegistry::open(default_edr_honey_registry_path()) {
-        Ok(registry) => registry,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint honey registry; using transient registry"
-            );
-            EndpointHoneyRegistry::transient()
-        }
-    }
+fn default_edr_honey_registry() -> Result<EndpointHoneyRegistry> {
+    let path = default_edr_honey_registry_path();
+    EndpointHoneyRegistry::open(&path)
+        .with_context(|| format!("open durable endpoint honey registry {}", path.display()))
 }
 
-fn default_edr_evidence_bundle_store() -> EndpointEvidenceBundleStore {
-    match EndpointEvidenceBundleStore::open(default_edr_evidence_bundle_dir()) {
-        Ok(store) => store,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint evidence bundle store; using transient store"
-            );
-            EndpointEvidenceBundleStore::transient()
-        }
-    }
+fn default_edr_evidence_bundle_store() -> Result<EndpointEvidenceBundleStore> {
+    let root = default_edr_evidence_bundle_dir();
+    EndpointEvidenceBundleStore::open(&root).with_context(|| {
+        format!(
+            "open durable endpoint evidence bundle store {}",
+            root.display()
+        )
+    })
 }
 
-fn default_edr_response_execution_ledger() -> EndpointResponseExecutionLedger {
-    match EndpointResponseExecutionLedger::open(default_edr_response_execution_ledger_path()) {
-        Ok(ledger) => ledger,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint response execution ledger; using transient ledger"
-            );
-            EndpointResponseExecutionLedger::transient()
-        }
-    }
+fn default_edr_response_execution_ledger() -> Result<EndpointResponseExecutionLedger> {
+    let path = default_edr_response_execution_ledger_path();
+    EndpointResponseExecutionLedger::open(&path).with_context(|| {
+        format!(
+            "open durable endpoint response execution ledger {}",
+            path.display()
+        )
+    })
 }
 
-fn default_edr_response_acknowledgement_ledger() -> EndpointResponseAcknowledgementLedger {
-    match EndpointResponseAcknowledgementLedger::open(
-        default_edr_response_acknowledgement_ledger_path(),
-    ) {
-        Ok(ledger) => ledger,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint response acknowledgement ledger; using transient ledger"
-            );
-            EndpointResponseAcknowledgementLedger::transient()
-        }
-    }
+fn default_edr_response_acknowledgement_ledger() -> Result<EndpointResponseAcknowledgementLedger> {
+    let path = default_edr_response_acknowledgement_ledger_path();
+    EndpointResponseAcknowledgementLedger::open(&path).with_context(|| {
+        format!(
+            "open durable endpoint response acknowledgement ledger {}",
+            path.display()
+        )
+    })
 }
 
-fn default_edr_control_ack_postback_retry_ledger() -> EndpointControlAckPostbackRetryLedger {
-    match EndpointControlAckPostbackRetryLedger::open(
-        default_edr_control_ack_postback_retry_ledger_path(),
-    ) {
-        Ok(ledger) => ledger,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint Control API acknowledgement retry queue; using transient queue"
-            );
-            EndpointControlAckPostbackRetryLedger::transient()
-        }
-    }
+fn default_edr_control_ack_postback_retry_ledger() -> Result<EndpointControlAckPostbackRetryLedger>
+{
+    let path = default_edr_control_ack_postback_retry_ledger_path();
+    EndpointControlAckPostbackRetryLedger::open(&path).with_context(|| {
+        format!(
+            "open durable endpoint Control API acknowledgement retry queue {}",
+            path.display()
+        )
+    })
 }
 
-fn default_edr_control_archive_upload_retry_ledger() -> EndpointControlArchiveUploadRetryLedger {
-    match EndpointControlArchiveUploadRetryLedger::open(
-        default_edr_control_archive_upload_retry_ledger_path(),
-    ) {
-        Ok(ledger) => ledger,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint Control API archive upload retry queue; using transient queue"
-            );
-            EndpointControlArchiveUploadRetryLedger::transient()
-        }
-    }
+fn default_edr_control_archive_upload_retry_ledger(
+) -> Result<EndpointControlArchiveUploadRetryLedger> {
+    let path = default_edr_control_archive_upload_retry_ledger_path();
+    EndpointControlArchiveUploadRetryLedger::open(&path).with_context(|| {
+        format!(
+            "open durable endpoint Control API archive upload retry queue {}",
+            path.display()
+        )
+    })
 }
 
-fn default_edr_control_receipt_upload_retry_ledger() -> EndpointControlReceiptUploadRetryLedger {
-    match EndpointControlReceiptUploadRetryLedger::open(
-        default_edr_control_receipt_upload_retry_ledger_path(),
-    ) {
-        Ok(ledger) => ledger,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint Control API receipt upload retry queue; using transient queue"
-            );
-            EndpointControlReceiptUploadRetryLedger::transient()
-        }
-    }
+fn default_edr_control_receipt_upload_retry_ledger(
+) -> Result<EndpointControlReceiptUploadRetryLedger> {
+    let path = default_edr_control_receipt_upload_retry_ledger_path();
+    EndpointControlReceiptUploadRetryLedger::open(&path).with_context(|| {
+        format!(
+            "open durable endpoint Control API receipt upload retry queue {}",
+            path.display()
+        )
+    })
 }
 
-fn default_edr_fleet_hunt_event_outbox() -> EndpointFleetHuntEventOutbox {
-    match EndpointFleetHuntEventOutbox::open(default_edr_fleet_hunt_event_outbox_path()) {
-        Ok(outbox) => outbox,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint fleet hunt-event outbox; using transient outbox"
-            );
-            EndpointFleetHuntEventOutbox::transient()
-        }
-    }
+fn default_edr_fleet_hunt_event_outbox() -> Result<EndpointFleetHuntEventOutbox> {
+    let path = default_edr_fleet_hunt_event_outbox_path();
+    EndpointFleetHuntEventOutbox::open(&path).with_context(|| {
+        format!(
+            "open durable endpoint fleet hunt-event outbox {}",
+            path.display()
+        )
+    })
 }
 
-fn default_edr_egress_restriction_ledger() -> EndpointEgressRestrictionLedger {
-    match EndpointEgressRestrictionLedger::open(default_edr_egress_restriction_ledger_path()) {
-        Ok(ledger) => ledger,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint egress restriction ledger; using transient ledger"
-            );
-            EndpointEgressRestrictionLedger::transient()
-        }
-    }
+fn default_edr_egress_restriction_ledger() -> Result<EndpointEgressRestrictionLedger> {
+    let path = default_edr_egress_restriction_ledger_path();
+    EndpointEgressRestrictionLedger::open(&path).with_context(|| {
+        format!(
+            "open durable endpoint egress restriction ledger {}",
+            path.display()
+        )
+    })
 }
 
-fn default_edr_staged_detection_ledger() -> EndpointStagedDetectionLedger {
-    match EndpointStagedDetectionLedger::open(default_edr_staged_detection_ledger_path()) {
-        Ok(ledger) => ledger,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint staged detection ledger; using transient ledger"
-            );
-            EndpointStagedDetectionLedger::transient()
-        }
-    }
+fn default_edr_staged_detection_ledger() -> Result<EndpointStagedDetectionLedger> {
+    let path = default_edr_staged_detection_ledger_path();
+    EndpointStagedDetectionLedger::open(&path).with_context(|| {
+        format!(
+            "open durable endpoint staged detection ledger {}",
+            path.display()
+        )
+    })
 }
 
-fn default_edr_policy_delta_store() -> EndpointPolicyDeltaStore {
-    match EndpointPolicyDeltaStore::open(default_edr_policy_delta_dir()) {
-        Ok(store) => store,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to open endpoint policy delta store; using transient store"
-            );
-            EndpointPolicyDeltaStore::transient()
-        }
-    }
+fn default_edr_policy_delta_store() -> Result<EndpointPolicyDeltaStore> {
+    let root = default_edr_policy_delta_dir();
+    EndpointPolicyDeltaStore::open(&root).with_context(|| {
+        format!(
+            "open durable endpoint policy delta store {}",
+            root.display()
+        )
+    })
 }
 
 async fn append_recent_edr_findings(state: &AgentApiState, findings: &[DetectionFinding]) {

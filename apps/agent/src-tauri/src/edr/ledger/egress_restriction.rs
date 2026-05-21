@@ -138,6 +138,7 @@ impl EndpointEgressRestrictionLedger {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient() -> Self {
         Self {
             path: None,
