@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use hush_core::{canonicalize_json, sha256};
+use hush_core::sha256;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -614,10 +614,7 @@ impl EndpointResponseExecutionReport {
             ));
         }
 
-        let graph_value = serde_json::to_value(graph).context("serialize evidence graph slice")?;
-        let canonical_graph =
-            canonicalize_json(&graph_value).context("canonicalize evidence graph slice")?;
-        let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
             [
@@ -684,10 +681,7 @@ impl EndpointResponseExecutionReport {
             return Err(anyhow!("failed execution report requires a failure reason"));
         }
 
-        let graph_value = serde_json::to_value(graph).context("serialize failed response graph")?;
-        let canonical_graph =
-            canonicalize_json(&graph_value).context("canonicalize failed response graph")?;
-        let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let reason = format!("{}; failure: {failure}", plan.reason);
         let reason_hash = sha256(reason.as_bytes()).to_hex_prefixed();
         let evidence_bundle_id = stable_id(
@@ -758,11 +752,7 @@ impl EndpointResponseExecutionReport {
             .first()
             .ok_or_else(|| anyhow!("restrict egress execution report requires a target"))?;
 
-        let graph_value =
-            serde_json::to_value(graph).context("serialize egress restriction graph slice")?;
-        let canonical_graph = canonicalize_json(&graph_value)
-            .context("canonicalize egress restriction graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let effect = EndpointResponseExecutionEffect::restrict_egress(primary_target, targets);
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
@@ -834,11 +824,7 @@ impl EndpointResponseExecutionReport {
         let original_path = original_path.as_ref();
         let quarantine_path = quarantine_path.as_ref();
         let content_hash = content_hash.as_ref();
-        let graph_value =
-            serde_json::to_value(graph).context("serialize quarantine evidence graph slice")?;
-        let canonical_graph = canonicalize_json(&graph_value)
-            .context("canonicalize quarantine evidence graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
             [
@@ -914,11 +900,7 @@ impl EndpointResponseExecutionReport {
         let original_path = original_path.as_ref();
         let disabled_path = disabled_path.as_ref();
         let content_hash = content_hash.as_ref();
-        let graph_value =
-            serde_json::to_value(graph).context("serialize persistence evidence graph slice")?;
-        let canonical_graph = canonicalize_json(&graph_value)
-            .context("canonicalize persistence evidence graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
             [
@@ -991,11 +973,7 @@ impl EndpointResponseExecutionReport {
 
         let grant_target = grant_target.as_ref();
         let revoked_grant_hash = revoked_grant_hash.as_ref();
-        let graph_value =
-            serde_json::to_value(graph).context("serialize revoke grant evidence graph slice")?;
-        let canonical_graph =
-            canonicalize_json(&graph_value).context("canonicalize revoke grant graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
             [
@@ -1068,11 +1046,7 @@ impl EndpointResponseExecutionReport {
             ));
         }
 
-        let graph_value =
-            serde_json::to_value(graph).context("serialize process containment graph slice")?;
-        let canonical_graph = canonicalize_json(&graph_value)
-            .context("canonicalize process containment graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let effect = EndpointResponseExecutionEffect::suspend_process_tree(root_pid, pids);
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
@@ -1245,6 +1219,12 @@ impl EndpointResponseExecutionReport {
             ),
         }
     }
+}
+
+fn response_graph_content_hash(root_node_id: &str, graph: &CausalGraph) -> Result<String> {
+    EndpointGraphReference::for_subgraph(root_node_id, graph)
+        .content_hash
+        .ok_or_else(|| anyhow!("response graph content hash is required"))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

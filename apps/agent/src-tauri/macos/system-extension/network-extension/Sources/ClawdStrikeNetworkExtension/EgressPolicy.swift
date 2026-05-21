@@ -74,6 +74,10 @@ public struct NetworkExtensionEgressPolicy: Equatable, Sendable {
         restrictions.contains { $0.active }
     }
 
+    public func enforcementReady(now: Date) -> Bool {
+        restrictions.contains { $0.active && $0.expiresAt > now }
+    }
+
     public func decision(for target: NetworkExtensionFlowTarget, now: Date) -> NetworkExtensionFlowDecision {
         if let restriction = restrictions.first(where: { $0.blocks(target, now: now) }) {
             return .block(restriction)

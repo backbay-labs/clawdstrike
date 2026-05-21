@@ -2,6 +2,8 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
+use anyhow::Context;
+#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -726,6 +728,35 @@ pub(crate) async fn agent_edr_policy_delta_apply(
         Some(backup_path.display().to_string())
     };
 
+    let mut record = EdrPolicyDeltaApplyRecord {
+        policy_delta_id: policy_delta.policy_delta_id.clone(),
+        applied_at,
+        apply_status: Some(if dry_run { "dry_run" } else { "prepared" }.to_string()),
+        failure_reason: None,
+        applied_by: applied_by.to_string(),
+        note,
+        dry_run,
+        applied: false,
+        allow_base_policy_drift,
+        cross_window_impact_hash: policy_delta
+            .artifact
+            .rollout
+            .cross_window_impact_hash
+            .clone(),
+        cross_window_recommendation_hash: policy_delta
+            .artifact
+            .rollout
+            .cross_window_recommendation_hash
+            .clone(),
+        policy_path: policy_path.display().to_string(),
+        backup_path: backup_path.clone(),
+        expected_base_policy_hash,
+        previous_policy_hash: previous_snapshot.policy_hash.clone(),
+        new_policy_hash: new_snapshot.policy_hash.clone(),
+        previous_policy_epoch: previous_snapshot.policy_epoch,
+        new_policy_epoch: new_snapshot.policy_epoch,
+    };
+
     let prepared_receipt = if dry_run {
         None
     } else {
@@ -752,12 +783,18 @@ pub(crate) async fn agent_edr_policy_delta_apply(
     };
 
     if !dry_run {
+        append_policy_delta_apply_record(state.as_ref(), &record).await?;
+    }
+
+    if !dry_run {
         crate::security::fs::write_private_atomic(
             &policy_path,
             &new_bytes,
             "endpoint policy delta applied policy",
         )
         .map_err(internal_error)?;
+        record.apply_status = Some("policy_written".to_string());
+        record.applied = true;
     }
 
     let receipt = if dry_run {
@@ -766,83 +803,77 @@ pub(crate) async fn agent_edr_policy_delta_apply(
         let sensor_state =
             endpoint_sensor_state_from_macos_host(&state.macos_host.snapshot().await);
         let mut ledger = state.edr_receipt_ledger.lock().await;
-        Some(
-            ledger
-                .sign_policy_delta_receipt(
-                    &settings,
-                    new_snapshot.clone(),
-                    sensor_state,
-                    EdrPolicyDeltaReceiptSigningInput {
-                        artifact: &policy_delta.artifact,
-                        artifact_hash: &policy_delta.artifact_hash,
-                        operation: "applied",
-                        previous_policy_hash: Some(previous_snapshot.policy_hash.as_str()),
-                        new_policy_hash: Some(new_snapshot.policy_hash.as_str()),
-                        backup_path: backup_path.as_deref(),
-                    },
+        match ledger.sign_policy_delta_receipt(
+            &settings,
+            new_snapshot.clone(),
+            sensor_state,
+            EdrPolicyDeltaReceiptSigningInput {
+                artifact: &policy_delta.artifact,
+                artifact_hash: &policy_delta.artifact_hash,
+                operation: "applied",
+                previous_policy_hash: Some(previous_snapshot.policy_hash.as_str()),
+                new_policy_hash: Some(new_snapshot.policy_hash.as_str()),
+                backup_path: backup_path.as_deref(),
+            },
+        ) {
+            Ok(receipt) => Some(receipt),
+            Err(err) => {
+                rollback_policy_delta_apply_after_failure(
+                    state.as_ref(),
+                    &mut record,
+                    &policy_path,
+                    "applied receipt signing failed",
                 )
-                .map_err(internal_error)?,
-        )
+                .await?;
+                return Err(internal_error(err));
+            }
+        }
     };
     let post_apply_enforcement =
         if !dry_run && (verify_protection_state || reload_daemon_policy || restart_daemon) {
-            Some(
-                build_policy_delta_apply_enforcement_proof(
-                    &state,
-                    PolicyDeltaApplyEnforcementProofInput {
-                        settings: &settings,
-                        local_policy: new_snapshot.clone(),
-                        cross_window_impact_hash: policy_delta
-                            .artifact
-                            .rollout
-                            .cross_window_impact_hash
-                            .as_deref(),
-                        cross_window_recommendation_hash: policy_delta
-                            .artifact
-                            .rollout
-                            .cross_window_recommendation_hash
-                            .as_deref(),
-                        daemon_policy_reload_requested: reload_daemon_policy,
-                        daemon_restart_requested: restart_daemon,
-                        provider_ack_timeout_ms,
-                    },
-                )
-                .await
-                .map_err(internal_error)?,
+            match build_policy_delta_apply_enforcement_proof(
+                &state,
+                PolicyDeltaApplyEnforcementProofInput {
+                    settings: &settings,
+                    local_policy: new_snapshot.clone(),
+                    cross_window_impact_hash: policy_delta
+                        .artifact
+                        .rollout
+                        .cross_window_impact_hash
+                        .as_deref(),
+                    cross_window_recommendation_hash: policy_delta
+                        .artifact
+                        .rollout
+                        .cross_window_recommendation_hash
+                        .as_deref(),
+                    daemon_policy_reload_requested: reload_daemon_policy,
+                    daemon_restart_requested: restart_daemon,
+                    provider_ack_timeout_ms,
+                },
             )
+            .await
+            {
+                Ok(proof) => Some(proof),
+                Err(err) => {
+                    rollback_policy_delta_apply_after_failure(
+                        state.as_ref(),
+                        &mut record,
+                        &policy_path,
+                        "post-apply enforcement proof failed",
+                    )
+                    .await?;
+                    return Err(internal_error(err));
+                }
+            }
         } else {
             None
         };
 
-    let record = EdrPolicyDeltaApplyRecord {
-        policy_delta_id: policy_delta.policy_delta_id.clone(),
-        applied_at,
-        applied_by: applied_by.to_string(),
-        note,
-        dry_run,
-        applied: !dry_run,
-        allow_base_policy_drift,
-        cross_window_impact_hash: policy_delta
-            .artifact
-            .rollout
-            .cross_window_impact_hash
-            .clone(),
-        cross_window_recommendation_hash: policy_delta
-            .artifact
-            .rollout
-            .cross_window_recommendation_hash
-            .clone(),
-        policy_path: policy_path.display().to_string(),
-        backup_path,
-        expected_base_policy_hash,
-        previous_policy_hash: previous_snapshot.policy_hash,
-        new_policy_hash: new_snapshot.policy_hash,
-        previous_policy_epoch: previous_snapshot.policy_epoch,
-        new_policy_epoch: new_snapshot.policy_epoch,
-    };
     if !dry_run {
-        let mut store = state.edr_policy_delta_store.lock().await;
-        store.append_apply(&record).map_err(internal_error)?;
+        record.apply_status = Some("complete".to_string());
+        record.failure_reason = None;
+        record.applied = true;
+        append_policy_delta_apply_record(state.as_ref(), &record).await?;
     }
 
     Ok(Json(EdrPolicyDeltaApplyResponse {
@@ -852,4 +883,55 @@ pub(crate) async fn agent_edr_policy_delta_apply(
         receipt,
         post_apply_enforcement,
     }))
+}
+
+async fn append_policy_delta_apply_record(
+    state: &AgentApiState,
+    record: &EdrPolicyDeltaApplyRecord,
+) -> Result<(), (StatusCode, String)> {
+    let mut store = state.edr_policy_delta_store.lock().await;
+    store.append_apply(record).map_err(internal_error)
+}
+
+async fn rollback_policy_delta_apply_after_failure(
+    state: &AgentApiState,
+    record: &mut EdrPolicyDeltaApplyRecord,
+    policy_path: &std::path::Path,
+    reason: &str,
+) -> Result<(), (StatusCode, String)> {
+    let rollback_result = restore_policy_delta_backup(policy_path, record.backup_path.as_deref());
+    record.applied = false;
+    match &rollback_result {
+        Ok(()) => {
+            record.apply_status = Some("failed_rolled_back".to_string());
+            record.failure_reason = Some(reason.to_string());
+        }
+        Err((_, rollback_error)) => {
+            record.apply_status = Some("failed_rollback_failed".to_string());
+            record.failure_reason = Some(format!("{reason}; rollback failed: {rollback_error}"));
+        }
+    }
+    append_policy_delta_apply_record(state, record).await?;
+    rollback_result
+}
+
+fn restore_policy_delta_backup(
+    policy_path: &std::path::Path,
+    backup_path: Option<&str>,
+) -> Result<(), (StatusCode, String)> {
+    let backup_path = backup_path.map(std::path::PathBuf::from).ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot rollback policy delta apply without a backup path".to_string(),
+        )
+    })?;
+    let backup_bytes = fs::read(&backup_path)
+        .with_context(|| format!("read policy delta backup {}", backup_path.display()))
+        .map_err(internal_error)?;
+    crate::security::fs::write_private_atomic(
+        policy_path,
+        &backup_bytes,
+        "endpoint policy delta rollback policy",
+    )
+    .map_err(internal_error)
 }

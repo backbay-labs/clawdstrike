@@ -2049,6 +2049,10 @@ pub(crate) struct EdrPolicyDeltasResponse {
 pub(crate) struct EdrPolicyDeltaApplyRecord {
     pub(crate) policy_delta_id: String,
     pub(crate) applied_at: chrono::DateTime<chrono::Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) apply_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) failure_reason: Option<String>,
     pub(crate) applied_by: String,
     pub(crate) note: Option<String>,
     pub(crate) dry_run: bool,

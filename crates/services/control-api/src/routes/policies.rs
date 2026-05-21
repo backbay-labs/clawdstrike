@@ -348,6 +348,7 @@ async fn deploy_policy(
     }
     tx.commit().await.map_err(ApiError::Database)?;
     let deployment = distribute_prepared_policy_to_fleet(&state, &auth.slug, deployment_plan).await;
+    ensure_policy_deployment_outcome_clean(&deployment)?;
 
     tracing::info!(
         deployment_id = %deployment.deployment_id,
@@ -1716,6 +1717,7 @@ async fn approve_policy_proposal(
     tx.commit().await.map_err(ApiError::Database)?;
     let deployment_outcome =
         distribute_prepared_policy_to_fleet(&state, &auth.slug, deployment_plan).await;
+    ensure_policy_deployment_outcome_clean(&deployment_outcome)?;
     let deployment = Some(DeployPolicyResponse {
         deployment_id: deployment_outcome.deployment_id,
         tenant_slug: auth.slug.clone(),
@@ -1729,6 +1731,18 @@ async fn approve_policy_proposal(
         deployment,
         approvals_remaining: 0,
     }))
+}
+
+fn ensure_policy_deployment_outcome_clean(
+    deployment: &PolicyDeploymentOutcome,
+) -> Result<(), ApiError> {
+    if deployment.kv_write_failures == 0 {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(format!(
+        "policy deployment {} failed to write {} agent policy snapshot(s); deployment cannot be reported as clean",
+        deployment.deployment_id, deployment.kv_write_failures
+    )))
 }
 
 fn active_policy_candidate_from_base(

@@ -292,6 +292,16 @@ impl CausalGraphRecorder {
         insert_json(&mut attributes, "ppid", observation.process.ppid);
         insert_json(
             &mut attributes,
+            "processGuid",
+            &observation.process.process_guid,
+        );
+        insert_json(
+            &mut attributes,
+            "parentProcessGuid",
+            &observation.process.parent_process_guid,
+        );
+        insert_json(
+            &mut attributes,
             "processIdentityStrength",
             if observation.process.has_durable_stable_key() {
                 "durable"

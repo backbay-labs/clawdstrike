@@ -32,17 +32,24 @@ import type {
   PolicyEvent,
   ToolCallEvent,
 } from "../../types.js";
-import { type ApprovalResolutionType, peekApproval, recordApproval } from "../approval-state.js";
+import {
+  type ApprovalResolutionType,
+  peekApproval,
+  recordApproval,
+} from "../approval-state.js";
 import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
-import { clearAllToolInvocations, rememberToolInvocation } from "../tool-invocation-state.js";
+import {
+  clearAllToolInvocations,
+  rememberToolInvocation,
+} from "../tool-invocation-state.js";
 
 const REDACTED = "[REDACTED]";
 const SECRET_LIKE_VALUE =
   /(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
 const SENSITIVE_COMMAND_KEY =
-  /^(?:-+)?(?:secret|token|auth[_-]?token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)$/i;
+  /(?:^|[:._/-])(?:_?auth[_-]?token|secret|token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret|body|value|data|from[_-]?literal|data[_-]?file)$/i;
 const SENSITIVE_VALUE_FLAG =
-  /^-+(?:token|auth[_-]?token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)$/i;
+  /^-+(?:token|auth[_-]?token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret|body|value|data|from[_-]?literal|data[_-]?file)$/i;
 const RAW_TELEMETRY_CONTENT_KEY =
   /^(?:content|file[_-]?content|body|payload|patch|patch[_-]?content|diff)$/i;
 const SENSITIVE_TELEMETRY_KEY =
@@ -74,7 +81,10 @@ import type { PolicyEngine } from "../../policy/engine.js";
  * Returns null for confirmed read-only tools that do not appear to touch the filesystem.
  * Unknown/unclassified tools are still evaluated (best-effort inference).
  */
-function inferPolicyEventType(toolName: string, params: Record<string, unknown>): EventType | null {
+function inferPolicyEventType(
+  toolName: string,
+  params: Record<string, unknown>,
+): EventType | null {
   const tokens = tokenize(toolName);
   const classification = classifyTool(tokens);
 
@@ -82,7 +92,10 @@ function inferPolicyEventType(toolName: string, params: Record<string, unknown>)
     // Read-only tools can still be risky if they touch forbidden paths OR perform network egress.
     // Do not skip preflight egress checks (eg. web_search/http_get) just because the tool name
     // contains a read-only token like "get" or "search".
-    if (tokens.some((t) => NETWORK_TOKENS.has(t)) || looksLikeNetworkEgress(params)) {
+    if (
+      tokens.some((t) => NETWORK_TOKENS.has(t)) ||
+      looksLikeNetworkEgress(params)
+    ) {
       return "network_egress";
     }
 
@@ -153,7 +166,8 @@ function buildPolicyEvent(
           type: "file",
           path,
           operation: "write",
-          content: typeof params.content === "string" ? params.content : undefined,
+          content:
+            typeof params.content === "string" ? params.content : undefined,
         },
         metadata: { toolName, preflight: true },
       };
@@ -168,9 +182,11 @@ function buildPolicyEvent(
 
       // Some tools pass argv-style params (args/argv) instead of a shell command line.
       const argv =
-        Array.isArray(params.argv) && params.argv.every((a) => typeof a === "string")
+        Array.isArray(params.argv) &&
+        params.argv.every((a) => typeof a === "string")
           ? (params.argv as string[])
-          : Array.isArray(params.args) && params.args.every((a) => typeof a === "string")
+          : Array.isArray(params.args) &&
+              params.args.every((a) => typeof a === "string")
             ? (params.args as string[])
             : null;
 
@@ -295,9 +311,18 @@ function looksLikePatchApply(params: Record<string, unknown>): boolean {
 }
 
 function looksLikeCommandExec(params: Record<string, unknown>): boolean {
-  if (typeof params.command === "string" || typeof params.cmd === "string") return true;
-  if (Array.isArray(params.args) && params.args.every((a) => typeof a === "string")) return true;
-  if (Array.isArray(params.argv) && params.argv.every((a) => typeof a === "string")) return true;
+  if (typeof params.command === "string" || typeof params.cmd === "string")
+    return true;
+  if (
+    Array.isArray(params.args) &&
+    params.args.every((a) => typeof a === "string")
+  )
+    return true;
+  if (
+    Array.isArray(params.argv) &&
+    params.argv.every((a) => typeof a === "string")
+  )
+    return true;
   return false;
 }
 
@@ -308,7 +333,8 @@ function looksLikeNetworkEgress(params: Record<string, unknown>): boolean {
     typeof params.href === "string"
   )
     return true;
-  if (typeof params.host === "string" || typeof params.hostname === "string") return true;
+  if (typeof params.host === "string" || typeof params.hostname === "string")
+    return true;
   return false;
 }
 
@@ -318,7 +344,8 @@ function looksLikeFileWrite(params: Record<string, unknown>): boolean {
   if (typeof params.text === "string") return true;
   if (typeof params.contentBase64 === "string") return true;
   if (typeof params.base64 === "string") return true;
-  if (typeof params.patch === "string" || typeof params.diff === "string") return true;
+  if (typeof params.patch === "string" || typeof params.diff === "string")
+    return true;
   if (typeof params.operation === "string") {
     const op = params.operation.toLowerCase();
     if (
@@ -413,13 +440,18 @@ async function requestApproval(details: {
 
   const deadline = Date.now() + APPROVAL_POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, APPROVAL_POLL_INTERVAL_MS));
+    await new Promise((resolve) =>
+      setTimeout(resolve, APPROVAL_POLL_INTERVAL_MS),
+    );
 
     try {
-      const pollRes = await fetch(`${approvalUrl}/api/v1/approval/${id}/status`, {
-        headers: { Authorization: "Bearer " + token },
-        signal: AbortSignal.timeout(10_000),
-      });
+      const pollRes = await fetch(
+        `${approvalUrl}/api/v1/approval/${id}/status`,
+        {
+          headers: { Authorization: "Bearer " + token },
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
       if (!pollRes.ok) {
         return null;
       }
@@ -461,10 +493,10 @@ const handler: HookHandler = async (
     if (value && typeof value === "object" && "type" in value) return false;
     return Boolean(
       value &&
-        typeof value === "object" &&
-        typeof (value as { toolName?: unknown }).toolName === "string" &&
-        typeof (value as { params?: unknown }).params === "object" &&
-        (value as { params?: unknown }).params !== null,
+      typeof value === "object" &&
+      typeof (value as { toolName?: unknown }).toolName === "string" &&
+      typeof (value as { params?: unknown }).params === "object" &&
+      (value as { params?: unknown }).params !== null,
     );
   };
 
@@ -485,16 +517,26 @@ const handler: HookHandler = async (
   // the general preflight handler as well would cause double evaluation.
   if ((event as any).__cuaBridgeEvaluated) return;
 
-  const toolName = isModern ? event.toolName : legacyToolEvent!.context.toolCall.toolName;
-  const params = isModern ? event.params : legacyToolEvent!.context.toolCall.params;
+  const toolName = isModern
+    ? event.toolName
+    : legacyToolEvent!.context.toolCall.toolName;
+  const params = isModern
+    ? event.params
+    : legacyToolEvent!.context.toolCall.params;
   const sessionId = isModern
     ? (hookCtx?.sessionKey ?? hookCtx?.agentId ?? "openclaw-runtime")
     : legacyToolEvent!.context.sessionId;
   const toolCallId =
-    isModern && typeof hookCtx?.toolCallId === "string" && hookCtx.toolCallId.length > 0
+    isModern &&
+    typeof hookCtx?.toolCallId === "string" &&
+    hookCtx.toolCallId.length > 0
       ? hookCtx.toolCallId
       : undefined;
-  const telemetryIdentity = preflightTelemetryIdentity(hookCtx, sessionId, toolCallId);
+  const telemetryIdentity = preflightTelemetryIdentity(
+    hookCtx,
+    sessionId,
+    toolCallId,
+  );
 
   if (isModern) {
     rememberToolInvocation(sessionId, toolName, params, toolCallId);
@@ -511,7 +553,12 @@ const handler: HookHandler = async (
   const policyEvent = buildPolicyEvent(sessionId, toolName, params, eventType);
   const decision = await policyEngine.evaluate(policyEvent);
   void publishPreflightPolicyEvent(
-    buildPreflightPolicyEventForEdr(policyEvent, toolName, decision, telemetryIdentity),
+    buildPreflightPolicyEventForEdr(
+      policyEvent,
+      toolName,
+      decision,
+      telemetryIdentity,
+    ),
   );
   const developerActivity = buildPreflightDeveloperActivityForCommand(
     policyEvent,
@@ -570,7 +617,9 @@ const handler: HookHandler = async (
       return { block: true, blockReason, params };
     }
     legacyToolEvent!.preventDefault = true;
-    legacyToolEvent!.messages.push(`[clawdstrike] Pre-flight check: ${blockReason}`);
+    legacyToolEvent!.messages.push(
+      `[clawdstrike] Pre-flight check: ${blockReason}`,
+    );
     if (legacyToolEvent!.type === "before_tool_call") {
       return { block: true, blockReason, params };
     }
@@ -619,16 +668,26 @@ function preflightTelemetryIdentity(
       hookCtx?.sessionKey,
       process.env.CLAWDSTRIKE_SESSION_ID,
     ),
-    agentId: firstNonEmptyString(hookCtx?.agentId, process.env.CLAWDSTRIKE_AGENT_ID),
+    agentId: firstNonEmptyString(
+      hookCtx?.agentId,
+      process.env.CLAWDSTRIKE_AGENT_ID,
+    ),
     workloadId:
-      firstNonEmptyString(hookCtx?.workloadId, process.env.CLAWDSTRIKE_WORKLOAD_ID) ??
-      "openclaw-tool-preflight",
-    approvalId: firstNonEmptyString(hookCtx?.approvalId, process.env.CLAWDSTRIKE_APPROVAL_ID),
+      firstNonEmptyString(
+        hookCtx?.workloadId,
+        process.env.CLAWDSTRIKE_WORKLOAD_ID,
+      ) ?? "openclaw-tool-preflight",
+    approvalId: firstNonEmptyString(
+      hookCtx?.approvalId,
+      process.env.CLAWDSTRIKE_APPROVAL_ID,
+    ),
     toolCallId,
   };
 }
 
-function firstNonEmptyString(...values: Array<string | undefined>): string | undefined {
+function firstNonEmptyString(
+  ...values: Array<string | undefined>
+): string | undefined {
   for (const value of values) {
     const trimmed = value?.trim();
     if (trimmed) return trimmed;
@@ -686,7 +745,8 @@ export function buildPreflightDeveloperActivityForCommand(
     };
   }
 
-  const packageRegistryTokenCommand = classifyPackageRegistryTokenCommand(command);
+  const packageRegistryTokenCommand =
+    classifyPackageRegistryTokenCommand(command);
   if (packageRegistryTokenCommand) {
     return {
       ...common,
@@ -752,7 +812,9 @@ export function buildPreflightPolicyEventForEdr(
   };
 }
 
-async function publishPreflightDeveloperActivity(activity: EdrDeveloperActivity): Promise<void> {
+async function publishPreflightDeveloperActivity(
+  activity: EdrDeveloperActivity,
+): Promise<void> {
   const endpoint = resolveDeveloperActivityEndpoint();
   if (!endpoint) return;
 
@@ -775,12 +837,15 @@ async function publishPreflightDeveloperActivity(activity: EdrDeveloperActivity)
   }
 }
 
-async function publishPreflightPolicyEvent(policyEvent: PolicyEvent): Promise<void> {
+async function publishPreflightPolicyEvent(
+  policyEvent: PolicyEvent,
+): Promise<void> {
   const endpoint = resolvePolicyEventsEndpoint();
   if (!endpoint) return;
 
   try {
-    const telemetryEvent = sanitizePreflightPolicyEventForTelemetry(policyEvent);
+    const telemetryEvent =
+      sanitizePreflightPolicyEventForTelemetry(policyEvent);
     const response = await fetch(endpoint.url, {
       method: "POST",
       headers: {
@@ -799,7 +864,9 @@ async function publishPreflightPolicyEvent(policyEvent: PolicyEvent): Promise<vo
   }
 }
 
-function sanitizePreflightPolicyEventForTelemetry(policyEvent: PolicyEvent): PolicyEvent {
+function sanitizePreflightPolicyEventForTelemetry(
+  policyEvent: PolicyEvent,
+): PolicyEvent {
   const scrubbedFields: string[] = [];
   const data = sanitizeTelemetryEventData(policyEvent.data, scrubbedFields);
   if (scrubbedFields.length === 0) {
@@ -837,7 +904,10 @@ function sanitizeTelemetryEventData(
     case "tool":
       return sanitizeToolTelemetryData(data, scrubbedFields);
     default:
-      return sanitizeTelemetryValue(data, "data", scrubbedFields) as Record<string, unknown>;
+      return sanitizeTelemetryValue(data, "data", scrubbedFields) as Record<
+        string,
+        unknown
+      >;
   }
 }
 
@@ -853,7 +923,10 @@ function sanitizeFileTelemetryData(
     sanitized.contentBytes = Buffer.byteLength(content);
     scrubbedFields.push("data.content");
   }
-  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<
+    string,
+    unknown
+  >;
 }
 
 function sanitizePatchTelemetryData(
@@ -868,7 +941,10 @@ function sanitizePatchTelemetryData(
     sanitized.patchBytes = Buffer.byteLength(patchContent);
     scrubbedFields.push("data.patchContent");
   }
-  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<
+    string,
+    unknown
+  >;
 }
 
 function sanitizeCommandTelemetryData(
@@ -876,11 +952,16 @@ function sanitizeCommandTelemetryData(
   scrubbedFields: string[],
 ): Record<string, unknown> {
   const sanitized = { ...data };
-  const command = typeof sanitized.command === "string" ? sanitized.command : "";
+  const command =
+    typeof sanitized.command === "string" ? sanitized.command : "";
   const args = Array.isArray(sanitized.args)
-    ? sanitized.args.filter((value): value is string => typeof value === "string")
+    ? sanitized.args.filter(
+        (value): value is string => typeof value === "string",
+      )
     : [];
-  const scrubbed = scrubCommandArgs([command, ...args].filter((value) => value.trim() !== ""));
+  const scrubbed = scrubCommandArgs(
+    [command, ...args].filter((value) => value.trim() !== ""),
+  );
   if (scrubbed.length > 0) {
     const [scrubbedCommand, ...scrubbedArgs] = scrubbed;
     if (scrubbedCommand !== command) {
@@ -892,7 +973,10 @@ function sanitizeCommandTelemetryData(
       scrubbedFields.push("data.args");
     }
   }
-  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<
+    string,
+    unknown
+  >;
 }
 
 function sanitizeNetworkTelemetryData(
@@ -907,7 +991,10 @@ function sanitizeNetworkTelemetryData(
       scrubbedFields.push("data.url");
     }
   }
-  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<
+    string,
+    unknown
+  >;
 }
 
 function sanitizeToolTelemetryData(
@@ -922,7 +1009,10 @@ function sanitizeToolTelemetryData(
       scrubbedFields,
     );
   }
-  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<
+    string,
+    unknown
+  >;
 }
 
 function sanitizeTelemetryValue(
@@ -945,7 +1035,14 @@ function sanitizeTelemetryValue(
   if (Array.isArray(value)) {
     return value
       .slice(0, 25)
-      .map((entry, index) => sanitizeTelemetryValue(entry, `${path}[${index}]`, scrubbedFields, depth + 1));
+      .map((entry, index) =>
+        sanitizeTelemetryValue(
+          entry,
+          `${path}[${index}]`,
+          scrubbedFields,
+          depth + 1,
+        ),
+      );
   }
 
   const record = value as Record<string, unknown>;
@@ -969,7 +1066,12 @@ function sanitizeTelemetryValue(
       scrubbedFields.push(entryPath);
       continue;
     }
-    sanitized[key] = sanitizeTelemetryValue(entry, entryPath, scrubbedFields, depth + 1);
+    sanitized[key] = sanitizeTelemetryValue(
+      entry,
+      entryPath,
+      scrubbedFields,
+      depth + 1,
+    );
   }
   return sanitized;
 }
@@ -988,7 +1090,10 @@ function redactTelemetryUrl(value: string): string {
     if (parsed.username) parsed.username = REDACTED;
     if (parsed.password) parsed.password = REDACTED;
     for (const [key, parameterValue] of parsed.searchParams.entries()) {
-      if (SENSITIVE_TELEMETRY_KEY.test(key) || SECRET_LIKE_VALUE.test(parameterValue)) {
+      if (
+        SENSITIVE_TELEMETRY_KEY.test(key) ||
+        SECRET_LIKE_VALUE.test(parameterValue)
+      ) {
         parsed.searchParams.set(key, REDACTED);
       }
     }
@@ -1008,7 +1113,10 @@ function sha256Hex(value: string): string {
   return `0x${createHash("sha256").update(value).digest("hex")}`;
 }
 
-function resolveDeveloperActivityEndpoint(): { url: string; token: string } | null {
+function resolveDeveloperActivityEndpoint(): {
+  url: string;
+  token: string;
+} | null {
   const token = localAgentToken();
   if (!token) return null;
 
@@ -1071,11 +1179,18 @@ function commandTokensFromPolicyEvent(policyEvent: PolicyEvent): string[] {
     command?: unknown;
     args?: unknown;
   };
-  if (data.type !== "command" || typeof data.command !== "string" || !data.command.trim()) {
+  if (
+    data.type !== "command" ||
+    typeof data.command !== "string" ||
+    !data.command.trim()
+  ) {
     return [];
   }
   const args = Array.isArray(data.args)
-    ? data.args.filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    ? data.args.filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim() !== "",
+      )
     : [];
   return [data.command.trim(), ...args.map((value) => value.trim())];
 }
@@ -1184,7 +1299,11 @@ function classifyPackageCommand(command: string[]): {
   return {
     manager,
     phase,
-    packageName: packageNameFromPackageCommand(manager, commandName, afterCommand),
+    packageName: packageNameFromPackageCommand(
+      manager,
+      commandName,
+      afterCommand,
+    ),
   };
 }
 
@@ -1204,7 +1323,8 @@ function classifyPackageRegistryTokenCommand(command: string[]): {
   const commandName = args[commandIndex]?.toLowerCase();
   if (!commandName) return null;
   const commandArgs = args.slice(commandIndex + 1);
-  if (!packageRegistryTokenCommandIsSensitive(commandName, commandArgs)) return null;
+  if (!packageRegistryTokenCommandIsSensitive(commandName, commandArgs))
+    return null;
 
   return {
     kind: "repo_secret",
@@ -1281,10 +1401,15 @@ function packageRegistryManager(image: string): string | null {
   return ["npm", "pnpm", "yarn"].includes(executable) ? executable : null;
 }
 
-function packageRegistryTokenCommandIsSensitive(commandName: string, args: string[]): boolean {
+function packageRegistryTokenCommandIsSensitive(
+  commandName: string,
+  args: string[],
+): boolean {
   const joined = args.join(" ").toLowerCase();
   if (commandName === "token") {
-    return ["list", "create", "revoke", "delete"].includes(args[0]?.toLowerCase() ?? "");
+    return ["list", "create", "revoke", "delete"].includes(
+      args[0]?.toLowerCase() ?? "",
+    );
   }
   if (commandName === "config") {
     const subcommand = args[0]?.toLowerCase();
@@ -1305,11 +1430,16 @@ function packageRegistryAuthConfigReference(value: string): boolean {
   );
 }
 
-function packagePhase(manager: string, commandName: string, args: string[]): string | null {
+function packagePhase(
+  manager: string,
+  commandName: string,
+  args: string[],
+): string | null {
   switch (manager) {
     case "npm":
     case "pnpm":
-      if (["install", "i", "ci", "add", "rebuild"].includes(commandName)) return "install";
+      if (["install", "i", "ci", "add", "rebuild"].includes(commandName))
+        return "install";
       if (["run", "run-script", "exec", "dlx"].includes(commandName)) {
         return packageScriptName(args) ?? commandName;
       }
@@ -1323,29 +1453,45 @@ function packagePhase(manager: string, commandName: string, args: string[]): str
       if (commandName === "wheel") return "build";
       return null;
     case "cargo":
-      return ["install", "build", "run", "test"].includes(commandName) ? commandName : null;
+      return ["install", "build", "run", "test"].includes(commandName)
+        ? commandName
+        : null;
     case "brew":
-      return ["install", "reinstall", "upgrade", "bundle"].includes(commandName) ? "install" : null;
+      return ["install", "reinstall", "upgrade", "bundle"].includes(commandName)
+        ? "install"
+        : null;
     case "go":
       if (["install", "get"].includes(commandName)) return "install";
-      return ["run", "build", "test"].includes(commandName) ? commandName : null;
+      return ["run", "build", "test"].includes(commandName)
+        ? commandName
+        : null;
     case "gem":
       return ["install", "build"].includes(commandName) ? commandName : null;
     case "composer":
-      if (["install", "update", "require", "create-project"].includes(commandName)) {
+      if (
+        ["install", "update", "require", "create-project"].includes(commandName)
+      ) {
         return "install";
       }
       if (["run-script", "exec"].includes(commandName))
         return packageScriptName(args) ?? commandName;
       return packageLifecyclePhase(commandName) ? commandName : null;
     case "maven":
-      return ["validate", "compile", "test", "package", "verify", "install", "deploy"].includes(
-        commandName,
-      )
+      return [
+        "validate",
+        "compile",
+        "test",
+        "package",
+        "verify",
+        "install",
+        "deploy",
+      ].includes(commandName)
         ? commandName
         : null;
     case "gradle":
-      return ["build", "test", "check", "assemble", "publish", "run"].includes(commandName)
+      return ["build", "test", "check", "assemble", "publish", "run"].includes(
+        commandName,
+      )
         ? commandName
         : null;
     case "uv":
@@ -1373,8 +1519,11 @@ function packagePhase(manager: string, commandName: string, args: string[]): str
       return null;
     case "dotnet":
       if (commandName === "restore") return "install";
-      if (commandName === "add" && args[0]?.toLowerCase() === "package") return "install";
-      return ["build", "test", "pack", "publish", "run"].includes(commandName) ? commandName : null;
+      if (commandName === "add" && args[0]?.toLowerCase() === "package")
+        return "install";
+      return ["build", "test", "pack", "publish", "run"].includes(commandName)
+        ? commandName
+        : null;
     case "nuget":
       if (["install", "restore"].includes(commandName)) return "install";
       if (commandName === "pack") return "build";
@@ -1383,13 +1532,19 @@ function packagePhase(manager: string, commandName: string, args: string[]): str
     case "swift":
       if (commandName === "package") {
         const packageCommand = args[0]?.toLowerCase();
-        if (["resolve", "update"].includes(packageCommand ?? "")) return "install";
+        if (["resolve", "update"].includes(packageCommand ?? ""))
+          return "install";
         return null;
       }
-      return ["build", "test", "run"].includes(commandName) ? commandName : null;
+      return ["build", "test", "run"].includes(commandName)
+        ? commandName
+        : null;
     case "mix":
       if (["deps.get", "deps.update"].includes(commandName)) return "install";
-      if (commandName === "deps" && ["get", "update"].includes(args[0]?.toLowerCase() ?? "")) {
+      if (
+        commandName === "deps" &&
+        ["get", "update"].includes(args[0]?.toLowerCase() ?? "")
+      ) {
         return "install";
       }
       if (commandName === "compile") return "build";
@@ -1423,7 +1578,8 @@ function packageNameFromPackageCommand(
 ): string | undefined {
   switch (manager) {
     case "uv":
-      if (["pip", "tool"].includes(commandName)) return packageNameFromArgs(args.slice(1));
+      if (["pip", "tool"].includes(commandName))
+        return packageNameFromArgs(args.slice(1));
       return packageNameFromArgs(args);
     case "dotnet":
       if (commandName === "add" && args[0]?.toLowerCase() === "package") {
@@ -1561,7 +1717,11 @@ function cloudCliArgsAreSensitive(provider: string, args: string[]): boolean {
   );
 }
 
-function terraformCliArgsAreSensitive(provider: string, args: string[], joined: string): boolean {
+function terraformCliArgsAreSensitive(
+  provider: string,
+  args: string[],
+  joined: string,
+): boolean {
   if (!["terraform", "terragrunt", "opentofu"].includes(provider)) return false;
   return (
     [

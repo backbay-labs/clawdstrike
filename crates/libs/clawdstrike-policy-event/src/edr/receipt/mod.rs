@@ -329,6 +329,7 @@ impl EndpointDecisionReceipt {
         let graph_ref = EndpointGraphReference::for_observation(input.observation, input.graph);
         let graph_slice_id = graph_ref.graph_slice_id.clone().unwrap_or_default();
         let process_node_id = graph_ref.process_node_id.clone().unwrap_or_default();
+        let graph_content_hash = graph_ref.content_hash.clone().unwrap_or_default();
         let target = event_target_field(input.observation).unwrap_or_else(|| "unknown".to_string());
         let provider = input.sensor_state.providers.first();
         let provider_id = provider
@@ -346,6 +347,7 @@ impl EndpointDecisionReceipt {
                 observation_hash: observation_hash.as_str(),
                 target: target.as_str(),
                 graph_slice_id: graph_slice_id.as_str(),
+                graph_content_hash: graph_content_hash.as_str(),
                 process_node_id: process_node_id.as_str(),
                 provider_id: provider_id.as_str(),
                 provider_kind: provider_kind.as_str(),
@@ -385,6 +387,7 @@ impl EndpointDecisionReceipt {
                 EndpointReceiptEvidence::hashed("observationHash", observation_hash),
                 EndpointReceiptEvidence::hashed("target", target),
                 EndpointReceiptEvidence::hashed("graphSliceId", graph_slice_id),
+                EndpointReceiptEvidence::hashed("contentHash", graph_content_hash),
                 EndpointReceiptEvidence::hashed("processNodeId", process_node_id),
                 EndpointReceiptEvidence::hashed("providerId", provider_id),
                 EndpointReceiptEvidence::hashed("providerKind", provider_kind),
@@ -541,6 +544,12 @@ impl EndpointDecisionReceipt {
             evidence.push(EndpointReceiptEvidence::hashed(
                 "detectionGraphSliceId",
                 graph_slice_id,
+            ));
+        }
+        if let Some(graph_content_hash) = graph_ref.content_hash.as_deref() {
+            evidence.push(EndpointReceiptEvidence::hashed(
+                "detectionContentHash",
+                graph_content_hash,
             ));
         }
         if let Some(process_node_id) = graph_ref.process_node_id.as_deref() {
@@ -2800,15 +2809,14 @@ fn require_subgraph_reference(graph: &EndpointGraphReference, label: &str) -> Re
         .graph_slice_id
         .as_deref()
         .ok_or_else(|| anyhow!("{label} graph slice reference is required"))?;
-    let node_count = graph.node_ids.len().to_string();
-    let edge_count = graph.edge_ids.len().to_string();
-    let expected_graph_slice_id = stable_id(
-        "graph_slice",
-        [root_node_id, node_count.as_str(), edge_count.as_str()],
-    );
+    let graph_content_hash = graph
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| anyhow!("{label} graph content hash is required"))?;
+    let expected_graph_slice_id = stable_id("graph_slice", [root_node_id, graph_content_hash]);
     if graph_slice_id != expected_graph_slice_id {
         return Err(anyhow!(
-            "{label} graph slice reference must match root and graph counts"
+            "{label} graph slice reference must match root and graph content hash"
         ));
     }
     Ok(())
@@ -4467,11 +4475,21 @@ fn require_detection_evidence(
         .graph_slice_id
         .as_deref()
         .ok_or_else(|| anyhow!("detection graph slice id is required"))?;
+    let graph_content_hash = graph
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| anyhow!("detection graph content hash is required"))?;
     let process_node_id = graph
         .process_node_id
         .as_deref()
         .ok_or_else(|| anyhow!("detection process node id is required"))?;
-    require_detection_graph_reference(graph, observation_id, graph_slice_id, process_node_id)?;
+    require_detection_graph_reference(
+        graph,
+        observation_id,
+        graph_slice_id,
+        graph_content_hash,
+        process_node_id,
+    )?;
 
     require_evidence_value_hash(
         evidence,
@@ -4523,6 +4541,12 @@ fn require_detection_evidence(
     )?;
     require_evidence_value_hash(
         evidence,
+        "detectionContentHash",
+        graph_content_hash,
+        "detection graph content hash evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
         "detectionProcessNodeId",
         process_node_id,
         "detection process node evidence",
@@ -4557,11 +4581,21 @@ fn require_observation_evidence(
         .graph_slice_id
         .as_deref()
         .ok_or_else(|| anyhow!("observation graph slice id is required"))?;
+    let graph_content_hash = graph
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| anyhow!("observation graph content hash is required"))?;
     let process_node_id = graph
         .process_node_id
         .as_deref()
         .ok_or_else(|| anyhow!("observation process node id is required"))?;
-    require_detection_graph_reference(graph, observation_id, graph_slice_id, process_node_id)?;
+    require_detection_graph_reference(
+        graph,
+        observation_id,
+        graph_slice_id,
+        graph_content_hash,
+        process_node_id,
+    )?;
 
     require_evidence_value_hash(
         evidence,
@@ -4586,6 +4620,12 @@ fn require_observation_evidence(
         "graphSliceId",
         graph_slice_id,
         "observation graph slice evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "contentHash",
+        graph_content_hash,
+        "observation graph content hash evidence",
     )?;
     require_evidence_value_hash(
         evidence,
@@ -4631,6 +4671,7 @@ fn require_detection_graph_reference(
     graph: &EndpointGraphReference,
     observation_id: &str,
     graph_slice_id: &str,
+    graph_content_hash: &str,
     process_node_id: &str,
 ) -> Result<()> {
     if !graph
@@ -4643,20 +4684,13 @@ fn require_detection_graph_reference(
         ));
     }
 
-    let node_count = graph.node_ids.len().to_string();
-    let edge_count = graph.edge_ids.len().to_string();
     let expected_graph_slice_id = stable_id(
         "graph_slice",
-        [
-            observation_id,
-            process_node_id,
-            node_count.as_str(),
-            edge_count.as_str(),
-        ],
+        [observation_id, process_node_id, graph_content_hash],
     );
     if graph_slice_id != expected_graph_slice_id {
         return Err(anyhow!(
-            "detection graph slice reference must match observation, process, and graph counts"
+            "detection graph slice reference must match observation, process, and graph content hash"
         ));
     }
     Ok(())
@@ -4684,6 +4718,7 @@ struct ObservationReceiptIdFields<'a> {
     observation_hash: &'a str,
     target: &'a str,
     graph_slice_id: &'a str,
+    graph_content_hash: &'a str,
     process_node_id: &'a str,
     provider_id: &'a str,
     provider_kind: &'a str,
@@ -4695,6 +4730,7 @@ fn observation_receipt_id_from_fields(fields: ObservationReceiptIdFields<'_>) ->
     let observation_hash_hash = sha256(fields.observation_hash.as_bytes()).to_hex_prefixed();
     let target_hash = sha256(fields.target.as_bytes()).to_hex_prefixed();
     let graph_slice_id_hash = sha256(fields.graph_slice_id.as_bytes()).to_hex_prefixed();
+    let graph_content_hash_hash = sha256(fields.graph_content_hash.as_bytes()).to_hex_prefixed();
     let process_node_id_hash = sha256(fields.process_node_id.as_bytes()).to_hex_prefixed();
     let provider_id_hash = sha256(fields.provider_id.as_bytes()).to_hex_prefixed();
     let provider_kind_hash = sha256(fields.provider_kind.as_bytes()).to_hex_prefixed();
@@ -4707,6 +4743,7 @@ fn observation_receipt_id_from_fields(fields: ObservationReceiptIdFields<'_>) ->
             observation_hash_hash: observation_hash_hash.as_str(),
             target_hash: target_hash.as_str(),
             graph_slice_id_hash: graph_slice_id_hash.as_str(),
+            graph_content_hash_hash: graph_content_hash_hash.as_str(),
             process_node_id_hash: process_node_id_hash.as_str(),
             provider_id_hash: provider_id_hash.as_str(),
             provider_kind_hash: provider_kind_hash.as_str(),
@@ -4744,6 +4781,11 @@ fn observation_receipt_id_from_evidence(
                 "graphSliceId",
                 "observation graph slice evidence",
             )?,
+            graph_content_hash_hash: evidence_value_hash(
+                evidence,
+                "contentHash",
+                "observation graph content hash evidence",
+            )?,
             process_node_id_hash: evidence_value_hash(
                 evidence,
                 "processNodeId",
@@ -4765,6 +4807,7 @@ struct ObservationReceiptIdEvidenceHashes<'a> {
     observation_hash_hash: &'a str,
     target_hash: &'a str,
     graph_slice_id_hash: &'a str,
+    graph_content_hash_hash: &'a str,
     process_node_id_hash: &'a str,
     provider_id_hash: &'a str,
     provider_kind_hash: &'a str,
@@ -4785,6 +4828,7 @@ fn observation_receipt_id_from_evidence_hashes(
             evidence_hashes.observation_hash_hash,
             evidence_hashes.target_hash,
             evidence_hashes.graph_slice_id_hash,
+            evidence_hashes.graph_content_hash_hash,
             evidence_hashes.process_node_id_hash,
             evidence_hashes.provider_id_hash,
             evidence_hashes.provider_kind_hash,

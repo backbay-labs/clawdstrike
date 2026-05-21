@@ -1045,7 +1045,9 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         var responseAttempted = false
         do {
             var request = try adapter.authorizationRequest(from: message)
-            let decision = request.failClosedDecisionForExpiredDeadline() ?? decisionHandler(request)
+            let evaluatedDecision =
+                request.failClosedDecisionForExpiredDeadline() ?? decisionHandler(request)
+            let decision = request.failClosedDecisionForExpiredDeadline() ?? evaluatedDecision
             try adapter.respondAuthorizationOpen(client: client, message: message, decision: decision)
             responseAttempted = true
             let event = request.authorizationEvent(decision: decision)

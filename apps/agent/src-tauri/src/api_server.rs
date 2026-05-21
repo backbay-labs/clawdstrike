@@ -3435,10 +3435,8 @@ pub(crate) fn evidence_bundle_for_graph_slice(
     reason: Option<&str>,
     graph: &CausalGraph,
 ) -> Result<EndpointEvidenceBundleReference> {
-    let graph_value = serde_json::to_value(graph).context("serialize exported graph slice")?;
-    let canonical_graph =
-        canonicalize_json(&graph_value).context("canonicalize exported graph slice")?;
-    let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+    let canonical_graph = canonical_evidence_graph(graph)?;
+    let content_hash = canonical_graph.content_hash;
     let graph_ref = EndpointGraphReference::for_subgraph(root_node_id, graph);
     let graph_slice_id = graph_ref
         .graph_slice_id
@@ -6418,10 +6416,13 @@ async fn execute_revoke_grant_response(
         )
     })?;
     let (grant_target, revoked_grant_hash) = match grant_target {
-        RevokeGrantTarget::LocalApiAuthToken => (
-            "local_api_auth_token".to_string(),
-            rotate_local_api_token_without_grace(state)?,
-        ),
+        RevokeGrantTarget::LocalApiAuthToken => {
+            return Err((
+                StatusCode::CONFLICT,
+                "local API auth token revocation is not safe for autonomous response without durable replacement-token handoff and recovery"
+                    .to_string(),
+            ));
+        }
         RevokeGrantTarget::BrokerCapability { capability_id } => {
             let revocation = revoke_broker_capability_grant(state, &capability_id).await?;
             let revoked_grant_hash =
@@ -6833,6 +6834,12 @@ async fn emit_pre_effect_response_execution_receipt(
         reason_hash.as_str(),
     );
     let evidence = [EndpointReceiptEvidence::hashed("executionPhase", phase)];
+    state
+        .edr_response_execution_ledger
+        .lock()
+        .await
+        .append(&prepared)
+        .map_err(internal_error)?;
     emit_edr_response_execution_receipt(state, &prepared, graph, Some(actor), &evidence)
         .await
         .map_err(internal_error)
@@ -12391,11 +12398,8 @@ pub(crate) async fn evidence_bundle_archive_receipts(
 pub(crate) fn evidence_bundle_archive_verification(
     archive: &EdrEvidenceBundleArchive,
 ) -> Result<EdrEvidenceBundleArchiveVerification> {
-    let graph_value =
-        serde_json::to_value(&archive.graph).context("serialize evidence bundle archive graph")?;
-    let canonical_graph =
-        canonicalize_json(&graph_value).context("canonicalize evidence bundle archive graph")?;
-    let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+    let canonical_graph = canonical_evidence_graph(&archive.graph)?;
+    let graph_content_hash = canonical_graph.content_hash.clone();
     let content_hash_matches = graph_content_hash == archive.bundle.content_hash;
     let expected_bundle_id_evidence = sha256(archive.bundle.bundle_id.as_bytes()).to_hex_prefixed();
     let expected_content_hash_evidence =
@@ -12441,11 +12445,10 @@ pub(crate) fn evidence_bundle_archive_verification(
             archive.artifact.content_hash
         ));
     }
-    if archive.artifact.byte_count != canonical_graph.len() {
+    if archive.artifact.byte_count != canonical_graph.byte_count {
         receipt_failures.push(format!(
             "artifact_byte_count_mismatch:{}:{}",
-            archive.artifact.byte_count,
-            canonical_graph.len()
+            archive.artifact.byte_count, canonical_graph.byte_count
         ));
     }
 
@@ -15795,18 +15798,13 @@ pub(crate) fn verify_response_execution_proof_evidence_bundle(
             "evidence bundle artifact edge count does not match response execution proof contract",
         ));
     }
-    let graph_value = serde_json::to_value(&stored.graph)
-        .map_err(|err| internal_error(anyhow::anyhow!("serialize proof evidence bundle: {err}")))?;
-    let canonical_graph = canonicalize_json(&graph_value).map_err(|err| {
-        internal_error(anyhow::anyhow!("canonicalize proof evidence bundle: {err}"))
-    })?;
-    let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
-    if content_hash != execution.evidence_bundle.content_hash {
+    let canonical_graph = canonical_evidence_graph(&stored.graph).map_err(internal_error)?;
+    if canonical_graph.content_hash != execution.evidence_bundle.content_hash {
         return Err(response_proof_contract_conflict(
             "evidence bundle artifact content hash does not match response execution proof contract",
         ));
     }
-    if stored.byte_count != canonical_graph.len() {
+    if stored.byte_count != canonical_graph.byte_count {
         return Err(response_proof_contract_conflict(
             "evidence bundle artifact byte count does not match response execution proof contract",
         ));
@@ -18657,6 +18655,7 @@ async fn append_recent_edr_findings(state: &AgentApiState, findings: &[Detection
     }
 }
 
+pub(crate) use crate::edr::ledger::evidence_bundle::canonical_evidence_graph;
 pub(crate) use crate::edr::ledger::EndpointEvidenceBundleStore;
 
 pub(crate) use crate::edr::ledger::EndpointStagedDetectionLedger;
@@ -19281,40 +19280,6 @@ fn rotate_local_api_token_with_grace(state: &AgentApiState) -> Result<u64, (Stat
     }
 
     Ok(grace_secs)
-}
-
-fn rotate_local_api_token_without_grace(
-    state: &AgentApiState,
-) -> Result<String, (StatusCode, String)> {
-    let old_token = current_auth_token(state);
-    let old_token_hash = sha256(old_token.as_bytes()).to_hex_prefixed();
-    let new_token = rotate_local_api_token_for_response().map_err(internal_error)?;
-    {
-        let mut guard = state
-            .auth_token
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *guard = new_token;
-    }
-    {
-        let mut previous = state
-            .previous_auth_token
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *previous = None;
-    }
-    Ok(old_token_hash)
-}
-
-fn rotate_local_api_token_for_response() -> Result<String> {
-    #[cfg(test)]
-    {
-        Ok(format!("clawdstrike-test-{}", uuid::Uuid::new_v4()))
-    }
-    #[cfg(not(test))]
-    {
-        rotate_local_api_token()
-    }
 }
 
 fn auth_token_matches(candidate: &str, state: &AgentApiState) -> bool {
@@ -20212,15 +20177,12 @@ mod tests {
             &[],
         )
         .unwrap_or_else(|err| panic!("valid proof contract failed verification: {err:?}"));
-        let canonical_subgraph = canonicalize_json(
-            &serde_json::to_value(&subgraph)
-                .unwrap_or_else(|err| panic!("failed to serialize proof contract graph: {err}")),
-        )
-        .unwrap_or_else(|err| panic!("failed to canonicalize proof contract graph: {err}"));
+        let canonical_subgraph = canonical_evidence_graph(&subgraph)
+            .unwrap_or_else(|err| panic!("failed to canonicalize proof contract graph: {err}"));
         let stored_bundle = StoredEndpointEvidenceBundle {
             bundle: execution.evidence_bundle.clone(),
             path: Some("/tmp/proof-contract-bundle.json".to_string()),
-            byte_count: canonical_subgraph.len(),
+            byte_count: canonical_subgraph.byte_count,
             graph: subgraph.clone(),
         };
         verify_response_execution_proof_evidence_bundle(&execution, &stored_bundle).unwrap_or_else(
@@ -41856,7 +41818,7 @@ guards:
     }
 
     #[tokio::test]
-    async fn agent_edr_response_action_executes_revoke_grant_without_grace() {
+    async fn agent_edr_response_action_rejects_local_api_token_revoke_grant() {
         let state = Arc::new(test_state());
         let app = Router::new()
             .route("/api/v1/agent/edr/findings", post(agent_edr_findings))
@@ -41923,92 +41885,18 @@ guards:
             .oneshot(req)
             .await
             .unwrap_or_else(|e| panic!("revoke grant request failed: {e}"));
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::CONFLICT);
         let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
             .await
             .unwrap_or_else(|e| panic!("failed to read revoke grant response: {e}"));
-        let payload: serde_json::Value = serde_json::from_slice(&bytes)
-            .unwrap_or_else(|e| panic!("failed to decode revoke grant response: {e}"));
-
-        assert_eq!(payload["plan"]["dryRun"], false);
-        assert_eq!(payload["plan"]["action"], "revoke_grant");
-        assert_eq!(payload["execution"]["action"], "revoke_grant");
-        assert_eq!(payload["execution"]["status"], "succeeded");
-        assert_eq!(
-            payload["execution"]["effects"][0]["effectType"],
-            "revoke_grant"
+        let body = String::from_utf8_lossy(&bytes);
+        assert!(
+            body.contains("local API auth token")
+                && body.contains("not safe for autonomous response"),
+            "unexpected revoke grant rejection: {body}"
         );
-        assert_eq!(
-            payload["execution"]["effects"][0]["target"],
-            "local_api_auth_token"
-        );
-        assert_eq!(
-            payload["execution"]["effects"][0]["contentHash"],
-            serde_json::Value::String(sha256(b"test-token").to_hex_prefixed())
-        );
-        assert!(payload["execution"]["effects"][0]
-            .as_object()
-            .unwrap_or_else(|| panic!("missing revoke grant effect"))
-            .get("artifact")
-            .is_none_or(serde_json::Value::is_null));
-
-        let execution_receipt: SignedReceipt =
-            serde_json::from_value(payload["executionReceipt"].clone())
-                .unwrap_or_else(|e| panic!("failed to decode revoke grant execution receipt: {e}"));
-        let endpoint_decision = execution_receipt
-            .receipt
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.get("endpointDecision"))
-            .unwrap_or_else(|| panic!("missing revoke grant endpointDecision metadata"));
-        assert_eq!(endpoint_decision["receiptFamily"], "response_execution");
-        assert_eq!(
-            endpoint_decision["decision"]["action"],
-            serde_json::Value::String("revoke_grant".to_string())
-        );
-        assert_eq!(
-            endpoint_decision["decision"]["rollbackRef"],
-            payload["plan"]["rollbackRef"]
-        );
-        assert!(endpoint_decision["evidence"]
-            .as_array()
-            .unwrap_or_else(|| panic!("missing revoke grant receipt evidence"))
-            .iter()
-            .any(|item| item["key"]
-                .as_str()
-                .is_some_and(|key| key.starts_with("executionEffect:"))));
-
-        let rotated_token = current_auth_token(&state);
-        assert_ne!(rotated_token, "test-token");
-        assert!(!auth_token_matches("test-token", &state));
-        assert!(auth_token_matches(rotated_token.as_str(), &state));
-
-        let req = axum::http::Request::builder()
-            .method("GET")
-            .uri("/api/v1/agent/edr/response-executions?limit=10")
-            .header(AUTHORIZATION, "Bearer test-token")
-            .body(axum::body::Body::empty())
-            .unwrap_or_else(|e| panic!("failed to build stale-token execution list request: {e}"));
-        let response = app
-            .clone()
-            .oneshot(req)
-            .await
-            .unwrap_or_else(|e| panic!("stale-token execution list request failed: {e}"));
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-
-        let req = axum::http::Request::builder()
-            .method("GET")
-            .uri("/api/v1/agent/edr/response-executions?limit=10")
-            .header(AUTHORIZATION, format!("Bearer {rotated_token}"))
-            .body(axum::body::Body::empty())
-            .unwrap_or_else(|e| {
-                panic!("failed to build rotated-token execution list request: {e}")
-            });
-        let response = app
-            .oneshot(req)
-            .await
-            .unwrap_or_else(|e| panic!("rotated-token execution list request failed: {e}"));
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(current_auth_token(&state), "test-token");
+        assert!(auth_token_matches("test-token", &state));
     }
 
     #[test]

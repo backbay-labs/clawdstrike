@@ -174,10 +174,7 @@ impl EndpointResponseExecutionLedger {
         else {
             return Ok(None);
         };
-        if !matches!(
-            latest.status,
-            EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
-        ) {
+        if latest.status != EndpointResponseExecutionStatus::Succeeded {
             return Ok(None);
         }
         if now > latest.expires_at() {
@@ -244,11 +241,7 @@ impl EndpointResponseExecutionLedger {
         let current = self.all()?;
         let mut expired = Vec::new();
         for execution in &current {
-            if !matches!(
-                execution.status,
-                EndpointResponseExecutionStatus::Succeeded
-                    | EndpointResponseExecutionStatus::Partial
-            ) {
+            if execution.status != EndpointResponseExecutionStatus::Succeeded {
                 continue;
             }
             if now <= execution.expires_at() {

@@ -14,6 +14,27 @@ use hush_core::{canonicalize_json, sha256};
 
 use crate::api_server::StoredEndpointEvidenceBundle;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CanonicalEvidenceGraph {
+    pub(crate) content_hash: String,
+    pub(crate) byte_count: usize,
+}
+
+pub(crate) fn canonical_evidence_graph(graph: &CausalGraph) -> Result<CanonicalEvidenceGraph> {
+    let mut canonical_graph = graph.clone();
+    canonical_graph
+        .edges
+        .sort_by(|left, right| left.edge_id.cmp(&right.edge_id));
+    let graph_value =
+        serde_json::to_value(&canonical_graph).context("serialize evidence bundle graph")?;
+    let canonical_json =
+        canonicalize_json(&graph_value).context("canonicalize evidence bundle graph")?;
+    Ok(CanonicalEvidenceGraph {
+        content_hash: sha256(canonical_json.as_bytes()).to_hex_prefixed(),
+        byte_count: canonical_json.len(),
+    })
+}
+
 pub(crate) struct EndpointEvidenceBundleStore {
     root: Option<PathBuf>,
     bundles: HashMap<String, StoredEndpointEvidenceBundle>,
@@ -50,15 +71,12 @@ impl EndpointEvidenceBundleStore {
         bundle: &EndpointEvidenceBundleReference,
         graph: &CausalGraph,
     ) -> Result<StoredEndpointEvidenceBundle> {
-        let graph_value = serde_json::to_value(graph).context("serialize evidence bundle graph")?;
-        let canonical_graph =
-            canonicalize_json(&graph_value).context("canonicalize evidence bundle graph")?;
-        let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
-        if content_hash != bundle.content_hash {
+        let canonical_graph = canonical_evidence_graph(graph)?;
+        if canonical_graph.content_hash != bundle.content_hash {
             return Err(anyhow::anyhow!(
                 "evidence bundle content hash mismatch: expected {}, computed {}",
                 bundle.content_hash,
-                content_hash
+                canonical_graph.content_hash
             ));
         }
 
@@ -70,7 +88,7 @@ impl EndpointEvidenceBundleStore {
         let stored = StoredEndpointEvidenceBundle {
             bundle: bundle.clone(),
             path: path.as_ref().map(|path| path.display().to_string()),
-            byte_count: canonical_graph.len(),
+            byte_count: canonical_graph.byte_count,
             graph: graph.clone(),
         };
 
@@ -91,10 +109,7 @@ impl EndpointEvidenceBundleStore {
         Ok(stored)
     }
 
-    pub(crate) fn load(
-        &mut self,
-        bundle_id: &str,
-    ) -> Result<Option<StoredEndpointEvidenceBundle>> {
+    pub(crate) fn load(&mut self, bundle_id: &str) -> Result<Option<StoredEndpointEvidenceBundle>> {
         if let Some(root) = &self.root {
             let path = evidence_bundle_path(root, bundle_id)?;
             let contents = match fs::read_to_string(&path) {
@@ -209,23 +224,19 @@ pub(crate) fn validate_stored_evidence_bundle_artifact(
             stored.graph.edges.len()
         ));
     }
-    let graph_value =
-        serde_json::to_value(&stored.graph).context("serialize endpoint evidence bundle graph")?;
-    let canonical_graph =
-        canonicalize_json(&graph_value).context("canonicalize endpoint evidence bundle graph")?;
-    let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
-    if content_hash != stored.bundle.content_hash {
+    let canonical_graph = canonical_evidence_graph(&stored.graph)?;
+    if canonical_graph.content_hash != stored.bundle.content_hash {
         return Err(anyhow::anyhow!(
             "endpoint evidence bundle artifact content hash mismatch: expected {}, computed {}",
             stored.bundle.content_hash,
-            content_hash
+            canonical_graph.content_hash
         ));
     }
-    if stored.byte_count != canonical_graph.len() {
+    if stored.byte_count != canonical_graph.byte_count {
         return Err(anyhow::anyhow!(
             "endpoint evidence bundle artifact byte count mismatch: expected {}, computed {}",
             stored.byte_count,
-            canonical_graph.len()
+            canonical_graph.byte_count
         ));
     }
     Ok(())
