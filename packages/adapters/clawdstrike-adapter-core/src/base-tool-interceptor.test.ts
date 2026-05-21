@@ -195,13 +195,16 @@ describe("BaseToolInterceptor", () => {
   });
 
   it("enforces sanitize decisions by returning modifiedParameters", async () => {
+    const rawSecret = "sk-1234567890abcdef1234567890abcdef";
     const engine: PolicyEngineLike = {
       evaluate: () => ({
         status: "sanitize",
         reason_code: "ADC_POLICY_SANITIZE",
+        original: `leaked ${rawSecret}`,
         sanitized: "Please summarize the quarterly report",
         message: "sanitized input",
       }),
+      redactSecrets: (value) => value.replaceAll(rawSecret, "[REDACTED]"),
     };
 
     const interceptor = new BaseToolInterceptor(engine, {
@@ -235,6 +238,7 @@ describe("BaseToolInterceptor", () => {
         mode: "enforced",
       },
     });
+    expect(JSON.stringify(sanitizeEvent)).not.toContain(rawSecret);
   });
 
   it("supports sanitize replacement_result execution override", async () => {

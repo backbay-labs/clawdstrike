@@ -92,6 +92,24 @@ function fileContentHash(parameters: Record<string, unknown>): string | undefine
   );
 }
 
+function fileWriteContentForPolicy(parameters: Record<string, unknown>): {
+  content?: string;
+  contentBase64?: string;
+} {
+  const content = rawStringParameter(parameters, ["content", "text"]);
+  if (content !== undefined) {
+    return { content };
+  }
+
+  const contentBase64 = rawStringParameter(parameters, ["contentBase64", "content_base64"]);
+  if (contentBase64 !== undefined) {
+    return { contentBase64 };
+  }
+
+  const binaryContent = binaryContentParameter(parameters.content);
+  return binaryContent ? { contentBase64: binaryContent.toString("base64") } : {};
+}
+
 function rawStringParameter(
   parameters: Record<string, unknown>,
   names: readonly string[],
@@ -309,6 +327,7 @@ export class PolicyEventFactory {
             parameters.path ?? parameters.file ?? parameters.filepath ?? parameters.filename ?? "",
           ),
           contentHash: fileContentHash(parameters),
+          ...(eventType === "file_write" ? fileWriteContentForPolicy(parameters) : {}),
           operation: eventType === "file_read" ? "read" : "write",
         };
 

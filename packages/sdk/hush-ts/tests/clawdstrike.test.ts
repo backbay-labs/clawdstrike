@@ -465,6 +465,32 @@ guards:
     expect(JSON.stringify(details)).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
   });
 
+  it("checks string file-write content for secret leaks in local sessions", async () => {
+    const policy = `
+version: "1.2.0"
+name: "file write string secret policy"
+mode: monitor
+guards:
+  secret_leak:
+    enabled: true
+    patterns:
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{48}"
+        severity: error
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const session = cs.session();
+
+    const decision = await session.check("file_write", {
+      path: "/tmp/config.ts",
+      content: "OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("secret_leak");
+  });
+
   it("skips prompt_injection guard when WASM is unavailable instead of fail-closing checks", async () => {
     const policy = `
 version: "1.2.0"

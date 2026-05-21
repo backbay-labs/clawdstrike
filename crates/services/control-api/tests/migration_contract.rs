@@ -546,3 +546,22 @@ fn policy_rule_diff_response_action_migration_extends_action_types() {
         "022 migration must allow policy rule-diff validation response actions"
     );
 }
+
+#[test]
+fn response_action_rollback_ack_migration_extends_terminal_statuses() {
+    let sql = fs::read_to_string(migration_path(
+        "023_response_action_rollback_ack_status.sql",
+    ))
+    .expect("failed to read 023 migration");
+
+    assert!(
+        sql.contains("response_actions_status_check")
+            && sql.contains("response_action_deliveries_status_check")
+            && sql.contains("response_action_acks_status_check"),
+        "023 migration must replace all response-action status constraints"
+    );
+    assert!(
+        sql.matches("'rolled_back'").count() >= 3,
+        "023 migration must allow rolled_back on actions, deliveries, and acknowledgements"
+    );
+}

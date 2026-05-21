@@ -725,21 +725,17 @@ export class PolicyEngine {
   }
 
   private checkFilesystem(event: PolicyEvent): Decision {
-    if (!this.config.guards.forbidden_path) {
-      return { status: "allow" };
-    }
+    if (this.config.guards.forbidden_path) {
+      // First, enforce forbidden path patterns.
+      const forbidden = this.forbiddenPathGuard.checkSync(event, this.policy);
+      const mapped = this.guardResultToDecision(forbidden);
+      if (mapped.status === "deny" || mapped.status === "warn") {
+        return this.applyOnViolation(mapped);
+      }
 
-    // First, enforce forbidden path patterns.
-    const forbidden = this.forbiddenPathGuard.checkSync(event, this.policy);
-    const mapped = this.guardResultToDecision(forbidden);
-    if (mapped.status === "deny" || mapped.status === "warn") {
-      return this.applyOnViolation(mapped);
-    }
-
-    // Then, enforce write roots if configured.
-    if (event.eventType === "file_write" && event.data.type === "file") {
+      // Then, enforce write roots if configured.
       const allowedWriteRoots = this.policy.filesystem?.allowed_write_roots;
-      if (allowedWriteRoots && allowedWriteRoots.length > 0) {
+      if (event.eventType === "file_write" && event.data.type === "file" && allowedWriteRoots?.length) {
         const filePath = normalizePathForPrefix(event.data.path);
         const ok = allowedWriteRoots.some((root) => {
           const rootPath = normalizePathForPrefix(root);
@@ -756,6 +752,13 @@ export class PolicyEngine {
           );
         }
       }
+    }
+
+    if (event.eventType === "file_write" && this.config.guards.secret_leak) {
+      const res = this.secretLeakGuard.checkSync(event, this.policy);
+      const mapped = this.guardResultToDecision(res);
+      const applied = this.applyOnViolation(mapped);
+      if (applied.status === "deny" || applied.status === "warn") return applied;
     }
 
     return { status: "allow" };

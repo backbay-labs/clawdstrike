@@ -204,7 +204,10 @@ impl EndpointResponseExecutionLedger {
         else {
             return Ok(None);
         };
-        if latest.status != EndpointResponseExecutionStatus::Succeeded {
+        if !matches!(
+            latest.status,
+            EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
+        ) {
             return Ok(None);
         }
         if Self::has_terminal_transition(&current, &latest) {
@@ -241,7 +244,11 @@ impl EndpointResponseExecutionLedger {
         let current = self.all()?;
         let mut expired = Vec::new();
         for execution in &current {
-            if execution.status != EndpointResponseExecutionStatus::Succeeded {
+            if !matches!(
+                execution.status,
+                EndpointResponseExecutionStatus::Succeeded
+                    | EndpointResponseExecutionStatus::Partial
+            ) {
                 continue;
             }
             if now <= execution.expires_at() {
@@ -340,6 +347,42 @@ mod tests {
             &[partial.clone(), failed],
             &partial,
         ));
+    }
+
+    #[test]
+    fn partial_execution_is_pending_when_ttl_expires() {
+        let partial = execution(
+            "response_execution_partial:ttl",
+            EndpointResponseExecutionStatus::Partial,
+        );
+        let now = partial.completed_at
+            + chrono::Duration::seconds(i64::try_from(partial.ttl_seconds + 1).unwrap());
+        let mut ledger = EndpointResponseExecutionLedger::transient();
+        ledger.append(&partial).unwrap();
+
+        let pending = ledger.pending_expiring_executions(now).unwrap();
+
+        assert_eq!(pending, vec![partial]);
+    }
+
+    #[test]
+    fn partial_execution_can_roll_back_to_terminal_transition() {
+        let partial = execution(
+            "response_execution_partial:rollback",
+            EndpointResponseExecutionStatus::Partial,
+        );
+        let mut ledger = EndpointResponseExecutionLedger::transient();
+        ledger.append(&partial).unwrap();
+
+        let rolled_back = ledger
+            .roll_back(&partial, "partial rollback", partial.completed_at)
+            .unwrap()
+            .expect("partial rollback transition");
+
+        assert_eq!(
+            rolled_back.status,
+            EndpointResponseExecutionStatus::RolledBack
+        );
     }
 }
 

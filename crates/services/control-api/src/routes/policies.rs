@@ -348,7 +348,14 @@ async fn deploy_policy(
     }
     tx.commit().await.map_err(ApiError::Database)?;
     let deployment = distribute_prepared_policy_to_fleet(&state, &auth.slug, deployment_plan).await;
-    ensure_policy_deployment_outcome_clean(&deployment)?;
+    if deployment.kv_write_failures > 0 {
+        tracing::warn!(
+            deployment_id = %deployment.deployment_id,
+            tenant = %auth.slug,
+            kv_write_failures = deployment.kv_write_failures,
+            "Policy deployment committed with fleet KV retry debt"
+        );
+    }
 
     tracing::info!(
         deployment_id = %deployment.deployment_id,
@@ -526,7 +533,14 @@ async fn attach_policy_proposal_impact(
 ) -> Result<Json<PolicyProposalResponse>, ApiError> {
     ensure_policy_author(&auth)?;
 
+    let proposal = fetch_policy_proposal_row(&state, auth.tenant_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if proposal.status != "pending" {
+        return Err(ApiError::NotFound);
+    }
     let impact = validate_policy_proposal_impact(req)?;
+    validate_policy_proposal_impact_matches_proposal(&proposal, &impact)?;
     let attached_by = auth.actor_id();
     let row = sqlx::query::query(
         r#"UPDATE policy_proposals
@@ -673,7 +687,7 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
         )
         .await?;
         let delivery = action.deliveries.first();
-        dispatches.push(serde_json::json!({
+        let dispatch = serde_json::json!({
             "responseActionId": action.action.id,
             "endpointAgentId": endpoint_agent_id,
             "actionStatus": action.action.status,
@@ -681,37 +695,39 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
             "deliverySubject": delivery.and_then(|delivery| delivery.delivery_subject.as_deref()),
             "publishedAt": delivery.and_then(|delivery| delivery.published_at),
             "dispatchedAt": Utc::now(),
-        }));
+        });
+        let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+        let latest_proposal = fetch_policy_proposal_row_for_update(&mut tx, auth.tenant_id, id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        let preview = append_policy_rule_diff_dispatches(
+            latest_proposal.preview,
+            validation_plan_sha256.as_deref(),
+            std::slice::from_ref(&dispatch),
+        )?;
+        let row = sqlx::query::query(
+            r#"UPDATE policy_proposals
+               SET preview = $3,
+                   updated_at = now()
+               WHERE tenant_id = $1
+                 AND id = $2
+                 AND status = 'pending'
+               RETURNING *"#,
+        )
+        .bind(auth.tenant_id)
+        .bind(id)
+        .bind(&preview)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::NotFound)?;
+        tx.commit().await.map_err(ApiError::Database)?;
+        proposal = policy_proposal_from_row(row).map_err(ApiError::Database)?;
+        dispatches.push(dispatch);
     }
 
-    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
-    let latest_proposal = fetch_policy_proposal_row_for_update(&mut tx, auth.tenant_id, id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    let preview = append_policy_rule_diff_dispatches(
-        latest_proposal.preview,
-        validation_plan_sha256.as_deref(),
-        &dispatches,
-    )?;
-    let row = sqlx::query::query(
-        r#"UPDATE policy_proposals
-           SET preview = $3,
-               updated_at = now()
-           WHERE tenant_id = $1
-             AND id = $2
-           RETURNING *"#,
-    )
-    .bind(auth.tenant_id)
-    .bind(id)
-    .bind(&preview)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(ApiError::Database)?
-    .ok_or(ApiError::NotFound)?;
-    tx.commit().await.map_err(ApiError::Database)?;
-
     Ok(Json(DispatchPolicyProposalFleetRuleDiffResponse {
-        proposal: proposal_response_from_row(row, &auth.slug)?,
+        proposal: proposal.into_response(&auth.slug),
         validation_plan_sha256,
         requested_endpoint_count: endpoint_requests.len(),
         dispatched_action_count: dispatches.len(),
@@ -1503,6 +1519,84 @@ fn ensure_policy_proposal_deployable_impact(proposal: &PolicyProposalRow) -> Res
     Ok(())
 }
 
+fn validate_policy_proposal_impact_matches_proposal(
+    proposal: &PolicyProposalRow,
+    impact: &serde_json::Value,
+) -> Result<(), ApiError> {
+    let Some(receipts) = impact
+        .get("simulationReceipts")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Ok(());
+    };
+    if receipts.is_empty() {
+        return Ok(());
+    }
+
+    let expected_policy_hash = sha256(proposal.checksum_sha256.as_bytes()).to_hex_prefixed();
+    let expected_policy_epoch =
+        sha256(proposal.proposed_policy_version.to_string().as_bytes()).to_hex_prefixed();
+
+    for receipt in receipts {
+        let proposed_policy_hash =
+            policy_proposal_receipt_evidence_hash(receipt, "proposedPolicyHash").ok_or_else(
+                || {
+                    ApiError::BadRequest(
+                        "simulation_receipt evidence must include proposedPolicyHash".to_string(),
+                    )
+                },
+            )?;
+        if !proposed_policy_hash.eq_ignore_ascii_case(&expected_policy_hash) {
+            return Err(ApiError::BadRequest(
+                "simulation_receipt proposedPolicyHash must match the policy proposal".to_string(),
+            ));
+        }
+
+        let proposed_policy_epoch =
+            policy_proposal_receipt_evidence_hash(receipt, "proposedPolicyEpoch").ok_or_else(
+                || {
+                    ApiError::BadRequest(
+                        "simulation_receipt evidence must include proposedPolicyEpoch".to_string(),
+                    )
+                },
+            )?;
+        if !proposed_policy_epoch.eq_ignore_ascii_case(&expected_policy_epoch) {
+            return Err(ApiError::BadRequest(
+                "simulation_receipt proposedPolicyEpoch must match the policy proposal".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn policy_proposal_receipt_evidence_hash<'a>(
+    receipt: &'a serde_json::Value,
+    key: &str,
+) -> Option<&'a str> {
+    if let Some(hash) = receipt
+        .get("evidenceValueHashes")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|hashes| hashes.get(key))
+        .and_then(serde_json::Value::as_str)
+    {
+        return Some(hash);
+    }
+
+    let evidence = receipt
+        .pointer("/signedReceipt/receipt/metadata/endpointDecision/evidence")
+        .or_else(|| receipt.pointer("/receipt/metadata/endpointDecision/evidence"))?
+        .as_array()?;
+    evidence.iter().find_map(|item| {
+        let item_key = item.get("key").and_then(serde_json::Value::as_str)?;
+        if item_key == key {
+            item.get("valueHash").and_then(serde_json::Value::as_str)
+        } else {
+            None
+        }
+    })
+}
+
 async fn reject_policy_proposal(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
@@ -1717,7 +1811,15 @@ async fn approve_policy_proposal(
     tx.commit().await.map_err(ApiError::Database)?;
     let deployment_outcome =
         distribute_prepared_policy_to_fleet(&state, &auth.slug, deployment_plan).await;
-    ensure_policy_deployment_outcome_clean(&deployment_outcome)?;
+    if deployment_outcome.kv_write_failures > 0 {
+        tracing::warn!(
+            deployment_id = %deployment_outcome.deployment_id,
+            tenant = %auth.slug,
+            kv_write_failures = deployment_outcome.kv_write_failures,
+            proposal_id = %proposal.id,
+            "Approved policy proposal committed with fleet KV retry debt"
+        );
+    }
     let deployment = Some(DeployPolicyResponse {
         deployment_id: deployment_outcome.deployment_id,
         tenant_slug: auth.slug.clone(),
@@ -1731,18 +1833,6 @@ async fn approve_policy_proposal(
         deployment,
         approvals_remaining: 0,
     }))
-}
-
-fn ensure_policy_deployment_outcome_clean(
-    deployment: &PolicyDeploymentOutcome,
-) -> Result<(), ApiError> {
-    if deployment.kv_write_failures == 0 {
-        return Ok(());
-    }
-    Err(ApiError::Conflict(format!(
-        "policy deployment {} failed to write {} agent policy snapshot(s); deployment cannot be reported as clean",
-        deployment.deployment_id, deployment.kv_write_failures
-    )))
 }
 
 fn active_policy_candidate_from_base(
@@ -2104,6 +2194,7 @@ impl VerifiedPolicyProposalSimulationReceipt {
             "impactId": self.impact_id,
             "graphSliceId": self.graph_slice_id,
             "evidenceKeys": self.evidence_keys,
+            "evidenceValueHashes": self.evidence_value_hashes.clone(),
             "signedReceipt": self.signed_receipt,
         })
     }
@@ -3347,6 +3438,45 @@ mod tests {
             ensure_policy_proposal_deployable_impact(&proposal),
             Err(ApiError::Conflict(_))
         ));
+    }
+
+    fn receipt_bound_impact(
+        proposed_policy_hash: &str,
+        proposed_policy_epoch: i64,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "simulationReceiptsVerifiedCount": 1,
+            "blockingChangeCount": 0,
+            "recommendation": "observe_only",
+            "simulationReceipts": [
+                {
+                    "evidenceValueHashes": {
+                        "proposedPolicyHash": sha256(proposed_policy_hash.as_bytes()).to_hex_prefixed(),
+                        "proposedPolicyEpoch": sha256(proposed_policy_epoch.to_string().as_bytes()).to_hex_prefixed()
+                    }
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn proposal_impact_receipts_must_match_proposal_policy_identity() {
+        let proposal = proposal_row_with_impact(receipt_bound_impact(&"0".repeat(64), 2));
+        let impact = receipt_bound_impact(&"1".repeat(64), 2);
+
+        assert!(matches!(
+            validate_policy_proposal_impact_matches_proposal(&proposal, &impact),
+            Err(ApiError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn proposal_impact_receipts_accept_matching_policy_identity() {
+        let proposal = proposal_row_with_impact(receipt_bound_impact(&"0".repeat(64), 2));
+        let impact = receipt_bound_impact(&"0".repeat(64), 2);
+
+        validate_policy_proposal_impact_matches_proposal(&proposal, &impact)
+            .expect("matching proposal receipt binding");
     }
 
     #[test]

@@ -610,6 +610,38 @@ guards:
     expect(decision.guard).toBe("secret_leak");
   });
 
+  it.each([
+    ["content", "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],
+    ["text", "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],
+    [
+      "contentBase64",
+      Buffer.from("-----BEGIN OPENSSH PRIVATE KEY-----").toString("base64"),
+    ],
+  ])("blocks secret leaks in file-write %s before execution", async (field, value) => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { mcp_tool: false },
+    });
+
+    const event: PolicyEvent = {
+      eventId: `file-write-secret-${field}`,
+      eventType: "file_write",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "file",
+        path: `${testDir}/allowed.txt`,
+        operation: "write",
+        [field]: value,
+      } as PolicyEvent["data"],
+    };
+
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("secret_leak");
+  });
+
   it("blocks unknown MCP tools by default under the AI-agent policy", async () => {
     const engine = new PolicyEngine({
       policy: "clawdstrike:ai-agent-minimal",

@@ -51,7 +51,7 @@ impl CausalGraphRecorder {
         {
             let parent = self.ensure_node(
                 CausalNodeKind::Process,
-                format!("process:{parent_guid}"),
+                format!("guid:{parent_guid}"),
                 parent_guid.to_string(),
                 observation.timestamp,
                 BTreeMap::new(),
@@ -842,6 +842,79 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("durable")
         );
+    }
+
+    #[test]
+    fn parent_process_placeholder_uses_canonical_process_identity_key() {
+        let mut recorder = CausalGraphRecorder::new();
+        let child = observation_with_process(
+            "obs-child",
+            EndpointProcess {
+                pid: Some(200),
+                ppid: Some(100),
+                process_guid: Some("child-1".to_string()),
+                parent_process_guid: Some("parent-1".to_string()),
+                image: Some("/bin/child".to_string()),
+                ..EndpointProcess::default()
+            },
+        );
+        let parent = observation_with_process(
+            "obs-parent",
+            EndpointProcess {
+                pid: Some(100),
+                process_guid: Some("parent-1".to_string()),
+                image: Some("/bin/parent".to_string()),
+                ..EndpointProcess::default()
+            },
+        );
+
+        recorder.record_observation(&child);
+        recorder.record_observation(&parent);
+
+        let graph = recorder.graph();
+        let parent_nodes = graph
+            .nodes
+            .values()
+            .filter(|node| {
+                node.kind == CausalNodeKind::Process
+                    && (node.label == "parent-1"
+                        || node
+                            .attributes
+                            .get("processGuid")
+                            .and_then(|value| value.as_str())
+                            == Some("parent-1"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            parent_nodes.len(),
+            1,
+            "parent placeholders and later parent observations must share one process node"
+        );
+        let parent_node = parent_nodes[0];
+        assert_eq!(
+            parent_node
+                .attributes
+                .get("processIdentityKey")
+                .and_then(|value| value.as_str()),
+            Some("guid:parent-1")
+        );
+
+        let child_node_id = graph
+            .nodes
+            .values()
+            .find(|node| {
+                node.attributes
+                    .get("processGuid")
+                    .and_then(|value| value.as_str())
+                    == Some("child-1")
+            })
+            .map(|node| node.node_id.as_str())
+            .expect("child process node");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.kind == CausalEdgeKind::Spawned
+                && edge.from == parent_node.node_id
+                && edge.to == child_node_id
+        }));
     }
 
     fn observation_with_process(

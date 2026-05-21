@@ -12779,7 +12779,7 @@ pub(crate) fn evidence_bundle_archive_verification(
         ));
     }
     for (family, count) in &receipt_family_counts {
-        if *count > 1 {
+        if *count > 1 && !receipt_family_allows_multiple_archive_members(family) {
             receipt_failures.push(format!("duplicate_receipt_family:{family}:{count}"));
         }
     }
@@ -13021,6 +13021,10 @@ pub(crate) fn evidence_bundle_archive_verification(
         receipt_failure_count: receipt_failures.len(),
         receipt_failures,
     })
+}
+
+fn receipt_family_allows_multiple_archive_members(family: &str) -> bool {
+    family == "response_execution"
 }
 
 fn push_archive_receipt_evidence_hash_failure(
@@ -19648,6 +19652,19 @@ mod tests {
     use tower::ServiceExt;
 
     static TEST_POLICY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn response_execution_archive_family_allows_lifecycle_receipts() {
+        assert!(receipt_family_allows_multiple_archive_members(
+            "response_execution"
+        ));
+        assert!(!receipt_family_allows_multiple_archive_members(
+            "response_request"
+        ));
+        assert!(!receipt_family_allows_multiple_archive_members(
+            "evidence_bundle_manifest"
+        ));
+    }
 
     fn response_action_actor_input() -> serde_json::Value {
         serde_json::json!({

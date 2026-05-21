@@ -686,7 +686,10 @@ pub(crate) async fn agent_edr_response_execution_rollback(
             ),
         ));
     }
-    if execution.status != EndpointResponseExecutionStatus::Succeeded {
+    if !matches!(
+        execution.status,
+        EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
+    ) {
         return Err((
             StatusCode::CONFLICT,
             format!(
