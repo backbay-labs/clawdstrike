@@ -116,7 +116,7 @@ guards:
       - git_push
       - deploy
       - publish
-    default_action: allow
+    default_action: block
     max_args_size: 2097152  # 2MB
 
   prompt_injection:

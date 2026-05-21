@@ -343,25 +343,24 @@ describe('Tool Guard Handler — inferEventType classification', () => {
 
   // ── tool_call fallback classification ──
 
-  it('should classify "generic_tool" as tool_call', async () => {
+  it('should classify "generic_tool" as tool_call and fail closed by default', async () => {
     const event = makeToolResultEvent(
       'generic_tool',
       { data: 'safe data' },
       'safe output',
     );
     await toolGuardHandler(event);
-    expect(event.context.toolResult.error).toBeUndefined();
-    expect(event.messages).toHaveLength(0);
+    expect(event.context.toolResult.error).toContain("not in allowed tool list");
   });
 
-  it('should classify unknown tool names as tool_call (fallback)', async () => {
+  it('should classify unknown tool names as tool_call and fail closed by default', async () => {
     const event = makeToolResultEvent(
       'completely_unknown_operation',
       { foo: 'bar' },
       'some result',
     );
     await toolGuardHandler(event);
-    expect(event.context.toolResult.error).toBeUndefined();
+    expect(event.context.toolResult.error).toContain("not in allowed tool list");
   });
 });
 
@@ -613,8 +612,8 @@ describe('Tool Guard Handler — secret leak detection in results', () => {
 
   it('should allow tool results with no secrets', async () => {
     const event = makeToolResultEvent(
-      'custom_action',
-      { data: 'health' },
+      'read_file',
+      { path: '/tmp/health.json' },
       '{"status": "healthy", "uptime": 12345}',
     );
     await toolGuardHandler(event);
@@ -802,8 +801,7 @@ describe('Tool Guard Handler — edge cases', () => {
   });
 
   it('should handle numeric result', async () => {
-    // Use a generic tool name so it classifies as tool_call, not network_egress
-    const event = makeToolResultEvent('custom_action', { data: 'count' }, 42);
+    const event = makeToolResultEvent('read_file', { path: '/tmp/count.txt' }, 42);
     await toolGuardHandler(event);
     expect(event.context.toolResult.error).toBeUndefined();
   });
@@ -819,10 +817,9 @@ describe('Tool Guard Handler — edge cases', () => {
   });
 
   it('should handle array result', async () => {
-    // Use a generic tool name so it classifies as tool_call, not network_egress
     const event = makeToolResultEvent(
-      'custom_action',
-      { data: 'items' },
+      'read_file',
+      { path: '/tmp/items.json' },
       ['item1', 'item2', 'item3'],
     );
     await toolGuardHandler(event);
@@ -830,7 +827,7 @@ describe('Tool Guard Handler — edge cases', () => {
   });
 
   it('should handle empty params', async () => {
-    const event = makeToolResultEvent('generic_tool', {}, 'result');
+    const event = makeToolResultEvent('read_file', { path: '/tmp/file.txt' }, 'result');
     await toolGuardHandler(event);
     expect(event.context.toolResult.error).toBeUndefined();
   });
@@ -870,6 +867,12 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
   });
 
   it('rewrites denied modern tool results into synthetic error messages', async () => {
+    initToolGuard({
+      policy: 'clawdstrike:ai-agent-minimal',
+      mode: 'deterministic',
+      logLevel: 'error',
+      guards: { mcp_tool: false },
+    });
     const event = makeModernToolResultEvent(
       'generic_tool',
       'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -912,6 +915,12 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
   });
 
   it('prefers structured modern result payloads over content summaries', async () => {
+    initToolGuard({
+      policy: 'clawdstrike:ai-agent-minimal',
+      mode: 'deterministic',
+      logLevel: 'error',
+      guards: { mcp_tool: false },
+    });
     const event: ModernToolResultPersistEvent = {
       toolName: 'generic_tool',
       toolCallId: 'tool-call-1',

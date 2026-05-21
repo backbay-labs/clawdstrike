@@ -2725,6 +2725,14 @@ posture:
         let mut policy = Policy::new();
         policy.version = "1.4.0".to_string();
         policy.name = "enclave-test".to_string();
+        policy.guards.mcp_tool = Some(crate::guards::McpToolConfig {
+            enabled: true,
+            allow: vec!["safe_tool".to_string(), "read_file".to_string()],
+            block: vec!["shell_exec".to_string()],
+            require_confirmation: vec![],
+            default_action: Some(McpDefaultAction::Block),
+            ..Default::default()
+        });
         policy.origins = Some(origins);
         policy
     }
@@ -2819,7 +2827,7 @@ posture:
             .await
             .unwrap();
 
-        // The guard pipeline (McpToolGuard) runs — default policy allows most tools
+        // The guard pipeline (McpToolGuard) runs after the enclave allows the tool.
         assert!(report.overall.allowed);
         // Verify enclave is NOT the denying guard
         assert_ne!(report.overall.guard, "enclave");
@@ -2871,8 +2879,9 @@ posture:
             .await
             .unwrap();
 
-        // Normal flow: no enclave resolution, just guard pipeline
-        assert!(report.overall.allowed);
+        // Normal flow: no enclave resolution, just the fail-closed guard pipeline.
+        assert!(!report.overall.allowed);
+        assert_eq!(report.overall.guard, "mcp_tool");
     }
 
     #[tokio::test]

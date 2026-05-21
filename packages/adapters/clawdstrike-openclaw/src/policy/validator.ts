@@ -35,7 +35,7 @@ const POLICY_KEYS = new Set([
 const EGRESS_KEYS = new Set(["mode", "allowed_domains", "allowed_cidrs", "denied_domains"]);
 const FILESYSTEM_KEYS = new Set(["allowed_write_roots", "allowed_read_paths", "forbidden_paths"]);
 const EXECUTION_KEYS = new Set(["allowed_commands", "denied_patterns"]);
-const TOOLS_KEYS = new Set(["allowed", "denied"]);
+const TOOLS_KEYS = new Set(["allowed", "denied", "require_confirmation", "default_action"]);
 const LIMITS_KEYS = new Set(["max_execution_seconds", "max_memory_mb", "max_output_bytes"]);
 const GUARDS_KEYS = new Set([
   "forbidden_path",
@@ -269,6 +269,18 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
       ensureAllowedKeys(p.tools, "tools", TOOLS_KEYS, errors);
       ensureStringArray((p.tools as any).allowed, "tools.allowed", errors);
       ensureStringArray((p.tools as any).denied, "tools.denied", errors);
+      ensureStringArray(
+        (p.tools as any).require_confirmation,
+        "tools.require_confirmation",
+        errors,
+      );
+      const defaultAction = (p.tools as any).default_action;
+      if (
+        defaultAction !== undefined &&
+        (typeof defaultAction !== "string" || !["allow", "block"].includes(defaultAction))
+      ) {
+        errors.push("tools.default_action must be one of: allow, block");
+      }
     }
   }
 

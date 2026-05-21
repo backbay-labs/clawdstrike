@@ -116,8 +116,8 @@ describe('Tool Guard Hook', () => {
       context: {
         sessionId: 'test-session',
         toolResult: {
-          toolName: 'custom_action',
-          params: {},
+          toolName: 'read_file',
+          params: { path: '/project/safe.json' },
           result: { data: 'safe content' },
         },
       },

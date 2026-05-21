@@ -205,6 +205,7 @@ const POLICY_REASON_CODES = {
   FILESYSTEM_WRITE_ROOT_DENY: "OCLAW_FILESYSTEM_WRITE_ROOT_DENY",
   TOOL_DENIED: "OCLAW_TOOL_DENIED",
   TOOL_NOT_ALLOWLISTED: "OCLAW_TOOL_NOT_ALLOWLISTED",
+  TOOL_APPROVAL_REQUIRED: "OCLAW_TOOL_APPROVAL_REQUIRED",
 } as const;
 
 function denyDecision(
@@ -821,7 +822,7 @@ export class PolicyEngine {
 
   private checkToolCall(event: PolicyEvent): Decision {
     // Optional tool allow/deny list.
-    if (event.data.type === "tool") {
+    if (this.config.guards.mcp_tool && event.data.type === "tool") {
       const tools = this.policy.tools;
       const toolName = event.data.toolName.toLowerCase();
 
@@ -837,12 +838,36 @@ export class PolicyEngine {
         );
       }
 
+      const approvalTools =
+        tools?.require_confirmation?.map((x) => x.toLowerCase()) ?? [];
+      if (approvalTools.includes(toolName)) {
+        return this.applyOnViolation(
+          denyDecision(
+            POLICY_REASON_CODES.TOOL_APPROVAL_REQUIRED,
+            `Tool '${event.data.toolName}' requires approval before execution`,
+            "mcp_tool",
+            "high",
+          ),
+        );
+      }
+
       const allowedTools = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
       if (allowedTools.length > 0 && !allowedTools.includes(toolName)) {
         return this.applyOnViolation(
           denyDecision(
             POLICY_REASON_CODES.TOOL_NOT_ALLOWLISTED,
             `Tool '${event.data.toolName}' is not in allowed tool list`,
+            "mcp_tool",
+            "high",
+          ),
+        );
+      }
+
+      if ((tools?.default_action ?? "block") === "block" && allowedTools.length === 0) {
+        return this.applyOnViolation(
+          denyDecision(
+            POLICY_REASON_CODES.TOOL_NOT_ALLOWLISTED,
+            `Tool '${event.data.toolName}' is not explicitly allowed by policy`,
             "mcp_tool",
             "high",
           ),

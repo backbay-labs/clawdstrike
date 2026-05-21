@@ -590,6 +590,7 @@ guards:
       policy: "clawdstrike:ai-agent-minimal",
       mode: "deterministic",
       logLevel: "error",
+      guards: { mcp_tool: false },
     });
 
     const event: PolicyEvent = {
@@ -607,6 +608,54 @@ guards:
     const decision = await engine.evaluate(event);
     expect(decision.status).toBe("deny");
     expect(decision.guard).toBe("secret_leak");
+  });
+
+  it("blocks unknown MCP tools by default under the AI-agent policy", async () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const event: PolicyEvent = {
+      eventId: "mcp-unknown-default-deny",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "browser_automation_click_and_download",
+        parameters: { url: "https://example.invalid/file" },
+      },
+    };
+
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("mcp_tool");
+    expect(decision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
+  });
+
+  it("blocks approval-gated MCP tools until an approval is supplied by the hook layer", async () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const event: PolicyEvent = {
+      eventId: "mcp-git-push-approval-required",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "git_push",
+        parameters: { remote: "origin", branch: "main" },
+      },
+    };
+
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("mcp_tool");
+    expect(decision.reason_code).toBe("OCLAW_TOOL_APPROVAL_REQUIRED");
   });
 
   it("enforces allowed_write_roots for output-style command flags", async () => {

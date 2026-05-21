@@ -184,10 +184,14 @@ export interface ExecutionPolicy {
  * Tool access policy
  */
 export interface ToolPolicy {
-  /** Allowed tools (empty = all allowed) */
+  /** Allowed tools (empty with default_action=block means deny unless explicitly allowed) */
   allowed?: string[];
   /** Denied tools */
   denied?: string[];
+  /** Tools that must have an approval before execution. */
+  require_confirmation?: string[];
+  /** Default action for tools not explicitly allowed, denied, or approval-gated. */
+  default_action?: "allow" | "block";
 }
 
 /**
