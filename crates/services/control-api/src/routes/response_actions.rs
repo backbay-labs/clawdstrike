@@ -920,10 +920,16 @@ async fn validate_endpoint_ack_signed_receipt(
     context: &AckContext,
     ack: &AckSubmission,
 ) -> Result<(), ApiError> {
-    if context.action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str()
-        && ack.ack_status == "acknowledged"
-    {
-        return validate_policy_rule_diff_ack_receipt(tx, context, ack).await;
+    if context.action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str() {
+        if ack.ack_status == "acknowledged" {
+            return validate_policy_rule_diff_ack_receipt(tx, context, ack).await;
+        }
+        validate_policy_rule_diff_error_payload_matches_action(
+            ack,
+            &context.action.payload,
+            &ack.target_id,
+        )?;
+        return Ok(());
     }
 
     if !requires_endpoint_ack_signed_receipt(&context.action, ack) {
@@ -1255,6 +1261,155 @@ fn validate_policy_rule_diff_ack_matches_action_payload(
     }
 
     Ok(())
+}
+
+fn policy_rule_diff_error_payload_value(ack: &AckSubmission) -> Result<&Value, ApiError> {
+    ack.raw_payload
+        .get("policyRuleDiffValidationError")
+        .or_else(|| ack.raw_payload.get("policy_rule_diff_validation_error"))
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "acknowledgement raw_payload must include policyRuleDiffValidationError"
+                    .to_string(),
+            )
+        })
+}
+
+fn validate_policy_rule_diff_error_payload_matches_action(
+    ack: &AckSubmission,
+    action_payload: &Value,
+    target_id: &str,
+) -> Result<(), ApiError> {
+    let payload = policy_rule_diff_error_payload_value(ack)?;
+    if !payload.is_object() {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidationError must be an object".to_string(),
+        ));
+    }
+
+    require_policy_rule_diff_error_str_matches_action(
+        payload,
+        action_payload,
+        "proposalId",
+        "proposalId",
+    )?;
+    require_policy_rule_diff_error_str_matches_action(
+        payload,
+        action_payload,
+        "validationPlanSha256",
+        "validationPlanSha256",
+    )?;
+    let endpoint_agent_id = required_policy_rule_diff_error_str(payload, "endpointAgentId")?;
+    if endpoint_agent_id != target_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidationError endpointAgentId does not match target_id".to_string(),
+        ));
+    }
+    let expected_endpoint_agent_id =
+        required_policy_rule_diff_action_str(action_payload, "endpointAgentId")?;
+    if endpoint_agent_id != expected_endpoint_agent_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidationError endpointAgentId does not match the dispatched response action"
+                .to_string(),
+        ));
+    }
+
+    let expected_request = action_payload.get("request").ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation dispatched response action must include request".to_string(),
+        )
+    })?;
+    let actual_request = payload.get("request").ok_or_else(|| {
+        ApiError::BadRequest("policyRuleDiffValidationError must include request".to_string())
+    })?;
+    let expected_request = canonicalize_json(expected_request).map_err(|err| {
+        ApiError::BadRequest(format!(
+            "policyRuleDiffValidation dispatched request is not canonicalizable JSON: {err}"
+        ))
+    })?;
+    let actual_request = canonicalize_json(actual_request).map_err(|err| {
+        ApiError::BadRequest(format!(
+            "policyRuleDiffValidationError request is not canonicalizable JSON: {err}"
+        ))
+    })?;
+    if actual_request != expected_request {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidationError request does not match the dispatched response action"
+                .to_string(),
+        ));
+    }
+
+    let message = payload
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidationError must include a non-empty message".to_string(),
+            )
+        })?;
+    if let Some(ack_message) = ack
+        .message
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if message != ack_message {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidationError message must match acknowledgement message"
+                    .to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn require_policy_rule_diff_error_str_matches_action(
+    payload: &Value,
+    action_payload: &Value,
+    payload_key: &str,
+    action_key: &str,
+) -> Result<(), ApiError> {
+    let actual = required_policy_rule_diff_error_str(payload, payload_key)?;
+    let expected = required_policy_rule_diff_action_str(action_payload, action_key)?;
+    if actual != expected {
+        return Err(ApiError::BadRequest(format!(
+            "policyRuleDiffValidationError {payload_key} does not match the dispatched response action"
+        )));
+    }
+    Ok(())
+}
+
+fn required_policy_rule_diff_error_str<'a>(
+    payload: &'a Value,
+    key: &str,
+) -> Result<&'a str, ApiError> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!("policyRuleDiffValidationError must include {key}"))
+        })
+}
+
+fn required_policy_rule_diff_action_str<'a>(
+    payload: &'a Value,
+    key: &str,
+) -> Result<&'a str, ApiError> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation dispatched response action must include {key}"
+            ))
+        })
 }
 
 fn validate_policy_rule_diff_ack_impact_evidence(
@@ -2727,6 +2882,40 @@ mod tests {
         .expect("test acknowledgement parses")
     }
 
+    fn policy_rule_diff_action_payload() -> Value {
+        json!({
+            "operation": "policy_rule_diff_validation",
+            "proposalId": "proposal-test",
+            "validationPlanSha256": "sha256:plan",
+            "endpointAgentId": "endpoint-1",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/edr/policy/event-impact",
+                "body": {
+                    "limit": 10,
+                    "trackPosture": true
+                }
+            }
+        })
+    }
+
+    fn policy_rule_diff_error_ack(mut error_payload: Value) -> AckSubmission {
+        error_payload["message"] = json!("local validation failed");
+        parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "failed".to_string(),
+            observed_at: None,
+            message: Some("local validation failed".to_string()),
+            resulting_state: Some("policy_rule_diff_validation:failed".to_string()),
+            raw_payload: Some(json!({
+                "policyRuleDiffValidationError": error_payload
+            })),
+        })
+        .expect("test policy rule-diff failure acknowledgement parses")
+    }
+
     #[test]
     fn endpoint_terminal_ack_statuses_require_signed_receipts() {
         let action = test_response_action(
@@ -2774,6 +2963,90 @@ mod tests {
         let ack = test_ack("acknowledged", "principal");
 
         assert!(!requires_endpoint_ack_signed_receipt(&action, &ack));
+    }
+
+    #[test]
+    fn policy_rule_diff_error_payload_must_be_bound_to_dispatched_action() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let action_payload = policy_rule_diff_action_payload();
+        let empty_payload = parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "failed".to_string(),
+            observed_at: None,
+            message: Some("local validation failed".to_string()),
+            resulting_state: Some("policy_rule_diff_validation:failed".to_string()),
+            raw_payload: Some(json!({})),
+        })
+        .expect("empty raw payload parses");
+        let message = bad_request_message(
+            validate_policy_rule_diff_error_payload_matches_action(
+                &empty_payload,
+                &action_payload,
+                "endpoint-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("must include policyRuleDiffValidationError"));
+
+        let wrong_plan = policy_rule_diff_error_ack(json!({
+            "proposalId": "proposal-test",
+            "validationPlanSha256": "sha256:wrong-plan",
+            "endpointAgentId": "endpoint-1",
+            "request": action_payload["request"].clone()
+        }));
+        let message = bad_request_message(
+            validate_policy_rule_diff_error_payload_matches_action(
+                &wrong_plan,
+                &action_payload,
+                "endpoint-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("validationPlanSha256 does not match"));
+
+        let wrong_request = policy_rule_diff_error_ack(json!({
+            "proposalId": "proposal-test",
+            "validationPlanSha256": "sha256:plan",
+            "endpointAgentId": "endpoint-1",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/edr/policy/event-impact",
+                "body": {
+                    "limit": 999,
+                    "trackPosture": true
+                }
+            }
+        }));
+        let message = bad_request_message(
+            validate_policy_rule_diff_error_payload_matches_action(
+                &wrong_request,
+                &action_payload,
+                "endpoint-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("request does not match"));
+
+        let valid = policy_rule_diff_error_ack(json!({
+            "proposalId": "proposal-test",
+            "validationPlanSha256": "sha256:plan",
+            "endpointAgentId": "endpoint-1",
+            "request": action_payload["request"].clone()
+        }));
+        validate_policy_rule_diff_error_payload_matches_action(
+            &valid,
+            &action_payload,
+            "endpoint-1",
+        )
+        .expect("bound policy rule-diff error payload should validate");
     }
 
     #[test]
