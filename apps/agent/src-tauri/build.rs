@@ -133,8 +133,7 @@ fn validate_concrete_system_extension_bundle(manifest_dir: &Path) -> Result<(), 
     }
 
     let info_path = bundle_path.join("Contents").join("Info.plist");
-    let info = fs::read_to_string(&info_path)
-        .map_err(|error| format!("failed to read system extension Info.plist: {error}"))?;
+    let info = read_plist_xml(&info_path)?;
     let template = fs::read_to_string(
         manifest_dir.join("macos/system-extension/plists/combined-system-extension-template.plist"),
     )
@@ -247,6 +246,40 @@ fn validate_system_extension_entitlements_output(contents: &str) -> Result<(), S
         );
     }
     Ok(())
+}
+
+fn read_plist_xml(path: &Path) -> Result<String, String> {
+    let plutil = Path::new("/usr/bin/plutil");
+    if plutil.is_file() {
+        let output = Command::new(plutil)
+            .arg("-convert")
+            .arg("xml1")
+            .arg("-o")
+            .arg("-")
+            .arg(path)
+            .output()
+            .map_err(|error| format!("failed to run plutil for {}: {error}", path.display()))?;
+        if !output.status.success() {
+            return Err(format!(
+                "failed to convert plist {} to XML: {}",
+                path.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        return String::from_utf8(output.stdout).map_err(|error| {
+            format!(
+                "plutil returned non-UTF-8 XML for {}: {error}",
+                path.display()
+            )
+        });
+    }
+
+    fs::read_to_string(path).map_err(|error| {
+        format!(
+            "failed to read plist as UTF-8 XML and /usr/bin/plutil is unavailable for {}: {error}",
+            path.display()
+        )
+    })
 }
 
 fn resolve_bundle_path(manifest_dir: &Path, value: &str) -> PathBuf {
@@ -445,5 +478,54 @@ mod tests {
             panic!("expected entitlement validation to reject missing ES/NE entitlements");
         };
         assert!(error.contains("endpoint-security"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn reads_binary_plist_via_plutil() -> Result<(), String> {
+        use std::process::Command;
+
+        let dir =
+            std::env::temp_dir().join(format!("clawdstrike-build-plist-{}", std::process::id()));
+        std::fs::create_dir_all(&dir)
+            .map_err(|error| format!("failed to create temp dir: {error}"))?;
+        let xml_path = dir.join("Info.xml.plist");
+        let binary_path = dir.join("Info.plist");
+        std::fs::write(
+            &xml_path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.backbay.clawdstrike.agent.extension</string>
+</dict>
+</plist>
+"#,
+        )
+        .map_err(|error| format!("failed to write XML plist fixture: {error}"))?;
+        let convert = Command::new("/usr/bin/plutil")
+            .arg("-convert")
+            .arg("binary1")
+            .arg("-o")
+            .arg(&binary_path)
+            .arg(&xml_path)
+            .output()
+            .map_err(|error| format!("failed to run plutil fixture conversion: {error}"))?;
+        if !convert.status.success() {
+            return Err(format!(
+                "failed to create binary plist fixture: {}",
+                String::from_utf8_lossy(&convert.stderr).trim()
+            ));
+        }
+
+        let xml = super::read_plist_xml(&binary_path)?;
+        assert_eq!(
+            super::plist_string_value(&xml, "CFBundleIdentifier").as_deref(),
+            Some("com.backbay.clawdstrike.agent.extension")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
     }
 }
