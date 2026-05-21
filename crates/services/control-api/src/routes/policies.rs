@@ -290,23 +290,51 @@ async fn deploy_policy(
     policy_distribution::validate_policy_document(&req.policy_yaml)
         .map_err(ApiError::BadRequest)?;
 
-    // Persist tenant-level active policy so enroll/recovery paths can converge later.
-    let active_policy = policy_distribution::upsert_active_policy(
-        &state.db,
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let current_active =
+        policy_distribution::fetch_active_policy_by_tenant_id_for_update_with_executor(
+            &mut *tx,
+            auth.tenant_id,
+        )
+        .await
+        .map_err(ApiError::Database)?;
+    let base_policy_version = current_active
+        .as_ref()
+        .map(|policy| policy.version)
+        .unwrap_or(0);
+    let candidate_policy = active_policy_candidate_from_base(
+        auth.tenant_id,
+        &auth.slug,
+        &req.policy_yaml,
+        req.description.as_deref(),
+        base_policy_version,
+    )?;
+    let deployment_id = Uuid::new_v4();
+    let deployment = distribute_active_policy_to_fleet(
+        &state,
+        auth.tenant_id,
+        &auth.slug,
+        &candidate_policy,
+        deployment_id,
+    )
+    .await?;
+    // Persist tenant-level active policy only after fleet KV writes succeed so
+    // enroll/recovery paths cannot observe a policy that failed distribution.
+    let active_policy = policy_distribution::upsert_active_policy_with_executor(
+        &mut *tx,
         auth.tenant_id,
         &req.policy_yaml,
         req.description.as_deref(),
     )
     .await
     .map_err(ApiError::Database)?;
-    let deployment = distribute_active_policy_to_fleet(
-        &state,
-        auth.tenant_id,
-        &auth.slug,
-        &active_policy,
-        Uuid::new_v4(),
-    )
-    .await?;
+    if active_policy.version != candidate_policy.version {
+        return Err(ApiError::Conflict(format!(
+            "policy deployment {deployment_id} expected active policy version {}, but recorded version {}; retry the deployment",
+            candidate_policy.version, active_policy.version
+        )));
+    }
+    tx.commit().await.map_err(ApiError::Database)?;
 
     tracing::info!(
         deployment_id = %deployment.deployment_id,
@@ -1510,12 +1538,13 @@ async fn approve_policy_proposal(
         return Err(ApiError::NotFound);
     }
 
-    let current_active = policy_distribution::fetch_active_policy_by_tenant_id_with_executor(
-        &mut *tx,
-        auth.tenant_id,
-    )
-    .await
-    .map_err(ApiError::Database)?;
+    let current_active =
+        policy_distribution::fetch_active_policy_by_tenant_id_for_update_with_executor(
+            &mut *tx,
+            auth.tenant_id,
+        )
+        .await
+        .map_err(ApiError::Database)?;
     let current_version = current_active
         .as_ref()
         .map(|policy| policy.version)
@@ -1588,6 +1617,33 @@ async fn approve_policy_proposal(
 
     ensure_policy_proposal_deployable_impact(&proposal)?;
 
+    let deployment_id = Uuid::new_v4();
+    let candidate_policy = active_policy_candidate_from_base(
+        auth.tenant_id,
+        &auth.slug,
+        &proposal.policy_yaml,
+        proposal.description.as_deref(),
+        proposal.base_active_policy_version,
+    )?;
+    let deployment = distribute_active_policy_to_fleet(
+        &state,
+        auth.tenant_id,
+        &auth.slug,
+        &candidate_policy,
+        deployment_id,
+    )
+    .await
+    .map_err(|err| {
+        tracing::warn!(
+            error = %err,
+            deployment_id = %deployment_id,
+            tenant = %auth.slug,
+            policy_version = candidate_policy.version,
+            "Policy proposal fleet distribution failed before deployed state was committed"
+        );
+        err
+    })?;
+
     let active_policy = policy_distribution::upsert_active_policy_after_version_with_executor(
         &mut *tx,
         auth.tenant_id,
@@ -1603,7 +1659,12 @@ async fn approve_policy_proposal(
             proposal.id, proposal.base_active_policy_version
         ))
     })?;
-    let deployment_id = Uuid::new_v4();
+    if active_policy.version != candidate_policy.version {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} expected deployed policy version {}, but recorded version {}; retry the proposal deployment",
+            proposal.id, candidate_policy.version, active_policy.version
+        )));
+    }
 
     let row = sqlx::query::query(
         r#"UPDATE policy_proposals
@@ -1640,24 +1701,6 @@ async fn approve_policy_proposal(
         ))
     })?;
     tx.commit().await.map_err(ApiError::Database)?;
-    let deployment = distribute_active_policy_to_fleet(
-        &state,
-        auth.tenant_id,
-        &auth.slug,
-        &active_policy,
-        deployment_id,
-    )
-    .await
-    .map_err(|err| {
-        tracing::warn!(
-            error = %err,
-            deployment_id = %deployment_id,
-            tenant = %auth.slug,
-            policy_version = active_policy.version,
-            "Policy proposal deployment persisted but fleet distribution failed"
-        );
-        err
-    })?;
     let deployment = Some(DeployPolicyResponse {
         deployment_id: deployment.deployment_id,
         tenant_slug: auth.slug.clone(),
@@ -1671,6 +1714,29 @@ async fn approve_policy_proposal(
         deployment,
         approvals_remaining: 0,
     }))
+}
+
+fn active_policy_candidate_from_base(
+    tenant_id: Uuid,
+    tenant_slug: &str,
+    policy_yaml: &str,
+    description: Option<&str>,
+    base_policy_version: i64,
+) -> Result<policy_distribution::ActiveTenantPolicy, ApiError> {
+    let version = base_policy_version.checked_add(1).ok_or_else(|| {
+        ApiError::Internal(format!(
+            "active policy version {base_policy_version} cannot be incremented"
+        ))
+    })?;
+    Ok(policy_distribution::ActiveTenantPolicy {
+        tenant_id,
+        tenant_slug: tenant_slug.to_string(),
+        policy_yaml: policy_yaml.to_string(),
+        checksum_sha256: policy_distribution::policy_yaml_checksum_sha256(policy_yaml),
+        description: description.map(str::to_string),
+        version,
+        updated_at: Utc::now(),
+    })
 }
 
 async fn get_active_policy(
@@ -1727,24 +1793,45 @@ async fn distribute_active_policy_to_fleet(
         .map_err(ApiError::Database)?;
     let agent_count = agent_ids.len() as i64;
 
-    // Write policy into each agent-scoped KV bucket used by PolicySync.
+    // Write the passed candidate policy into each agent-scoped KV bucket used
+    // by PolicySync. Do not resolve active policy from the database here:
+    // proposal approval calls this before committing the active/deployed rows.
     let mut kv_write_failures = 0_i64;
     for agent_id in &agent_ids {
-        if let Err(err) = policy_distribution::reconcile_effective_policy_for_agent(
+        match policy_distribution::preview_effective_policy_candidate_for_agent(
             &state.db,
-            &state.nats,
             tenant_id,
             agent_id,
+            active_policy,
         )
         .await
         {
-            kv_write_failures += 1;
-            tracing::warn!(
-                error = %err,
-                tenant = %tenant_slug,
-                agent_id = %agent_id,
-                "Failed to push deployed policy to agent KV bucket"
-            );
+            Ok(Some(effective_policy)) => {
+                if let Err(err) = policy_distribution::put_effective_policy_for_agent(
+                    &state.nats,
+                    &effective_policy,
+                )
+                .await
+                {
+                    kv_write_failures += 1;
+                    tracing::warn!(
+                        error = %err,
+                        tenant = %tenant_slug,
+                        agent_id = %agent_id,
+                        "Failed to push deployed policy to agent KV bucket"
+                    );
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                kv_write_failures += 1;
+                tracing::warn!(
+                    error = %err,
+                    tenant = %tenant_slug,
+                    agent_id = %agent_id,
+                    "Failed to build deployed effective policy for agent"
+                );
+            }
         }
     }
     ensure_policy_distribution_complete(kv_write_failures, agent_count, deployment_id)?;

@@ -274,6 +274,34 @@ where
     row.map(row_to_active_policy).transpose()
 }
 
+pub async fn fetch_active_policy_by_tenant_id_for_update_with_executor<'e, E>(
+    executor: E,
+    tenant_id: Uuid,
+) -> Result<Option<ActiveTenantPolicy>, sqlx::error::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query::query(
+        r#"SELECT p.tenant_id,
+                  t.slug AS tenant_slug,
+                  p.policy_yaml,
+                  p.checksum_sha256,
+                  p.description,
+                  p.version,
+                  p.updated_at
+           FROM tenant_active_policies AS p
+           JOIN tenants AS t
+             ON t.id = p.tenant_id
+           WHERE p.tenant_id = $1
+           FOR UPDATE OF p"#,
+    )
+    .bind(tenant_id)
+    .fetch_optional(executor)
+    .await?;
+
+    row.map(row_to_active_policy).transpose()
+}
+
 pub async fn fetch_active_policy_by_tenant_slug(
     db: &PgPool,
     tenant_slug: &str,
