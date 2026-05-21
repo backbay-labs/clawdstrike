@@ -67,7 +67,9 @@ pub struct EndpointGraphReference {
 impl EndpointGraphReference {
     #[must_use]
     pub fn for_observation(observation: &EndpointObservation, graph: &CausalGraph) -> Self {
-        let process_stable_key = observation.process.stable_key();
+        let process_stable_key = observation
+            .process
+            .stable_key_for_observation(&observation.observation_id);
         let process_node_id = stable_id("node", [process_stable_key.as_str()]);
         let mut node_ids = BTreeSet::new();
         if graph.nodes.contains_key(&process_node_id) {

@@ -73,6 +73,7 @@ pub(crate) struct EdrFindingsResponse {
     pub(crate) receipt_count: usize,
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -91,6 +92,7 @@ pub(crate) struct EdrPolicyEventsResponse {
     pub(crate) observations: Vec<EndpointObservation>,
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -276,6 +278,7 @@ pub(crate) struct EdrDeveloperActivityResponse {
     pub(crate) observations: Vec<EndpointObservation>,
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -328,6 +331,7 @@ pub(crate) struct EdrPackageManagerEventsResponse {
     pub(crate) observations: Vec<EndpointObservation>,
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -2040,7 +2044,7 @@ pub(crate) struct EdrPolicyDeltasResponse {
     pub(crate) count: usize,
     pub(crate) policy_deltas: Vec<EdrPolicyDeltaRecord>,
 }
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EdrPolicyDeltaApplyRecord {
     pub(crate) policy_delta_id: String,
@@ -2067,6 +2071,8 @@ pub(crate) struct EdrPolicyDeltaApplyRecord {
 pub(crate) struct EdrPolicyDeltaApplyResponse {
     pub(crate) record: EdrPolicyDeltaApplyRecord,
     pub(crate) policy_delta: EdrPolicyDeltaRecord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) prepared_receipt: Option<SignedReceipt>,
     pub(crate) receipt: Option<SignedReceipt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) post_apply_enforcement: Option<EdrPolicyDeltaApplyEnforcementProof>,

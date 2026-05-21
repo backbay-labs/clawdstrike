@@ -160,7 +160,11 @@ extension, or developer-tool collectors:
   subscriber for a bounded operator window, writes
   `CLAWDSTRIKE_ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_PATH` when configured, and
   lets the normal `live` mode return the most recent runtime snapshot to the
-  agent collector. The live dogfood script can start that observer itself when
+  agent collector. The packaged agent collector uses explicit
+  `CLAWDSTRIKE_ENDPOINT_SECURITY_STATUS_TOOL`/`CLAWDSTRIKE_NETWORK_EXTENSION_STATUS_TOOL`
+  helper paths or bundled helper binaries; it only falls back to `swift run`
+  for local development when `CLAWDSTRIKE_ALLOW_SWIFT_RUN_STATUS_TOOLS=1` is
+  set. The live dogfood script can start that observer itself when
   `CLAWDSTRIKE_ES_DOGFOOD_STATUS_TOOL` is set to a signed status-tool path, or
   when `CLAWDSTRIKE_ES_DOGFOOD_OBSERVE_AUTH_OPEN=1` opts into the local
   `swift run` fallback. It passes the agent URL/token and shared runtime

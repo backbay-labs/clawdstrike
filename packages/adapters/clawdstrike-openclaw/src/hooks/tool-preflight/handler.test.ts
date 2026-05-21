@@ -898,6 +898,93 @@ describe("tool-preflight handler", () => {
     });
   });
 
+  it("scrubs raw preflight policy payloads before posting local EDR telemetry", async () => {
+    process.env.CLAWDSTRIKE_AGENT_TOKEN = "test-token";
+    process.env.CLAWDSTRIKE_POLICY_EVENTS_URL =
+      "http://127.0.0.1:9878/api/v1/agent/edr/policy-events";
+    const fetchMock = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await handler(
+      {
+        toolName: "write_file",
+        params: {
+          path: "/tmp/secret.txt",
+          content: "api key sk-abcdefghijklmnopqrstuvwxyz",
+        },
+      },
+      { sessionKey: "sess-privacy-file", toolCallId: "tool-call-privacy-file" },
+    );
+    await handler(
+      {
+        toolName: "apply_patch",
+        params: {
+          path: "/tmp/secret.txt",
+          patch: "+ token=ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+        },
+      },
+      { sessionKey: "sess-privacy-patch", toolCallId: "tool-call-privacy-patch" },
+    );
+    await handler(
+      {
+        toolName: "custom_tool",
+        params: {
+          secretToken: "raw-token-value",
+          prompt: "use sk-zyxwvutsrqponmlkjihgfedcba",
+        },
+      },
+      { sessionKey: "sess-privacy-tool", toolCallId: "tool-call-privacy-tool" },
+    );
+    await handler(
+      {
+        toolName: "http_get",
+        params: {
+          url: "https://example.invalid/run?token=raw-token-value&query=ok",
+        },
+      },
+      { sessionKey: "sess-privacy-network", toolCallId: "tool-call-privacy-network" },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const postedBodies = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse(String((init as RequestInit).body)),
+    );
+    const serialized = JSON.stringify(postedBodies);
+    expect(serialized).not.toContain("api key sk-abcdefghijklmnopqrstuvwxyz");
+    expect(serialized).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz1234567890");
+    expect(serialized).not.toContain("raw-token-value");
+    expect(serialized).not.toContain("sk-zyxwvutsrqponmlkjihgfedcba");
+
+    const [fileEvent, patchEvent, toolEvent, networkEvent] = postedBodies.map(
+      (body) => body.events[0],
+    );
+    expect(fileEvent.data.content).toBeUndefined();
+    expect(fileEvent.data.contentHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(fileEvent.metadata).toMatchObject({
+      telemetryScrubbed: true,
+      telemetryRedaction: "hashes_and_summaries",
+    });
+    expect(fileEvent.metadata.telemetryScrubbedFields).toContain("data.content");
+
+    expect(patchEvent.data.patchContent).toBeUndefined();
+    expect(patchEvent.data.patchHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(patchEvent.metadata.telemetryScrubbedFields).toContain("data.patchContent");
+
+    expect(toolEvent.data.parameters.secretToken).toBe("[REDACTED]");
+    expect(toolEvent.data.parameters.prompt).toBe("[REDACTED]");
+    expect(toolEvent.metadata.telemetryScrubbedFields).toEqual(
+      expect.arrayContaining([
+        "data.parameters.secretToken",
+        "data.parameters.prompt",
+      ]),
+    );
+
+    expect(networkEvent.data.url).toBe(
+      "https://example.invalid/run?token=%5BREDACTED%5D&query=ok",
+    );
+    expect(networkEvent.metadata.telemetryScrubbedFields).toContain("data.url");
+  });
+
   it("binds modern hook identity into posted preflight PolicyEvents", async () => {
     process.env.CLAWDSTRIKE_AGENT_TOKEN = "test-token";
     process.env.CLAWDSTRIKE_POLICY_EVENTS_URL =

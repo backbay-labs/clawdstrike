@@ -278,6 +278,14 @@ struct PolicyDeploymentOutcome {
     kv_write_failures: i64,
 }
 
+struct PreparedPolicyDeployment {
+    deployment_id: Uuid,
+    nats_subject: String,
+    agent_count: i64,
+    effective_policies: Vec<policy_distribution::EffectiveAgentPolicy>,
+    distribution_policy_yaml: String,
+}
+
 async fn deploy_policy(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
@@ -310,7 +318,7 @@ async fn deploy_policy(
         base_policy_version,
     )?;
     let deployment_id = Uuid::new_v4();
-    let deployment = distribute_active_policy_to_fleet(
+    let deployment_plan = prepare_active_policy_deployment(
         &state,
         auth.tenant_id,
         &auth.slug,
@@ -318,16 +326,20 @@ async fn deploy_policy(
         deployment_id,
     )
     .await?;
-    // Persist tenant-level active policy only after fleet KV writes succeed so
-    // enroll/recovery paths cannot observe a policy that failed distribution.
-    let active_policy = policy_distribution::upsert_active_policy_with_executor(
+    let active_policy = policy_distribution::upsert_active_policy_after_version_with_executor(
         &mut *tx,
         auth.tenant_id,
         &req.policy_yaml,
         req.description.as_deref(),
+        base_policy_version,
     )
     .await
-    .map_err(ApiError::Database)?;
+    .map_err(ApiError::Database)?
+    .ok_or_else(|| {
+        ApiError::Conflict(format!(
+            "policy deployment {deployment_id} was based on active policy version {base_policy_version}, but the active policy changed before deployment could be recorded; retry the deployment"
+        ))
+    })?;
     if active_policy.version != candidate_policy.version {
         return Err(ApiError::Conflict(format!(
             "policy deployment {deployment_id} expected active policy version {}, but recorded version {}; retry the deployment",
@@ -335,6 +347,7 @@ async fn deploy_policy(
         )));
     }
     tx.commit().await.map_err(ApiError::Database)?;
+    let deployment = distribute_prepared_policy_to_fleet(&state, &auth.slug, deployment_plan).await;
 
     tracing::info!(
         deployment_id = %deployment.deployment_id,
@@ -1625,7 +1638,7 @@ async fn approve_policy_proposal(
         proposal.description.as_deref(),
         proposal.base_active_policy_version,
     )?;
-    let deployment = distribute_active_policy_to_fleet(
+    let deployment_plan = prepare_active_policy_deployment(
         &state,
         auth.tenant_id,
         &auth.slug,
@@ -1639,7 +1652,7 @@ async fn approve_policy_proposal(
             deployment_id = %deployment_id,
             tenant = %auth.slug,
             policy_version = candidate_policy.version,
-            "Policy proposal fleet distribution failed before deployed state was committed"
+            "Policy proposal deployment preparation failed before deployed state was committed"
         );
         err
     })?;
@@ -1701,12 +1714,14 @@ async fn approve_policy_proposal(
         ))
     })?;
     tx.commit().await.map_err(ApiError::Database)?;
+    let deployment_outcome =
+        distribute_prepared_policy_to_fleet(&state, &auth.slug, deployment_plan).await;
     let deployment = Some(DeployPolicyResponse {
-        deployment_id: deployment.deployment_id,
+        deployment_id: deployment_outcome.deployment_id,
         tenant_slug: auth.slug.clone(),
-        nats_subject: deployment.nats_subject,
-        agent_count: deployment.agent_count,
-        kv_write_failures: deployment.kv_write_failures,
+        nats_subject: deployment_outcome.nats_subject,
+        agent_count: deployment_outcome.agent_count,
+        kv_write_failures: deployment_outcome.kv_write_failures,
     });
 
     Ok(Json(ApprovePolicyProposalResponse {
@@ -1765,13 +1780,13 @@ async fn get_active_policy(
     })))
 }
 
-async fn distribute_active_policy_to_fleet(
+async fn prepare_active_policy_deployment(
     state: &AppState,
     tenant_id: Uuid,
     tenant_slug: &str,
     active_policy: &policy_distribution::ActiveTenantPolicy,
     deployment_id: Uuid,
-) -> Result<PolicyDeploymentOutcome, ApiError> {
+) -> Result<PreparedPolicyDeployment, ApiError> {
     // Enumerate all non-revoked agents (active + inactive lifecycle states).
     // This avoids only targeting currently-active agents during deploy.
     let agent_rows = sqlx::query::query(
@@ -1793,74 +1808,91 @@ async fn distribute_active_policy_to_fleet(
         .map_err(ApiError::Database)?;
     let agent_count = agent_ids.len() as i64;
 
-    // Write the passed candidate policy into each agent-scoped KV bucket used
-    // by PolicySync. Do not resolve active policy from the database here:
-    // proposal approval calls this before committing the active/deployed rows.
-    let mut kv_write_failures = 0_i64;
+    // Prepare the exact effective policies before committing the DB row, but
+    // do not publish them yet. KV is a side effect and must not get ahead of
+    // the committed active-policy source of truth.
+    let mut effective_policies = Vec::new();
     for agent_id in &agent_ids {
-        match policy_distribution::preview_effective_policy_candidate_for_agent(
+        let effective_policy = policy_distribution::preview_effective_policy_candidate_for_agent(
             &state.db,
             tenant_id,
             agent_id,
             active_policy,
         )
         .await
-        {
-            Ok(Some(effective_policy)) => {
-                if let Err(err) = policy_distribution::put_effective_policy_for_agent(
-                    &state.nats,
-                    &effective_policy,
-                )
-                .await
-                {
-                    kv_write_failures += 1;
-                    tracing::warn!(
-                        error = %err,
-                        tenant = %tenant_slug,
-                        agent_id = %agent_id,
-                        "Failed to push deployed policy to agent KV bucket"
-                    );
-                }
-            }
-            Ok(None) => {}
-            Err(err) => {
-                kv_write_failures += 1;
-                tracing::warn!(
-                    error = %err,
-                    tenant = %tenant_slug,
-                    agent_id = %agent_id,
-                    "Failed to build deployed effective policy for agent"
-                );
-            }
+        .map_err(|err| {
+            ApiError::Conflict(format!(
+                "policy deployment {deployment_id} failed to build effective policy for agent {agent_id}: {err}"
+            ))
+        })?;
+        if let Some(effective_policy) = effective_policy {
+            effective_policies.push(effective_policy);
         }
     }
-    ensure_policy_distribution_complete(kv_write_failures, agent_count, deployment_id)?;
 
-    // Best-effort compatibility broadcast for legacy subscribers.
     let subject = policy_distribution::policy_update_subject(tenant_slug);
     let distribution_policy_yaml =
         policy_distribution::distribution_policy_yaml(active_policy).map_err(ApiError::Internal)?;
+    Ok(PreparedPolicyDeployment {
+        deployment_id,
+        nats_subject: subject,
+        agent_count,
+        effective_policies,
+        distribution_policy_yaml,
+    })
+}
+
+async fn distribute_prepared_policy_to_fleet(
+    state: &AppState,
+    tenant_slug: &str,
+    prepared: PreparedPolicyDeployment,
+) -> PolicyDeploymentOutcome {
+    let PreparedPolicyDeployment {
+        deployment_id,
+        nats_subject,
+        agent_count,
+        effective_policies,
+        distribution_policy_yaml,
+    } = prepared;
+    let mut kv_write_failures = 0_i64;
+    for effective_policy in &effective_policies {
+        if let Err(err) =
+            policy_distribution::put_effective_policy_for_agent(&state.nats, effective_policy).await
+        {
+            kv_write_failures += 1;
+            tracing::warn!(
+                error = %err,
+                tenant = %tenant_slug,
+                agent_id = %effective_policy.agent_id,
+                policy_version = effective_policy.policy_epoch,
+                deployment_id = %deployment_id,
+                "Failed to push committed policy to agent KV bucket; heartbeat reconciliation will retry from the active-policy database"
+            );
+        }
+    }
+
+    // Best-effort compatibility broadcast for legacy subscribers.
     if let Err(err) = state
         .nats
         .publish(
-            subject.clone(),
+            nats_subject.clone(),
             distribution_policy_yaml.into_bytes().into(),
         )
         .await
     {
         tracing::warn!(
             error = %err,
-            subject = %subject,
-            "Legacy policy update publish failed (KV writes succeeded)"
+            subject = %nats_subject,
+            "Legacy policy update publish failed after committed policy deployment"
         );
     }
 
-    Ok(PolicyDeploymentOutcome {
+    PolicyDeploymentOutcome {
         deployment_id,
-        nats_subject: subject,
+        nats_subject,
         agent_count,
         kv_write_failures,
-    })
+    }
 }
 
 async fn fetch_policy_proposal_row(
@@ -2014,19 +2046,6 @@ fn require_direct_policy_deploy_break_glass(req: &DeployPolicyRequest) -> Result
                 "break_glass_reason is required for direct policy deployment".to_string(),
             )
         })
-}
-
-fn ensure_policy_distribution_complete(
-    kv_write_failures: i64,
-    agent_count: i64,
-    deployment_id: Uuid,
-) -> Result<(), ApiError> {
-    if kv_write_failures == 0 {
-        return Ok(());
-    }
-    Err(ApiError::Conflict(format!(
-        "policy deployment {deployment_id} failed to write effective policy KV for {kv_write_failures} of {agent_count} agents"
-    )))
 }
 
 fn append_policy_proposal_approval_note(
@@ -3255,26 +3274,6 @@ mod tests {
         match require_direct_policy_deploy_break_glass(&req) {
             Ok(reason) => assert_eq!(reason, "emergency recovery"),
             Err(err) => panic!("direct deploy break-glass rejected valid reason: {err}"),
-        }
-    }
-
-    #[test]
-    fn policy_distribution_rejects_partial_kv_failures() {
-        match ensure_policy_distribution_complete(2, 5, Uuid::from_u128(42)) {
-            Err(ApiError::Conflict(message)) => {
-                assert!(message.contains("failed to write effective policy KV"));
-                assert!(message.contains("2 of 5 agents"));
-            }
-            Ok(_) => panic!("partial KV distribution unexpectedly succeeded"),
-            Err(err) => panic!("unexpected policy distribution error: {err}"),
-        }
-    }
-
-    #[test]
-    fn policy_distribution_allows_complete_kv_distribution() {
-        match ensure_policy_distribution_complete(0, 5, Uuid::from_u128(42)) {
-            Ok(()) => {}
-            Err(err) => panic!("complete KV distribution rejected: {err}"),
         }
     }
 

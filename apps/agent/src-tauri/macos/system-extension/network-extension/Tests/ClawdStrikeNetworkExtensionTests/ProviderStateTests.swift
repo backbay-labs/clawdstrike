@@ -519,6 +519,64 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertEqual(snapshot.lastError, "policy_not_enforcing")
     }
 
+    func testContentFilterRuntimeAllowsWithSyncedEmptyPolicy() throws {
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        runtime.updatePolicy(NetworkExtensionEgressPolicy(restrictions: []))
+
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(host: "allowed-empty-policy.example.invalid", port: 443),
+            now: now
+        )
+
+        XCTAssertEqual(decision, .allow)
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertFalse(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 0)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 0)
+        XCTAssertNil(snapshot.lastError)
+    }
+
+    func testContentFilterRuntimeAllowsAfterAllRestrictionsExpire() throws {
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        runtime.updatePolicy(NetworkExtensionEgressPolicy(restrictions: [
+            NetworkExtensionEgressRestriction(
+                restrictionID: "restriction-expired",
+                actionID: "action-expired",
+                executionID: "execution-expired",
+                target: "expired.example.invalid:443",
+                expiresAt: now.addingTimeInterval(-1)
+            ),
+        ]))
+
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(host: "expired.example.invalid", port: 443),
+            now: now
+        )
+
+        XCTAssertEqual(decision, .allow)
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertTrue(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 0)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 0)
+        XCTAssertNil(snapshot.lastError)
+    }
+
     func testContentFilterRuntimeFailsClosedForUnresolvedTarget() throws {
         let runtime = NetworkExtensionContentFilterRuntime()
         let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!

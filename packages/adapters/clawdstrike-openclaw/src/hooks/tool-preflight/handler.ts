@@ -9,6 +9,7 @@
  * forbidden paths when a read targets a sensitive location.
  */
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -42,6 +43,10 @@ const SENSITIVE_COMMAND_KEY =
   /^(?:-+)?(?:secret|token|auth[_-]?token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)$/i;
 const SENSITIVE_VALUE_FLAG =
   /^-+(?:token|auth[_-]?token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)$/i;
+const RAW_TELEMETRY_CONTENT_KEY =
+  /^(?:content|file[_-]?content|body|payload|patch|patch[_-]?content|diff)$/i;
+const SENSITIVE_TELEMETRY_KEY =
+  /(?:secret|token|password|passwd|credential|api[_-]?key|authorization|cookie|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)/i;
 
 /**
  * Initialize the hook with configuration.
@@ -775,6 +780,7 @@ async function publishPreflightPolicyEvent(policyEvent: PolicyEvent): Promise<vo
   if (!endpoint) return;
 
   try {
+    const telemetryEvent = sanitizePreflightPolicyEventForTelemetry(policyEvent);
     const response = await fetch(endpoint.url, {
       method: "POST",
       headers: {
@@ -782,7 +788,7 @@ async function publishPreflightPolicyEvent(policyEvent: PolicyEvent): Promise<vo
         Authorization: `Bearer ${endpoint.token}`,
       },
       signal: AbortSignal.timeout(250),
-      body: JSON.stringify({ events: [policyEvent] }),
+      body: JSON.stringify({ events: [telemetryEvent] }),
     });
     if (!response.ok) {
       return;
@@ -791,6 +797,215 @@ async function publishPreflightPolicyEvent(policyEvent: PolicyEvent): Promise<vo
     // EDR capture is evidence enrichment only. Preflight policy enforcement
     // above remains the authoritative allow/block path.
   }
+}
+
+function sanitizePreflightPolicyEventForTelemetry(policyEvent: PolicyEvent): PolicyEvent {
+  const scrubbedFields: string[] = [];
+  const data = sanitizeTelemetryEventData(policyEvent.data, scrubbedFields);
+  if (scrubbedFields.length === 0) {
+    return policyEvent;
+  }
+
+  return {
+    ...policyEvent,
+    data: data as PolicyEvent["data"],
+    metadata: {
+      ...(policyEvent.metadata ?? {}),
+      telemetryScrubbed: true,
+      telemetryRedaction: "hashes_and_summaries",
+      telemetryScrubbedFields: [...new Set(scrubbedFields)].sort(),
+    },
+  };
+}
+
+function sanitizeTelemetryEventData(
+  value: PolicyEvent["data"],
+  scrubbedFields: string[],
+): Record<string, unknown> {
+  const data = asRecord(value);
+  if (!data) return {};
+
+  switch (data.type) {
+    case "file":
+      return sanitizeFileTelemetryData(data, scrubbedFields);
+    case "patch":
+      return sanitizePatchTelemetryData(data, scrubbedFields);
+    case "command":
+      return sanitizeCommandTelemetryData(data, scrubbedFields);
+    case "network":
+      return sanitizeNetworkTelemetryData(data, scrubbedFields);
+    case "tool":
+      return sanitizeToolTelemetryData(data, scrubbedFields);
+    default:
+      return sanitizeTelemetryValue(data, "data", scrubbedFields) as Record<string, unknown>;
+  }
+}
+
+function sanitizeFileTelemetryData(
+  data: Record<string, unknown>,
+  scrubbedFields: string[],
+): Record<string, unknown> {
+  const sanitized = { ...data };
+  if (typeof sanitized.content === "string") {
+    const content = sanitized.content;
+    delete sanitized.content;
+    sanitized.contentHash = sha256Hex(content);
+    sanitized.contentBytes = Buffer.byteLength(content);
+    scrubbedFields.push("data.content");
+  }
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+}
+
+function sanitizePatchTelemetryData(
+  data: Record<string, unknown>,
+  scrubbedFields: string[],
+): Record<string, unknown> {
+  const sanitized = { ...data };
+  if (typeof sanitized.patchContent === "string") {
+    const patchContent = sanitized.patchContent;
+    delete sanitized.patchContent;
+    sanitized.patchHash = sha256Hex(patchContent);
+    sanitized.patchBytes = Buffer.byteLength(patchContent);
+    scrubbedFields.push("data.patchContent");
+  }
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+}
+
+function sanitizeCommandTelemetryData(
+  data: Record<string, unknown>,
+  scrubbedFields: string[],
+): Record<string, unknown> {
+  const sanitized = { ...data };
+  const command = typeof sanitized.command === "string" ? sanitized.command : "";
+  const args = Array.isArray(sanitized.args)
+    ? sanitized.args.filter((value): value is string => typeof value === "string")
+    : [];
+  const scrubbed = scrubCommandArgs([command, ...args].filter((value) => value.trim() !== ""));
+  if (scrubbed.length > 0) {
+    const [scrubbedCommand, ...scrubbedArgs] = scrubbed;
+    if (scrubbedCommand !== command) {
+      sanitized.command = scrubbedCommand;
+      scrubbedFields.push("data.command");
+    }
+    if (JSON.stringify(scrubbedArgs) !== JSON.stringify(args)) {
+      sanitized.args = scrubbedArgs;
+      scrubbedFields.push("data.args");
+    }
+  }
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+}
+
+function sanitizeNetworkTelemetryData(
+  data: Record<string, unknown>,
+  scrubbedFields: string[],
+): Record<string, unknown> {
+  const sanitized = { ...data };
+  if (typeof sanitized.url === "string") {
+    const redacted = redactTelemetryUrl(sanitized.url);
+    if (redacted !== sanitized.url) {
+      sanitized.url = redacted;
+      scrubbedFields.push("data.url");
+    }
+  }
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+}
+
+function sanitizeToolTelemetryData(
+  data: Record<string, unknown>,
+  scrubbedFields: string[],
+): Record<string, unknown> {
+  const sanitized = { ...data };
+  if (sanitized.parameters !== undefined) {
+    sanitized.parameters = sanitizeTelemetryValue(
+      sanitized.parameters,
+      "data.parameters",
+      scrubbedFields,
+    );
+  }
+  return sanitizeTelemetryValue(sanitized, "data", scrubbedFields) as Record<string, unknown>;
+}
+
+function sanitizeTelemetryValue(
+  value: unknown,
+  path: string,
+  scrubbedFields: string[],
+  depth = 0,
+): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    const redacted = redactTelemetryString(value);
+    if (redacted !== value) scrubbedFields.push(path);
+    return redacted;
+  }
+  if (typeof value !== "object") return value;
+  if (depth >= 6) {
+    scrubbedFields.push(path);
+    return { redaction: "omitted", reason: "max_depth" };
+  }
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, 25)
+      .map((entry, index) => sanitizeTelemetryValue(entry, `${path}[${index}]`, scrubbedFields, depth + 1));
+  }
+
+  const record = value as Record<string, unknown>;
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    const entryPath = `${path}.${key}`;
+    if (RAW_TELEMETRY_CONTENT_KEY.test(key) && typeof entry === "string") {
+      sanitized[key] = {
+        redaction: "hash_only",
+        sha256: sha256Hex(entry),
+        byteLength: Buffer.byteLength(entry),
+      };
+      scrubbedFields.push(entryPath);
+      continue;
+    }
+    if (SENSITIVE_TELEMETRY_KEY.test(key)) {
+      sanitized[key] =
+        typeof entry === "string"
+          ? REDACTED
+          : { redaction: "omitted", reason: "sensitive_key" };
+      scrubbedFields.push(entryPath);
+      continue;
+    }
+    sanitized[key] = sanitizeTelemetryValue(entry, entryPath, scrubbedFields, depth + 1);
+  }
+  return sanitized;
+}
+
+function redactTelemetryString(value: string): string {
+  const trimmed = value.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return redactTelemetryUrl(value);
+  }
+  return redactSensitiveCommandString(value);
+}
+
+function redactTelemetryUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    if (parsed.username) parsed.username = REDACTED;
+    if (parsed.password) parsed.password = REDACTED;
+    for (const [key, parameterValue] of parsed.searchParams.entries()) {
+      if (SENSITIVE_TELEMETRY_KEY.test(key) || SECRET_LIKE_VALUE.test(parameterValue)) {
+        parsed.searchParams.set(key, REDACTED);
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return redactSensitiveCommandString(value);
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function sha256Hex(value: string): string {
+  return `0x${createHash("sha256").update(value).digest("hex")}`;
 }
 
 function resolveDeveloperActivityEndpoint(): { url: string; token: string } | null {

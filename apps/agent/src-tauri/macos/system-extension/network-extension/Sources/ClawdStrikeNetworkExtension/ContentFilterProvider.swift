@@ -467,7 +467,7 @@ public final class NetworkExtensionContentFilterRuntime {
     public func evaluate(target: NetworkExtensionFlowTarget, now: Date = Date()) -> NetworkExtensionFlowDecision {
         lock.lock()
         let decision: NetworkExtensionFlowDecision
-        if let policy, policySynced, policy.enforcementReady {
+        if let policy, policySynced {
             decision = policy.decision(for: target, now: now)
         } else {
             decision = failClosedDecision(target: target, now: now, reason: "policy_not_enforcing")
@@ -504,7 +504,7 @@ public final class NetworkExtensionContentFilterRuntime {
         lock.lock()
         counters.flowsObserved += 1
         let decision: NetworkExtensionFlowDecision
-        if let target, let policy, policySynced, policy.enforcementReady {
+        if let target, let policy, policySynced {
             decision = policy.decision(for: target, now: now)
             lastHealthyAt = now
         } else {

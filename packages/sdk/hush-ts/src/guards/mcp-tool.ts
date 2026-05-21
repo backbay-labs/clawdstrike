@@ -71,9 +71,15 @@ export class McpToolGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    const toolName = action.tool;
+    const toolName = action.tool?.trim();
     if (!toolName) {
-      return GuardResult.allow(this.name);
+      return GuardResult.block(
+        this.name,
+        Severity.ERROR,
+        "MCP tool invocation is missing a tool name",
+      ).withDetails({
+        reason: "missing_tool_name",
+      });
     }
 
     // Check args size

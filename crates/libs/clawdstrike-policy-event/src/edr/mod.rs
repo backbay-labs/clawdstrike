@@ -1438,7 +1438,7 @@ fn project_event_privacy(
             push_metadata(
                 projections,
                 "event.policyDecision.action",
-                action,
+                action.as_str(),
                 privacy_mode,
                 "policy action is a normalized decision feature",
             );
@@ -9514,7 +9514,7 @@ mod tests {
                 rule_id: "endpoint.policy_delta.test",
                 stage: "audit",
                 generated_at,
-                action,
+                action: action.clone(),
                 artifact_hash: artifact_hash.as_str(),
                 simulation_id: "simulation:test",
                 graph_slice_id: "graph_slice:test",
@@ -9541,6 +9541,44 @@ mod tests {
         assert_eq!(
             receipt.decision.finding_id.as_deref(),
             Some(policy_delta_id.as_str())
+        );
+
+        let previous_policy_hash = sha256(b"test-policy").to_hex_prefixed();
+        let prepared_policy_hash = sha256(b"test-policy-v2").to_hex_prefixed();
+        let prepared_receipt =
+            EndpointDecisionReceipt::for_policy_delta(EndpointPolicyDeltaReceiptInput {
+                local_sequence: 33,
+                endpoint_id: "endpoint-1",
+                signer_identity: "local-edr:endpoint-1",
+                policy: EndpointPolicySnapshot {
+                    policy_version: "test-policy@2".to_string(),
+                    policy_hash: prepared_policy_hash.clone(),
+                    policy_epoch: 8,
+                },
+                sensor_state: EndpointSensorState::single_active_agent("agent-api:test"),
+                operation: "prepared",
+                policy_delta_id: policy_delta_id.as_str(),
+                staged_detection_id: "staged_detection:test",
+                rule_id: "endpoint.policy_delta.test",
+                stage: "audit",
+                generated_at,
+                action,
+                artifact_hash: artifact_hash.as_str(),
+                simulation_id: "simulation:test",
+                graph_slice_id: "graph_slice:test",
+                root_node_id: "node:test",
+                source_affected_identity_context,
+                source_affected_tool_context,
+                cross_window_impact_hash: None,
+                cross_window_recommendation_hash: None,
+                previous_policy_hash: Some(previous_policy_hash.as_str()),
+                new_policy_hash: Some(prepared_policy_hash.as_str()),
+                backup_path: Some("/tmp/policy.yaml.backup"),
+            });
+        assert!(prepared_receipt.validate().is_ok());
+        assert_eq!(
+            prepared_receipt.decision.title.as_deref(),
+            Some("Endpoint staged policy delta prepared")
         );
 
         let terminate_delta_id = endpoint_policy_delta_id(EndpointPolicyDeltaIdInput {

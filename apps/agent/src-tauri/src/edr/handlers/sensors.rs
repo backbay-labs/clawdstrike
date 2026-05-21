@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -19,6 +17,8 @@ use hush_core::SignedReceipt;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
+#[allow(unused_imports)]
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::sync::Arc;
 
@@ -36,16 +36,24 @@ pub(crate) async fn agent_edr_findings(
         input.honey_artifacts,
     )
     .await?;
+    let observation_receipts = emit_edr_provider_observation_receipts(
+        &state,
+        &observations,
+        "agent_edr_findings_observation",
+    )
+    .await
+    .map_err(internal_error)?;
+    let receipt_count = evaluated.receipts.len() + observation_receipts.len();
 
     Ok(Json(EdrFindingsResponse {
         observation_count: observations.len(),
         finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
+        receipt_count,
         findings: evaluated.findings,
         receipts: evaluated.receipts,
+        observation_receipts,
     }))
 }
-
 
 pub(crate) async fn agent_edr_developer_activity(
     State(state): State<Arc<AgentApiState>>,
@@ -68,18 +76,26 @@ pub(crate) async fn agent_edr_developer_activity(
         input.honey_artifacts,
     )
     .await?;
+    let observation_receipts = emit_edr_provider_observation_receipts(
+        &state,
+        &recorded_observations,
+        "developer_activity_observation",
+    )
+    .await
+    .map_err(internal_error)?;
+    let receipt_count = evaluated.receipts.len() + observation_receipts.len();
 
     Ok(Json(EdrDeveloperActivityResponse {
         activity_count: input.activities.len(),
         observation_count: recorded_observations.len(),
         finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
+        receipt_count,
         observations: recorded_observations,
         findings: evaluated.findings,
         receipts: evaluated.receipts,
+        observation_receipts,
     }))
 }
-
 
 pub(crate) async fn agent_edr_package_manager_events(
     State(state): State<Arc<AgentApiState>>,
@@ -102,18 +118,26 @@ pub(crate) async fn agent_edr_package_manager_events(
         input.honey_artifacts,
     )
     .await?;
+    let observation_receipts = emit_edr_provider_observation_receipts(
+        &state,
+        &recorded_observations,
+        "package_manager_observation",
+    )
+    .await
+    .map_err(internal_error)?;
+    let receipt_count = evaluated.receipts.len() + observation_receipts.len();
 
     Ok(Json(EdrPackageManagerEventsResponse {
         event_count: input.events.len(),
         observation_count: recorded_observations.len(),
         finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
+        receipt_count,
         observations: recorded_observations,
         findings: evaluated.findings,
         receipts: evaluated.receipts,
+        observation_receipts,
     }))
 }
-
 
 pub(crate) async fn agent_edr_endpoint_security_events(
     State(state): State<Arc<AgentApiState>>,
@@ -180,7 +204,6 @@ pub(crate) async fn agent_edr_endpoint_security_events(
     }))
 }
 
-
 pub(crate) async fn agent_edr_network_extension_events(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -238,7 +261,6 @@ pub(crate) async fn agent_edr_network_extension_events(
     }))
 }
 
-
 pub(crate) async fn agent_edr_policy_events(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -263,18 +285,23 @@ pub(crate) async fn agent_edr_policy_events(
         input.honey_artifacts,
     )
     .await?;
+    let observation_receipts =
+        emit_edr_provider_observation_receipts(&state, &observations, "policy_event_observation")
+            .await
+            .map_err(internal_error)?;
+    let receipt_count = evaluated.receipts.len() + observation_receipts.len();
 
     Ok(Json(EdrPolicyEventsResponse {
         policy_event_count: input.events.len(),
         observation_count: observations.len(),
         finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
+        receipt_count,
         observations,
         findings: evaluated.findings,
         receipts: evaluated.receipts,
+        observation_receipts,
     }))
 }
-
 
 pub(crate) async fn agent_edr_policy_events_jsonl(
     State(state): State<Arc<AgentApiState>>,
@@ -297,18 +324,23 @@ pub(crate) async fn agent_edr_policy_events_jsonl(
         Vec::new(),
     )
     .await?;
+    let observation_receipts =
+        emit_edr_provider_observation_receipts(&state, &observations, "policy_event_observation")
+            .await
+            .map_err(internal_error)?;
+    let receipt_count = evaluated.receipts.len() + observation_receipts.len();
 
     Ok(Json(EdrPolicyEventsResponse {
         policy_event_count: events.len(),
         observation_count: observations.len(),
         finding_count: evaluated.findings.len(),
-        receipt_count: evaluated.receipts.len(),
+        receipt_count,
         observations,
         findings: evaluated.findings,
         receipts: evaluated.receipts,
+        observation_receipts,
     }))
 }
-
 
 pub(crate) async fn agent_edr_agent_secret_touches(
     State(state): State<Arc<AgentApiState>>,
@@ -320,7 +352,6 @@ pub(crate) async fn agent_edr_agent_secret_touches(
         .await
         .map(Json)
 }
-
 
 pub(crate) async fn agent_edr_agent_secret_touches_fleet_publish(
     State(state): State<Arc<AgentApiState>>,
@@ -338,4 +369,3 @@ pub(crate) async fn agent_edr_agent_secret_touches_fleet_publish(
         events,
     }))
 }
-

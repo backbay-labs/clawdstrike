@@ -11,7 +11,7 @@ use std::path::{Path as FsPath, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::api_server::{EdrPolicyDeltaRecord, EDR_MAX_STORED_FINDINGS};
+use crate::api_server::{EdrPolicyDeltaApplyRecord, EdrPolicyDeltaRecord, EDR_MAX_STORED_FINDINGS};
 
 use super::{open_private_append, open_private_truncate};
 
@@ -114,6 +114,36 @@ impl EndpointPolicyDeltaStore {
             .find(|record| record.policy_delta_id == policy_delta_id))
     }
 
+    pub(crate) fn append_apply(&mut self, record: &EdrPolicyDeltaApplyRecord) -> Result<()> {
+        let Some(root) = &self.root else {
+            return Ok(());
+        };
+        fs::create_dir_all(root).with_context(|| {
+            format!("create endpoint policy delta directory {}", root.display())
+        })?;
+        let apply_path = policy_delta_apply_index_path(root);
+        let mut file = open_private_append(&apply_path, "endpoint policy delta apply index")?;
+        serde_json::to_writer(&mut file, record).with_context(|| {
+            format!(
+                "serialize endpoint policy delta apply record {}",
+                record.policy_delta_id
+            )
+        })?;
+        file.write_all(b"\n").with_context(|| {
+            format!(
+                "write endpoint policy delta apply index {}",
+                apply_path.display()
+            )
+        })?;
+        file.flush().with_context(|| {
+            format!(
+                "flush endpoint policy delta apply index {}",
+                apply_path.display()
+            )
+        })?;
+        Ok(())
+    }
+
     pub(crate) fn all(&self) -> Result<Vec<EdrPolicyDeltaRecord>> {
         if let Some(root) = &self.root {
             return read_policy_delta_index(&policy_delta_index_path(root));
@@ -124,6 +154,10 @@ impl EndpointPolicyDeltaStore {
 
 pub(crate) fn policy_delta_index_path(root: &FsPath) -> PathBuf {
     root.join("policy-deltas.jsonl")
+}
+
+pub(crate) fn policy_delta_apply_index_path(root: &FsPath) -> PathBuf {
+    root.join("policy-delta-applies.jsonl")
 }
 
 pub(crate) fn policy_delta_filename(policy_delta_id: &str) -> Result<String> {

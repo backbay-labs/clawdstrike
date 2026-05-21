@@ -273,7 +273,9 @@ impl CausalGraphRecorder {
     }
 
     fn process_node(&mut self, observation: &EndpointObservation) -> String {
-        let key = observation.process.stable_key();
+        let key = observation
+            .process
+            .stable_key_for_observation(&observation.observation_id);
         if let Some(node_id) = self.process_nodes.get(&key).cloned() {
             self.touch_node(&node_id, observation.timestamp);
             return node_id;
@@ -288,6 +290,24 @@ impl CausalGraphRecorder {
         let mut attributes = BTreeMap::new();
         insert_json(&mut attributes, "pid", observation.process.pid);
         insert_json(&mut attributes, "ppid", observation.process.ppid);
+        insert_json(
+            &mut attributes,
+            "processIdentityStrength",
+            if observation.process.has_durable_stable_key() {
+                "durable"
+            } else {
+                "weak_observation_scoped"
+            },
+        );
+        insert_json(
+            &mut attributes,
+            "processIdentityKey",
+            if observation.process.has_durable_stable_key() {
+                observation.process.stable_key()
+            } else {
+                observation.process.weak_stable_key()
+            },
+        );
         insert_json(
             &mut attributes,
             "commandLine",
@@ -713,5 +733,124 @@ impl CausalGraphRecorder {
             observation_id: observation.observation_id.clone(),
             attributes,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+
+    use super::super::super::process::EndpointProcess;
+    use super::*;
+
+    #[test]
+    fn pid_only_process_identity_is_observation_scoped() {
+        let mut recorder = CausalGraphRecorder::new();
+        let first = observation_with_process(
+            "obs-pid-reuse-1",
+            EndpointProcess {
+                pid: Some(4242),
+                image: Some("/bin/sh".to_string()),
+                command_line: Some("sh -c make".to_string()),
+                ..EndpointProcess::default()
+            },
+        );
+        let second = observation_with_process(
+            "obs-pid-reuse-2",
+            EndpointProcess {
+                pid: Some(4242),
+                image: Some("/bin/sh".to_string()),
+                command_line: Some("sh -c make".to_string()),
+                ..EndpointProcess::default()
+            },
+        );
+
+        recorder.record_observation(&first);
+        recorder.record_observation(&second);
+
+        let process_nodes = recorder
+            .graph()
+            .nodes
+            .values()
+            .filter(|node| {
+                node.kind == CausalNodeKind::Process
+                    && node.attributes.get("pid").and_then(|value| value.as_u64()) == Some(4242)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            process_nodes.len(),
+            2,
+            "same PID without a durable process GUID must not merge process nodes"
+        );
+        assert!(process_nodes.iter().all(|node| {
+            node.attributes
+                .get("processIdentityStrength")
+                .and_then(|value| value.as_str())
+                == Some("weak_observation_scoped")
+        }));
+    }
+
+    #[test]
+    fn durable_process_guid_still_merges_observations() {
+        let mut recorder = CausalGraphRecorder::new();
+        let first = observation_with_process(
+            "obs-guid-1",
+            EndpointProcess {
+                pid: Some(4242),
+                process_guid: Some("proc-guid-4242".to_string()),
+                image: Some("/bin/sh".to_string()),
+                ..EndpointProcess::default()
+            },
+        );
+        let second = observation_with_process(
+            "obs-guid-2",
+            EndpointProcess {
+                pid: Some(4242),
+                process_guid: Some("proc-guid-4242".to_string()),
+                image: Some("/bin/sh".to_string()),
+                ..EndpointProcess::default()
+            },
+        );
+
+        recorder.record_observation(&first);
+        recorder.record_observation(&second);
+
+        let process_nodes = recorder
+            .graph()
+            .nodes
+            .values()
+            .filter(|node| {
+                node.kind == CausalNodeKind::Process
+                    && node.attributes.get("pid").and_then(|value| value.as_u64()) == Some(4242)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(process_nodes.len(), 1);
+        assert_eq!(
+            process_nodes[0]
+                .attributes
+                .get("processIdentityStrength")
+                .and_then(|value| value.as_str()),
+            Some("durable")
+        );
+    }
+
+    fn observation_with_process(
+        observation_id: &str,
+        process: EndpointProcess,
+    ) -> EndpointObservation {
+        EndpointObservation {
+            observation_id: observation_id.to_string(),
+            timestamp: Utc::now(),
+            host_id: Some("host-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            process,
+            event: EndpointEvent::ProcessExec {
+                image: "/bin/sh".to_string(),
+                args: vec!["-c".to_string(), "make".to_string()],
+                env: BTreeMap::new(),
+            },
+            metadata: BTreeMap::new(),
+        }
     }
 }

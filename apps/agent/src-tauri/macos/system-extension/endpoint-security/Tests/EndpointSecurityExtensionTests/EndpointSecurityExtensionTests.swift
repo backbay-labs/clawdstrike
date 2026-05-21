@@ -395,6 +395,44 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(request.context.metadata["endpointSecurityRespondApi"], "es_respond_flags_result")
     }
 
+    func testAuthorizationRequestFailsClosedBeforeDecisionHandlerWhenDeadlineExpired() throws {
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open:deadline",
+            process: EndpointSecurityAgentProcess(
+                pid: 501,
+                ppid: 1,
+                processGuid: "macos:501:9",
+                image: "/bin/cat",
+                commandLine: "/bin/cat"
+            ),
+            metadata: [
+                "endpointSecurityEventType": "AUTH_OPEN",
+                "endpointSecurityRespondApi": "es_respond_flags_result"
+            ]
+        )
+        var request = EndpointSecurityAuthorizationRequest(
+            path: "/tmp/clawdstrike-es-auth-open.txt",
+            fflag: 1,
+            latencyMs: 200,
+            deadlineMs: 200,
+            context: context
+        )
+
+        let decision = try XCTUnwrap(request.failClosedDecisionForExpiredDeadline())
+        let event = request.authorizationEvent(decision: decision)
+
+        XCTAssertEqual(decision, .deny)
+        XCTAssertEqual(event.decision, .deny)
+        XCTAssertTrue(event.exceededDeadline)
+        XCTAssertEqual(request.context.metadata["authorizationDecisionSource"], "deadline_fail_closed")
+        XCTAssertEqual(
+            request.context.metadata["authorizationDeadlineExceededBeforeDecision"],
+            "true"
+        )
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineLatencyMs"], "200")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineMs"], "200")
+    }
+
     func testStatusToolRejectsUnsupportedScenarioInsteadOfFallingBackToHealthy() {
         XCTAssertThrowsError(
             try EndpointSecurityFixtureScenario.resolve(commandLineArgument: "definitely-not-real")

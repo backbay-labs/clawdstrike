@@ -456,12 +456,9 @@ swarm_run_lane_bootstrap() {
       bootstrap_args=(cargo fetch --locked --manifest-path apps/agent/src-tauri/Cargo.toml)
       ;;
     *)
-      printf 'bootstrap %s: %s\n' "$lane" "$bootstrap_preset"
-      (
-        cd "$worktree_path"
-        bash -lc "$bootstrap_preset"
-      )
-      return 0
+      printf 'unsupported bootstrap preset for %s: %s\n' "$lane" "$bootstrap_preset" >&2
+      printf '%s\n' 'bootstrap presets must be reviewed fixed argv IDs, not shell source' >&2
+      exit 1
       ;;
   esac
 

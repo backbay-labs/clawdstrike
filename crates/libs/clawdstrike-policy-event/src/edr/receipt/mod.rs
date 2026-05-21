@@ -5709,7 +5709,7 @@ fn policy_delta_operation_from_title(decision: &EndpointDecisionRecord) -> Resul
         return Err(anyhow!("policy delta operation title is invalid"));
     };
     match operation {
-        "generated" | "applied" => Ok(operation),
+        "generated" | "prepared" | "applied" => Ok(operation),
         _ => Err(anyhow!("policy delta operation title is invalid")),
     }
 }
@@ -5731,7 +5731,7 @@ fn require_policy_delta_operation_evidence(
                 ));
             }
         }
-        "applied" => {
+        "prepared" | "applied" => {
             require_nonempty_hashed_evidence(
                 evidence,
                 "previousPolicyHash",

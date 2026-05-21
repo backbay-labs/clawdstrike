@@ -116,6 +116,9 @@ pub(crate) async fn agent_edr_policy_events_impact_history(
     let cross_window_impact = validation_window_seconds.map(|window_seconds| {
         build_policy_event_history_cross_window_impact(&selection, &impact.changes, window_seconds)
     });
+    if let Some(cross_window_impact) = &cross_window_impact {
+        remember_cross_window_promotion_validation(&state, cross_window_impact).await;
+    }
     let promotion_stage = cross_window_impact
         .as_ref()
         .map(|impact| impact.recommended_stage.as_str());
@@ -365,11 +368,17 @@ pub(crate) async fn agent_edr_stage_detection(
         "crossWindowRecommendationHash",
         input.cross_window_recommendation_hash,
     )?;
+    let cross_window_validation = recent_cross_window_promotion_validation(
+        state.as_ref(),
+        stage,
+        cross_window_impact_hash.as_deref(),
+        cross_window_recommendation_hash.as_deref(),
+    )
+    .await?;
     validate_detection_stage_promotion_readiness(
         stage,
         stage_entry,
-        cross_window_impact_hash.as_deref(),
-        cross_window_recommendation_hash.as_deref(),
+        cross_window_validation.as_ref(),
     )?;
 
     let settings = state.settings.read().await.clone();
@@ -714,14 +723,42 @@ pub(crate) async fn agent_edr_policy_delta_apply(
                 ),
             )
         })?;
+        Some(backup_path.display().to_string())
+    };
+
+    let prepared_receipt = if dry_run {
+        None
+    } else {
+        let sensor_state =
+            endpoint_sensor_state_from_macos_host(&state.macos_host.snapshot().await);
+        let mut ledger = state.edr_receipt_ledger.lock().await;
+        Some(
+            ledger
+                .sign_policy_delta_receipt(
+                    &settings,
+                    new_snapshot.clone(),
+                    sensor_state,
+                    EdrPolicyDeltaReceiptSigningInput {
+                        artifact: &policy_delta.artifact,
+                        artifact_hash: &policy_delta.artifact_hash,
+                        operation: "prepared",
+                        previous_policy_hash: Some(previous_snapshot.policy_hash.as_str()),
+                        new_policy_hash: Some(new_snapshot.policy_hash.as_str()),
+                        backup_path: backup_path.as_deref(),
+                    },
+                )
+                .map_err(internal_error)?,
+        )
+    };
+
+    if !dry_run {
         crate::security::fs::write_private_atomic(
             &policy_path,
             &new_bytes,
             "endpoint policy delta applied policy",
         )
         .map_err(internal_error)?;
-        Some(backup_path.display().to_string())
-    };
+    }
 
     let receipt = if dry_run {
         None
@@ -803,10 +840,15 @@ pub(crate) async fn agent_edr_policy_delta_apply(
         previous_policy_epoch: previous_snapshot.policy_epoch,
         new_policy_epoch: new_snapshot.policy_epoch,
     };
+    if !dry_run {
+        let mut store = state.edr_policy_delta_store.lock().await;
+        store.append_apply(&record).map_err(internal_error)?;
+    }
 
     Ok(Json(EdrPolicyDeltaApplyResponse {
         record,
         policy_delta,
+        prepared_receipt,
         receipt,
         post_apply_enforcement,
     }))

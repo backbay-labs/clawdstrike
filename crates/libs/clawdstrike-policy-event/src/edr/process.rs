@@ -69,28 +69,86 @@ pub struct EndpointProcess {
 impl EndpointProcess {
     #[must_use]
     pub fn stable_key(&self) -> String {
+        self.durable_stable_key()
+            .unwrap_or_else(|| self.weak_stable_key())
+    }
+
+    #[must_use]
+    pub fn stable_key_for_observation(&self, observation_id: &str) -> String {
+        self.durable_stable_key().unwrap_or_else(|| {
+            let observation_id = observation_id.trim();
+            if observation_id.is_empty() {
+                self.weak_stable_key()
+            } else {
+                format!("{}:observation:{observation_id}", self.weak_stable_key())
+            }
+        })
+    }
+
+    #[must_use]
+    pub fn has_durable_stable_key(&self) -> bool {
+        self.durable_stable_key().is_some()
+    }
+
+    #[must_use]
+    pub fn durable_stable_key(&self) -> Option<String> {
         self.process_guid
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|value| format!("guid:{value}"))
-            .or_else(|| self.pid.map(|pid| format!("pid:{pid}")))
-            .or_else(|| {
-                self.image
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(|image| {
-                        let command_line = self.command_line.as_deref().unwrap_or_default();
-                        format!("image:{image}:{command_line}")
-                    })
-            })
-            .unwrap_or_else(|| "process:unknown".to_string())
+    }
+
+    #[must_use]
+    pub fn weak_stable_key(&self) -> String {
+        let pid = self
+            .pid
+            .map(|pid| pid.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        let image = self
+            .image
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown");
+        let command_line = self
+            .command_line
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown");
+        let cwd = self
+            .cwd
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown");
+        let signing_id = self
+            .signing
+            .signing_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown");
+        let cdhash = self
+            .signing
+            .cdhash
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown");
+        format!("weak:pid:{pid}:image:{image}:cmd:{command_line}:cwd:{cwd}:signing:{signing_id}:cdhash:{cdhash}")
     }
 
     #[must_use]
     pub fn stable_node_id(&self) -> String {
         let key = self.stable_key();
+        stable_id("node", [key.as_str()])
+    }
+
+    #[must_use]
+    pub fn stable_node_id_for_observation(&self, observation_id: &str) -> String {
+        let key = self.stable_key_for_observation(observation_id);
         stable_id("node", [key.as_str()])
     }
 }

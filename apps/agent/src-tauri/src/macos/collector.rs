@@ -34,6 +34,7 @@ const NETWORK_EXTENSION_EGRESS_POLICY_ENV: &str =
     "CLAWDSTRIKE_NETWORK_EXTENSION_EGRESS_POLICY_PATH";
 const NETWORK_EXTENSION_RUNTIME_SNAPSHOT_ENV: &str =
     "CLAWDSTRIKE_NETWORK_EXTENSION_RUNTIME_SNAPSHOT_PATH";
+const ALLOW_SWIFT_RUN_STATUS_TOOLS_ENV: &str = "CLAWDSTRIKE_ALLOW_SWIFT_RUN_STATUS_TOOLS";
 const ENDPOINT_SECURITY_TOOL_NAME: &str = "endpoint-security-status-tool";
 const NETWORK_EXTENSION_TOOL_NAME: &str = "network-extension-status-tool";
 
@@ -688,34 +689,32 @@ fn resolve_status_tool<R: Runtime>(
     relative_package_path: &str,
     executable: &'static str,
 ) -> Option<ToolInvocation> {
+    let allow_swift_run = swift_run_status_tools_enabled();
+
     if let Some(tool) = resolve_direct_tool_from_env(env_var) {
         return Some(tool);
     }
 
     if let Some(resource_package) = resolve_resource_package_path(app, relative_package_path) {
-        if let Some(tool) = resolve_direct_built_tool(&resource_package, executable) {
+        if let Some(tool) =
+            resolve_package_status_tool(&resource_package, executable, allow_swift_run)
+        {
             return Some(tool);
-        }
-        if resource_package.join("Package.swift").is_file() && which::which("swift").is_ok() {
-            return Some(ToolInvocation::SwiftRun {
-                package_path: resource_package,
-                executable,
-            });
         }
     }
 
     let source_package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative_package_path);
-    if let Some(tool) = resolve_direct_built_tool(&source_package, executable) {
+    if let Some(tool) = resolve_package_status_tool(&source_package, executable, allow_swift_run) {
         return Some(tool);
-    }
-    if source_package.join("Package.swift").is_file() && which::which("swift").is_ok() {
-        return Some(ToolInvocation::SwiftRun {
-            package_path: source_package,
-            executable,
-        });
     }
 
     None
+}
+
+fn swift_run_status_tools_enabled() -> bool {
+    std::env::var(ALLOW_SWIFT_RUN_STATUS_TOOLS_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }
 
 fn resolve_direct_tool_from_env(env_var: &str) -> Option<ToolInvocation> {
@@ -761,6 +760,37 @@ fn resolve_direct_built_tool(
     None
 }
 
+fn resolve_package_status_tool(
+    package_path: &Path,
+    executable: &'static str,
+    allow_swift_run: bool,
+) -> Option<ToolInvocation> {
+    resolve_package_status_tool_with_swift_availability(
+        package_path,
+        executable,
+        allow_swift_run,
+        which::which("swift").is_ok(),
+    )
+}
+
+fn resolve_package_status_tool_with_swift_availability(
+    package_path: &Path,
+    executable: &'static str,
+    allow_swift_run: bool,
+    swift_available: bool,
+) -> Option<ToolInvocation> {
+    if let Some(tool) = resolve_direct_built_tool(package_path, executable) {
+        return Some(tool);
+    }
+    if allow_swift_run && swift_available && package_path.join("Package.swift").is_file() {
+        return Some(ToolInvocation::SwiftRun {
+            package_path: package_path.to_path_buf(),
+            executable,
+        });
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
@@ -791,6 +821,15 @@ mod tests {
         let mut permissions = fs::metadata(&path).expect("stat temp script").permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions).expect("chmod temp script");
+        path
+    }
+
+    fn temp_package_dir(name: &str) -> PathBuf {
+        let path = temp_script_path(name);
+        let _ = fs::remove_file(&path);
+        fs::create_dir_all(&path).expect("create temp package dir");
+        fs::write(path.join("Package.swift"), "// swift-tools-version: 5.9\n")
+            .expect("write test package manifest");
         path
     }
 
@@ -920,6 +959,48 @@ mod tests {
             timeout_result.is_err(),
             "helper should time out in the test harness"
         );
+    }
+
+    #[test]
+    fn status_tool_resolution_does_not_use_swift_run_without_dev_override() {
+        let package = temp_package_dir("status-tool-package");
+
+        let resolved = resolve_package_status_tool_with_swift_availability(
+            &package,
+            ENDPOINT_SECURITY_TOOL_NAME,
+            false,
+            true,
+        );
+        let _ = fs::remove_dir_all(&package);
+
+        assert!(
+            resolved.is_none(),
+            "production status collection must not execute Swift package sources via swift run"
+        );
+    }
+
+    #[test]
+    fn status_tool_resolution_allows_swift_run_only_with_dev_override() {
+        let package = temp_package_dir("status-tool-package-dev");
+
+        let resolved = resolve_package_status_tool_with_swift_availability(
+            &package,
+            ENDPOINT_SECURITY_TOOL_NAME,
+            true,
+            true,
+        );
+        let _ = fs::remove_dir_all(&package);
+
+        match resolved {
+            Some(ToolInvocation::SwiftRun {
+                package_path,
+                executable,
+            }) => {
+                assert_eq!(package_path, package);
+                assert_eq!(executable, ENDPOINT_SECURITY_TOOL_NAME);
+            }
+            other => panic!("expected dev-only SwiftRun helper, got {other:?}"),
+        }
     }
 
     #[test]

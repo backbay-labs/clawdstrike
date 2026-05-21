@@ -787,6 +787,21 @@ public struct EndpointSecurityAuthorizationRequest: Equatable {
             observedAt: observedAt
         )
     }
+
+    public var responseDeadlineExpired: Bool {
+        latencyMs >= deadlineMs
+    }
+
+    public mutating func failClosedDecisionForExpiredDeadline() -> EndpointSecurityAuthorizationDecision? {
+        guard responseDeadlineExpired else {
+            return nil
+        }
+        context.metadata["authorizationDecisionSource"] = "deadline_fail_closed"
+        context.metadata["authorizationDeadlineExceededBeforeDecision"] = "true"
+        context.metadata["authorizationDeadlineLatencyMs"] = String(latencyMs)
+        context.metadata["authorizationDeadlineMs"] = String(deadlineMs)
+        return .deny
+    }
 }
 
 public enum EndpointSecurityRuntimeClientError: Error, LocalizedError, Equatable {
@@ -1029,8 +1044,8 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
     ) {
         var responseAttempted = false
         do {
-            let request = try adapter.authorizationRequest(from: message)
-            let decision = decisionHandler(request)
+            var request = try adapter.authorizationRequest(from: message)
+            let decision = request.failClosedDecisionForExpiredDeadline() ?? decisionHandler(request)
             try adapter.respondAuthorizationOpen(client: client, message: message, decision: decision)
             responseAttempted = true
             let event = request.authorizationEvent(decision: decision)

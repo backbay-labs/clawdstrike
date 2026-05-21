@@ -29,4 +29,23 @@ describe("McpToolGuard", () => {
       ).allowed,
     ).toBe(true);
   });
+
+  it("fails closed when an MCP action omits the tool name", () => {
+    const guard = new McpToolGuard({ defaultAction: "allow", block: [], requireConfirmation: [] });
+
+    for (const tool of [undefined, "", "   "]) {
+      const result = guard.check(
+        new GuardAction({
+          actionType: "mcp_tool",
+          tool,
+          args: { code: "print(1)" },
+        }),
+        new GuardContext(),
+      );
+
+      expect(result.allowed).toBe(false);
+      expect(result.guard).toBe("mcp_tool");
+      expect(result.details).toMatchObject({ reason: "missing_tool_name" });
+    }
+  });
 });

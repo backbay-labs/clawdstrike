@@ -14,8 +14,8 @@
 //!
 //! - **Linux**: seccomp-notify intercepts openat/openat2; supervisor receives
 //!   notify fd from child and runs the recv_notif loop
-//! - **macOS**: extension-based flow; child sends CapabilityRequests over the
-//!   supervisor socket, supervisor issues extension tokens
+//! - **Non-Linux**: the dynamic supervisor contract is not wired into this CLI
+//!   path yet; supervised mode fails closed before launching the child.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -79,14 +79,14 @@ pub fn spawn_supervised_child(
         let runtime = SandboxRuntimeState::supervised_preflight_refused(
             supervised_preflight_failure_reason(),
         )
-        .with_provider_states(macos_provider_states_for_preflight_refusal());
+        .with_provider_states(non_linux_provider_states_for_preflight_refusal());
 
         Ok(SupervisedResult {
             exit_code: 126,
             runtime,
             stats: SupervisorStats {
                 enabled: false,
-                backend: "macos_endpoint_security_auth_contract".to_string(),
+                backend: "supervised_contract_unavailable".to_string(),
                 ..Default::default()
             },
             denials: Vec::new(),
@@ -381,15 +381,22 @@ fn run_linux_supervisor_loop(
 }
 
 #[cfg(not(target_os = "linux"))]
-fn macos_provider_states_for_preflight_refusal() -> Vec<ProviderState> {
-    vec![
-        ProviderState::unavailable_without_approval(
-            "seatbelt",
-            "sandbox_not_invoked_due_to_supervised_preflight_refusal",
-        ),
-        ProviderState::unknown("endpoint_security", supervised_preflight_failure_reason()),
-        ProviderState::unknown("network_extension", "provider_state_unknown"),
-    ]
+fn non_linux_provider_states_for_preflight_refusal() -> Vec<ProviderState> {
+    if cfg!(target_os = "macos") {
+        vec![
+            ProviderState::unavailable_without_approval(
+                "seatbelt",
+                "sandbox_not_invoked_due_to_supervised_preflight_refusal",
+            ),
+            ProviderState::unknown("endpoint_security", supervised_preflight_failure_reason()),
+            ProviderState::unknown("network_extension", "provider_state_unknown"),
+        ]
+    } else {
+        vec![ProviderState::unknown(
+            "supervised_interception",
+            supervised_preflight_failure_reason(),
+        )]
+    }
 }
 
 #[cfg(not(target_os = "linux"))]

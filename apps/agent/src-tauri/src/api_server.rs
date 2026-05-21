@@ -140,6 +140,8 @@ pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_CHAIN_DRIVER_SAMPLES: usize = 5;
 pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_PROMOTION_SUGGESTIONS: usize = 16;
 pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_BREAKAGE_DRIVERS: usize = 8;
 pub(crate) const EDR_MAX_POLICY_EVENT_IMPACT_VALIDATION_WINDOW_SECONDS: u64 = 86_400;
+pub(crate) const EDR_CROSS_WINDOW_PROMOTION_VALIDATION_CACHE_LIMIT: usize = 128;
+pub(crate) const EDR_CROSS_WINDOW_PROMOTION_VALIDATION_MAX_AGE_SECONDS: i64 = 86_400;
 pub(crate) const EDR_MAX_AUTO_FLEET_AGENT_SECRET_TOUCHES_PER_BATCH: usize = 100;
 pub(crate) const EDR_MAX_AUTO_FLEET_HUNT_EVENT_OUTBOX_RETRIES_PER_BATCH: usize = 100;
 pub(crate) const EDR_FLEET_AGENT_SECRET_TOUCH_SYNC_INTERVAL: Duration = Duration::from_secs(60);
@@ -247,6 +249,8 @@ pub(crate) struct AgentApiState {
     pub(crate) edr_egress_restriction_ledger: Arc<Mutex<EndpointEgressRestrictionLedger>>,
     pub(crate) edr_staged_detection_ledger: Arc<Mutex<EndpointStagedDetectionLedger>>,
     pub(crate) edr_policy_delta_store: Arc<Mutex<EndpointPolicyDeltaStore>>,
+    pub(crate) edr_cross_window_promotion_validations:
+        Arc<Mutex<VecDeque<EdrCrossWindowPromotionValidation>>>,
     pub(crate) edr_network_extension_egress_policy_path: Arc<PathBuf>,
     pub(crate) edr_quarantine_root: Arc<PathBuf>,
     pub(crate) edr_recent_findings: Arc<Mutex<VecDeque<DetectionFinding>>>,
@@ -277,6 +281,15 @@ pub(crate) struct PolicyVersionCache {
     last_refresh_at: Option<std::time::Instant>,
     refresh_in_flight: bool,
     refresh_started_at: Option<std::time::Instant>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct EdrCrossWindowPromotionValidation {
+    pub(crate) recorded_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) impact_hash: String,
+    pub(crate) recommendation_hash: String,
+    pub(crate) recommended_stage: String,
+    pub(crate) promotion_ready: bool,
 }
 
 impl PolicyVersionCache {
@@ -504,6 +517,7 @@ impl AgentApiServer {
                     default_edr_staged_detection_ledger(),
                 )),
                 edr_policy_delta_store: Arc::new(Mutex::new(default_edr_policy_delta_store())),
+                edr_cross_window_promotion_validations: Arc::new(Mutex::new(VecDeque::new())),
                 edr_network_extension_egress_policy_path: Arc::new(
                     default_edr_network_extension_egress_policy_path(),
                 ),
@@ -4729,6 +4743,53 @@ pub(crate) fn normalize_staged_detection_hash(
     Ok(Some(value.to_ascii_lowercase()))
 }
 
+pub(crate) async fn remember_cross_window_promotion_validation(
+    state: &Arc<AgentApiState>,
+    impact: &EdrPolicyEventHistoryCrossWindowImpact,
+) {
+    let validation = EdrCrossWindowPromotionValidation {
+        recorded_at: chrono::Utc::now(),
+        impact_hash: impact.impact_hash.clone(),
+        recommendation_hash: impact.recommendation_hash.clone(),
+        recommended_stage: impact.recommended_stage.clone(),
+        promotion_ready: impact.promotion_ready,
+    };
+    let mut validations = state.edr_cross_window_promotion_validations.lock().await;
+    validations.push_back(validation);
+    while validations.len() > EDR_CROSS_WINDOW_PROMOTION_VALIDATION_CACHE_LIMIT {
+        let _ = validations.pop_front();
+    }
+}
+
+pub(crate) async fn recent_cross_window_promotion_validation(
+    state: &AgentApiState,
+    stage: &str,
+    cross_window_impact_hash: Option<&str>,
+    cross_window_recommendation_hash: Option<&str>,
+) -> Result<Option<EdrCrossWindowPromotionValidation>, (StatusCode, String)> {
+    let (Some(cross_window_impact_hash), Some(cross_window_recommendation_hash)) =
+        (cross_window_impact_hash, cross_window_recommendation_hash)
+    else {
+        return Ok(None);
+    };
+    let now = chrono::Utc::now();
+    let validations = state.edr_cross_window_promotion_validations.lock().await;
+    Ok(validations
+        .iter()
+        .rev()
+        .find(|validation| {
+            validation.promotion_ready
+                && validation.recommended_stage == stage
+                && validation.impact_hash == cross_window_impact_hash
+                && validation.recommendation_hash == cross_window_recommendation_hash
+                && now
+                    .signed_duration_since(validation.recorded_at)
+                    .num_seconds()
+                    <= EDR_CROSS_WINDOW_PROMOTION_VALIDATION_MAX_AGE_SECONDS
+        })
+        .cloned())
+}
+
 pub(crate) struct PolicyDeltaApplyEnforcementProofInput<'a> {
     pub(crate) settings: &'a Settings,
     pub(crate) local_policy: EndpointPolicySnapshot,
@@ -5626,19 +5687,18 @@ pub(crate) fn detection_stage_entry<'a>(
 pub(crate) fn validate_detection_stage_promotion_readiness(
     stage: &str,
     stage_entry: &EdrDetectionCandidateStage,
-    cross_window_impact_hash: Option<&str>,
-    cross_window_recommendation_hash: Option<&str>,
+    cross_window_validation: Option<&EdrCrossWindowPromotionValidation>,
 ) -> Result<(), (StatusCode, String)> {
     if !policy_delta_stage_is_enforcing(stage, &stage_entry.action) {
         return Ok(());
     }
-    if cross_window_impact_hash.is_some() && cross_window_recommendation_hash.is_some() {
+    if cross_window_validation.is_some() {
         return Ok(());
     }
     Err((
         StatusCode::BAD_REQUEST,
         format!(
-            "{stage} is an enforcing endpoint policy stage for action {}; provide crossWindowImpactHash and crossWindowRecommendationHash from a promotionReady=true policy-events impact history response before staging enforcement",
+            "{stage} is an enforcing endpoint policy stage for action {}; provide crossWindowImpactHash and crossWindowRecommendationHash from a recent promotionReady=true policy-events impact history response before staging enforcement",
             stage_entry.action.as_str()
         ),
     ))
@@ -6126,6 +6186,14 @@ async fn execute_restrict_egress_response(
     ensure_network_extension_ready_for_restrict_egress(state).await?;
     let execution = EndpointResponseExecutionReport::restrict_egress(plan, graph, &targets)
         .map_err(internal_error)?;
+    emit_pre_effect_response_execution_receipt(
+        state,
+        &execution,
+        graph,
+        actor.clone(),
+        "pre_effect_restrict_egress",
+    )
+    .await?;
     let reload_proof = append_edr_egress_restrictions(state, &execution, &targets).await?;
     ensure_network_extension_reload_proof_succeeded(&reload_proof).map_err(|message| {
         (
@@ -6206,6 +6274,14 @@ async fn execute_quarantine_file_response(
         .await
         .store(&execution.evidence_bundle, graph)
         .map_err(internal_error)?;
+    emit_pre_effect_response_execution_receipt(
+        state,
+        &execution,
+        graph,
+        actor.clone(),
+        "pre_effect_quarantine_file",
+    )
+    .await?;
     fs::rename(&source_path, &quarantine_path)
         .with_context(|| {
             format!(
@@ -6293,6 +6369,14 @@ async fn execute_disable_persistence_response(
         .await
         .store(&execution.evidence_bundle, graph)
         .map_err(internal_error)?;
+    emit_pre_effect_response_execution_receipt(
+        state,
+        &execution,
+        graph,
+        actor.clone(),
+        "pre_effect_disable_persistence",
+    )
+    .await?;
     fs::rename(&source_path, &disabled_path)
         .with_context(|| {
             format!(
@@ -6404,6 +6488,25 @@ async fn execute_suspend_process_tree_response(
         })?;
     }
 
+    let pids = targets.iter().map(|target| target.pid).collect::<Vec<_>>();
+    let root_pid = targets.first().map(|target| target.pid).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "process tree target is empty".to_string(),
+        )
+    })?;
+    let execution =
+        EndpointResponseExecutionReport::suspend_process_tree(plan, graph, root_pid, &pids)
+            .map_err(internal_error)?;
+    emit_pre_effect_response_execution_receipt(
+        state,
+        &execution,
+        graph,
+        actor.clone(),
+        "pre_effect_suspend_process_tree",
+    )
+    .await?;
+
     let mut suspended = Vec::new();
     for target in targets.iter().rev() {
         if let Err(err) = signal_process(target.pid, process_suspend_signal()) {
@@ -6417,17 +6520,6 @@ async fn execute_suspend_process_tree_response(
         }
         suspended.push(target.pid);
     }
-
-    let pids = targets.iter().map(|target| target.pid).collect::<Vec<_>>();
-    let root_pid = targets.first().map(|target| target.pid).ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            "process tree target is empty".to_string(),
-        )
-    })?;
-    let execution =
-        EndpointResponseExecutionReport::suspend_process_tree(plan, graph, root_pid, &pids)
-            .map_err(internal_error)?;
     persist_edr_response_execution(state, execution, graph, actor).await
 }
 
@@ -6716,6 +6808,67 @@ async fn persist_edr_response_execution(
     (StatusCode, String),
 > {
     persist_edr_response_execution_with_evidence(state, execution, graph, actor, &[]).await
+}
+
+async fn emit_pre_effect_response_execution_receipt(
+    state: &AgentApiState,
+    execution: &EndpointResponseExecutionReport,
+    graph: &CausalGraph,
+    actor: EndpointDecisionActor,
+    phase: &str,
+) -> Result<SignedReceipt, (StatusCode, String)> {
+    let mut prepared = execution.clone();
+    prepared.status = EndpointResponseExecutionStatus::Partial;
+    prepared.completed_at = chrono::Utc::now();
+    prepared.summary = format!(
+        "Durably recorded {} response execution intent before local side effects.",
+        execution.action.as_str()
+    );
+    let reason_hash = sha256(prepared.reason.as_bytes()).to_hex_prefixed();
+    prepared.execution_id = response_execution_transition_id(
+        "response_execution_partial",
+        prepared.action_id.as_str(),
+        prepared.evidence_bundle.bundle_id.as_str(),
+        prepared.rollback_ref.as_str(),
+        reason_hash.as_str(),
+    );
+    let evidence = [EndpointReceiptEvidence::hashed("executionPhase", phase)];
+    emit_edr_response_execution_receipt(state, &prepared, graph, Some(actor), &evidence)
+        .await
+        .map_err(internal_error)
+}
+
+fn response_execution_transition_id(
+    prefix: &str,
+    response_action_id: &str,
+    evidence_bundle_id: &str,
+    rollback_ref: &str,
+    reason_hash: &str,
+) -> String {
+    edr_fnv_stable_id(
+        prefix,
+        [
+            response_action_id,
+            evidence_bundle_id,
+            rollback_ref,
+            reason_hash,
+        ],
+    )
+}
+
+fn edr_fnv_stable_id<'a>(prefix: &str, parts: impl IntoIterator<Item = &'a str>) -> String {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = FNV_OFFSET;
+    for part in parts {
+        for byte in part.as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        hash ^= 0xff;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    format!("{prefix}:{hash:016x}")
 }
 
 async fn persist_edr_response_execution_with_evidence(
@@ -21366,6 +21519,7 @@ mod tests {
                 EndpointStagedDetectionLedger::transient(),
             )),
             edr_policy_delta_store: Arc::new(Mutex::new(EndpointPolicyDeltaStore::transient())),
+            edr_cross_window_promotion_validations: Arc::new(Mutex::new(VecDeque::new())),
             edr_network_extension_egress_policy_path: Arc::new(
                 test_network_extension_egress_policy_path(),
             ),
@@ -23328,7 +23482,16 @@ mod tests {
                 "missing supply-chain identity evidence {key}"
             );
         }
-        assert_eq!(payload["receipt_count"], 1);
+        assert_eq!(payload["receipt_count"], 2);
+        assert_eq!(
+            payload["observation_receipts"].as_array().map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            payload["observation_receipts"][0]["receipt"]["metadata"]["endpointDecision"]
+                ["receiptFamily"],
+            "observation"
+        );
         assert!(!payload.to_string().contains("MY_RAW_SECRET"));
 
         let signed: SignedReceipt = serde_json::from_value(payload["receipts"][0].clone())
@@ -23456,7 +23619,11 @@ mod tests {
             payload["findings"][0]["ruleId"],
             "supply_chain.cloud_cli_sensitive_operation"
         );
-        assert_eq!(payload["receipt_count"], 1);
+        assert_eq!(payload["receipt_count"], 2);
+        assert_eq!(
+            payload["observation_receipts"].as_array().map(Vec::len),
+            Some(1)
+        );
         assert!(payload["findings"][0]["evidence"]
             .as_array()
             .unwrap_or_else(|| panic!("missing cloud CLI evidence"))
@@ -25366,7 +25533,11 @@ mod tests {
         assert_eq!(payload["policy_event_count"], 2);
         assert_eq!(payload["observation_count"], 2);
         assert_eq!(payload["finding_count"], 2);
-        assert_eq!(payload["receipt_count"], 2);
+        assert_eq!(payload["receipt_count"], 4);
+        assert_eq!(
+            payload["observation_receipts"].as_array().map(Vec::len),
+            Some(2)
+        );
         assert_eq!(
             payload["observations"][0]["event"]["type"],
             "credential_access"
@@ -25745,7 +25916,11 @@ mod tests {
         assert_eq!(payload["policy_event_count"], 2);
         assert_eq!(payload["observation_count"], 2);
         assert_eq!(payload["finding_count"], 2);
-        assert_eq!(payload["receipt_count"], 2);
+        assert_eq!(payload["receipt_count"], 4);
+        assert_eq!(
+            payload["observation_receipts"].as_array().map(Vec::len),
+            Some(2)
+        );
         let rule_ids = payload["findings"]
             .as_array()
             .unwrap_or_else(|| panic!("missing policy-event JSONL findings"))
@@ -28106,7 +28281,11 @@ guards:
         let payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode EndpointSecurity honey response: {e}"));
         assert_eq!(payload["findingCount"], 1);
-        assert_eq!(payload["receiptCount"], 1);
+        assert_eq!(payload["receiptCount"], 2);
+        assert_eq!(
+            payload["observationReceipts"].as_array().map(Vec::len),
+            Some(1)
+        );
         assert_eq!(
             payload["findings"][0]["ruleId"],
             "deception.honey_artifact_touched"
@@ -28166,7 +28345,11 @@ guards:
             .unwrap_or_else(|e| panic!("failed to decode NetworkExtension honey response: {e}"));
         assert_eq!(payload["observationCount"], 3);
         assert_eq!(payload["findingCount"], 2);
-        assert_eq!(payload["receiptCount"], 3);
+        assert_eq!(payload["receiptCount"], 6);
+        assert_eq!(
+            payload["observationReceipts"].as_array().map(Vec::len),
+            Some(3)
+        );
         assert_eq!(
             payload["policyDecisionReceipts"]
                 .as_array()
@@ -29909,7 +30092,7 @@ guards:
         assert_eq!(response.status(), StatusCode::OK);
 
         let requests = control_api_state.requests.lock().await;
-        assert_eq!(requests.len(), 1);
+        assert_eq!(requests.len(), 2);
         let request = &requests[0];
         assert_eq!(
             request.api_key.as_deref(),
@@ -29921,6 +30104,16 @@ guards:
         assert_eq!(
             receipt["signed_receipt"]["receipt"]["metadata"]["endpointDecision"]["receiptFamily"],
             "detection"
+        );
+        let observation_request = &requests[1];
+        assert_eq!(
+            observation_request.api_key.as_deref(),
+            Some("configured-control-api-key")
+        );
+        assert_eq!(
+            observation_request.body["receipts"][0]["signed_receipt"]["receipt"]["metadata"]
+                ["endpointDecision"]["receiptFamily"],
+            "observation"
         );
 
         control_api_task.abort();
@@ -30207,7 +30400,7 @@ guards:
         }
 
         let body = serde_json::json!({
-            "maxReceipts": 1,
+            "maxReceipts": 2,
             "minAgeSeconds": 0,
             "dryRun": true
         });
@@ -30230,14 +30423,14 @@ guards:
         let payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode receipt compaction dry-run: {e}"));
         assert_eq!(payload["dryRun"], true);
-        assert_eq!(payload["receiptCount"], 2);
-        assert_eq!(payload["candidateCount"], 1);
+        assert_eq!(payload["receiptCount"], 4);
+        assert_eq!(payload["candidateCount"], 2);
         assert_eq!(payload["removedCount"], 0);
         assert_eq!(payload["records"][0]["family"], "detection");
         assert_eq!(payload["records"][0]["removed"], false);
 
         let body = serde_json::json!({
-            "maxReceipts": 1,
+            "maxReceipts": 2,
             "minAgeSeconds": 0,
             "dryRun": false
         });
@@ -30260,8 +30453,8 @@ guards:
         let payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode receipt compaction response: {e}"));
         assert_eq!(payload["dryRun"], false);
-        assert_eq!(payload["removedCount"], 1);
-        assert_eq!(payload["retainedCount"], 1);
+        assert_eq!(payload["removedCount"], 2);
+        assert_eq!(payload["retainedCount"], 2);
         assert_eq!(payload["records"][0]["removed"], true);
 
         let req = axum::http::Request::builder()
@@ -30283,7 +30476,7 @@ guards:
         assert_eq!(payload["receipt_count"], 1);
         assert_eq!(
             payload["receipts"][0]["receipt"]["metadata"]["endpointDecision"]["localSequence"],
-            2
+            3
         );
 
         let _ = std::fs::remove_file(receipt_path);
@@ -30561,8 +30754,15 @@ guards:
                 ..EndpointObservation::default()
             },
         ];
+        {
+            let mut recorder = state.edr_flight_recorder.lock().await;
+            recorder
+                .append_observations(&[observations[0].clone()])
+                .unwrap_or_else(|e| panic!("failed to seed unprotected old observation: {e}"));
+        }
+
         let body = serde_json::json!({
-            "observations": observations,
+            "observations": [observations[1].clone()],
             "honey_artifacts": []
         });
         let req = axum::http::Request::builder()
@@ -30583,8 +30783,15 @@ guards:
             .unwrap_or_else(|e| panic!("failed to read graph compaction findings: {e}"));
         let payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode graph compaction findings: {e}"));
-        assert_eq!(payload["observation_count"], 3);
-        assert_eq!(payload["receipt_count"], 1);
+        assert_eq!(payload["observation_count"], 1);
+        assert_eq!(payload["receipt_count"], 2);
+
+        {
+            let mut recorder = state.edr_flight_recorder.lock().await;
+            recorder
+                .append_observations(&[observations[2].clone()])
+                .unwrap_or_else(|e| panic!("failed to seed unprotected fresh observation: {e}"));
+        }
 
         let body = serde_json::json!({
             "maxObservations": 1,
@@ -32825,7 +33032,7 @@ guards:
         );
         assert_eq!(
             verify_payload["verification"]["receiptLocalSequences"],
-            serde_json::json!([1])
+            serde_json::json!([3])
         );
         assert_eq!(
             verify_payload["verification"]["receiptTimestampsParse"],
@@ -34697,6 +34904,11 @@ guards:
             .unwrap_or_else(|e| panic!("failed to decode developer-activity response: {e}"));
         assert_eq!(payload["activityCount"], 2);
         assert_eq!(payload["observationCount"], 2);
+        assert_eq!(
+            payload["observationReceipts"].as_array().map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(payload["receiptCount"], 3);
         assert!(payload["observations"]
             .as_array()
             .unwrap_or_else(|| panic!("missing developer observations"))
@@ -35639,7 +35851,11 @@ guards:
         assert_eq!(payload["eventCount"], 1);
         assert_eq!(payload["observationCount"], 1);
         assert_eq!(payload["findingCount"], 1);
-        assert_eq!(payload["receiptCount"], 1);
+        assert_eq!(payload["receiptCount"], 2);
+        assert_eq!(
+            payload["observationReceipts"].as_array().map(Vec::len),
+            Some(1)
+        );
         let observation = &payload["observations"][0];
         assert_eq!(observation["event"]["type"], "package_script");
         assert_eq!(observation["event"]["manager"], "npm");
@@ -37525,6 +37741,50 @@ guards:
             .oneshot(req)
             .await
             .unwrap_or_else(|e| panic!("policy-delta stage request failed: {e}"));
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 256 * 1024)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read unproven staged detection response: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "unproven stage response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(
+            String::from_utf8_lossy(&bytes).contains("recent promotionReady=true"),
+            "unproven stage response: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+
+        state
+            .edr_cross_window_promotion_validations
+            .lock()
+            .await
+            .push_back(EdrCrossWindowPromotionValidation {
+                recorded_at: chrono::Utc::now(),
+                impact_hash:
+                    "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                        .to_string(),
+                recommendation_hash:
+                    "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                        .to_string(),
+                recommended_stage: "limited_block".to_string(),
+                promotion_ready: true,
+            });
+
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/edr/staged-detections")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap_or_else(|e| panic!("failed to build proven policy-delta stage request: {e}"));
+        let response = app
+            .clone()
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("proven policy-delta stage request failed: {e}"));
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = axum::body::to_bytes(response.into_body(), 256 * 1024)
             .await
@@ -37916,6 +38176,24 @@ guards:
         assert_eq!(
             apply_payload["receipt"]["receipt"]["metadata"]["endpointDecision"]["receiptFamily"],
             "policy_delta"
+        );
+        assert_eq!(
+            apply_payload["preparedReceipt"]["receipt"]["metadata"]["endpointDecision"]
+                ["receiptFamily"],
+            "policy_delta"
+        );
+        assert_eq!(
+            apply_payload["preparedReceipt"]["receipt"]["metadata"]["endpointDecision"]["decision"]
+                ["title"],
+            "Endpoint staged policy delta prepared"
+        );
+        let apply_ledger_path =
+            crate::edr::ledger::policy_delta::policy_delta_apply_index_path(&policy_delta_dir);
+        let apply_ledger = std::fs::read_to_string(&apply_ledger_path)
+            .unwrap_or_else(|e| panic!("failed to read policy delta apply ledger: {e}"));
+        assert!(
+            apply_ledger.contains(policy_delta_id),
+            "policy delta apply ledger missing {policy_delta_id}: {apply_ledger}"
         );
         assert!(
             apply_payload["receipt"]["receipt"]["metadata"]["endpointDecision"]["evidence"]
@@ -43514,10 +43792,16 @@ guards:
             .oneshot(req)
             .await
             .unwrap_or_else(|e| panic!("quarantine response request failed: {e}"));
-        assert_eq!(response.status(), StatusCode::OK);
+        let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024)
             .await
             .unwrap_or_else(|e| panic!("failed to read quarantine response: {e}"));
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "unexpected quarantine response body: {}",
+            String::from_utf8_lossy(&bytes)
+        );
         let payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode quarantine response: {e}"));
 
@@ -43574,6 +43858,29 @@ guards:
         let execution_id = payload["execution"]["executionId"]
             .as_str()
             .unwrap_or_else(|| panic!("missing quarantine execution id"));
+        let response_action_id = payload["plan"]["actionId"]
+            .as_str()
+            .unwrap_or_else(|| panic!("missing quarantine response action id"));
+        let receipts = read_endpoint_receipt_ledger(&receipt_path)
+            .unwrap_or_else(|err| panic!("failed to read quarantine receipt ledger: {err}"));
+        assert!(
+            receipts.iter().any(|receipt| {
+                receipt_endpoint_decision_str(receipt, &["receiptFamily"])
+                    == Some("response_execution")
+                    && receipt_evidence_hash_matches(
+                        receipt,
+                        "responseActionId",
+                        response_action_id,
+                    )
+                    && receipt_evidence_hash_matches(receipt, "executionStatus", "partial")
+                    && receipt_evidence_hash_matches(
+                        receipt,
+                        "executionPhase",
+                        "pre_effect_quarantine_file",
+                    )
+            }),
+            "missing durable pre-effect quarantine execution receipt"
+        );
         let body = serde_json::json!({
             "reason": "cancel quarantined file without restoring it"
         });
