@@ -28,21 +28,9 @@ const SECRET_PATTERNS: SecretPattern[] = [
   // GitHub Tokens
   {
     name: "github_pat",
-    pattern: /ghp_[A-Za-z0-9]{36}/g,
+    pattern: /gh[pousr]_[A-Za-z0-9_]{20,}/g,
     severity: "critical",
-    description: "GitHub Personal Access Token",
-  },
-  {
-    name: "github_oauth",
-    pattern: /gho_[A-Za-z0-9]{36}/g,
-    severity: "critical",
-    description: "GitHub OAuth Token",
-  },
-  {
-    name: "github_app_token",
-    pattern: /ghu_[A-Za-z0-9]{36}/g,
-    severity: "critical",
-    description: "GitHub App User Token",
+    description: "GitHub Token",
   },
   {
     name: "github_fine_grained",
@@ -54,13 +42,13 @@ const SECRET_PATTERNS: SecretPattern[] = [
   // OpenAI Keys
   {
     name: "openai_api_key",
-    pattern: /sk-[A-Za-z0-9]{48}/g,
+    pattern: /sk-[A-Za-z0-9_-]{20,}/g,
     severity: "critical",
     description: "OpenAI API Key",
   },
   {
     name: "openai_project_key",
-    pattern: /sk-proj-[A-Za-z0-9]{48}/g,
+    pattern: /sk-proj-[A-Za-z0-9_-]{20,}/g,
     severity: "critical",
     description: "OpenAI Project API Key",
   },

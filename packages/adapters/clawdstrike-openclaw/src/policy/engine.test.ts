@@ -611,6 +611,33 @@ guards:
   });
 
   it.each([
+    ["github_app_server_token", "ghs_abcdefghijklmnopqrstuvwxyz123456"],
+    ["github_refresh_token", "ghr_abcdefghijklmnopqrstuvwxyz123456"],
+    ["openai_project_token", "sk-proj-abc_DEF-1234567890abcdefghi"],
+  ])("blocks expanded secret token family %s in tool output", async (_name, token) => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { mcp_tool: false },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: `secret-family-${_name}`,
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "api_call",
+        parameters: {},
+        result: `token=${token}`,
+      },
+    });
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("secret_leak");
+  });
+
+  it.each([
     ["content", "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],
     ["text", "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],
     [
