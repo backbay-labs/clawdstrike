@@ -11,7 +11,7 @@ use crate::api_server::{
 use crate::edr::dto::{EdrEndpointSecurityEvent, EdrEndpointSecurityEventKind};
 use axum::http::StatusCode;
 use clawdstrike_policy_event::edr::{
-    EndpointEvent, EndpointObservation, EndpointProcess, EndpointProviderKind,
+    CredentialKind, EndpointEvent, EndpointObservation, EndpointProcess, EndpointProviderKind,
     EndpointProviderState, EndpointSensorState, FileOperation,
 };
 use std::collections::BTreeMap;
@@ -79,13 +79,20 @@ pub(crate) fn endpoint_security_endpoint_event(
                         "operation must be read, write, create, delete, rename, execute, or chmod",
                     )
                 })?;
+            let path =
+                required_endpoint_security_event_string(event, "path", event.path.as_deref())?;
+            if operation == FileOperation::Read {
+                if let Some(kind) = endpoint_security_credential_kind_for_path(&path) {
+                    return Ok(EndpointEvent::CredentialAccess {
+                        kind,
+                        path: Some(path),
+                        name: None,
+                    });
+                }
+            }
             Ok(EndpointEvent::FileAccess {
                 operation,
-                path: required_endpoint_security_event_string(
-                    event,
-                    "path",
-                    event.path.as_deref(),
-                )?,
+                path,
                 source_url: None,
                 content_preview: None,
             })
@@ -372,6 +379,74 @@ pub(crate) fn endpoint_security_file_operation(value: Option<&str>) -> Option<Fi
     }
 }
 
+fn endpoint_security_credential_kind_for_path(path: &str) -> Option<CredentialKind> {
+    let path = path.replace('\\', "/").to_ascii_lowercase();
+    let basename = path.rsplit('/').next().unwrap_or(path.as_str());
+
+    if path.contains("/.ssh/") || matches!(basename, "id_rsa" | "id_ed25519" | "id_ecdsa") {
+        return Some(CredentialKind::SshKey);
+    }
+
+    if path.contains("/.aws/")
+        || path.contains("/.config/gcloud/")
+        || path.contains("/.azure/")
+        || path.contains("/.kube/config")
+        || path.contains("/.pulumi/credentials.json")
+        || path.contains("/.config/pulumi/credentials.json")
+        || path.contains("/.terraform.d/credentials.tfrc.json")
+        || path.contains("/.terraformrc")
+    {
+        return Some(CredentialKind::CloudCredential);
+    }
+
+    if path.contains("/.npmrc")
+        || path.contains("/.pypirc")
+        || path.contains("/.netrc")
+        || path.contains("/.docker/config.json")
+        || path.contains("/.cargo/credentials")
+        || path.contains("/.config/pypoetry/auth.toml")
+        || path.contains("/library/application support/pypoetry/auth.toml")
+        || path.contains("/.config/pip/pip.conf")
+        || path.contains("/.pip/pip.conf")
+        || path.contains("/pip/pip.ini")
+        || path.contains("/.yarnrc.yml")
+        || path.contains("/.pnpmrc")
+        || path.contains("/.m2/settings.xml")
+        || path.contains("/.gradle/gradle.properties")
+        || path.contains("/.nuget/nuget/nuget.config")
+    {
+        return Some(CredentialKind::PackageRegistryToken);
+    }
+
+    if path.contains("/.config/gh/hosts.yml")
+        || path.contains("/.config/gh/config.yml")
+        || path.contains("/.config/glab-cli/hosts.yml")
+        || path.contains("/.config/glab-cli/config.yml")
+        || path.contains("/.config/hub")
+        || path.contains("/.config/git-credential/")
+    {
+        return Some(CredentialKind::ApiToken);
+    }
+
+    if path.contains("/.gnupg/private-keys-v1.d/")
+        || path.contains("/.gnupg/secring.gpg")
+        || path.contains("/.config/sops/age/keys.txt")
+        || path.contains("/.age/key.txt")
+    {
+        return Some(CredentialKind::SigningKey);
+    }
+
+    if basename == "cookies"
+        || basename == "login data"
+        || basename == "local state"
+        || path.contains("/keychains/")
+    {
+        return Some(CredentialKind::BrowserCookie);
+    }
+
+    None
+}
+
 pub(crate) fn normalized_endpoint_security_decision(value: Option<&str>) -> Option<&'static str> {
     match value
         .and_then(|value| non_empty(Some(value)))
@@ -453,6 +528,15 @@ mod tests {
         }
     }
 
+    fn file_access_event(path: &str, operation: &str) -> EdrEndpointSecurityEvent {
+        let mut event = process_exec_event("2026-05-20T12:00:00Z");
+        event.kind = EdrEndpointSecurityEventKind::FileAccess;
+        event.event_id = Some(format!("file-{operation}-{path}"));
+        event.path = Some(path.to_string());
+        event.operation = Some(operation.to_string());
+        event
+    }
+
     #[test]
     fn fallback_observation_id_includes_durable_timestamp() {
         let first =
@@ -482,5 +566,61 @@ mod tests {
         let second = endpoint_security_event_observation(&second, 0).expect("second observation");
 
         assert_ne!(first.observation_id, second.observation_id);
+    }
+
+    #[test]
+    fn endpoint_security_reads_of_developer_secret_paths_become_credential_access() {
+        for (path, expected_kind) in [
+            (
+                "/Users/alice/.aws/credentials",
+                CredentialKind::CloudCredential,
+            ),
+            ("/Users/alice/.npmrc", CredentialKind::PackageRegistryToken),
+            ("/Users/alice/.pypirc", CredentialKind::PackageRegistryToken),
+            ("/Users/alice/.netrc", CredentialKind::PackageRegistryToken),
+            (
+                "/Users/alice/.docker/config.json",
+                CredentialKind::PackageRegistryToken,
+            ),
+            ("/Users/alice/.ssh/id_ed25519", CredentialKind::SshKey),
+            (
+                "/Users/alice/Library/Application Support/Google/Chrome/Default/Cookies",
+                CredentialKind::BrowserCookie,
+            ),
+        ] {
+            let observation =
+                endpoint_security_event_observation(&file_access_event(path, "read"), 0)
+                    .expect("secret read observation");
+            match observation.event {
+                EndpointEvent::CredentialAccess {
+                    kind,
+                    path: Some(actual_path),
+                    ..
+                } => {
+                    assert_eq!(kind, expected_kind);
+                    assert_eq!(actual_path, path);
+                }
+                other => panic!("expected credential access for {path}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn endpoint_security_secret_path_writes_remain_file_access_events() {
+        let observation = endpoint_security_event_observation(
+            &file_access_event("/Users/alice/.npmrc", "write"),
+            0,
+        )
+        .expect("secret write observation");
+
+        match observation.event {
+            EndpointEvent::FileAccess {
+                operation, path, ..
+            } => {
+                assert_eq!(operation, FileOperation::Write);
+                assert_eq!(path, "/Users/alice/.npmrc");
+            }
+            other => panic!("expected file access for secret write, got {other:?}"),
+        }
     }
 }
