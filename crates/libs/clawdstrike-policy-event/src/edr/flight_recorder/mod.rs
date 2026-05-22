@@ -775,6 +775,13 @@ fn parse_endpoint_flight_recorder_log_line(
         }
         Err(record_err) => {
             if chain_state.is_some() {
+                serde_json::from_str::<serde_json::Value>(trimmed).with_context(|| {
+                    format!(
+                        "invalid endpoint observation JSONL at {}:{}; hash-chain record parse error: {record_err}",
+                        path.display(),
+                        line_number
+                    )
+                })?;
                 return Err(anyhow!(
                     "legacy endpoint observation JSONL at {}:{} is not accepted by the production hash-chain reader; run an explicit migration before using this log as durable evidence; hash-chain record parse error: {record_err}",
                     path.display(),
