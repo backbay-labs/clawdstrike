@@ -1,6 +1,7 @@
 import type { SecurityContext } from "@clawdstrike/adapter-core";
 import {
   createSecurityContext,
+  type LocalEdrConfig,
   resolveInterceptor,
   type SecuritySource,
   wrapExecuteWithInterceptor,
@@ -9,6 +10,7 @@ import {
 export interface SecureToolsOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
+  edr?: LocalEdrConfig;
 }
 
 type OpenCodeToolLike<TInput = unknown, TOutput = unknown> = {
@@ -21,7 +23,7 @@ export function secureTools<TTools extends Record<string, OpenCodeToolLike>>(
   source: SecuritySource,
   options?: SecureToolsOptions,
 ): TTools {
-  const interceptor = resolveInterceptor(source);
+  const interceptor = resolveInterceptor(source, options?.edr ? { edr: options.edr } : undefined);
 
   const defaultContext =
     options?.context ??

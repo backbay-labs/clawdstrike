@@ -7,6 +7,7 @@ rust-version = "1.80"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde_json = "1"
 
 [dependencies]
 # Tauri
@@ -58,6 +59,7 @@ which = "6"
 
 # Shared crypto/data primitives
 hush-core = { path = "../../../crates/libs/hush-core" }
+clawdstrike-policy-event = { path = "../../../crates/libs/clawdstrike-policy-event", default-features = false, features = ["simulate"] }
 base64 = "0.22"
 
 # NATS / Spine (adaptive SDR)
@@ -87,3 +89,5 @@ async-nats = { path = "../../../infra/vendor/async-nats" }
 [lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+
+[workspace]

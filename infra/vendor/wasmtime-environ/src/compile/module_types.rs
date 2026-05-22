@@ -1,11 +1,12 @@
 use crate::{
     EngineOrModuleTypeIndex, EntityRef, ModuleInternedRecGroupIndex, ModuleInternedTypeIndex,
-    ModuleTypes, TypeConvert, TypeIndex, WasmArrayType, WasmCompositeInnerType, WasmCompositeType,
-    WasmExnType, WasmFieldType, WasmFuncType, WasmHeapType, WasmResult, WasmStorageType,
-    WasmStructType, WasmSubType, wasm_unsupported,
+    ModuleTypes, PanicOnOom as _, TypeConvert, TypeIndex, WasmArrayType, WasmCompositeInnerType,
+    WasmCompositeType, WasmExnType, WasmFieldType, WasmFuncType, WasmHeapType, WasmResult,
+    WasmStorageType, WasmStructType, WasmSubType,
+    collections::{TryClone as _, TryCow},
+    wasm_unsupported,
 };
 use std::{
-    borrow::Cow,
     collections::{HashMap, hash_map::Entry},
     ops::Index,
 };
@@ -153,7 +154,7 @@ impl ModuleTypesBuilder {
         for_func_ty: ModuleInternedTypeIndex,
     ) -> ModuleInternedTypeIndex {
         let sub_ty = &self.types[for_func_ty];
-        let trampoline = sub_ty.unwrap_func().trampoline_type();
+        let trampoline = sub_ty.unwrap_func().trampoline_type().panic_on_oom();
 
         if let Some(idx) = self.trampoline_types.get(&trampoline) {
             // We've already interned this trampoline type; reuse it.
@@ -165,19 +166,20 @@ impl ModuleTypesBuilder {
                 // type. We can reuse the definition and its index, but still
                 // need to intern the type into our `trampoline_types` map so we
                 // can reuse it in the future.
-                Cow::Borrowed(f) => {
-                    self.trampoline_types.insert(f.clone(), for_func_ty);
+                TryCow::Borrowed(f) => {
+                    self.trampoline_types
+                        .insert(f.clone_panic_on_oom(), for_func_ty);
                     for_func_ty
                 }
                 // The trampoline type is different from the original function
                 // type. Define the trampoline type and then intern it in
                 // `trampoline_types` so we can reuse it in the future.
-                Cow::Owned(f) => {
+                TryCow::Owned(f) => {
                     let idx = self.types.push(WasmSubType {
                         is_final: true,
                         supertype: None,
                         composite_type: WasmCompositeType {
-                            inner: WasmCompositeInnerType::Func(f.clone()),
+                            inner: WasmCompositeInnerType::Func(f.clone_panic_on_oom()),
                             shared: sub_ty.composite_type.shared,
                         },
                     });

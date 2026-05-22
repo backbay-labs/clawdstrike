@@ -17,7 +17,6 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use regalloc2::{MachineEnv, PReg, PRegSet};
 use smallvec::{SmallVec, smallvec};
-use std::sync::OnceLock;
 
 // We use a generic implementation that factors out AArch64 and x64 ABI commonalities, because
 // these ABIs are very similar.
@@ -39,7 +38,10 @@ impl From<StackAMode> for AMode {
 
 // Returns the size of stack space needed to store the
 // `clobbered_callee_saved` registers.
-fn compute_clobber_size(clobbered_callee_saves: &[Writable<RealReg>]) -> u32 {
+fn compute_clobber_size(
+    call_conv: isa::CallConv,
+    clobbered_callee_saves: &[Writable<RealReg>],
+) -> u32 {
     let mut int_regs = 0;
     let mut vec_regs = 0;
     for &reg in clobbered_callee_saves {
@@ -56,16 +58,22 @@ fn compute_clobber_size(clobbered_callee_saves: &[Writable<RealReg>]) -> u32 {
 
     // Round up to multiple of 2, to keep 16-byte stack alignment.
     let int_save_bytes = (int_regs + (int_regs & 1)) * 8;
-    // The Procedure Call Standard for the Arm 64-bit Architecture
-    // (AAPCS64, including several related ABIs such as the one used by
-    // Windows) mandates saving only the bottom 8 bytes of the vector
-    // registers, so we round up the number of registers to ensure
-    // proper stack alignment (similarly to the situation with
-    // `int_reg`).
-    let vec_reg_size = 8;
-    let vec_save_padding = vec_regs & 1;
-    // FIXME: SVE: ABI is different to Neon, so do we treat all vec regs as Z-regs?
-    let vec_save_bytes = (vec_regs + vec_save_padding) * vec_reg_size;
+    let vec_save_bytes = if call_conv == isa::CallConv::PreserveAll {
+        // In the PreserveAll ABI, we save the entire vector register,
+        // i.e., all 128 bits.
+        vec_regs * 16
+    } else {
+        // The Procedure Call Standard for the Arm 64-bit Architecture
+        // (AAPCS64, including several related ABIs such as the one used by
+        // Windows) mandates saving only the bottom 8 bytes of the vector
+        // registers, so we round up the number of registers to ensure
+        // proper stack alignment (similarly to the situation with
+        // `int_reg`).
+        let vec_reg_size = 8;
+        let vec_save_padding = vec_regs & 1;
+        // FIXME: SVE: ABI is different to Neon, so do we treat all vec regs as Z-regs?
+        (vec_regs + vec_save_padding) * vec_reg_size
+    };
 
     int_save_bytes + vec_save_bytes
 }
@@ -715,7 +723,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
     }
 
     fn gen_clobber_save(
-        _call_conv: isa::CallConv,
+        call_conv: isa::CallConv,
         flags: &settings::Flags,
         frame_layout: &FrameLayout,
     ) -> SmallVec<[Inst; 16]> {
@@ -858,74 +866,91 @@ impl ABIMachineSpec for AArch64MachineDeps {
             }
         }
 
-        let store_vec_reg = |rd| Inst::FpuStore64 {
-            rd,
-            mem: AMode::SPPreIndexed {
-                simm9: SImm9::maybe_from_i64(-clobber_offset_change).unwrap(),
-            },
-            flags: MemFlags::trusted(),
-        };
-        let iter = clobbered_vec.chunks_exact(2);
-
-        if let [rd] = iter.remainder() {
-            let rd: Reg = rd.to_reg().into();
-
-            debug_assert_eq!(rd.class(), RegClass::Float);
-            insts.push(store_vec_reg(rd));
-
-            if flags.unwind_info() {
-                clobber_offset -= clobber_offset_change as u32;
-                insts.push(Inst::Unwind {
-                    inst: UnwindInst::SaveReg {
-                        clobber_offset,
-                        reg: rd.to_real_reg().unwrap(),
-                    },
-                });
-            }
-        }
-
-        let store_vec_reg_pair = |rt, rt2| {
-            let clobber_offset_change = 16;
-
-            (
-                Inst::FpuStoreP64 {
-                    rt,
-                    rt2,
-                    mem: PairAMode::SPPreIndexed {
-                        simm7: SImm7Scaled::maybe_from_i64(-clobber_offset_change, F64).unwrap(),
+        if call_conv == isa::CallConv::PreserveAll {
+            // Store full vector registers in PreserveAll convention.
+            for reg in clobbered_vec.iter().rev() {
+                let inst = Inst::FpuStore128 {
+                    rd: reg.to_reg().into(),
+                    mem: AMode::SPPreIndexed {
+                        simm9: SImm9::maybe_from_i64(-clobber_offset_change).unwrap(),
                     },
                     flags: MemFlags::trusted(),
+                };
+                insts.push(inst);
+                // N.B.: no unwind info: we don't have a way to
+                // represent "full register" anyway.
+            }
+        } else {
+            let store_vec_reg_half = |rd| Inst::FpuStore64 {
+                rd,
+                mem: AMode::SPPreIndexed {
+                    simm9: SImm9::maybe_from_i64(-clobber_offset_change).unwrap(),
                 },
-                clobber_offset_change as u32,
-            )
-        };
-        let mut iter = iter.rev();
+                flags: MemFlags::trusted(),
+            };
+            let iter = clobbered_vec.chunks_exact(2);
 
-        while let Some([rt, rt2]) = iter.next() {
-            let rt: Reg = rt.to_reg().into();
-            let rt2: Reg = rt2.to_reg().into();
+            if let [rd] = iter.remainder() {
+                let rd: Reg = rd.to_reg().into();
 
-            debug_assert_eq!(rt.class(), RegClass::Float);
-            debug_assert_eq!(rt2.class(), RegClass::Float);
+                debug_assert_eq!(rd.class(), RegClass::Float);
+                insts.push(store_vec_reg_half(rd));
 
-            let (inst, clobber_offset_change) = store_vec_reg_pair(rt, rt2);
+                if flags.unwind_info() {
+                    clobber_offset -= clobber_offset_change as u32;
+                    insts.push(Inst::Unwind {
+                        inst: UnwindInst::SaveReg {
+                            clobber_offset,
+                            reg: rd.to_real_reg().unwrap(),
+                        },
+                    });
+                }
+            }
 
-            insts.push(inst);
+            let store_vec_reg_half_pair = |rt, rt2| {
+                let clobber_offset_change = 16;
 
-            if flags.unwind_info() {
-                clobber_offset -= clobber_offset_change;
-                insts.push(Inst::Unwind {
-                    inst: UnwindInst::SaveReg {
-                        clobber_offset,
-                        reg: rt.to_real_reg().unwrap(),
+                (
+                    Inst::FpuStoreP64 {
+                        rt,
+                        rt2,
+                        mem: PairAMode::SPPreIndexed {
+                            simm7: SImm7Scaled::maybe_from_i64(-clobber_offset_change, F64)
+                                .unwrap(),
+                        },
+                        flags: MemFlags::trusted(),
                     },
-                });
-                insts.push(Inst::Unwind {
-                    inst: UnwindInst::SaveReg {
-                        clobber_offset: clobber_offset + clobber_offset_change / 2,
-                        reg: rt2.to_real_reg().unwrap(),
-                    },
-                });
+                    clobber_offset_change as u32,
+                )
+            };
+            let mut iter = iter.rev();
+
+            while let Some([rt, rt2]) = iter.next() {
+                let rt: Reg = rt.to_reg().into();
+                let rt2: Reg = rt2.to_reg().into();
+
+                debug_assert_eq!(rt.class(), RegClass::Float);
+                debug_assert_eq!(rt2.class(), RegClass::Float);
+
+                let (inst, clobber_offset_change) = store_vec_reg_half_pair(rt, rt2);
+
+                insts.push(inst);
+
+                if flags.unwind_info() {
+                    clobber_offset -= clobber_offset_change;
+                    insts.push(Inst::Unwind {
+                        inst: UnwindInst::SaveReg {
+                            clobber_offset,
+                            reg: rt.to_real_reg().unwrap(),
+                        },
+                    });
+                    insts.push(Inst::Unwind {
+                        inst: UnwindInst::SaveReg {
+                            clobber_offset: clobber_offset + clobber_offset_change / 2,
+                            reg: rt2.to_real_reg().unwrap(),
+                        },
+                    });
+                }
             }
         }
 
@@ -944,7 +969,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
     }
 
     fn gen_clobber_restore(
-        _call_conv: isa::CallConv,
+        call_conv: isa::CallConv,
         _flags: &settings::Flags,
         frame_layout: &FrameLayout,
     ) -> SmallVec<[Inst; 16]> {
@@ -957,40 +982,55 @@ impl ABIMachineSpec for AArch64MachineDeps {
             insts.extend(Self::gen_sp_reg_adjust(stack_size as i32));
         }
 
-        let load_vec_reg = |rd| Inst::FpuLoad64 {
-            rd,
-            mem: AMode::SPPostIndexed {
-                simm9: SImm9::maybe_from_i64(16).unwrap(),
-            },
-            flags: MemFlags::trusted(),
-        };
-        let load_vec_reg_pair = |rt, rt2| Inst::FpuLoadP64 {
-            rt,
-            rt2,
-            mem: PairAMode::SPPostIndexed {
-                simm7: SImm7Scaled::maybe_from_i64(16, F64).unwrap(),
-            },
-            flags: MemFlags::trusted(),
-        };
+        if call_conv == isa::CallConv::PreserveAll {
+            for reg in clobbered_vec.iter() {
+                let inst = Inst::FpuLoad128 {
+                    rd: reg.map(|r| r.into()),
+                    mem: AMode::SPPostIndexed {
+                        simm9: SImm9::maybe_from_i64(16).unwrap(),
+                    },
+                    flags: MemFlags::trusted(),
+                };
+                insts.push(inst);
+                // N.B.: no unwind info; we don't have a way to
+                // represent "full vector register saved" anyway.
+            }
+        } else {
+            let load_vec_reg_half = |rd| Inst::FpuLoad64 {
+                rd,
+                mem: AMode::SPPostIndexed {
+                    simm9: SImm9::maybe_from_i64(16).unwrap(),
+                },
+                flags: MemFlags::trusted(),
+            };
+            let load_vec_reg_half_pair = |rt, rt2| Inst::FpuLoadP64 {
+                rt,
+                rt2,
+                mem: PairAMode::SPPostIndexed {
+                    simm7: SImm7Scaled::maybe_from_i64(16, F64).unwrap(),
+                },
+                flags: MemFlags::trusted(),
+            };
 
-        let mut iter = clobbered_vec.chunks_exact(2);
+            let mut iter = clobbered_vec.chunks_exact(2);
 
-        while let Some([rt, rt2]) = iter.next() {
-            let rt: Writable<Reg> = rt.map(|r| r.into());
-            let rt2: Writable<Reg> = rt2.map(|r| r.into());
+            while let Some([rt, rt2]) = iter.next() {
+                let rt: Writable<Reg> = rt.map(|r| r.into());
+                let rt2: Writable<Reg> = rt2.map(|r| r.into());
 
-            debug_assert_eq!(rt.to_reg().class(), RegClass::Float);
-            debug_assert_eq!(rt2.to_reg().class(), RegClass::Float);
-            insts.push(load_vec_reg_pair(rt, rt2));
-        }
+                debug_assert_eq!(rt.to_reg().class(), RegClass::Float);
+                debug_assert_eq!(rt2.to_reg().class(), RegClass::Float);
+                insts.push(load_vec_reg_half_pair(rt, rt2));
+            }
 
-        debug_assert!(iter.remainder().len() <= 1);
+            debug_assert!(iter.remainder().len() <= 1);
 
-        if let [rd] = iter.remainder() {
-            let rd: Writable<Reg> = rd.map(|r| r.into());
+            if let [rd] = iter.remainder() {
+                let rd: Writable<Reg> = rd.map(|r| r.into());
 
-            debug_assert_eq!(rd.to_reg().class(), RegClass::Float);
-            insts.push(load_vec_reg(rd));
+                debug_assert_eq!(rd.to_reg().class(), RegClass::Float);
+                insts.push(load_vec_reg_half(rd));
+            }
         }
 
         let mut iter = clobbered_int.chunks_exact(2);
@@ -1089,11 +1129,11 @@ impl ABIMachineSpec for AArch64MachineDeps {
 
     fn get_machine_env(flags: &settings::Flags, _call_conv: isa::CallConv) -> &MachineEnv {
         if flags.enable_pinned_reg() {
-            static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-            MACHINE_ENV.get_or_init(|| create_reg_env(true))
+            static MACHINE_ENV: MachineEnv = create_reg_env(true);
+            &MACHINE_ENV
         } else {
-            static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-            MACHINE_ENV.get_or_init(|| create_reg_env(false))
+            static MACHINE_ENV: MachineEnv = create_reg_env(false);
+            &MACHINE_ENV
         }
     }
 
@@ -1151,7 +1191,7 @@ impl ABIMachineSpec for AArch64MachineDeps {
         regs.sort_unstable();
 
         // Compute clobber size.
-        let clobber_size = compute_clobber_size(&regs);
+        let clobber_size = compute_clobber_size(call_conv, &regs);
 
         // Compute linkage frame size.
         let setup_area_size = if flags.preserve_frame_pointers()
@@ -1534,100 +1574,96 @@ const WINCH_CLOBBERS: PRegSet = winch_clobbers();
 const ALL_CLOBBERS: PRegSet = all_clobbers();
 const NO_CLOBBERS: PRegSet = PRegSet::empty();
 
-fn create_reg_env(enable_pinned_reg: bool) -> MachineEnv {
-    fn preg(r: Reg) -> PReg {
-        r.to_real_reg().unwrap().into()
+const fn create_reg_env(enable_pinned_reg: bool) -> MachineEnv {
+    const fn preg(r: Reg) -> PReg {
+        r.to_real_reg().unwrap().preg()
     }
 
     let mut env = MachineEnv {
         preferred_regs_by_class: [
-            vec![
-                preg(xreg(0)),
-                preg(xreg(1)),
-                preg(xreg(2)),
-                preg(xreg(3)),
-                preg(xreg(4)),
-                preg(xreg(5)),
-                preg(xreg(6)),
-                preg(xreg(7)),
-                preg(xreg(8)),
-                preg(xreg(9)),
-                preg(xreg(10)),
-                preg(xreg(11)),
-                preg(xreg(12)),
-                preg(xreg(13)),
-                preg(xreg(14)),
-                preg(xreg(15)),
-                // x16 and x17 are spilltmp and tmp2 (see above).
-                // x18 could be used by the platform to carry inter-procedural state;
-                // conservatively assume so and make it not allocatable.
-                // x19-28 are callee-saved and so not preferred.
-                // x21 is the pinned register (if enabled) and not allocatable if so.
-                // x29 is FP, x30 is LR, x31 is SP/ZR.
-            ],
-            vec![
-                preg(vreg(0)),
-                preg(vreg(1)),
-                preg(vreg(2)),
-                preg(vreg(3)),
-                preg(vreg(4)),
-                preg(vreg(5)),
-                preg(vreg(6)),
-                preg(vreg(7)),
+            PRegSet::empty()
+                .with(preg(xreg(0)))
+                .with(preg(xreg(1)))
+                .with(preg(xreg(2)))
+                .with(preg(xreg(3)))
+                .with(preg(xreg(4)))
+                .with(preg(xreg(5)))
+                .with(preg(xreg(6)))
+                .with(preg(xreg(7)))
+                .with(preg(xreg(8)))
+                .with(preg(xreg(9)))
+                .with(preg(xreg(10)))
+                .with(preg(xreg(11)))
+                .with(preg(xreg(12)))
+                .with(preg(xreg(13)))
+                .with(preg(xreg(14)))
+                .with(preg(xreg(15))),
+            // x16 and x17 are spilltmp and tmp2 (see above).
+            // x18 could be used by the platform to carry inter-procedural state;
+            // conservatively assume so and make it not allocatable.
+            // x19-28 are callee-saved and so not preferred.
+            // x21 is the pinned register (if enabled) and not allocatable if so.
+            // x29 is FP, x30 is LR, x31 is SP/ZR.
+            PRegSet::empty()
+                .with(preg(vreg(0)))
+                .with(preg(vreg(1)))
+                .with(preg(vreg(2)))
+                .with(preg(vreg(3)))
+                .with(preg(vreg(4)))
+                .with(preg(vreg(5)))
+                .with(preg(vreg(6)))
+                .with(preg(vreg(7)))
                 // v8-15 are callee-saved and so not preferred.
-                preg(vreg(16)),
-                preg(vreg(17)),
-                preg(vreg(18)),
-                preg(vreg(19)),
-                preg(vreg(20)),
-                preg(vreg(21)),
-                preg(vreg(22)),
-                preg(vreg(23)),
-                preg(vreg(24)),
-                preg(vreg(25)),
-                preg(vreg(26)),
-                preg(vreg(27)),
-                preg(vreg(28)),
-                preg(vreg(29)),
-                preg(vreg(30)),
-                preg(vreg(31)),
-            ],
+                .with(preg(vreg(16)))
+                .with(preg(vreg(17)))
+                .with(preg(vreg(18)))
+                .with(preg(vreg(19)))
+                .with(preg(vreg(20)))
+                .with(preg(vreg(21)))
+                .with(preg(vreg(22)))
+                .with(preg(vreg(23)))
+                .with(preg(vreg(24)))
+                .with(preg(vreg(25)))
+                .with(preg(vreg(26)))
+                .with(preg(vreg(27)))
+                .with(preg(vreg(28)))
+                .with(preg(vreg(29)))
+                .with(preg(vreg(30)))
+                .with(preg(vreg(31))),
             // Vector Regclass is unused
-            vec![],
+            PRegSet::empty(),
         ],
         non_preferred_regs_by_class: [
-            vec![
-                preg(xreg(19)),
-                preg(xreg(20)),
+            PRegSet::empty()
+                .with(preg(xreg(19)))
+                .with(preg(xreg(20)))
                 // x21 is pinned reg if enabled; we add to this list below if not.
-                preg(xreg(22)),
-                preg(xreg(23)),
-                preg(xreg(24)),
-                preg(xreg(25)),
-                preg(xreg(26)),
-                preg(xreg(27)),
-                preg(xreg(28)),
-            ],
-            vec![
-                preg(vreg(8)),
-                preg(vreg(9)),
-                preg(vreg(10)),
-                preg(vreg(11)),
-                preg(vreg(12)),
-                preg(vreg(13)),
-                preg(vreg(14)),
-                preg(vreg(15)),
-            ],
+                .with(preg(xreg(22)))
+                .with(preg(xreg(23)))
+                .with(preg(xreg(24)))
+                .with(preg(xreg(25)))
+                .with(preg(xreg(26)))
+                .with(preg(xreg(27)))
+                .with(preg(xreg(28))),
+            PRegSet::empty()
+                .with(preg(vreg(8)))
+                .with(preg(vreg(9)))
+                .with(preg(vreg(10)))
+                .with(preg(vreg(11)))
+                .with(preg(vreg(12)))
+                .with(preg(vreg(13)))
+                .with(preg(vreg(14)))
+                .with(preg(vreg(15))),
             // Vector Regclass is unused
-            vec![],
+            PRegSet::empty(),
         ],
         fixed_stack_slots: vec![],
         scratch_by_class: [None, None, None],
     };
 
     if !enable_pinned_reg {
-        debug_assert_eq!(PINNED_REG, 21); // We assumed this above in hardcoded reg list.
-        env.non_preferred_regs_by_class[0].push(preg(xreg(PINNED_REG)));
+        debug_assert!(PINNED_REG == 21);
+        env.non_preferred_regs_by_class[0].add(preg(xreg(PINNED_REG)));
     }
 
     env

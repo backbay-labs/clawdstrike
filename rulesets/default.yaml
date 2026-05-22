@@ -110,7 +110,7 @@ guards:
       - file_write
       - file_delete
       - git_push
-    default_action: allow
+    default_action: block
     max_args_size: 1048576
 
 settings:

@@ -696,20 +696,20 @@ impl core::fmt::Debug for Func {
 }
 
 pub fn machine_env() -> MachineEnv {
-    fn regs(r: core::ops::Range<usize>, c: RegClass) -> Vec<PReg> {
+    fn regs(r: core::ops::Range<usize>, c: RegClass) -> PRegSet {
         r.map(|i| PReg::new(i, c)).collect()
     }
-    let preferred_regs_by_class: [Vec<PReg>; 3] = [
+    let preferred_regs_by_class = [
         regs(0..24, RegClass::Int),
         regs(0..24, RegClass::Float),
         regs(0..24, RegClass::Vector),
     ];
-    let non_preferred_regs_by_class: [Vec<PReg>; 3] = [
+    let non_preferred_regs_by_class = [
         regs(24..32, RegClass::Int),
         regs(24..32, RegClass::Float),
         regs(24..32, RegClass::Vector),
     ];
-    let scratch_by_class: [Option<PReg>; 3] = [None, None, None];
+    let scratch_by_class = [None, None, None];
     let fixed_stack_slots = (32..63)
         .flat_map(|i| {
             [

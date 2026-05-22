@@ -16,7 +16,7 @@ use serde_derive::{Deserialize, Serialize};
 const PINNED_VREGS: usize = 192;
 
 /// Convert a `VReg` to its pinned `PReg`, if any.
-pub fn pinned_vreg_to_preg(vreg: VReg) -> Option<PReg> {
+pub const fn pinned_vreg_to_preg(vreg: VReg) -> Option<PReg> {
     if vreg.vreg() < PINNED_VREGS {
         Some(PReg::from_index(vreg.vreg()))
     } else {
@@ -54,18 +54,38 @@ const REG_SPILLSLOT_MASK: u32 = !REG_SPILLSLOT_BIT;
 impl Reg {
     /// Const constructor: create a new Reg from a regalloc2 VReg.
     pub const fn from_virtual_reg(vreg: regalloc2::VReg) -> Reg {
-        Reg(vreg.bits() as u32)
+        let bits = vreg.bits() as u32;
+        debug_assert!(bits <= REG_SPILLSLOT_MASK);
+        Reg(bits)
     }
 
     /// Const constructor: create a new Reg from a regalloc2 PReg.
     pub const fn from_real_reg(preg: regalloc2::PReg) -> Reg {
-        Reg(preg_to_pinned_vreg(preg).bits() as u32)
+        let vreg = preg_to_pinned_vreg(preg);
+        let bits = vreg.bits() as u32;
+        debug_assert!(bits <= REG_SPILLSLOT_MASK);
+        Reg(bits)
+    }
+
+    /// Maybe construct from a `regalloc2::VReg`, checking if the
+    /// index is in-range for our bit-packing.
+    pub fn from_virtual_reg_checked(vreg: regalloc2::VReg) -> Option<Reg> {
+        let bits = vreg.bits() as u32;
+        if bits <= REG_SPILLSLOT_MASK {
+            Some(Reg(bits))
+        } else {
+            None
+        }
     }
 
     /// Get the physical register (`RealReg`), if this register is
     /// one.
-    pub fn to_real_reg(self) -> Option<RealReg> {
-        pinned_vreg_to_preg(self.0.into()).map(RealReg)
+    pub const fn to_real_reg(self) -> Option<RealReg> {
+        // We can't use `map` or `?` in a const fn.
+        match pinned_vreg_to_preg(VReg::from_bits(self.0)) {
+            Some(preg) => Some(RealReg(preg)),
+            None => None,
+        }
     }
 
     /// Get the virtual (non-physical) register, if this register is
@@ -150,6 +170,11 @@ impl RealReg {
     /// The physical register number.
     pub fn hw_enc(self) -> u8 {
         self.0.hw_enc() as u8
+    }
+
+    /// The underlying PReg.
+    pub const fn preg(self) -> PReg {
+        self.0
     }
 }
 

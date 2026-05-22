@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "pulley-interpreter"
-version = "41.0.4"
+version = "44.0.1"
 authors = ["The Pulley Project Developers"]
 build = false
 autolib = false
@@ -43,13 +43,13 @@ encode = []
 interp = [
     "decode",
     "encode",
-    "dep:wasmtime-math",
+    "dep:wasmtime-core",
 ]
 profile = [
     "std",
     "dep:anyhow",
 ]
-std = ["wasmtime-math?/std"]
+std = ["wasmtime-core?/std"]
 
 [lib]
 name = "pulley_interpreter"
@@ -58,7 +58,11 @@ path = "src/lib.rs"
 [[example]]
 name = "profiler-html"
 path = "examples/profiler-html.rs"
-required-features = ["profile"]
+required-features = [
+    "disas",
+    "interp",
+    "profile",
+]
 
 [[test]]
 name = "all"
@@ -74,19 +78,19 @@ version = "1.4.2"
 optional = true
 
 [dependencies.cranelift-bitset]
-version = "0.128.4"
+version = "0.131.1"
 
 [dependencies.log]
 version = "0.4.28"
 default-features = false
 
 [dependencies.pulley-macros]
-version = "=41.0.4"
+version = "=44.0.1"
 
-[dependencies.wasmtime-math]
-version = "=41.0.4"
+[dependencies.wasmtime-core]
+version = "=44.0.1"
 optional = true
-package = "wasmtime-internal-math"
+package = "wasmtime-internal-core"
 
 [dev-dependencies.anyhow]
 version = "1.0.100"
@@ -142,4 +146,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

@@ -6,9 +6,11 @@ use crate::isa::aarch64::settings as aarch64_settings;
 #[cfg(feature = "unwind")]
 use crate::isa::unwind::systemv;
 use crate::isa::{Builder as IsaBuilder, FunctionAlignment, IsaFlagsHashKey, TargetIsa};
+#[cfg(feature = "unwind")]
+use crate::machinst::CompiledCode;
 use crate::machinst::{
-    CompiledCode, CompiledCodeStencil, MachInst, MachTextSectionBuilder, Reg, SigSet,
-    TextSectionBuilder, VCode, compile,
+    CompiledCodeStencil, MachInst, MachTextSectionBuilder, Reg, SigSet, TextSectionBuilder, VCode,
+    compile,
 };
 use crate::result::CodegenResult;
 use crate::settings as shared_settings;
@@ -16,13 +18,14 @@ use alloc::string::String;
 use alloc::{boxed::Box, vec::Vec};
 use core::fmt;
 use cranelift_control::ControlPlane;
-use target_lexicon::{Aarch64Architecture, Architecture, OperatingSystem, Triple};
+#[cfg(feature = "unwind")]
+use target_lexicon::OperatingSystem;
+use target_lexicon::{Aarch64Architecture, Architecture, Triple};
 
 // New backend:
 mod abi;
 pub mod inst;
 mod lower;
-mod pcc;
 pub mod settings;
 
 use self::inst::EmitInfo;
@@ -56,7 +59,7 @@ impl AArch64Backend {
         domtree: &DominatorTree,
         ctrl_plane: &mut ControlPlane,
     ) -> CodegenResult<(VCode<inst::Inst>, regalloc2::Output)> {
-        let emit_info = EmitInfo::new(self.flags.clone());
+        let emit_info = EmitInfo::new(self.flags.clone(), self.isa_flags.clone());
         let sigs = SigSet::new::<abi::AArch64MachineDeps>(func, &self.flags)?;
         let abi = abi::AArch64Callee::new(func, self, &self.isa_flags, &sigs)?;
         compile::compile::<AArch64Backend>(func, domtree, self, abi, emit_info, sigs, ctrl_plane)
@@ -227,7 +230,7 @@ impl TargetIsa for AArch64Backend {
         true
     }
 
-    fn has_x86_blendv_lowering(&self, _: Type) -> bool {
+    fn has_blendv_lowering(&self, _: Type) -> bool {
         false
     }
 

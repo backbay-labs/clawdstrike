@@ -26,18 +26,17 @@ pub fn create_tag(store: &mut StoreOpaque, ty: &TagType) -> Result<InstanceId> {
     let tag_id = module.tags.push(Tag {
         signature: EngineOrModuleTypeIndex::Engine(func_ty.index()),
         exception: EngineOrModuleTypeIndex::Engine(exn_ty.index()),
-    });
+    })?;
 
-    module
-        .exports
-        .insert(String::new(), EntityIndex::Tag(tag_id));
+    let name = module.strings.insert("")?;
+    module.exports.insert(name, EntityIndex::Tag(tag_id))?;
 
     let imports = Imports::default();
 
     unsafe {
         let allocator =
             OnDemandInstanceAllocator::new(store.engine().config().mem_creator.clone(), 0, false);
-        let module = Arc::new(module);
+        let module = try_new::<Arc<_>>(module)?;
 
         // Note that `assert_ready` should be valid here because this module
         // doesn't allocate tables or memories meaning it shouldn't need a
@@ -48,7 +47,7 @@ pub fn create_tag(store: &mut StoreOpaque, ty: &TagType) -> Result<InstanceId> {
             AllocateInstanceKind::Dummy {
                 allocator: &allocator,
             },
-            &ModuleRuntimeInfo::bare_with_registered_type(module, Some(func_ty)),
+            &ModuleRuntimeInfo::bare_with_registered_type(module, Some(func_ty))?,
             imports,
         ))
     }

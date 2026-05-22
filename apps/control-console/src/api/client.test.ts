@@ -1,25 +1,55 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   approveBrokerPreview,
+  attachEndpointEvidenceArchiveToCase,
+  backfillEndpointEvidenceArchivesToControl,
+  bulkUpdateFleetCaseStatus,
+  createCausalContext,
+  createCausalSubgraph,
+  createDetectionCandidate,
+  createFleetCase,
+  createPolicyDelta,
+  createPolicyReplay,
+  createPrivacyReport,
+  createResponseAction,
+  createStagedDetection,
+  downloadEndpointEvidenceArchive,
+  downloadFleetEvidenceBundle,
+  dryRunPolicyDeltaApply,
   exportBrokerCompletionBundle,
-  fetchBrokerPreview,
-  fetchBrokerPreviews,
-  fetchBrokerCapabilities,
-  fetchBrokerCapability,
-  fetchFrozenBrokerProviders,
+  exportFleetCaseEvidenceBundle,
+  exportGraphSlice,
+  fetchAgentSecretTouches,
   fetchAgentStatus,
   fetchAuditEvents,
   fetchAuditStats,
+  fetchBrokerCapabilities,
+  fetchBrokerCapability,
+  fetchBrokerPreview,
+  fetchBrokerPreviews,
+  fetchEndpointEvidenceArchive,
+  fetchFindingGroups,
+  fetchFleetCase,
+  fetchFleetCases,
+  fetchFleetCaseTimeline,
+  fetchFrozenBrokerProviders,
   fetchHealth,
   fetchIntegrationSettings,
+  fetchNetworkExtensionEgressPolicyProof,
   fetchPolicy,
+  fetchResponseExecutionProof,
+  fetchResponseExecutions,
   freezeBrokerProvider,
+  publishAgentSecretTouchesToFleet,
+  publishEndpointEvidenceBundleToFleet,
   replayBrokerCapability,
   revokeAllBrokerCapabilities,
   revokeBrokerCapability,
+  rollbackResponseExecution,
   saveIntegrationSettings,
   testIntegrationDelivery,
   unfreezeBrokerProvider,
+  updateFleetCase,
 } from "./client";
 
 const mockFetch = vi.fn();
@@ -112,6 +142,1289 @@ describe("fetchAgentStatus", () => {
     expect(url).toContain("endpoint_agent_id=endpoint-1");
     expect(url).toContain("include_stale=true");
     expect(url).toContain("limit=25");
+  });
+});
+
+describe("endpoint evidence archive helpers", () => {
+  it("fetches archive metadata and raw archive download by encoded archive id", async () => {
+    mockFetch
+      .mockReturnValueOnce(
+        jsonResponse({
+          archiveId: "archive/with spaces",
+          archiveHash: "0xarchive",
+          rawRef: "endpoint-evidence-bundle-archive:archive/with spaces:0xarchive",
+          bundleId: "bundle-1",
+          endpointAgentId: "endpoint-agent-1",
+          eventId: "evidence-bundle-archive:endpoint-agent-1:archive/with spaces",
+          uploadedAt: "2026-05-16T12:00:00Z",
+          expiresAt: "2026-06-15T12:00:00Z",
+          retentionDays: 30,
+          sizeBytes: 4096,
+          verification: { verified: true },
+          metadata: { source: "clawdstrike-agent" },
+        }),
+      )
+      .mockReturnValueOnce(
+        jsonResponse({
+          record: {
+            archiveId: "archive/with spaces",
+            archiveHash: "0xarchive",
+            rawRef: "endpoint-evidence-bundle-archive:archive/with spaces:0xarchive",
+            bundleId: "bundle-1",
+            uploadedAt: "2026-05-16T12:00:00Z",
+            expiresAt: "2026-06-15T12:00:00Z",
+            retentionDays: 30,
+            sizeBytes: 4096,
+            verification: { verified: true },
+            metadata: { source: "clawdstrike-agent" },
+          },
+          archive: { bundle: { bundleId: "bundle-1" }, receipts: [] },
+        }),
+      );
+
+    const metadata = await fetchEndpointEvidenceArchive("archive/with spaces");
+    const download = await downloadEndpointEvidenceArchive("archive/with spaces");
+
+    expect(metadata.archiveId).toBe("archive/with spaces");
+    expect(download.archive.bundle).toMatchObject({ bundleId: "bundle-1" });
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "/api/v1/hunt/evidence-bundle-archives/archive%2Fwith%20spaces",
+    );
+    expect(mockFetch.mock.calls[1][0]).toBe(
+      "/api/v1/hunt/evidence-bundle-archives/archive%2Fwith%20spaces/download",
+    );
+  });
+
+  it("attaches endpoint evidence archives to remote cases", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        id: "artifact-1",
+        caseId: "case/with spaces",
+        artifactKind: "endpoint_evidence_archive",
+        artifactId: "archive/with spaces",
+        summary: "endpoint evidence archive bundle-1",
+        metadata: {
+          artifactClass: "verified_reference",
+          sourceTable: "endpoint_evidence_archives",
+        },
+        addedBy: "operator@example.com",
+        addedAt: "2026-05-16T12:00:00Z",
+      }),
+    );
+
+    const artifact = await attachEndpointEvidenceArchiveToCase(
+      "case/with spaces",
+      "archive/with spaces",
+    );
+
+    expect(artifact.artifactKind).toBe("endpoint_evidence_archive");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/cases/case%2Fwith%20spaces/artifacts");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body as string)).toEqual({
+      artifactKind: "endpoint_evidence_archive",
+      artifactId: "archive/with spaces",
+    });
+  });
+});
+
+describe("fleet case helpers", () => {
+  it("lists fleet cases and creates a case with encoded JSON body", async () => {
+    mockFetch
+      .mockReturnValueOnce(
+        jsonResponse([
+          {
+            id: "case-1",
+            tenantId: "tenant-1",
+            title: "Existing case",
+            severity: "high",
+            status: "open",
+            createdBy: "operator@example.com",
+            principalIds: [],
+            detectionIds: [],
+            responseActionIds: [],
+            grantIds: [],
+            tags: ["endpoint-evidence"],
+            metadata: {},
+            createdAt: "2026-05-16T12:00:00Z",
+            updatedAt: "2026-05-16T12:00:00Z",
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        jsonResponse({
+          id: "case-2",
+          tenantId: "tenant-1",
+          title: "Endpoint evidence archive evidence_bundle-1",
+          summary: "Remote case created from retained endpoint archive evidence_bundle_archive-1",
+          severity: "high",
+          status: "open",
+          createdBy: "operator@example.com",
+          principalIds: ["principal-1"],
+          detectionIds: [],
+          responseActionIds: [],
+          grantIds: [],
+          tags: ["endpoint-evidence", "case-handoff"],
+          metadata: { archiveId: "evidence_bundle_archive-1" },
+          createdAt: "2026-05-16T12:01:00Z",
+          updatedAt: "2026-05-16T12:01:00Z",
+        }),
+      );
+
+    const cases = await fetchFleetCases();
+    const created = await createFleetCase({
+      title: " Endpoint evidence archive evidence_bundle-1 ",
+      summary: "Remote case created from retained endpoint archive evidence_bundle_archive-1",
+      severity: "high",
+      principalIds: ["principal-1"],
+      tags: ["endpoint-evidence", "case-handoff"],
+      metadata: { archiveId: "evidence_bundle_archive-1" },
+    });
+
+    expect(cases[0].id).toBe("case-1");
+    expect(created.id).toBe("case-2");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/cases");
+    expect(mockFetch.mock.calls[1][0]).toBe("/api/v1/cases");
+    expect(mockFetch.mock.calls[1][1]).toMatchObject({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body as string)).toEqual({
+      title: "Endpoint evidence archive evidence_bundle-1",
+      summary: "Remote case created from retained endpoint archive evidence_bundle_archive-1",
+      severity: "high",
+      principalIds: ["principal-1"],
+      tags: ["endpoint-evidence", "case-handoff"],
+      metadata: { archiveId: "evidence_bundle_archive-1" },
+    });
+  });
+
+  it("lists fleet cases with server-side query filters", async () => {
+    mockFetch.mockReturnValue(jsonResponse([]));
+
+    await fetchFleetCases({
+      query: "endpoint archive",
+      status: "closed",
+      severity: "low",
+    });
+
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "/api/v1/cases?q=endpoint+archive&status=closed&severity=low",
+    );
+  });
+
+  it("loads case detail, timeline, and requests a signed evidence export", async () => {
+    mockFetch
+      .mockReturnValueOnce(
+        jsonResponse({
+          case: {
+            id: "case/with spaces",
+            tenantId: "tenant-1",
+            title: "Existing case",
+            severity: "high",
+            status: "open",
+            createdBy: "operator@example.com",
+            principalIds: [],
+            detectionIds: [],
+            responseActionIds: [],
+            grantIds: [],
+            tags: [],
+            metadata: {},
+            createdAt: "2026-05-16T12:00:00Z",
+            updatedAt: "2026-05-16T12:00:00Z",
+          },
+          artifacts: [],
+          evidenceBundles: [],
+        }),
+      )
+      .mockReturnValueOnce(
+        jsonResponse([
+          {
+            id: "timeline-1",
+            caseId: "case/with spaces",
+            eventKind: "artifact_added",
+            actorId: "operator@example.com",
+            payload: { artifactKind: "endpoint_evidence_archive" },
+            createdAt: "2026-05-16T12:01:00Z",
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        jsonResponse({
+          exportId: "caseexp-1",
+          tenantId: "tenant-1",
+          caseId: "case/with spaces",
+          status: "completed",
+          requestedBy: "operator@example.com",
+          requestedAt: "2026-05-16T12:02:00Z",
+          retentionDays: 30,
+          filters: {},
+          artifactCounts: { endpoint_evidence_archive: 1 },
+          metadata: { manifestRef: "manifest.json" },
+        }),
+      );
+
+    const detail = await fetchFleetCase("case/with spaces");
+    const timeline = await fetchFleetCaseTimeline("case/with spaces");
+    const bundle = await exportFleetCaseEvidenceBundle("case/with spaces", {
+      includeRawEnvelopes: true,
+      retentionDays: 7,
+    });
+
+    expect(detail.case.id).toBe("case/with spaces");
+    expect(timeline[0].eventKind).toBe("artifact_added");
+    expect(bundle.exportId).toBe("caseexp-1");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/cases/case%2Fwith%20spaces");
+    expect(mockFetch.mock.calls[1][0]).toBe("/api/v1/cases/case%2Fwith%20spaces/timeline");
+    expect(mockFetch.mock.calls[2][0]).toBe("/api/v1/cases/case%2Fwith%20spaces/evidence/export");
+    expect(JSON.parse(mockFetch.mock.calls[2][1].body as string)).toEqual({
+      includeRawEnvelopes: true,
+      retentionDays: 7,
+    });
+  });
+
+  it("updates a fleet case by encoded id", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        id: "case/with spaces",
+        tenantId: "tenant-1",
+        title: "Existing case",
+        severity: "critical",
+        status: "closed",
+        createdBy: "operator@example.com",
+        principalIds: [],
+        detectionIds: [],
+        responseActionIds: [],
+        grantIds: [],
+        tags: ["case-management"],
+        metadata: { closedBy: "operator" },
+        createdAt: "2026-05-16T12:00:00Z",
+        updatedAt: "2026-05-16T12:04:00Z",
+      }),
+    );
+
+    const updated = await updateFleetCase("case/with spaces", {
+      status: "closed",
+      severity: "critical",
+      tags: ["case-management"],
+      metadata: { closedBy: "operator" },
+    });
+
+    expect(updated.status).toBe("closed");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/cases/case%2Fwith%20spaces");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body as string)).toEqual({
+      status: "closed",
+      severity: "critical",
+      tags: ["case-management"],
+      metadata: { closedBy: "operator" },
+    });
+  });
+
+  it("bulk updates selected fleet case status", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse([
+        {
+          id: "case-1",
+          tenantId: "tenant-1",
+          title: "Selected case 1",
+          severity: "high",
+          status: "closed",
+          createdBy: "operator@example.com",
+          principalIds: [],
+          detectionIds: [],
+          responseActionIds: [],
+          grantIds: [],
+          tags: ["case-management"],
+          metadata: {},
+          createdAt: "2026-05-16T12:00:00Z",
+          updatedAt: "2026-05-16T12:05:00Z",
+        },
+        {
+          id: "case-2",
+          tenantId: "tenant-1",
+          title: "Selected case 2",
+          severity: "medium",
+          status: "closed",
+          createdBy: "operator@example.com",
+          principalIds: [],
+          detectionIds: [],
+          responseActionIds: [],
+          grantIds: [],
+          tags: ["case-management"],
+          metadata: {},
+          createdAt: "2026-05-16T12:01:00Z",
+          updatedAt: "2026-05-16T12:05:00Z",
+        },
+      ]),
+    );
+
+    const updated = await bulkUpdateFleetCaseStatus(["case-1", "case-2"], "closed");
+
+    expect(updated).toHaveLength(2);
+    expect(updated.every((fleetCase) => fleetCase.status === "closed")).toBe(true);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/cases/bulk");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body as string)).toEqual({
+      caseIds: ["case-1", "case-2"],
+      status: "closed",
+    });
+  });
+
+  it("downloads a signed fleet evidence bundle by encoded export id", async () => {
+    const bundle = new Blob(["zip"], { type: "application/zip" });
+    mockFetch.mockReturnValue(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve(bundle),
+        text: () => Promise.resolve(""),
+      }),
+    );
+
+    const downloaded = await downloadFleetEvidenceBundle("caseexp/with spaces");
+
+    expect(downloaded).toBe(bundle);
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "/api/v1/evidence-bundles/caseexp%2Fwith%20spaces/download",
+    );
+  });
+});
+
+describe("endpoint response execution proof helpers", () => {
+  it("publishes an endpoint evidence bundle with raw archive approval query fields", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        bundleId: "evidence_bundle-1",
+        archiveId: "evidence_bundle_archive-1",
+        archiveHash: "0xarchive",
+        published: true,
+        queued: false,
+        controlUpload: {
+          attempted: true,
+          accepted: true,
+          rawArtifactUploadAllowed: true,
+          rawArtifactApprovalRequired: true,
+          rawArtifactApprovalProvided: true,
+          rawArtifactApprovalId: "approval-archive-ui-1",
+          rawArtifactApprovalReasonHash: "0xapproval",
+          policySource: "/tmp/policy.yml",
+          retryQueued: false,
+        },
+        eventId: "evidence-bundle-archive:endpoint-agent-1:evidence_bundle_archive-1",
+        rawRef: "endpoint-evidence-bundle-archive:evidence_bundle_archive-1:0xarchive",
+      }),
+    );
+
+    const result = await publishEndpointEvidenceBundleToFleet("evidence_bundle-1", {
+      rawArtifactApprovalId: " approval-archive-ui-1 ",
+      rawArtifactApprovalReason: " incident ir-ui-1 raw archive approved ",
+    });
+
+    expect(result.controlUpload?.rawArtifactApprovalId).toBe("approval-archive-ui-1");
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "/api/v1/agent/edr/evidence-bundles/evidence_bundle-1/fleet-publish?rawArtifactApprovalId=approval-archive-ui-1&rawArtifactApprovalReason=incident+ir-ui-1+raw+archive+approved",
+    );
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+    });
+  });
+
+  it("backfills endpoint evidence archives with raw archive approval body fields", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        attempted: 1,
+        delivered: 1,
+        failed: 0,
+        skipped: 0,
+        records: [
+          {
+            bundleId: "evidence_bundle-1",
+            archiveId: "evidence_bundle_archive-1",
+            archiveHash: "0xarchive",
+            rawRef: "endpoint-evidence-bundle-archive:evidence_bundle_archive-1:0xarchive",
+            controlUpload: {
+              attempted: true,
+              accepted: true,
+              rawArtifactUploadAllowed: true,
+              rawArtifactApprovalRequired: true,
+              rawArtifactApprovalProvided: true,
+              rawArtifactApprovalId: "approval-backfill-ui-1",
+              rawArtifactApprovalReasonHash: "0xapproval",
+              policySource: "/tmp/policy.yml",
+              retryQueued: false,
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await backfillEndpointEvidenceArchivesToControl({
+      bundleId: " evidence_bundle-1 ",
+      limit: 5,
+      rawArtifactApprovalId: " approval-backfill-ui-1 ",
+      rawArtifactApprovalReason: " incident ir-ui-2 raw archive backfill approved ",
+    });
+
+    expect(result.delivered).toBe(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/control-archive-uploads/backfill");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        bundleId: "evidence_bundle-1",
+        limit: 5,
+        rawArtifactApprovalId: "approval-backfill-ui-1",
+        rawArtifactApprovalReason: "incident ir-ui-2 raw archive backfill approved",
+      }),
+    });
+  });
+
+  it("queries agent-secret touches with credential graph filters", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        touchCount: 1,
+        touches: [
+          {
+            credentialNodeId: "credential:aws",
+            credentialLabel: "/Users/alice/.aws/credentials",
+            credentialKind: "cloud_credential",
+            path: "/Users/alice/.aws/credentials",
+            name: "aws-credentials",
+            agentNodeIds: ["agent:codex"],
+            agentLabels: ["agent:codex", "mcp__filesystem__read_file"],
+            processNodeIds: ["process:python"],
+            graph: {
+              nodes: {
+                "credential:aws": { kind: "credential", label: "/Users/alice/.aws/credentials" },
+                "agent:codex": { kind: "agent", label: "agent:codex" },
+              },
+              edges: [],
+            },
+            receipt: {
+              receipt: { metadata: { endpointDecision: { receiptFamily: "graph_slice" } } },
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await fetchAgentSecretTouches({
+      sessionId: "agent-secret-session-1",
+      credentialKind: "cloud_credential",
+      requireAgentContext: true,
+      upstreamDepth: 3,
+      downstreamDepth: 1,
+      limit: 10,
+    });
+
+    expect(result.touchCount).toBe(1);
+    expect(result.touches[0].agentLabels).toContain("mcp__filesystem__read_file");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/agent-secret-touches");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        sessionId: "agent-secret-session-1",
+        credentialKind: "cloud_credential",
+        requireAgentContext: true,
+        upstreamDepth: 3,
+        downstreamDepth: 1,
+        limit: 10,
+      }),
+    });
+  });
+
+  it("publishes filtered agent-secret touches to the fleet hunt stream", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        touchCount: 1,
+        publishedCount: 1,
+        events: [
+          {
+            eventId: "hunt-event-1",
+            rawRef: "nats://hunt.raw/hunt-event-1",
+            credentialNodeId: "credential:aws",
+          },
+        ],
+      }),
+    );
+
+    const result = await publishAgentSecretTouchesToFleet({
+      sessionId: "agent-secret-session-1",
+      credentialKind: "cloud_credential",
+      limit: 10,
+    });
+
+    expect(result.publishedCount).toBe(1);
+    expect(result.events[0].rawRef).toBe("nats://hunt.raw/hunt-event-1");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/agent-secret-touches/fleet-publish");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        sessionId: "agent-secret-session-1",
+        credentialKind: "cloud_credential",
+        limit: 10,
+      }),
+    });
+  });
+
+  it("creates a dry-run local containment response action", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        plan: {
+          actionId: "response-action-1",
+          action: "suspend_process_tree",
+          dryRun: true,
+          rootNodeId: "process:proc-1",
+          graphSliceId: "graph-slice-1",
+          ttlSeconds: 600,
+          rollbackRef: "rollback:response-action-1",
+          reason: "contain process tree for 10 minutes",
+          createdAt: "2026-05-16T12:00:00Z",
+          expiresAt: "2026-05-16T12:10:00Z",
+          nodeCount: 3,
+          edgeCount: 2,
+        },
+        graph: { nodes: {}, edges: [] },
+        receipt: {
+          receipt: { metadata: { endpointDecision: { receiptFamily: "response_request" } } },
+        },
+      }),
+    );
+
+    const result = await createResponseAction({
+      process: { processGuid: "proc-1" },
+      action: "suspend_process_tree",
+      ttlSeconds: 600,
+      dryRun: true,
+      reason: "contain process tree for 10 minutes",
+    });
+
+    expect(result.plan.rollbackRef).toBe("rollback:response-action-1");
+    expect(result.plan.ttlSeconds).toBe(600);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/response-action");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        process: { processGuid: "proc-1" },
+        action: "suspend_process_tree",
+        ttlSeconds: 600,
+        dryRun: true,
+        reason: "contain process tree for 10 minutes",
+      }),
+    });
+  });
+
+  it("rolls back a rollback-capable response execution by encoded execution id", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        path: "/tmp/response-executions.jsonl",
+        execution: {
+          execution: {
+            executionId: "exec/with spaces",
+            action: "suspend_process_tree",
+            status: "succeeded",
+            ttlSeconds: 600,
+            rollbackRef: "rollback:exec-1",
+          },
+          expiresAt: "2026-05-16T12:10:00Z",
+          expired: false,
+          rollbackRef: "rollback:exec-1",
+        },
+        rollback: {
+          rollbackId: "rollback-1",
+          executionId: "exec/with spaces",
+          action: "suspend_process_tree",
+          status: "succeeded",
+          ttlSeconds: 600,
+          rollbackRef: "rollback:exec-1",
+          reason: "operator rollback",
+          effects: [
+            {
+              effectId: "effect-1",
+              effectType: "resume_process_tree",
+              target: "pid:4242",
+            },
+          ],
+        },
+        receipt: {
+          receipt: { metadata: { endpointDecision: { receiptFamily: "response_rollback" } } },
+        },
+      }),
+    );
+
+    const result = await rollbackResponseExecution("exec/with spaces", {
+      reason: "operator rollback",
+    });
+
+    expect(result.rollback.effects[0].effectType).toBe("resume_process_tree");
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "/api/v1/agent/edr/response-executions/exec%2Fwith%20spaces/rollback",
+    );
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ reason: "operator rollback" }),
+    });
+  });
+
+  it("queries recent response executions with a bounded limit", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        path: "/tmp/response-executions.jsonl",
+        execution_count: 1,
+        executions: [
+          {
+            execution: {
+              executionId: "exec-1",
+              actionId: "action-1",
+              status: "succeeded",
+              action: "collect_evidence",
+              completedAt: "2026-05-16T12:00:00Z",
+              evidenceBundle: { bundleId: "bundle-1" },
+            },
+            expiresAt: "2026-05-16T12:10:00Z",
+            expired: false,
+            rollbackRef: "rollback:exec-1",
+          },
+        ],
+      }),
+    );
+
+    const result = await fetchResponseExecutions({ limit: 25 });
+
+    expect(result.execution_count).toBe(1);
+    expect(result.executions[0].execution.executionId).toBe("exec-1");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/response-executions?limit=25");
+  });
+
+  it("fetches a proof package by encoded execution id", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        executionPath: "/tmp/response-executions.jsonl",
+        receiptPath: "/tmp/decision-receipts.jsonl",
+        execution: {
+          execution: {
+            executionId: "exec/with spaces",
+            actionId: "action-1",
+            status: "succeeded",
+            action: "collect_evidence",
+            evidenceBundle: { bundleId: "bundle-1" },
+          },
+          expiresAt: "2026-05-16T12:10:00Z",
+          expired: false,
+          rollbackRef: "rollback:exec-1",
+        },
+        graph: { graphSliceId: "graph-1" },
+        providerState: { providers: [{ providerId: "agent-api", healthy: true }] },
+        requestReceipt: { receipt: { receipt_id: "request-1" } },
+        executionReceipt: { receipt: { receipt_id: "execution-1" } },
+        evidenceBundleReceipt: { receipt: { receipt_id: "bundle-1" } },
+        transitionReceipts: [{ receipt: { receipt_id: "expired-1" } }],
+        rollbackReceipts: [{ receipt: { receipt_id: "rollback-1" } }],
+        acknowledgementReceipts: [{ receipt: { receipt_id: "ack-1" } }],
+      }),
+    );
+
+    const result = await fetchResponseExecutionProof("exec/with spaces");
+
+    expect(result.graph.graphSliceId).toBe("graph-1");
+    expect(result.providerState.providers[0].providerId).toBe("agent-api");
+    expect(result.transitionReceipts?.[0]).toEqual({ receipt: { receipt_id: "expired-1" } });
+    expect(result.rollbackReceipts?.[0]).toEqual({ receipt: { receipt_id: "rollback-1" } });
+    expect(result.acknowledgementReceipts?.[0]).toEqual({ receipt: { receipt_id: "ack-1" } });
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "/api/v1/agent/edr/response-executions/exec%2Fwith%20spaces/proof",
+    );
+  });
+
+  it("fetches the NetworkExtension egress policy proof with provider counters", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        providerPolicyPath: "/tmp/clawdstrike-network-egress-policy.json",
+        snapshotPresent: true,
+        snapshotDecodable: true,
+        snapshotHash: "0xproof",
+        restrictionCount: 1,
+        activeRestrictionCount: 1,
+        expiredRestrictionCount: 0,
+        enforcementReady: true,
+        flowCounterObserved: true,
+        observedFlowCount: 11,
+        blockedFlowCount: 3,
+        remediationRequestCount: 1,
+        droppedVerdictCount: 0,
+        providerStatusRefresh: { requested: false, refreshed: false },
+        networkExtensionProvider: { runtime: "active", policy_synced: true },
+        sensorState: { providers: [{ providerId: "macos.network_extension", healthy: true }] },
+        receipt: { receipt: { metadata: { endpointDecision: { receiptFamily: "sensor_state" } } } },
+        degradedProviderReceipts: [],
+      }),
+    );
+
+    const result = await fetchNetworkExtensionEgressPolicyProof({
+      refreshProviders: false,
+      providerRefreshTimeoutMs: 1000,
+    });
+
+    expect(result.flowCounterObserved).toBe(true);
+    expect(result.observedFlowCount).toBe(11);
+    expect(result.blockedFlowCount).toBe(3);
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "/api/v1/agent/edr/network-extension/egress-policy/proof",
+    );
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ refreshProviders: false, providerRefreshTimeoutMs: 1000 }),
+    });
+  });
+
+  it("creates a signed privacy report for submitted endpoint observations", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        report: {
+          reportId: "privacy-1",
+          privacyMode: "hashes_features",
+          rawArtifactUploadPermitted: false,
+          observationCount: 1,
+          fieldCount: 3,
+          hashOnlyCount: 1,
+          metadataOnlyCount: 1,
+          redactedCount: 0,
+          rawSuppressedCount: 1,
+          localOnlyCount: 1,
+          observations: [
+            {
+              observationId: "obs-1",
+              eventKind: "file_access",
+              fieldCount: 3,
+              rawSuppressedCount: 1,
+              localOnlyCount: 1,
+              projections: [
+                {
+                  fieldPath: "event.fileAccess.contentPreview",
+                  redactionClass: "local_only",
+                  valueHash: "0xabc",
+                  reason: "raw artifact remains local",
+                },
+              ],
+            },
+          ],
+        },
+        privacy_policy: {
+          requestedPrivacyMode: "raw_artifact_permitted",
+          effectivePrivacyMode: "hashes_features",
+          rawArtifactUploadRequested: true,
+          rawArtifactUploadAllowed: false,
+          policySource: "/tmp/policy.yml",
+          deniedReason: "raw_artifact_permitted was requested",
+        },
+        receipt: {
+          receipt: { metadata: { endpointDecision: { receiptFamily: "privacy_report" } } },
+        },
+      }),
+    );
+
+    const result = await createPrivacyReport({
+      privacyMode: "raw_artifact_permitted",
+      rawArtifactApprovalId: "approval-privacy-api-1",
+      rawArtifactApprovalReason: "incident ir-api-1 raw collection approved",
+      observations: [{ event: { fileAccess: { contentPreview: "secret" } } }],
+    });
+
+    expect(result.report.rawSuppressedCount).toBe(1);
+    expect(result.privacy_policy.effectivePrivacyMode).toBe("hashes_features");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/privacy-report");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        privacyMode: "raw_artifact_permitted",
+        rawArtifactApprovalId: "approval-privacy-api-1",
+        rawArtifactApprovalReason: "incident ir-api-1 raw collection approved",
+        observations: [{ event: { fileAccess: { contentPreview: "secret" } } }],
+      }),
+    });
+  });
+});
+
+describe("endpoint causal finding group helpers", () => {
+  it("queries causal finding groups with bounded limit and max depth", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        groupCount: 1,
+        findingCount: 2,
+        groups: [
+          {
+            groupId: "group-1",
+            rootNodeId: "process:proc-1",
+            rootLabel: "/usr/local/bin/npm",
+            findingCount: 2,
+            nodeCount: 3,
+            edgeCount: 2,
+            ruleIds: ["supply_chain.developer_secret_access", "supply_chain.install_script.risky"],
+            findingIds: ["finding-1", "finding-2"],
+            findings: [],
+            graph: {
+              nodes: {
+                "process:proc-1": { kind: "process", label: "/usr/local/bin/npm" },
+                "package_script:postinstall": { kind: "package_script", label: "postinstall" },
+                "credential:aws": { kind: "credential", label: "aws-credentials" },
+              },
+              edges: [{ from: "process:proc-1", to: "credential:aws", kind: "read" }],
+            },
+            receipt: {
+              receipt: { metadata: { endpointDecision: { receiptFamily: "graph_slice" } } },
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await fetchFindingGroups({ limit: 10, maxDepth: 3 });
+
+    expect(result.groupCount).toBe(1);
+    expect(result.groups[0].ruleIds).toContain("supply_chain.install_script.risky");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/finding-groups?limit=10&maxDepth=3");
+  });
+});
+
+describe("endpoint causal graph slice helpers", () => {
+  it("creates a causal subgraph from a process guid and max depth", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        root_node_id: "process:proc-1",
+        max_depth: 3,
+        node_count: 2,
+        edge_count: 1,
+        graph: {
+          nodes: {
+            "process:proc-1": { kind: "process", label: "/usr/bin/python3" },
+            "network:api.example.invalid:443": {
+              kind: "network",
+              label: "api.example.invalid:443",
+            },
+          },
+          edges: [
+            { from: "process:proc-1", to: "network:api.example.invalid:443", kind: "opened" },
+          ],
+        },
+        receipt: {
+          receipt: { metadata: { endpointDecision: { receiptFamily: "graph_slice" } } },
+        },
+      }),
+    );
+
+    const result = await createCausalSubgraph({
+      process: { processGuid: "proc-1" },
+      maxDepth: 3,
+    });
+
+    expect(result.node_count).toBe(2);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/causal-subgraph");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ process: { processGuid: "proc-1" }, maxDepth: 3 }),
+    });
+  });
+
+  it("creates causal context from a root node with bounded upstream and downstream depth", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        root_node_id: "network:api.example.invalid:443",
+        upstream_depth: 2,
+        downstream_depth: 1,
+        node_count: 3,
+        edge_count: 2,
+        graph: { nodes: {}, edges: [] },
+        receipt: {
+          receipt: { metadata: { endpointDecision: { receiptFamily: "graph_slice" } } },
+        },
+      }),
+    );
+
+    const result = await createCausalContext({
+      rootNodeId: "network:api.example.invalid:443",
+      upstreamDepth: 2,
+      downstreamDepth: 1,
+    });
+
+    expect(result.upstream_depth).toBe(2);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/causal-context");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        rootNodeId: "network:api.example.invalid:443",
+        upstreamDepth: 2,
+        downstreamDepth: 1,
+      }),
+    });
+  });
+
+  it("exports a signed graph slice evidence bundle", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        rootNodeId: "process:proc-1",
+        sliceKind: "causal_subgraph",
+        nodeCount: 2,
+        edgeCount: 1,
+        graph: { nodes: {}, edges: [] },
+        bundle: {
+          bundleId: "bundle-1",
+          graphSliceId: "graph-slice-1",
+          contentHash: "0xabc",
+          nodeCount: 2,
+          edgeCount: 1,
+        },
+        artifact: {
+          bundleId: "bundle-1",
+          path: "/tmp/bundle-1.json",
+          byteCount: 512,
+        },
+        receipt: {
+          receipt: { metadata: { endpointDecision: { receiptFamily: "graph_slice" } } },
+        },
+      }),
+    );
+
+    const result = await exportGraphSlice({
+      rootNodeId: "process:proc-1",
+      sliceKind: "causal_subgraph",
+      maxDepth: 3,
+      reason: "operator export",
+    });
+
+    expect(result.bundle.graphSliceId).toBe("graph-slice-1");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/graph-slices/export");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        rootNodeId: "process:proc-1",
+        sliceKind: "causal_subgraph",
+        maxDepth: 3,
+        reason: "operator export",
+      }),
+    });
+  });
+});
+
+describe("endpoint policy replay helpers", () => {
+  it("replays a captured graph target under the current local policy", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        replay: {
+          replayId: "policy-replay-1",
+          replayedAt: "2026-05-16T12:00:00Z",
+          mode: "current_policy_graph_replay",
+          policy: {
+            policyVersion: "test-edr-replay",
+            policyHash: "sha256:policy",
+            policyEpoch: 77,
+          },
+          rootNodeId: "process:proc-1",
+          rootLabel: "/usr/local/bin/npm",
+          rootKind: "process",
+          action: "block",
+          graphSliceId: "graph-slice-1",
+          observationCount: 2,
+          nodeCount: 3,
+          edgeCount: 2,
+          flightRecorderObservationCount: 5,
+          wouldEnforce: true,
+          developerBreakageScore: 72,
+          impactLevel: "high",
+          summary: "Replayed graph slice graph-slice-1 under current endpoint policy.",
+        },
+        simulation: {
+          simulationId: "simulation-1",
+          ruleId: "endpoint.current_policy_replay.epoch_77.block.process.npm",
+          action: "block",
+          rootNodeId: "process:proc-1",
+          graphSliceId: "graph-slice-1",
+          wouldBlock: true,
+          createdAt: "2026-05-16T12:00:00Z",
+          affectedNodeCount: 3,
+          affectedEdgeCount: 2,
+          affectedProcessCount: 1,
+          affectedFileCount: 0,
+          affectedNetworkCount: 1,
+          affectedCredentialCount: 1,
+          affectedToolCount: 0,
+          developerBreakageScore: 72,
+          impactLevel: "high",
+          summary: "Would block captured graph.",
+          affectedNodes: [],
+        },
+        graph: {
+          nodes: {
+            "process:proc-1": { kind: "process", label: "/usr/local/bin/npm" },
+          },
+          edges: [],
+        },
+        receipt: {
+          receipt: { metadata: { endpointDecision: { receiptFamily: "simulation" } } },
+        },
+      }),
+    );
+
+    const result = await createPolicyReplay({
+      process: { processGuid: "proc-1" },
+      action: "block",
+      maxDepth: 8,
+    });
+
+    expect(result.replay.policy.policyEpoch).toBe(77);
+    expect(result.simulation.ruleId).toContain("endpoint.current_policy_replay");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/policy-replay");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        process: { processGuid: "proc-1" },
+        action: "block",
+        maxDepth: 8,
+      }),
+    });
+  });
+});
+
+describe("endpoint rule impact and staged enforcement helpers", () => {
+  it("creates a detection candidate from a captured process graph", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        candidate: {
+          ruleId: "endpoint.generated.block.process.npm",
+          action: "block",
+          description: "Block npm credential access",
+          rootNodeId: "process:proc-1",
+          rootLabel: "/usr/local/bin/npm",
+          rootKind: "process",
+          graphSliceId: "graph-slice-1",
+        },
+        recommendedStage: "audit",
+        stagePlan: [
+          {
+            stage: "observe",
+            action: "observe",
+            promotionGate: "observe only",
+            recommended: false,
+          },
+          { stage: "audit", action: "alert", promotionGate: "audit first", recommended: true },
+        ],
+        simulation: {
+          simulationId: "simulation-1",
+          ruleId: "endpoint.generated.block.process.npm",
+          action: "block",
+          rootNodeId: "process:proc-1",
+          graphSliceId: "graph-slice-1",
+          wouldBlock: true,
+          createdAt: "2026-05-16T12:00:00Z",
+          affectedNodeCount: 3,
+          affectedEdgeCount: 2,
+          affectedProcessCount: 1,
+          affectedFileCount: 0,
+          affectedNetworkCount: 1,
+          affectedCredentialCount: 1,
+          affectedToolCount: 0,
+          developerBreakageScore: 72,
+          impactLevel: "high",
+          summary: "Would block captured graph.",
+          affectedNodes: [],
+        },
+        graph: { nodes: {}, edges: [] },
+        receipt: {
+          receipt: { metadata: { endpointDecision: { receiptFamily: "simulation" } } },
+        },
+      }),
+    );
+
+    const result = await createDetectionCandidate({
+      process: { processGuid: "proc-1" },
+      action: "block",
+      maxDepth: 8,
+    });
+
+    expect(result.recommendedStage).toBe("audit");
+    expect(result.candidate.ruleId).toBe("endpoint.generated.block.process.npm");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/edr/detection-candidate");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        process: { processGuid: "proc-1" },
+        action: "block",
+        maxDepth: 8,
+      }),
+    });
+  });
+
+  it("stages a generated detection and promotes it to a dry-run policy delta apply", async () => {
+    mockFetch
+      .mockReturnValueOnce(
+        jsonResponse({
+          path: "/tmp/staged-detections.jsonl",
+          record: {
+            stagedDetectionId: "staged-1",
+            stagedAt: "2026-05-16T12:01:00Z",
+            stagedBy: "operator:alice",
+            stage: "audit",
+            note: "stage npm rule",
+            policy: {
+              policyVersion: "test-edr",
+              policyHash: "sha256:base",
+              policyEpoch: 77,
+            },
+            candidate: {
+              ruleId: "endpoint.generated.block.process.npm",
+              action: "block",
+              description: "Block npm credential access",
+              rootNodeId: "process:proc-1",
+              rootLabel: "/usr/local/bin/npm",
+              rootKind: "process",
+              graphSliceId: "graph-slice-1",
+            },
+            recommendedStage: "audit",
+            stagePlan: [],
+            simulation: {
+              simulationId: "simulation-1",
+              ruleId: "endpoint.generated.block.process.npm",
+              action: "block",
+              rootNodeId: "process:proc-1",
+              graphSliceId: "graph-slice-1",
+              wouldBlock: true,
+              createdAt: "2026-05-16T12:00:00Z",
+              affectedNodeCount: 3,
+              affectedEdgeCount: 2,
+              affectedProcessCount: 1,
+              affectedFileCount: 0,
+              affectedNetworkCount: 1,
+              affectedCredentialCount: 1,
+              affectedToolCount: 0,
+              developerBreakageScore: 72,
+              impactLevel: "high",
+              summary: "Would block captured graph.",
+              affectedNodes: [],
+            },
+            simulationReceipt: {
+              receipt: { metadata: { endpointDecision: { receiptFamily: "simulation" } } },
+            },
+          },
+          graph: { nodes: {}, edges: [] },
+        }),
+      )
+      .mockReturnValueOnce(
+        jsonResponse({
+          path: "/tmp/policy-deltas",
+          record: {
+            policyDeltaId: "policy-delta-1",
+            generatedAt: "2026-05-16T12:02:00Z",
+            generatedBy: "operator:alice",
+            ruleId: "endpoint.generated.block.process.npm",
+            stage: "audit",
+            action: "alert",
+            artifactHash: "0xabc",
+            artifactPath: "/tmp/policy-delta-1.json",
+            artifact: {
+              schemaVersion: "clawdstrike.endpoint_policy_delta.v1",
+              policyDeltaId: "policy-delta-1",
+              generatedAt: "2026-05-16T12:02:00Z",
+              generatedBy: "operator:alice",
+              stagedDetectionId: "staged-1",
+              sourceSimulationId: "simulation-1",
+              candidate: { ruleId: "endpoint.generated.block.process.npm" },
+              targetPolicy: {
+                basePolicyVersion: "test-edr",
+                basePolicyHash: "sha256:base",
+                basePolicyEpoch: 77,
+                targetPolicyEpoch: 78,
+              },
+              rollout: {
+                stage: "audit",
+                action: "alert",
+                recommendedStage: "audit",
+                promotionGate: "audit first",
+                developerBreakageScore: 72,
+                impactLevel: "high",
+                wouldBlock: true,
+              },
+              policyPatch: { guards: {} },
+            },
+            receipt: {
+              receipt: { metadata: { endpointDecision: { receiptFamily: "policy_delta" } } },
+            },
+          },
+        }),
+      )
+      .mockReturnValueOnce(
+        jsonResponse({
+          record: {
+            policyDeltaId: "policy-delta-1",
+            appliedAt: "2026-05-16T12:03:00Z",
+            appliedBy: "operator:alice",
+            dryRun: true,
+            applied: false,
+            allowBasePolicyDrift: false,
+            policyPath: "/tmp/policy.yml",
+            expectedBasePolicyHash: "sha256:base",
+            previousPolicyHash: "sha256:base",
+            newPolicyHash: "sha256:new",
+            previousPolicyEpoch: 77,
+            newPolicyEpoch: 78,
+          },
+          policyDelta: {
+            policyDeltaId: "policy-delta-1",
+            ruleId: "endpoint.generated.block.process.npm",
+            stage: "audit",
+            action: "alert",
+            artifactHash: "0xabc",
+            artifact: {
+              targetPolicy: {
+                basePolicyHash: "sha256:base",
+                targetPolicyEpoch: 78,
+              },
+              rollout: { stage: "audit", action: "alert" },
+            },
+            receipt: {},
+          },
+          receipt: null,
+          postApplyEnforcement: null,
+        }),
+      );
+
+    const staged = await createStagedDetection({
+      process: { processGuid: "proc-1" },
+      selectedStage: "audit",
+      stagedBy: "operator:alice",
+      note: "stage npm rule",
+      maxDepth: 8,
+    });
+    const delta = await createPolicyDelta({
+      stagedDetectionId: staged.record.stagedDetectionId,
+      generatedBy: "operator:alice",
+      note: "promote staged rule",
+    });
+    const apply = await dryRunPolicyDeltaApply(delta.record.policyDeltaId, {
+      appliedBy: "operator:alice",
+    });
+    const deltaReceipt = delta.record.receipt as {
+      receipt: { metadata: { endpointDecision: { receiptFamily: string } } };
+    };
+
+    expect(staged.record.stagedDetectionId).toBe("staged-1");
+    expect(deltaReceipt.receipt.metadata.endpointDecision.receiptFamily).toBe("policy_delta");
+    expect(apply.record.dryRun).toBe(true);
+    expect(mockFetch.mock.calls.map((call) => call[0])).toEqual([
+      "/api/v1/agent/edr/staged-detections",
+      "/api/v1/agent/edr/policy-deltas",
+      "/api/v1/agent/edr/policy-deltas/policy-delta-1/apply",
+    ]);
+    expect(mockFetch.mock.calls[2][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ dryRun: true, appliedBy: "operator:alice" }),
+    });
   });
 });
 

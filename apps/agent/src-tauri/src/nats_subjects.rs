@@ -9,9 +9,23 @@ pub fn heartbeat_subject(subject_prefix: &str, agent_id: &str) -> String {
     format!("{subject_prefix}.agent.heartbeat.{agent_id}")
 }
 
+/// Build the endpoint-originated hunt event publish subject.
+pub fn hunt_event_subject(subject_prefix: &str, agent_id: &str) -> String {
+    format!("{subject_prefix}.hunt.events.{agent_id}")
+}
+
 /// Build the posture command subscription subject.
 pub fn posture_command_subject(subject_prefix: &str, agent_id: &str) -> String {
     format!("{subject_prefix}.posture.command.{agent_id}")
+}
+
+/// Build the canonical response-action command subscription subject.
+pub fn response_command_subject(
+    subject_prefix: &str,
+    target_kind: &str,
+    target_id: &str,
+) -> String {
+    format!("{subject_prefix}.response.command.{target_kind}.{target_id}")
 }
 
 /// Build the approval request publish subject.
@@ -66,8 +80,16 @@ mod tests {
             "tenant-acme.clawdstrike.agent.heartbeat.agent-1"
         );
         assert_eq!(
+            hunt_event_subject(prefix, "agent-1"),
+            "tenant-acme.clawdstrike.hunt.events.agent-1"
+        );
+        assert_eq!(
             posture_command_subject(prefix, "agent-1"),
             "tenant-acme.clawdstrike.posture.command.agent-1"
+        );
+        assert_eq!(
+            response_command_subject(prefix, "endpoint", "agent-1"),
+            "tenant-acme.clawdstrike.response.command.endpoint.agent-1"
         );
         assert_eq!(
             approval_request_subject(prefix, "agent-1"),

@@ -39,6 +39,7 @@ describe('Tool Pre-flight Hook', () => {
     policy: 'clawdstrike:ai-agent-minimal',
     mode: 'deterministic',
     logLevel: 'error',
+    guards: { mcp_tool: false },
   };
 
   beforeEach(() => {
@@ -276,14 +277,22 @@ describe('Tool Pre-flight Hook', () => {
   });
 
   describe('unknown/unclassified tools', () => {
-    it('should evaluate unknown tools through the policy engine (not skip)', async () => {
+    beforeEach(() => {
+      initPreflight({
+        policy: 'clawdstrike:ai-agent-minimal',
+        mode: 'deterministic',
+        logLevel: 'error',
+      });
+    });
+
+    it('should evaluate and block unknown tools through the policy engine', async () => {
       const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
 
       const event = makeToolCallEvent('mystery_tool', { data: 'something' });
 
       await toolPreflightHandler(event);
 
-      expect(event.preventDefault).toBe(false);
+      expect(event.preventDefault).toBe(true);
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ eventType: 'tool_call' }));
     });
@@ -296,7 +305,7 @@ describe('Tool Pre-flight Hook', () => {
 
       await toolPreflightHandler(event);
 
-      expect(event.preventDefault).toBe(false);
+      expect(event.preventDefault).toBe(true);
       expect(spy).toHaveBeenCalledTimes(1);
     });
 
@@ -685,6 +694,14 @@ describe('Tool Pre-flight Hook', () => {
   });
 
   describe('T7 — empty and edge-case tool names', () => {
+    beforeEach(() => {
+      initPreflight({
+        policy: 'clawdstrike:ai-agent-minimal',
+        mode: 'deterministic',
+        logLevel: 'error',
+      });
+    });
+
     it('should handle empty string tool name without crashing', async () => {
       const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
       const event = makeToolCallEvent('', { data: 'test' });
@@ -692,8 +709,8 @@ describe('Tool Pre-flight Hook', () => {
       await toolPreflightHandler(event);
 
       // Empty string tokenizes to [] -> unknown -> tool_call.
-      // Should not throw; handler processes it through the engine.
-      expect(event.preventDefault).toBe(false);
+      // Should not throw; handler processes it through the engine and fails closed.
+      expect(event.preventDefault).toBe(true);
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy.mock.calls[0]?.[0]?.eventType).toBe('tool_call');
     });
@@ -705,7 +722,7 @@ describe('Tool Pre-flight Hook', () => {
       await toolPreflightHandler(event);
 
       // "a" tokenizes to ["a"] -> unknown -> tool_call.
-      expect(event.preventDefault).toBe(false);
+      expect(event.preventDefault).toBe(true);
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy.mock.calls[0]?.[0]?.eventType).toBe('tool_call');
     });
@@ -717,8 +734,8 @@ describe('Tool Pre-flight Hook', () => {
       await toolPreflightHandler(event);
 
       // "___" splits on underscores, filter(Boolean) removes empty strings -> [].
-      // Classification: unknown -> tool_call.
-      expect(event.preventDefault).toBe(false);
+      // Classification: unknown -> tool_call and fails closed.
+      expect(event.preventDefault).toBe(true);
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy.mock.calls[0]?.[0]?.eventType).toBe('tool_call');
     });

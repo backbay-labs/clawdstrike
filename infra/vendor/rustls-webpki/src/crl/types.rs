@@ -14,7 +14,10 @@ use crate::public_values_eq;
 use crate::signed_data::{self, SignedData};
 use crate::subject_name::GeneralName;
 use crate::verify_cert::{Budget, PathNode, Role};
-use crate::x509::{DistributionPointName, Extension, remember_extension, set_extension_once};
+use crate::x509::{
+    DistributionPointName, Extension, UnknownExtensionPolicy, remember_extension,
+    set_extension_once,
+};
 
 /// A RFC 5280[^1] profile Certificate Revocation List (CRL).
 ///
@@ -266,7 +269,7 @@ impl<'a> BorrowedCertRevocationList<'a> {
     }
 
     fn remember_extension(&mut self, extension: &Extension<'a>) -> Result<(), Error> {
-        remember_extension(extension, |id| {
+        remember_extension(extension, UnknownExtensionPolicy::default(), |id| {
             match id {
                 // id-ce-cRLNumber 2.5.29.20 - RFC 5280 §5.2.3
                 20 => {
@@ -304,7 +307,7 @@ impl<'a> BorrowedCertRevocationList<'a> {
                 35 => Ok(()),
 
                 // Unsupported extension
-                _ => extension.unsupported(),
+                _ => extension.unsupported(UnknownExtensionPolicy::default()),
             }
         })
     }
@@ -729,7 +732,7 @@ impl<'a> BorrowedRevokedCert<'a> {
     }
 
     fn remember_extension(&mut self, extension: &Extension<'a>) -> Result<(), Error> {
-        remember_extension(extension, |id| {
+        remember_extension(extension, UnknownExtensionPolicy::default(), |id| {
             match id {
                 // id-ce-cRLReasons 2.5.29.21 - RFC 5280 §5.3.1.
                 21 => set_extension_once(&mut self.reason_code, || der::read_all(extension.value)),
@@ -749,7 +752,7 @@ impl<'a> BorrowedRevokedCert<'a> {
                 29 => Err(Error::UnsupportedIndirectCrl),
 
                 // Unsupported extension
-                _ => extension.unsupported(),
+                _ => extension.unsupported(UnknownExtensionPolicy::default()),
             }
         })
     }
@@ -1266,5 +1269,23 @@ mod tests {
         let crl =
             include_bytes!("../../tests/client_auth_revocation/ee_revoked_crl_ku_ee_depth.crl.der");
         assert!(OwnedCertRevocationList::from_der(crl).is_ok())
+    }
+
+    #[test]
+    fn test_crl_issuing_distribution_point_illegal_bit_string() {
+        let crl = &[
+            0x30, 0x65, 0x30, 0x50, 0x02, 0x01, 0x01, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48,
+            0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b, 0x05, 0x00, 0x30, 0x0c, 0x31, 0x0a, 0x30, 0x08,
+            0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x01, 0x41, 0x17, 0x0d, 0x32, 0x30, 0x30, 0x31,
+            0x30, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x5a, 0x17, 0x0d, 0x32, 0x31, 0x30,
+            0x31, 0x30, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x5a, 0xa0, 0x10, 0x30, 0x0e,
+            0x30, 0x0c, 0x06, 0x03, 0x55, 0x1d, 0x1c, 0x04, 0x05, 0x30, 0x03, 0x83, 0x01, 0x00,
+            0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b, 0x05,
+            0x00, 0x03, 0x02, 0x00, 0x00,
+        ];
+        assert_eq!(
+            BorrowedCertRevocationList::from_der(crl).err(),
+            Some(Error::UnsupportedRevocationReasonsPartitioning)
+        );
     }
 }

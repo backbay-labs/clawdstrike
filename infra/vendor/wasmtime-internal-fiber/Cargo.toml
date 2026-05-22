@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "wasmtime-internal-fiber"
-version = "41.0.4"
+version = "44.0.1"
 authors = ["The Wasmtime Project Developers"]
 build = "build.rs"
 autolib = false
@@ -38,10 +38,10 @@ path = "src/lib.rs"
 version = "1.0"
 
 [dependencies.wasmtime-environ]
-version = "=41.0.4"
+version = "=44.0.1"
 
 [dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.4"
+version = "=44.0.1"
 package = "wasmtime-internal-versioned-export-macros"
 
 [dev-dependencies.backtrace]
@@ -51,7 +51,7 @@ version = "0.3.68"
 version = "1.0"
 
 [build-dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.4"
+version = "=44.0.1"
 package = "wasmtime-internal-versioned-export-macros"
 
 [target."cfg(unix)".dependencies.libc]
@@ -104,4 +104,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

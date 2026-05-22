@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>AppIDName</key>
+  <string>ClawdStrike Agent Developer ID Packaging</string>
+  <key>ApplicationIdentifierPrefix</key>
+  <array>
+    <string>JB6682CJY9</string>
+  </array>
+  <key>ClawdStrikeExpectedBundleIdentifiers</key>
+  <array>
+    <string>dev.clawdstrike.agent</string>
+    <string>dev.clawdstrike.agent.system-extension</string>
+  </array>
+  <key>ClawdStrikeNotarytoolCredentialSource</key>
+  <string>signer_host_keychain_profile_or_apple_id</string>
+  <key>ClawdStrikePackagingState</key>
+  <string>prebuilt_system_extension_required</string>
+  <key>TeamIdentifier</key>
+  <array>
+    <string>JB6682CJY9</string>
+  </array>
+</dict>
+</plist>

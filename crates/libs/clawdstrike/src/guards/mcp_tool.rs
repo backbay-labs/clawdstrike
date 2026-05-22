@@ -11,8 +11,8 @@ use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum McpDefaultAction {
-    #[default]
     Allow,
+    #[default]
     #[serde(alias = "deny")]
     Block,
 }
@@ -151,7 +151,7 @@ impl McpToolConfig {
                 "file_delete".to_string(),
                 "git_push".to_string(),
             ],
-            default_action: Some(McpDefaultAction::Allow),
+            default_action: Some(McpDefaultAction::Block),
             max_args_size: Some(default_max_args_size()),
             additional_allow: vec![],
             remove_allow: vec![],
@@ -323,13 +323,15 @@ impl Guard for McpToolGuard {
                 "tool": tool_name,
                 "reason": "blocked_by_policy",
             })),
-            ToolDecision::RequireConfirmation => GuardResult::warn(
+            ToolDecision::RequireConfirmation => GuardResult::block(
                 &self.name,
+                Severity::Error,
                 format!("Tool '{}' requires confirmation", tool_name),
             )
             .with_details(serde_json::json!({
                 "tool": tool_name,
                 "requires_confirmation": true,
+                "reason": "approval_required",
             })),
         }
     }
@@ -349,11 +351,11 @@ mod tests {
     }
 
     #[test]
-    fn test_default_allowed() {
+    fn test_default_blocks_unknown_tools() {
         let guard = McpToolGuard::new();
 
-        assert_eq!(guard.is_allowed("read_file"), ToolDecision::Allow);
-        assert_eq!(guard.is_allowed("list_directory"), ToolDecision::Allow);
+        assert_eq!(guard.is_allowed("read_file"), ToolDecision::Block);
+        assert_eq!(guard.is_allowed("list_directory"), ToolDecision::Block);
     }
 
     #[test]
@@ -450,12 +452,33 @@ mod tests {
         let result = guard
             .check(&GuardAction::McpTool("read_file", &args), &context)
             .await;
-        assert!(result.allowed);
+        assert!(!result.allowed);
 
         let result = guard
             .check(&GuardAction::McpTool("shell_exec", &args), &context)
             .await;
         assert!(!result.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_confirmation_required_blocks_until_approved_by_caller() {
+        let guard = McpToolGuard::new();
+        let context = GuardContext::new();
+        let args = serde_json::json!({"path": "/app/file.txt"});
+
+        let result = guard
+            .check(&GuardAction::McpTool("git_push", &args), &context)
+            .await;
+
+        assert!(!result.allowed);
+        assert_eq!(result.severity, Severity::Error);
+        assert_eq!(
+            result
+                .details
+                .as_ref()
+                .and_then(|details| details["reason"].as_str()),
+            Some("approval_required")
+        );
     }
 
     #[tokio::test]

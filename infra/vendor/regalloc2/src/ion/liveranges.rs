@@ -115,9 +115,8 @@ impl<'a, F: Function> Env<'a, F> {
         }
         for class in 0..self.preferred_victim_by_class.len() {
             self.preferred_victim_by_class[class] = self.env.non_preferred_regs_by_class[class]
-                .last()
-                .or(self.env.preferred_regs_by_class[class].last())
-                .cloned()
+                .max_preg()
+                .or(self.env.preferred_regs_by_class[class].max_preg())
                 .unwrap_or(PReg::invalid());
         }
         // Create VRegs from the vreg count.

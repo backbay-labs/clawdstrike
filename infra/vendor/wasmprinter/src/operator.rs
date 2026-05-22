@@ -501,7 +501,7 @@ impl<'printer, 'state, 'a, 'b> PrintOperator<'printer, 'state, 'a, 'b> {
 macro_rules! define_visit {
     // General structure of all the operator printer methods:
     //
-    // * Print the name of the insruction as defined in this macro
+    // * Print the name of the instruction as defined in this macro
     // * Print any payload, as necessary
     ($(@$proposal:ident $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident ($($ann:tt)*) )*) => ($(
         fn $visit(&mut self $( , $($arg: $argty),* )?) -> Self::Output {
@@ -769,13 +769,13 @@ macro_rules! define_visit {
     (payload $self:ident RefGetDesc $hty:ident) => (
         $self.struct_type_index($hty)?;
     );
-    (payload $self:ident RefCastDescNonNull $hty:ident) => (
+    (payload $self:ident RefCastDescEqNonNull $hty:ident) => (
         $self.push_str(" ")?;
         let rty = RefType::new(false, $hty)
             .ok_or_else(|| anyhow!("implementation limit: type index too large"))?;
         $self.printer.print_reftype($self.state, rty)?;
     );
-    (payload $self:ident RefCastDescNullable $hty:ident) => (
+    (payload $self:ident RefCastDescEqNullable $hty:ident) => (
         $self.push_str(" ")?;
         let rty = RefType::new(true, $hty)
             .ok_or_else(|| anyhow!("implementation limit: type index too large"))?;
@@ -1402,16 +1402,17 @@ macro_rules! define_visit {
     (name Suspend) => ("suspend");
     (name Resume) => ("resume");
     (name ResumeThrow) => ("resume_throw");
+    (name ResumeThrowRef) => ("resume_throw_ref");
     (name Switch) => ("switch");
     (name I64Add128) => ("i64.add128");
     (name I64Sub128) => ("i64.sub128");
     (name I64MulWideS) => ("i64.mul_wide_s");
     (name I64MulWideU) => ("i64.mul_wide_u");
     (name RefGetDesc) => ("ref.get_desc");
-    (name RefCastDescNonNull) => ("ref.cast_desc");
-    (name RefCastDescNullable) => ("ref.cast_desc");
-    (name BrOnCastDesc) => ("br_on_cast_desc");
-    (name BrOnCastDescFail) => ("br_on_cast_desc_fail");
+    (name RefCastDescEqNonNull) => ("ref.cast_desc_eq");
+    (name RefCastDescEqNullable) => ("ref.cast_desc_eq");
+    (name BrOnCastDescEq) => ("br_on_cast_desc_eq");
+    (name BrOnCastDescEqFail) => ("br_on_cast_desc_eq_fail");
 }
 
 impl<'a> VisitOperator<'a> for PrintOperator<'_, '_, '_, '_> {

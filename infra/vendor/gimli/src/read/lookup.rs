@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 use crate::common::{DebugInfoOffset, Format};
-use crate::read::{parse_debug_info_offset, Error, Reader, ReaderOffset, Result, UnitOffset};
+use crate::read::{Error, Reader, ReaderOffset, Result, UnitOffset};
 
 // The various "Accelerated Access" sections (DWARF standard v4 Section 6.1) all have
 // similar structures. They consist of a header with metadata and an offset into the
@@ -90,20 +90,18 @@ where
     /// parsed and yielded. If an error occurs while parsing the next entry,
     /// then this error is returned as `Err(e)`, and all subsequent calls return
     /// `Ok(None)`.
-    ///
-    /// Can be [used with `FallibleIterator`](./index.html#using-with-fallibleiterator).
     pub fn next(&mut self) -> Result<Option<Parser::Entry>> {
         loop {
-            if let Some((ref mut input, ref header)) = self.current_set {
-                if !input.is_empty() {
-                    match Parser::parse_entry(input, header) {
-                        Ok(Some(entry)) => return Ok(Some(entry)),
-                        Ok(None) => {}
-                        Err(e) => {
-                            input.empty();
-                            self.remaining_input.empty();
-                            return Err(e);
-                        }
+            if let Some((ref mut input, ref header)) = self.current_set
+                && !input.is_empty()
+            {
+                match Parser::parse_entry(input, header) {
+                    Ok(Some(entry)) => return Ok(Some(entry)),
+                    Ok(None) => {}
+                    Err(e) => {
+                        input.empty();
+                        self.remaining_input.empty();
+                        return Err(e);
                     }
                 }
             }
@@ -171,7 +169,7 @@ where
             return Err(Error::UnknownVersion(u64::from(version)));
         }
 
-        let unit_offset = parse_debug_info_offset(&mut rest, format)?;
+        let unit_offset = rest.read_offset(format).map(DebugInfoOffset)?;
         let unit_length = rest.read_length(format)?;
 
         let header = PubStuffHeader {

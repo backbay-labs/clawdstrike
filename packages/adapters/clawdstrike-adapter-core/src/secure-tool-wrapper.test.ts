@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSecurityContext } from "./context.js";
 import type { ToolInterceptor } from "./interceptor.js";
 import { secureToolSet, wrapExecuteWithInterceptor } from "./secure-tool-wrapper.js";
@@ -20,6 +20,11 @@ function createInterceptor(overrides: Partial<ToolInterceptor> = {}): ToolInterc
 }
 
 describe("wrapExecuteWithInterceptor", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("forwards sanitize-modified input when provided", async () => {
     const execute = vi.fn(async (input: string) => `ok:${input}`);
     const interceptor = createInterceptor({
@@ -161,5 +166,50 @@ describe("secureToolSet", () => {
     await expect(secured.klass.execute("x")).resolves.toBe("class-tool:x");
     expect(typeof secured.klass.describe).toBe("function");
     expect(secured.klass.describe()).toBe("class-tool");
+  });
+
+  it("passes EDR config through to engine-backed interceptors", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine = {
+      evaluate: vi.fn(async () => ({ status: "allow" as const })),
+    };
+    const tools = {
+      echo: {
+        execute: vi.fn(async (input: { text: string }) => ({ echoed: input.text })),
+      },
+    };
+
+    const secured = secureToolSet(tools, engine, {
+      framework: "test",
+      edr: {
+        enabled: true,
+        token: "local-token",
+        policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
+      },
+    });
+
+    await expect(secured.echo.execute({ text: "hello" })).resolves.toEqual({ echoed: "hello" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const developerActivityCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith("/api/v1/agent/edr/developer-activity"),
+    );
+    expect(developerActivityCall).toBeDefined();
+    const payload = JSON.parse(String(developerActivityCall?.[1]?.body)) as {
+      activities: any[];
+    };
+    expect(payload.activities[0]).toMatchObject({
+      kind: "mcp_tool",
+      toolName: "echo",
+      parameters: {
+        text: "hello",
+      },
+      metadata: {
+        collectorKind: "adapter_core_tool_interceptor",
+        policyEventType: "tool_call",
+        shellClassifier: "tool_call",
+      },
+    });
   });
 });

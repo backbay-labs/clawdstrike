@@ -8,8 +8,9 @@ use crate::ir::ExternalName;
 use crate::isa::s390x::S390xBackend;
 use crate::isa::s390x::abi::REG_SAVE_AREA_SIZE;
 use crate::isa::s390x::inst::{
-    CallInstDest, Cond, Inst as MInst, LaneOrder, MemArg, RegPair, ReturnCallInfo, SymbolReloc,
-    UImm12, UImm16Shifted, UImm32Shifted, WritableRegPair, gpr, stack_reg, writable_gpr, zero_reg,
+    CallInstDest, Cond, Inst as MInst, LaneOrder, MemArg, RegPair, ReturnCallInfo, SImm20,
+    SymbolReloc, UImm12, UImm16Shifted, UImm32Shifted, WritableRegPair, gpr, stack_reg,
+    writable_gpr, zero_reg,
 };
 use crate::machinst::isle::*;
 use crate::machinst::{CallInfo, MachLabel, Reg, TryCallInfo, non_writable_value_regs};
@@ -105,7 +106,7 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, S390xBackend> {
     }
 
     // Adjust the stack before performing a tail call.  The actual stack
-    // adjustment is defered to the call instruction itself, but we create
+    // adjustment is deferred to the call instruction itself, but we create
     // a temporary backchain copy in the proper place here, if necessary
     // for unwinding.
     fn abi_emit_return_call_adjust_stack(&mut self, abi: Sig) -> Unit {
@@ -230,6 +231,24 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, S390xBackend> {
     }
 
     #[inline]
+    fn mie4_enabled(&mut self, _: Type) -> Option<()> {
+        if self.backend.isa_flags.has_mie4() {
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn mie4_disabled(&mut self, _: Type) -> Option<()> {
+        if !self.backend.isa_flags.has_mie4() {
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     fn vxrs_ext2_enabled(&mut self, _: Type) -> Option<()> {
         if self.backend.isa_flags.has_vxrs_ext2() {
             Some(())
@@ -241,6 +260,24 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, S390xBackend> {
     #[inline]
     fn vxrs_ext2_disabled(&mut self, _: Type) -> Option<()> {
         if !self.backend.isa_flags.has_vxrs_ext2() {
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn vxrs_ext3_enabled(&mut self, _: Type) -> Option<()> {
+        if self.backend.isa_flags.has_vxrs_ext3() {
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn vxrs_ext3_disabled(&mut self, _: Type) -> Option<()> {
+        if !self.backend.isa_flags.has_vxrs_ext3() {
             Some(())
         } else {
             None
@@ -681,12 +718,48 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, S390xBackend> {
     }
 
     #[inline]
+    fn memarg_imm_from_offset(&mut self, imm: Offset32) -> Option<SImm20> {
+        SImm20::maybe_from_i64(i64::from(imm))
+    }
+
+    #[inline]
+    fn memarg_imm_from_offset_plus_bias(&mut self, imm: Offset32, bias: u8) -> Option<SImm20> {
+        let final_offset = i64::from(imm) + bias as i64;
+        SImm20::maybe_from_i64(final_offset)
+    }
+
+    #[inline]
     fn memarg_reg_plus_reg(&mut self, x: Reg, y: Reg, bias: u8, flags: MemFlags) -> MemArg {
         MemArg::BXD12 {
             base: x,
             index: y,
             disp: UImm12::maybe_from_u64(bias as u64).unwrap(),
             flags,
+        }
+    }
+
+    #[inline]
+    fn memarg_reg_plus_reg_plus_off(
+        &mut self,
+        x: Reg,
+        y: Reg,
+        offset: &SImm20,
+        flags: MemFlags,
+    ) -> MemArg {
+        if let Some(imm) = UImm12::maybe_from_simm20(*offset) {
+            MemArg::BXD12 {
+                base: x,
+                index: y,
+                disp: imm,
+                flags,
+            }
+        } else {
+            MemArg::BXD20 {
+                base: x,
+                index: y,
+                disp: *offset,
+                flags,
+            }
         }
     }
 

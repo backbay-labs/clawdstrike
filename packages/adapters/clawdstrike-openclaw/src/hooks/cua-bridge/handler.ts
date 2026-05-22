@@ -12,6 +12,9 @@
  * passed through unchanged (no regression on existing behavior).
  */
 
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   type CuaEventData,
   type Decision,
@@ -54,6 +57,13 @@ const CUA_TOOL_PREFIXES = [
   "rdp.",
 ] as const;
 const CUA_TOOL_NAMES = new Set(["computer", "computer_use", "computer.use", "computer-use"]);
+const REDACTED = "[REDACTED]";
+const SENSITIVE_TELEMETRY_KEY =
+  /(?:secret|token|password|passwd|credential|api[_-]?key|authorization|cookie|session|private[_-]?key|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)/i;
+const CONTENT_TELEMETRY_KEY =
+  /(?:content|body|payload|patch|diff|result|output|prompt|input|message|raw)/i;
+const SECRET_LIKE_TELEMETRY_VALUE =
+  /(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
 
 /** Maps recognized CUA action tokens to factory method selectors. */
 type CuaActionKind =
@@ -185,6 +195,7 @@ export function buildCuaEvent(
   sessionId: string,
   kind: CuaActionKind,
   params: Record<string, unknown>,
+  identity: CuaTelemetryIdentity = {},
 ): PolicyEvent {
   const extraData: Partial<Omit<CuaEventData, "type" | "cuaAction">> = {};
 
@@ -214,31 +225,90 @@ export function buildCuaEvent(
   switch (kind) {
     case "connect": {
       const connectMeta = extractConnectMetadata(params);
-      return factory.createCuaConnectEvent(sessionId, { ...extraData, ...connectMeta });
+      return withCuaTelemetryIdentity(
+        factory.createCuaConnectEvent(sessionId, { ...extraData, ...connectMeta }),
+        identity,
+      );
     }
     case "disconnect":
-      return factory.createCuaDisconnectEvent(sessionId, extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaDisconnectEvent(sessionId, extraData),
+        identity,
+      );
     case "reconnect":
-      return factory.createCuaReconnectEvent(sessionId, extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaReconnectEvent(sessionId, extraData),
+        identity,
+      );
     case "input_inject":
-      return factory.createCuaInputInjectEvent(sessionId, extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaInputInjectEvent(sessionId, extraData),
+        identity,
+      );
     case "clipboard_read":
-      return factory.createCuaClipboardEvent(sessionId, "read", extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaClipboardEvent(sessionId, "read", extraData),
+        identity,
+      );
     case "clipboard_write":
-      return factory.createCuaClipboardEvent(sessionId, "write", extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaClipboardEvent(sessionId, "write", extraData),
+        identity,
+      );
     case "file_upload":
-      return factory.createCuaFileTransferEvent(sessionId, "upload", extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaFileTransferEvent(sessionId, "upload", extraData),
+        identity,
+      );
     case "file_download":
-      return factory.createCuaFileTransferEvent(sessionId, "download", extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaFileTransferEvent(sessionId, "download", extraData),
+        identity,
+      );
     case "session_share":
-      return factory.createCuaSessionShareEvent(sessionId, extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaSessionShareEvent(sessionId, extraData),
+        identity,
+      );
     case "audio":
-      return factory.createCuaAudioEvent(sessionId, extraData);
+      return withCuaTelemetryIdentity(factory.createCuaAudioEvent(sessionId, extraData), identity);
     case "drive_mapping":
-      return factory.createCuaDriveMappingEvent(sessionId, extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaDriveMappingEvent(sessionId, extraData),
+        identity,
+      );
     case "printing":
-      return factory.createCuaPrintingEvent(sessionId, extraData);
+      return withCuaTelemetryIdentity(
+        factory.createCuaPrintingEvent(sessionId, extraData),
+        identity,
+      );
   }
+}
+
+type CuaTelemetryIdentity = {
+  hostId?: string;
+  userId?: string;
+  sessionId?: string;
+  agentId?: string;
+  workloadId?: string;
+  approvalId?: string;
+  toolCallId?: string;
+};
+
+function withCuaTelemetryIdentity(event: PolicyEvent, identity: CuaTelemetryIdentity): PolicyEvent {
+  return {
+    ...event,
+    metadata: {
+      ...(event.metadata ?? {}),
+      hostId: identity.hostId,
+      userId: identity.userId,
+      sessionId: identity.sessionId ?? event.sessionId,
+      agentId: identity.agentId,
+      workloadId: identity.workloadId,
+      approvalId: identity.approvalId,
+      toolCallId: identity.toolCallId,
+    },
+  };
 }
 
 // ── Hook Handler ────────────────────────────────────────────────────
@@ -346,12 +416,17 @@ const handler: HookHandler = async (
     return beforeToolCallBlockResult(legacyToolEvent!, blockReason);
   }
 
+  const telemetryIdentity = cuaTelemetryIdentity(hookCtx, params, sessionId);
+
   // Build canonical CUA event via PolicyEventFactory
-  const cuaEvent = buildCuaEvent(sessionId, kind, params);
+  const cuaEvent = buildCuaEvent(sessionId, kind, params, telemetryIdentity);
 
   // Evaluate through policy engine first to get severity before consulting prior approvals.
   const policyEngine = getEngine();
   const decision: Decision = await policyEngine.evaluate(cuaEvent);
+  await publishCuaDeveloperActivity(
+    buildCuaDeveloperActivity(sessionId, toolName, kind, params, decision, telemetryIdentity),
+  );
 
   // Check prior approvals for non-critical denials only.
   // Critical denials must always be re-evaluated and never short-circuited.
@@ -394,6 +469,274 @@ export default handler;
 
 // Re-export for testing
 export { classifyCuaAction, extractActionToken, type CuaActionKind };
+
+type EdrDeveloperActivity = Record<string, unknown>;
+
+function cuaTelemetryIdentity(
+  hookCtx: OpenClawHookContext | undefined,
+  params: Record<string, unknown>,
+  sessionId: string,
+): CuaTelemetryIdentity {
+  return {
+    hostId: firstCuaString(
+      hookCtx?.hostId,
+      firstStringParam(params, ["hostId", "host_id", "endpointHostId", "endpoint_host_id"]),
+      process.env.CLAWDSTRIKE_HOST_ID,
+      process.env.CLAWDSTRIKE_ENDPOINT_ID,
+    ),
+    userId: firstCuaString(
+      hookCtx?.userId,
+      firstStringParam(params, ["userId", "user_id", "principal", "principalId", "principal_id"]),
+      process.env.CLAWDSTRIKE_USER_ID,
+      process.env.CLAWDSTRIKE_PRINCIPAL_ID,
+    ),
+    sessionId: firstCuaString(sessionId, hookCtx?.sessionKey, process.env.CLAWDSTRIKE_SESSION_ID),
+    agentId: firstCuaString(
+      hookCtx?.agentId,
+      firstStringParam(params, ["agentId", "agent_id", "runtimeAgentId"]),
+      process.env.CLAWDSTRIKE_AGENT_ID,
+    ),
+    workloadId:
+      firstCuaString(
+        hookCtx?.workloadId,
+        firstStringParam(params, ["workloadId", "workload_id"]),
+        process.env.CLAWDSTRIKE_WORKLOAD_ID,
+      ) ?? "openclaw-cua",
+    approvalId: firstCuaString(
+      hookCtx?.approvalId,
+      firstStringParam(params, ["approvalId", "approval_id"]),
+      process.env.CLAWDSTRIKE_APPROVAL_ID,
+    ),
+    toolCallId: firstCuaString(
+      hookCtx?.toolCallId,
+      firstStringParam(params, ["toolCallId", "tool_call_id"]),
+      process.env.CLAWDSTRIKE_TOOL_CALL_ID,
+    ),
+  };
+}
+
+function firstCuaString(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+export function buildCuaDeveloperActivity(
+  sessionId: string,
+  toolName: string,
+  kind: CuaActionKind,
+  params: Record<string, unknown>,
+  decision: Decision,
+  identity: CuaTelemetryIdentity = cuaTelemetryIdentity(undefined, params, sessionId),
+): EdrDeveloperActivity {
+  const browser = firstStringParam(params, ["browser", "browserName", "app", "client", "runtime"]);
+  const common = {
+    hostId: identity.hostId,
+    userId: identity.userId,
+    sessionId,
+    agentId: identity.agentId,
+    workloadId: identity.workloadId ?? "openclaw-cua",
+    approvalId: identity.approvalId,
+    toolName,
+    browser: browser ?? "openclaw-cua",
+    metadata: {
+      collectorKind: "openclaw_cua_bridge",
+      policyAllowed: decision.status !== "deny",
+      policyStatus: decision.status,
+      policyGuard: decision.guard,
+      policySeverity: decision.severity,
+      policyReason: decision.reason,
+      cuaActionKind: kind,
+      toolName,
+      toolCallId: identity.toolCallId,
+    },
+  };
+
+  if (kind === "file_download") {
+    const path = firstStringParam(params, [
+      "path",
+      "filePath",
+      "file_path",
+      "downloadPath",
+      "download_path",
+      "localPath",
+      "local_path",
+      "target",
+    ]);
+    if (path) {
+      return {
+        ...common,
+        kind: "browser_download",
+        path,
+        sourceUrl: redactOptionalTelemetryUrl(
+          firstStringParam(params, ["sourceUrl", "source_url", "remoteUrl", "remote_url", "url"]),
+        ),
+      };
+    }
+  }
+
+  return {
+    ...common,
+    kind: "browser_automation",
+    action: kind,
+    target: redactOptionalTelemetryTarget(
+      firstStringParam(params, ["target", "url", "path", "selector", "text"]),
+    ),
+    parameters: sanitizeTelemetryRecord(params),
+  };
+}
+
+async function publishCuaDeveloperActivity(activity: EdrDeveloperActivity): Promise<void> {
+  const endpoint = resolveDeveloperActivityEndpoint();
+  if (!endpoint) return;
+
+  try {
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${endpoint.token}`,
+      },
+      signal: AbortSignal.timeout(250),
+      body: JSON.stringify({ activities: [activity] }),
+    });
+    if (!response.ok) {
+      return;
+    }
+  } catch {
+    // Developer-activity telemetry is evidence enrichment only. CUA policy
+    // enforcement above remains the authoritative allow/block path.
+  }
+}
+
+function resolveDeveloperActivityEndpoint(): { url: string; token: string } | null {
+  const token = localAgentToken();
+  if (!token) return null;
+
+  const explicitUrl = process.env.CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL?.trim();
+  if (explicitUrl) {
+    return { url: explicitUrl, token };
+  }
+
+  const baseUrl =
+    process.env.CLAWDSTRIKE_AGENT_URL?.trim() ??
+    process.env.CLAWDSTRIKE_APPROVAL_URL?.trim() ??
+    "http://127.0.0.1:9878";
+  return {
+    url: `${baseUrl.replace(/\/+$/, "")}/api/v1/agent/edr/developer-activity`,
+    token,
+  };
+}
+
+function localAgentToken(): string | null {
+  const envToken = process.env.CLAWDSTRIKE_AGENT_TOKEN?.trim();
+  if (envToken) return envToken;
+
+  const tokenPath =
+    process.env.CLAWDSTRIKE_AGENT_TOKEN_PATH?.trim() ??
+    join(
+      process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config"),
+      "clawdstrike",
+      "agent-local-token",
+    );
+  try {
+    const token = readFileSync(tokenPath, "utf8").trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
+function firstStringParam(params: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = params[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function sanitizeTelemetryRecord(value: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = sanitizeTelemetryValue(value, "parameters");
+  return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized)
+    ? (sanitized as Record<string, unknown>)
+    : {};
+}
+
+function sanitizeTelemetryValue(value: unknown, key = "", depth = 0): unknown {
+  if (value === null || value === undefined) return value;
+
+  if (typeof value === "string") {
+    if (
+      SENSITIVE_TELEMETRY_KEY.test(key) ||
+      CONTENT_TELEMETRY_KEY.test(key) ||
+      SECRET_LIKE_TELEMETRY_VALUE.test(value)
+    ) {
+      return { omitted: true, reason: telemetryOmissionReason(key, value), length: value.length };
+    }
+    if (value.length > 256) {
+      return { omitted: true, reason: "large_string", length: value.length };
+    }
+    return redactSensitiveTelemetryString(value);
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value !== "object") return String(value);
+  if (depth >= 4) return { omitted: true, reason: "max_depth" };
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 25).map((entry) => sanitizeTelemetryValue(entry, key, depth + 1));
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
+    sanitized[entryKey] = sanitizeTelemetryValue(entryValue, entryKey, depth + 1);
+  }
+  return sanitized;
+}
+
+function telemetryOmissionReason(key: string, value: string): string {
+  if (CONTENT_TELEMETRY_KEY.test(key)) return "content";
+  if (SENSITIVE_TELEMETRY_KEY.test(key) || SECRET_LIKE_TELEMETRY_VALUE.test(value)) {
+    return "sensitive";
+  }
+  return "value";
+}
+
+function redactOptionalTelemetryTarget(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return redactTelemetryUrl(value);
+  return redactSensitiveTelemetryString(value);
+}
+
+function redactOptionalTelemetryUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return redactTelemetryUrl(value);
+}
+
+function redactSensitiveTelemetryString(value: string): string {
+  if (SECRET_LIKE_TELEMETRY_VALUE.test(value)) return REDACTED;
+  return value.replace(
+    /((?:token|secret|password|passwd|api[_-]?key|authorization|cookie)=)[^\s&]+/gi,
+    `$1${REDACTED}`,
+  );
+}
+
+function redactTelemetryUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return redactSensitiveTelemetryString(value);
+  }
+}
 
 function coerceTransferSize(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value) && value >= 0) {

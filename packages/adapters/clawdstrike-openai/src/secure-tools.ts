@@ -1,8 +1,5 @@
 import type { SecurityContext } from "@clawdstrike/adapter-core";
-import {
-  secureToolSet,
-  type SecuritySource,
-} from "@clawdstrike/adapter-core";
+import { type LocalEdrConfig, type SecuritySource, secureToolSet } from "@clawdstrike/adapter-core";
 
 import type { OpenAIBrokerOptions } from "./broker.js";
 import { createOpenAIBrokerExecutor } from "./broker.js";
@@ -12,6 +9,7 @@ export interface SecureToolsOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
   broker?: OpenAIBrokerOptions;
+  edr?: LocalEdrConfig;
 }
 
 type OpenAIToolLike<TInput = unknown, TOutput = unknown> = {
@@ -30,5 +28,6 @@ export function secureTools<TTools extends Record<string, OpenAIToolLike>>(
     context: options?.context,
     getContext: options?.getContext,
     broker: options?.broker ? { executor: createOpenAIBrokerExecutor(options.broker) } : undefined,
+    edr: options?.edr,
   });
 }

@@ -52,8 +52,45 @@ The package exports hook handlers for direct OpenClaw integration:
 
 - `agentBootstrapHandler` -- Injects security prompt at session start
 - `toolPreflightHandler` -- Preflight policy check before tool execution
+- `toolGuardHandler` -- Post-result policy check, output redaction, and result telemetry
 - `cuaBridgeHandler` -- Computer-use agent bridge with CUA-specific checks
 - `inboundMessageHandler` -- Pre-context inbound message guard (`inbound_message` / `user_input`)
+
+When the local ClawdStrike agent token is available, `toolPreflightHandler`
+also publishes best-effort canonical `PolicyEvent` telemetry to the local agent
+EDR API for the preflight file, command, patch, network, and tool events it
+already evaluates. Package-manager lifecycle commands, including Composer,
+Maven, Gradle, uv, Poetry, Pipenv, .NET/NuGet, SwiftPM, and Mix command forms,
+and sensitive cloud-CLI commands, including
+Firebase Functions Secrets, Railway variables, Sentry/Snyk auth tokens, Bitwarden
+item reads, AWS/GCP/Azure credential and kubeconfig operations, and Terraform-family state,
+output, and login commands, are also
+emitted as normalized developer-activity facts with credential-bearing command
+tokens redacted. Telemetry failure does not
+affect preflight enforcement.
+
+When the local ClawdStrike agent token is available, `toolGuardHandler` also
+publishes best-effort post-execution EDR telemetry for `tool_result_persist`
+events. It sends scrubbed `PolicyEvent` evidence with result/content bodies
+omitted and hashed, and emits normalized developer-activity facts for
+result-discovered local downloads, browser extension installs, credential-like
+paths, and secret-like tool outputs with tokenized source URLs scrubbed before
+submission. Telemetry failure does not affect post-result blocking or
+redaction.
+
+When inbound message handling is enabled and the local ClawdStrike agent token
+is available, `inboundMessageHandler` also publishes best-effort custom
+`PolicyEvent` evidence for prompt/message decisions. It records message hashes,
+sizes, sender/session metadata, and allow/warn/deny/sanitize decisions without
+uploading raw prompt text. Telemetry failure does not affect inbound blocking or
+sanitization.
+
+When the local ClawdStrike agent token is available, `cuaBridgeHandler` also
+publishes best-effort developer-activity telemetry to the agent EDR API.
+Recognized CUA input/session actions are recorded as `browser_automation`
+facts, and file-download actions with local paths are recorded as
+`browser_download` facts. Tool parameters and tokenized source URLs are scrubbed
+before submission. Telemetry failure does not affect CUA policy enforcement.
 
 ### CLI
 

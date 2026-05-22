@@ -126,6 +126,15 @@ impl OperatorState {
         inserted
     }
 
+    pub async fn capability_record(&self, capability_id: &str) -> Option<CapabilityRecord> {
+        self.inner
+            .read()
+            .await
+            .capabilities
+            .get(capability_id)
+            .cloned()
+    }
+
     pub async fn is_capability_revoked(&self, capability_id: &str) -> bool {
         self.inner
             .read()

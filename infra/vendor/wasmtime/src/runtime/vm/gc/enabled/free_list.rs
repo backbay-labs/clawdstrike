@@ -40,6 +40,11 @@ impl FreeList {
         Layout::from_size_align(size, ALIGN_USIZE).unwrap()
     }
 
+    /// Get the current total capacity this free list manages.
+    pub fn current_capacity(&self) -> usize {
+        self.capacity
+    }
+
     /// Create a new `FreeList` for a contiguous region of memory of the given
     /// size.
     pub fn new(capacity: usize) -> Self {
@@ -153,7 +158,7 @@ impl FreeList {
 
         let alloc_size = u32::try_from(layout.size()).map_err(|e| {
             let trap = crate::Trap::AllocationTooLarge;
-            let err = anyhow::Error::from(trap);
+            let err = crate::Error::from(trap);
             err.context(e)
                 .context("requested allocation's size does not fit in a u32")
         })?;
@@ -161,7 +166,7 @@ impl FreeList {
             .checked_next_multiple_of(ALIGN_U32)
             .ok_or_else(|| {
                 let trap = crate::Trap::AllocationTooLarge;
-                let err = anyhow::Error::from(trap);
+                let err = crate::Error::from(trap);
                 let err = err.context(format!(
                     "failed to round allocation size of {alloc_size} up to next \
                      multiple of {ALIGN_USIZE}"
@@ -338,6 +343,11 @@ impl FreeList {
         // integrity.
         #[cfg(debug_assertions)]
         self.check_integrity();
+    }
+
+    /// Iterate over all free blocks as `(index, len)` pairs.
+    pub fn iter_free_blocks(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.free_block_index_to_len.iter().map(|(&i, &l)| (i, l))
     }
 
     /// Assert that the free list is valid:

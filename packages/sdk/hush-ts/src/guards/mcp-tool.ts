@@ -55,7 +55,7 @@ export class McpToolGuard implements Guard {
     this.allowSet = new Set(config.allow ?? []);
     this.blockSet = new Set(config.block ?? DEFAULT_BLOCKED_TOOLS);
     this.confirmSet = new Set(config.requireConfirmation ?? DEFAULT_REQUIRE_CONFIRMATION);
-    this.defaultAction = config.defaultAction ?? "allow";
+    this.defaultAction = config.defaultAction ?? "block";
     this.maxArgsSize = config.maxArgsSize ?? 1024 * 1024; // 1MB default
   }
 
@@ -71,9 +71,15 @@ export class McpToolGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    const toolName = action.tool;
+    const toolName = action.tool?.trim();
     if (!toolName) {
-      return GuardResult.allow(this.name);
+      return GuardResult.block(
+        this.name,
+        Severity.ERROR,
+        "MCP tool invocation is missing a tool name",
+      ).withDetails({
+        reason: "missing_tool_name",
+      });
     }
 
     // Check args size
@@ -103,9 +109,14 @@ export class McpToolGuard implements Guard {
         });
 
       case ToolDecision.RequireConfirmation:
-        return GuardResult.warn(this.name, `Tool '${toolName}' requires confirmation`).withDetails({
+        return GuardResult.block(
+          this.name,
+          Severity.ERROR,
+          `Tool '${toolName}' requires confirmation before execution`,
+        ).withDetails({
           tool: toolName,
           requiresConfirmation: true,
+          reason: "confirmation_required",
         });
     }
   }

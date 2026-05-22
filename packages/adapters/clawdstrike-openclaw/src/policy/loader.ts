@@ -333,6 +333,10 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
         denied: Array.isArray(cfg.block)
           ? cfg.block.filter((v): v is string => typeof v === "string")
           : [],
+        require_confirmation: Array.isArray(cfg.require_confirmation)
+          ? cfg.require_confirmation.filter((v): v is string => typeof v === "string")
+          : [],
+        default_action: cfg.default_action === "allow" ? "allow" : "block",
       };
     }
 

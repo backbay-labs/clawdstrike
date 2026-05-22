@@ -132,6 +132,10 @@ describe('inferEventTypeFromName — direct classification', () => {
     // tokens: ['generic', 'tool'] -> no matching tokens -> null
     expect(inferEventTypeFromName('generic_tool')).toBeNull();
   });
+
+  it('should not classify browser extension installs as shell commands', () => {
+    expect(inferEventTypeFromName('browser.extension.install')).toBeNull();
+  });
 });
 
 describe('Tool Guard Handler — inferEventType classification', () => {
@@ -139,6 +143,7 @@ describe('Tool Guard Handler — inferEventType classification', () => {
     policy: 'clawdstrike:ai-agent-minimal',
     mode: 'deterministic',
     logLevel: 'error',
+    guards: { mcp_tool: false },
   };
 
   beforeEach(() => {
@@ -343,25 +348,34 @@ describe('Tool Guard Handler — inferEventType classification', () => {
 
   // ── tool_call fallback classification ──
 
-  it('should classify "generic_tool" as tool_call', async () => {
+  it('should classify "generic_tool" as tool_call and fail closed by default', async () => {
+    initToolGuard({
+      policy: 'clawdstrike:ai-agent-minimal',
+      mode: 'deterministic',
+      logLevel: 'error',
+    });
     const event = makeToolResultEvent(
       'generic_tool',
       { data: 'safe data' },
       'safe output',
     );
     await toolGuardHandler(event);
-    expect(event.context.toolResult.error).toBeUndefined();
-    expect(event.messages).toHaveLength(0);
+    expect(event.context.toolResult.error).toContain("not in allowed tool list");
   });
 
-  it('should classify unknown tool names as tool_call (fallback)', async () => {
+  it('should classify unknown tool names as tool_call and fail closed by default', async () => {
+    initToolGuard({
+      policy: 'clawdstrike:ai-agent-minimal',
+      mode: 'deterministic',
+      logLevel: 'error',
+    });
     const event = makeToolResultEvent(
       'completely_unknown_operation',
       { foo: 'bar' },
       'some result',
     );
     await toolGuardHandler(event);
-    expect(event.context.toolResult.error).toBeUndefined();
+    expect(event.context.toolResult.error).toContain("not in allowed tool list");
   });
 });
 
@@ -542,7 +556,7 @@ describe('Tool Guard Handler — initialization', () => {
     });
 
     const event = makeToolResultEvent(
-      'read',
+      'read_file',
       { path: '/project/src/safe.ts' },
       'safe content',
     );
@@ -613,8 +627,8 @@ describe('Tool Guard Handler — secret leak detection in results', () => {
 
   it('should allow tool results with no secrets', async () => {
     const event = makeToolResultEvent(
-      'custom_action',
-      { data: 'health' },
+      'read_file',
+      { path: '/tmp/health.json' },
       '{"status": "healthy", "uptime": 12345}',
     );
     await toolGuardHandler(event);
@@ -660,7 +674,7 @@ describe('Tool Guard Handler — output sanitization (PII redaction)', () => {
 
   it('should redact email addresses in allowed tool output', async () => {
     const event = makeToolResultEvent(
-      'read',
+      'read_file',
       { path: '/project/notes.txt' },
       'Contact alice@example.com for details',
     );
@@ -672,7 +686,7 @@ describe('Tool Guard Handler — output sanitization (PII redaction)', () => {
 
   it('should redact PII in nested object results', async () => {
     const event = makeToolResultEvent(
-      'read',
+      'read_file',
       { path: '/project/data.json' },
       { user: { email: 'bob@company.org' }, data: 'safe' },
     );
@@ -685,7 +699,7 @@ describe('Tool Guard Handler — output sanitization (PII redaction)', () => {
 
   it('should not modify results with no PII', async () => {
     const event = makeToolResultEvent(
-      'read',
+      'read_file',
       { path: '/project/code.ts' },
       'const x = 42; // no secrets here',
     );
@@ -784,33 +798,32 @@ describe('Tool Guard Handler — edge cases', () => {
   });
 
   it('should handle empty string result', async () => {
-    const event = makeToolResultEvent('read', { path: '/tmp/empty.txt' }, '');
+    const event = makeToolResultEvent('read_file', { path: '/tmp/empty.txt' }, '');
     await toolGuardHandler(event);
     expect(event.context.toolResult.error).toBeUndefined();
   });
 
   it('should handle null result', async () => {
-    const event = makeToolResultEvent('read', { path: '/tmp/file.txt' }, null);
+    const event = makeToolResultEvent('read_file', { path: '/tmp/file.txt' }, null);
     await toolGuardHandler(event);
     expect(event.context.toolResult.error).toBeUndefined();
   });
 
   it('should handle undefined result', async () => {
-    const event = makeToolResultEvent('read', { path: '/tmp/file.txt' }, undefined);
+    const event = makeToolResultEvent('read_file', { path: '/tmp/file.txt' }, undefined);
     await toolGuardHandler(event);
     expect(event.context.toolResult.error).toBeUndefined();
   });
 
   it('should handle numeric result', async () => {
-    // Use a generic tool name so it classifies as tool_call, not network_egress
-    const event = makeToolResultEvent('custom_action', { data: 'count' }, 42);
+    const event = makeToolResultEvent('read_file', { path: '/tmp/count.txt' }, 42);
     await toolGuardHandler(event);
     expect(event.context.toolResult.error).toBeUndefined();
   });
 
   it('should handle deeply nested object result', async () => {
     const event = makeToolResultEvent(
-      'read',
+      'read_file',
       { path: '/project/config.json' },
       { a: { b: { c: { d: { e: 'no secrets here' } } } } },
     );
@@ -819,10 +832,9 @@ describe('Tool Guard Handler — edge cases', () => {
   });
 
   it('should handle array result', async () => {
-    // Use a generic tool name so it classifies as tool_call, not network_egress
     const event = makeToolResultEvent(
-      'custom_action',
-      { data: 'items' },
+      'read_file',
+      { path: '/tmp/items.json' },
       ['item1', 'item2', 'item3'],
     );
     await toolGuardHandler(event);
@@ -830,7 +842,7 @@ describe('Tool Guard Handler — edge cases', () => {
   });
 
   it('should handle empty params', async () => {
-    const event = makeToolResultEvent('generic_tool', {}, 'result');
+    const event = makeToolResultEvent('read_file', { path: '/tmp/file.txt' }, 'result');
     await toolGuardHandler(event);
     expect(event.context.toolResult.error).toBeUndefined();
   });
@@ -859,7 +871,7 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
   });
 
   it('sanitizes modern tool_result_persist messages synchronously', async () => {
-    const event = makeModernToolResultEvent('read', 'Contact alice@example.com for access');
+    const event = makeModernToolResultEvent('read_file', 'Contact alice@example.com for access');
 
     const result = await toolGuardHandler(event as any, { sessionKey: 'modern-session' });
     const message = (result as { message?: { content?: Array<{ text?: string }> } } | undefined)?.message;
@@ -870,6 +882,12 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
   });
 
   it('rewrites denied modern tool results into synthetic error messages', async () => {
+    initToolGuard({
+      policy: 'clawdstrike:ai-agent-minimal',
+      mode: 'deterministic',
+      logLevel: 'error',
+      guards: { mcp_tool: false },
+    });
     const event = makeModernToolResultEvent(
       'generic_tool',
       'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -890,12 +908,12 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
   it('recovers modern tool params from the prior tool invocation state', async () => {
     rememberToolInvocation(
       'modern-session',
-      'read',
+      'read_file',
       { path: `${HOME}/.ssh/id_rsa` },
       'tool-call-1',
     );
 
-    const event = makeModernToolResultEvent('read', 'safe looking content');
+    const event = makeModernToolResultEvent('read_file', 'safe looking content');
     const result = await toolGuardHandler(event as any, {
       sessionKey: 'modern-session',
       toolCallId: 'tool-call-1',
@@ -912,6 +930,12 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
   });
 
   it('prefers structured modern result payloads over content summaries', async () => {
+    initToolGuard({
+      policy: 'clawdstrike:ai-agent-minimal',
+      mode: 'deterministic',
+      logLevel: 'error',
+      guards: { mcp_tool: false },
+    });
     const event: ModernToolResultPersistEvent = {
       toolName: 'generic_tool',
       toolCallId: 'tool-call-1',
@@ -941,7 +965,7 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
   it('ignores blank hook context tool names and falls back to the message payload', async () => {
     rememberToolInvocation(
       'modern-session',
-      'read',
+      'read_file',
       { path: `${HOME}/.ssh/id_rsa` },
       'tool-call-2',
     );
@@ -950,7 +974,7 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
       toolCallId: 'tool-call-2',
       message: {
         role: 'toolResult',
-        toolName: 'read',
+        toolName: 'read_file',
         toolCallId: 'tool-call-2',
         content: [{ type: 'text', text: 'safe looking content' }],
       },

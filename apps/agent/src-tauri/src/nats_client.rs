@@ -12,6 +12,7 @@ use crate::settings::NatsSettings;
 pub struct NatsClient {
     client: async_nats::Client,
     js: async_nats::jetstream::Context,
+    tenant_id: String,
     agent_id: String,
     subject_prefix: String,
 }
@@ -57,6 +58,7 @@ impl NatsClient {
         Ok(Self {
             client,
             js,
+            tenant_id: tenant_id.to_string(),
             agent_id: agent_id.to_string(),
             subject_prefix: subject_prefix.to_string(),
         })
@@ -75,6 +77,11 @@ impl NatsClient {
     /// Get the agent ID.
     pub fn agent_id(&self) -> &str {
         &self.agent_id
+    }
+
+    /// Get the enrolled tenant ID.
+    pub fn tenant_id(&self) -> &str {
+        &self.tenant_id
     }
 
     /// Get the tenant-scoped NATS subject prefix provisioned by cloud enrollment.

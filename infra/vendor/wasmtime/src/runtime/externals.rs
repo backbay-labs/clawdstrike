@@ -127,13 +127,13 @@ impl Extern {
 
     pub(crate) fn from_wasmtime_export(
         wasmtime_export: crate::runtime::vm::Export,
-        store: &StoreOpaque,
+        engine: &Engine,
     ) -> Extern {
         match wasmtime_export {
             crate::runtime::vm::Export::Function(f) => Extern::Func(f),
             crate::runtime::vm::Export::Memory(m) => Extern::Memory(m),
             crate::runtime::vm::Export::SharedMemory(m, _) => {
-                Extern::SharedMemory(crate::SharedMemory::from_raw(m, store.engine().clone()))
+                Extern::SharedMemory(crate::SharedMemory::from_raw(m, engine.clone()))
             }
             crate::runtime::vm::Export::Global(g) => Extern::Global(g),
             crate::runtime::vm::Export::Table(t) => Extern::Table(t),
@@ -247,6 +247,12 @@ impl<'instance> Export<'instance> {
     /// or `None` otherwise.
     pub fn into_memory(self) -> Option<Memory> {
         self.definition.into_memory()
+    }
+
+    /// Consume this `Export` and return the contained `SharedMemory`, if it's
+    /// a shared memory, or `None` otherwise.
+    pub fn into_shared_memory(self) -> Option<SharedMemory> {
+        self.definition.into_shared_memory()
     }
 
     /// Consume this `Export` and return the contained `Global`, if it's a global,

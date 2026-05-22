@@ -18,7 +18,7 @@
 //! backend pipeline.
 
 use crate::CodegenError;
-use crate::ir::pcc::*;
+use crate::FxHashMap;
 use crate::ir::{self, Constant, ConstantData, ValueLabel, types};
 use crate::ranges::Ranges;
 use crate::timing;
@@ -29,7 +29,6 @@ use regalloc2::{
     Edit, Function as RegallocFunction, InstOrEdit, InstPosition, InstRange, Operand,
     OperandConstraint, OperandKind, PRegSet, ProgPoint, RegClass,
 };
-use rustc_hash::FxHashMap;
 
 use crate::HashMap;
 use crate::hash_map::Entry;
@@ -203,9 +202,6 @@ pub struct VCode<I: VCodeInst> {
     debug_value_labels: Vec<(VReg, InsnIndex, InsnIndex, u32)>,
 
     pub(crate) sigs: SigSet,
-
-    /// Facts on VRegs, for proof-carrying code verification.
-    facts: Vec<Option<Fact>>,
 
     log2_min_function_alignment: u8,
 }
@@ -566,7 +562,6 @@ impl<I: VCodeInst> VCodeBuilder<I> {
     /// Build the final VCode.
     pub fn build(mut self, mut vregs: VRegAllocator<I>) -> VCode<I> {
         self.vcode.vreg_types = take(&mut vregs.vreg_types);
-        self.vcode.facts = take(&mut vregs.facts);
 
         if self.direction == VCodeBuildDirection::Backward {
             self.reverse_and_finalize(&vregs);
@@ -590,19 +585,6 @@ impl<I: VCodeInst> VCodeBuilder<I> {
         // Debug value labels are resolved in reverse_and_finalize.
         vregs.debug_assert_no_vreg_aliases(
             self.vcode.debug_value_labels.iter().map(|&(vreg, ..)| vreg),
-        );
-        // Facts are resolved eagerly during set_vreg_alias.
-        vregs.debug_assert_no_vreg_aliases(
-            self.vcode
-                .facts
-                .iter()
-                .zip(&vregs.vreg_types)
-                .enumerate()
-                .filter(|(_, (fact, _))| fact.is_some())
-                .map(|(vreg, (_, &ty))| {
-                    let (regclasses, _) = I::rc_for_type(ty).unwrap();
-                    VReg::new(vreg, regclasses[0])
-                }),
         );
 
         self.vcode
@@ -668,7 +650,6 @@ impl<I: VCodeInst> VCode<I> {
             emit_info,
             constants,
             debug_value_labels: vec![],
-            facts: vec![],
             log2_min_function_alignment,
         }
     }
@@ -1253,36 +1234,44 @@ impl<I: VCodeInst> VCode<I> {
                 }
                 inst.index()
             };
+            let inst_to_offset = |inst_index: usize| {
+                // Skip over cold blocks.
+                for offset in &inst_offsets[inst_index..] {
+                    if *offset != NO_INST_OFFSET {
+                        return *offset;
+                    }
+                }
+                func_body_len
+            };
             let from_inst_index = prog_point_to_inst(from);
             let to_inst_index = prog_point_to_inst(to);
-            let from_offset = inst_offsets[from_inst_index];
-            let to_offset = if to_inst_index == inst_offsets.len() {
-                func_body_len
-            } else {
-                inst_offsets[to_inst_index]
-            };
+            let from_offset = inst_to_offset(from_inst_index);
+            let to_offset = inst_to_offset(to_inst_index);
 
             // Empty ranges or unavailable offsets can happen
             // due to cold blocks and branch removal (see above).
-            if from_offset == NO_INST_OFFSET
-                || to_offset == NO_INST_OFFSET
-                || from_offset == to_offset
-            {
+            if from_offset == to_offset {
                 continue;
             }
 
             let loc = if let Some(preg) = alloc.as_reg() {
                 LabelValueLoc::Reg(Reg::from(preg))
             } else {
-                let slot = alloc.as_stack().unwrap();
-                let slot_offset = self.abi.get_spillslot_offset(slot);
-                let slot_base_to_caller_sp_offset = self.abi.slot_base_to_caller_sp_offset();
-                let caller_sp_to_cfa_offset =
-                    crate::isa::unwind::systemv::caller_sp_to_cfa_offset();
-                // NOTE: this is a negative offset because it's relative to the caller's SP
-                let cfa_to_sp_offset =
-                    -((slot_base_to_caller_sp_offset + caller_sp_to_cfa_offset) as i64);
-                LabelValueLoc::CFAOffset(cfa_to_sp_offset + slot_offset)
+                #[cfg(not(feature = "unwind"))]
+                continue;
+
+                #[cfg(feature = "unwind")]
+                {
+                    let slot = alloc.as_stack().unwrap();
+                    let slot_offset = self.abi.get_spillslot_offset(slot);
+                    let slot_base_to_caller_sp_offset = self.abi.slot_base_to_caller_sp_offset();
+                    let caller_sp_to_cfa_offset =
+                        crate::isa::unwind::systemv::caller_sp_to_cfa_offset();
+                    // NOTE: this is a negative offset because it's relative to the caller's SP
+                    let cfa_to_sp_offset =
+                        -((slot_base_to_caller_sp_offset + caller_sp_to_cfa_offset) as i64);
+                    LabelValueLoc::CFAOffset(cfa_to_sp_offset + slot_offset)
+                }
             };
 
             // Coalesce adjacent ranges that for the same location
@@ -1520,31 +1509,6 @@ impl<I: VCodeInst> VCode<I> {
         self.block_order.lowered_order()[block.index()].orig_block()
     }
 
-    /// Get the type of a VReg.
-    pub fn vreg_type(&self, vreg: VReg) -> Type {
-        self.vreg_types[vreg.vreg()]
-    }
-
-    /// Get the fact, if any, for a given VReg.
-    pub fn vreg_fact(&self, vreg: VReg) -> Option<&Fact> {
-        self.facts[vreg.vreg()].as_ref()
-    }
-
-    /// Set the fact for a given VReg.
-    pub fn set_vreg_fact(&mut self, vreg: VReg, fact: Fact) {
-        trace!("set fact on {}: {:?}", vreg, fact);
-        self.facts[vreg.vreg()] = Some(fact);
-    }
-
-    /// Does a given instruction define any facts?
-    pub fn inst_defines_facts(&self, inst: InsnIndex) -> bool {
-        self.inst_operands(inst)
-            .iter()
-            .filter(|o| o.kind() == OperandKind::Def)
-            .map(|o| o.vreg())
-            .any(|vreg| self.facts[vreg.vreg()].is_some())
-    }
-
     /// Get the user stack map associated with the given forward instruction index.
     pub fn get_user_stack_map(&self, inst: InsnIndex) -> Option<&ir::UserStackMap> {
         let index = inst.to_backwards_insn_index(self.num_insts());
@@ -1661,12 +1625,6 @@ impl<I: VCodeInst> Debug for VRegAllocator<I> {
             writeln!(f, "  {:?} := {:?}", Reg::from(key), Reg::from(*dest))?;
         }
 
-        for (vreg, fact) in self.facts.iter().enumerate() {
-            if let Some(fact) = fact {
-                writeln!(f, "  v{vreg} ! {fact}")?;
-            }
-        }
-
         writeln!(f, "}}")
     }
 }
@@ -1704,15 +1662,6 @@ impl<I: VCodeInst> fmt::Debug for VCode<I> {
                     inst,
                     self.insts[inst].pretty_print_inst(&mut state)
                 )?;
-                if !self.operands.is_empty() {
-                    for operand in self.inst_operands(InsnIndex::new(inst)) {
-                        if operand.kind() == OperandKind::Def {
-                            if let Some(fact) = &self.facts[operand.vreg().vreg()] {
-                                writeln!(f, "    v{} ! {}", operand.vreg().vreg(), fact)?;
-                            }
-                        }
-                    }
-                }
                 if let Some(user_stack_map) = self.get_user_stack_map(InsnIndex::new(inst)) {
                     writeln!(f, "    {user_stack_map:?}")?;
                 }
@@ -1743,9 +1692,6 @@ pub struct VRegAllocator<I> {
     /// lowering rules) or some ABI code.
     deferred_error: Option<CodegenError>,
 
-    /// Facts on VRegs, for proof-carrying code.
-    facts: Vec<Option<Fact>>,
-
     /// The type of instruction that this allocator makes registers for.
     _inst: core::marker::PhantomData<I>,
 }
@@ -1760,7 +1706,6 @@ impl<I: VCodeInst> VRegAllocator<I> {
             vreg_types,
             vreg_aliases: FxHashMap::with_capacity_and_hasher(capacity, Default::default()),
             deferred_error: None,
-            facts: Vec::with_capacity(capacity),
             _inst: core::marker::PhantomData::default(),
         }
     }
@@ -1772,13 +1717,23 @@ impl<I: VCodeInst> VRegAllocator<I> {
         }
         let v = self.vreg_types.len();
         let (regclasses, tys) = I::rc_for_type(ty)?;
-        if v + regclasses.len() >= VReg::MAX {
+
+        // Check that new indices are in-bounds for regalloc2's
+        // VReg/Operand representation.
+        if v + regclasses.len() > VReg::MAX {
             return Err(CodegenError::CodeTooLarge);
         }
 
+        // Check that new indices are in-bounds for our Reg
+        // bit-packing on top of the RA2 types, which represents
+        // spillslots as well.
+        let check = |vreg: regalloc2::VReg| -> CodegenResult<Reg> {
+            Reg::from_virtual_reg_checked(vreg).ok_or(CodegenError::CodeTooLarge)
+        };
+
         let regs: ValueRegs<Reg> = match regclasses {
-            &[rc0] => ValueRegs::one(VReg::new(v, rc0).into()),
-            &[rc0, rc1] => ValueRegs::two(VReg::new(v, rc0).into(), VReg::new(v + 1, rc1).into()),
+            &[rc0] => ValueRegs::one(check(VReg::new(v, rc0))?),
+            &[rc0, rc1] => ValueRegs::two(check(VReg::new(v, rc0))?, check(VReg::new(v + 1, rc1))?),
             // We can extend this if/when we support 32-bit targets; e.g.,
             // an i128 on a 32-bit machine will need up to four machine regs
             // for a `Value`.
@@ -1789,9 +1744,6 @@ impl<I: VCodeInst> VRegAllocator<I> {
             debug_assert_eq!(self.vreg_types.len(), vreg.index());
             self.vreg_types.push(reg_ty);
         }
-
-        // Create empty facts for each allocated vreg.
-        self.facts.resize(self.vreg_types.len(), None);
 
         Ok(regs)
     }
@@ -1835,13 +1787,6 @@ impl<I: VCodeInst> VRegAllocator<I> {
         // Disallow cycles (see below).
         assert_ne!(resolved_to, from);
 
-        // Maintain the invariant that PCC facts only exist on vregs
-        // which aren't aliases. We want to preserve whatever was
-        // stated about the vreg before its producer was lowered.
-        if let Some(fact) = self.facts[from.vreg()].take() {
-            self.set_fact(resolved_to, fact);
-        }
-
         let old_alias = self.vreg_aliases.insert(from, resolved_to);
         debug_assert_eq!(old_alias, None);
     }
@@ -1865,42 +1810,6 @@ impl<I: VCodeInst> VRegAllocator<I> {
     #[inline]
     fn debug_assert_no_vreg_aliases(&self, mut list: impl Iterator<Item = VReg>) {
         debug_assert!(list.all(|vreg| !self.vreg_aliases.contains_key(&vreg)));
-    }
-
-    /// Set the proof-carrying code fact on a given virtual register.
-    ///
-    /// Returns the old fact, if any (only one fact can be stored).
-    fn set_fact(&mut self, vreg: regalloc2::VReg, fact: Fact) -> Option<Fact> {
-        trace!("vreg {:?} has fact: {:?}", vreg, fact);
-        debug_assert!(!self.vreg_aliases.contains_key(&vreg));
-        self.facts[vreg.vreg()].replace(fact)
-    }
-
-    /// Set a fact only if one doesn't already exist.
-    pub fn set_fact_if_missing(&mut self, vreg: VirtualReg, fact: Fact) {
-        let vreg = self.resolve_vreg_alias(vreg.into());
-        if self.facts[vreg.vreg()].is_none() {
-            self.set_fact(vreg, fact);
-        }
-    }
-
-    /// Allocate a fresh ValueRegs, with a given fact to apply if
-    /// the value fits in one VReg.
-    pub fn alloc_with_maybe_fact(
-        &mut self,
-        ty: Type,
-        fact: Option<Fact>,
-    ) -> CodegenResult<ValueRegs<Reg>> {
-        let result = self.alloc(ty)?;
-
-        // Ensure that we don't lose a fact on a value that splits
-        // into multiple VRegs.
-        assert!(result.len() == 1 || fact.is_none());
-        if let Some(fact) = fact {
-            self.set_fact(result.regs()[0].into(), fact);
-        }
-
-        Ok(result)
     }
 }
 

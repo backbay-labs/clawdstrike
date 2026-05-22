@@ -85,6 +85,7 @@ export interface NetworkEventData {
   port: number;
   protocol?: string;
   url?: string;
+  method?: string;
 }
 
 export interface ToolEventData {

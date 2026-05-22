@@ -1,0 +1,37 @@
+{
+  "approval" : "unknown",
+  "attestation_state" : {
+    "active" : false,
+    "approval_status" : "unknown",
+    "availability" : "unavailable",
+    "degraded_reasons" : [
+      "system_extension_not_installed"
+    ],
+    "healthy" : false,
+    "installed" : false,
+    "provider" : "network_extension"
+  },
+  "backend_hint" : "legacy_proxy_only_runtime",
+  "counters" : {
+    "dropped_verdicts" : 0,
+    "flows_blocked" : 0,
+    "flows_observed" : 0,
+    "remediation_requests" : 0
+  },
+  "enforcement_ready" : false,
+  "host_status" : {
+    "runtime" : {
+      "reason" : "system_extension_not_installed",
+      "state" : "degraded"
+    }
+  },
+  "install_state" : "not_installed",
+  "policy_synced" : false,
+  "provider_kind" : "content_filter",
+  "selection_evidence" : {
+    "backend_hint" : "legacy_proxy_only_runtime",
+    "effective_provider" : "content_filter",
+    "exception_required" : false,
+    "requested_provider" : "content_filter"
+  }
+}

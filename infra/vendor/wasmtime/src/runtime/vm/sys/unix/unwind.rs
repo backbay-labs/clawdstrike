@@ -6,7 +6,7 @@ use core::ptr::NonNull;
 
 /// Represents a registration of function unwind information for System V ABI.
 pub struct UnwindRegistration {
-    registrations: Vec<SendSyncPtr<u8>>,
+    registrations: TryVec<SendSyncPtr<u8>>,
 }
 
 cfg_if::cfg_if! {
@@ -78,7 +78,7 @@ impl UnwindRegistration {
             "The unwind info must always be aligned to a page"
         );
 
-        let mut registrations = Vec::new();
+        let mut registrations = TryVec::new();
         unsafe {
             if using_libunwind() {
                 // For libunwind, `__register_frame` takes a pointer to a single
@@ -97,7 +97,7 @@ impl UnwindRegistration {
                     if current != start {
                         __register_frame(current);
                         let cur = NonNull::new(current.cast_mut()).unwrap();
-                        registrations.push(SendSyncPtr::new(cur));
+                        registrations.push(SendSyncPtr::new(cur))?;
                     }
 
                     // Move to the next table entry (+4 because the length itself is
@@ -109,7 +109,7 @@ impl UnwindRegistration {
                 // entry of length 0
                 __register_frame(unwind_info);
                 let info = NonNull::new(unwind_info.cast_mut()).unwrap();
-                registrations.push(SendSyncPtr::new(info));
+                registrations.push(SendSyncPtr::new(info))?;
             }
         }
 

@@ -252,7 +252,7 @@ describe('ReceiptSigner', () => {
   });
 
   describe('verify', () => {
-    it('should return true for unsigned receipts', () => {
+    it('should reject unsigned receipts by default', () => {
       const signer = new ReceiptSigner();
       const receipt = signer.createReceipt(
         makeDenyDecision(),
@@ -260,7 +260,18 @@ describe('ReceiptSigner', () => {
         SAMPLE_POLICY_HASH,
       ) as DecisionReceipt;
 
-      expect(ReceiptSigner.verify(receipt)).toBe(true);
+      expect(ReceiptSigner.verify(receipt)).toBe(false);
+    });
+
+    it('should allow unsigned development receipts only with explicit opt-in', () => {
+      const signer = new ReceiptSigner();
+      const receipt = signer.createReceipt(
+        makeDenyDecision(),
+        makeToolEvent(),
+        SAMPLE_POLICY_HASH,
+      ) as DecisionReceipt;
+
+      expect(ReceiptSigner.verify(receipt, { allowUnsignedDevReceipts: true })).toBe(true);
     });
 
     it('should return false for receipts with a signature (no WASM verifier)', () => {

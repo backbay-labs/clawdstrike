@@ -24,6 +24,7 @@ hunt-query.workspace = true
 hush-multi-agent.workspace = true
 spine.workspace = true
 clawdstrike-ocsf.workspace = true
+clawdstrike-policy-event.workspace = true
 
 # Web framework
 axum.workspace = true
@@ -77,6 +78,7 @@ hex.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+zip = "0.6.6"
 
 [lints]
 workspace = true

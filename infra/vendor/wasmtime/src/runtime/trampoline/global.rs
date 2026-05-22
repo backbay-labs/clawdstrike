@@ -29,7 +29,7 @@ pub fn generate_global_export(
         ty: global,
         global: VMGlobalDefinition::new(),
         _registered_type: ty.into_registered_type(),
-    });
+    })?;
 
     let mut store = AutoAssertNoGc::new(store);
     // SAFETY: the global that this is pointing to is rooted in `ctx` above and
@@ -76,13 +76,13 @@ pub fn generate_global_export(
             }
             Val::ContRef(Some(_)) => {
                 // TODO(#10248): Implement non-null trampoline continuation reference handling
-                return Err(anyhow::anyhow!(
+                return Err(crate::format_err!(
                     "non-null continuation references in trampoline globals not yet supported"
                 ));
             }
         }
     }
 
-    let index = store.host_globals_mut().push(ctx);
+    let index = store.host_globals_mut().push(ctx)?;
     Ok(crate::Global::from_host(store.id(), index))
 }

@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "pulley-macros"
-version = "41.0.4"
+version = "44.0.1"
 build = false
 autolib = false
 autobins = false

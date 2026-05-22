@@ -88,7 +88,7 @@ impl Mmap {
             .metadata()
             .context("failed to get file metadata")?
             .len();
-        let len = usize::try_from(len).map_err(|_| anyhow::anyhow!("file too large to map"))?;
+        let len = usize::try_from(len).map_err(|_| crate::format_err!("file too large to map"))?;
         let ptr = unsafe {
             rustix::mm::mmap(
                 ptr::null_mut(),
@@ -98,7 +98,7 @@ impl Mmap {
                 &file,
                 0,
             )
-            .context(format!("mmap failed to allocate {len:#x} bytes"))?
+            .with_context(|| format!("mmap failed to allocate {len:#x} bytes"))?
         };
         let memory = std::ptr::slice_from_raw_parts_mut(ptr.cast(), len);
         let memory = SendSyncPtr::new(NonNull::new(memory).unwrap());

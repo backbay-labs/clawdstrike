@@ -38,6 +38,7 @@ const MAX_TYPE_DEPTH: u32 = 100;
 pub struct ComponentTypesBuilder {
     functions: HashMap<TypeFunc, TypeFuncIndex>,
     lists: HashMap<TypeList, TypeListIndex>,
+    maps: HashMap<TypeMap, TypeMapIndex>,
     records: HashMap<TypeRecord, TypeRecordIndex>,
     variants: HashMap<TypeVariant, TypeVariantIndex>,
     tuples: HashMap<TypeTuple, TypeTupleIndex>,
@@ -50,6 +51,7 @@ pub struct ComponentTypesBuilder {
     future_tables: HashMap<TypeFutureTable, TypeFutureTableIndex>,
     stream_tables: HashMap<TypeStreamTable, TypeStreamTableIndex>,
     error_context_tables: HashMap<TypeErrorContextTable, TypeComponentLocalErrorContextTableIndex>,
+    fixed_length_lists: HashMap<TypeFixedLengthList, TypeFixedLengthListIndex>,
 
     component_types: ComponentTypes,
     module_types: ModuleTypesBuilder,
@@ -102,6 +104,7 @@ impl ComponentTypesBuilder {
 
             functions: HashMap::default(),
             lists: HashMap::default(),
+            maps: HashMap::default(),
             records: HashMap::default(),
             variants: HashMap::default(),
             tuples: HashMap::default(),
@@ -118,6 +121,7 @@ impl ComponentTypesBuilder {
             type_info: TypeInformationCache::default(),
             resources: ResourcesBuilder::default(),
             abstract_resources: 0,
+            fixed_length_lists: HashMap::default(),
         }
     }
 
@@ -171,7 +175,7 @@ impl ComponentTypesBuilder {
             .find(|(_, ty)| {
                 ty.as_func().map_or(false, |sig| {
                     sig.params().len() == 1
-                        && sig.returns().len() == 0
+                        && sig.results().len() == 0
                         && sig.params()[0] == WasmValType::I32
                 })
             })
@@ -439,6 +443,9 @@ impl ComponentTypesBuilder {
                 InterfaceType::Variant(self.variant_type(types, e)?)
             }
             ComponentDefinedType::List(e) => InterfaceType::List(self.list_type(types, e)?),
+            ComponentDefinedType::Map(key, value) => {
+                InterfaceType::Map(self.map_type(types, key, value)?)
+            }
             ComponentDefinedType::Tuple(e) => InterfaceType::Tuple(self.tuple_type(types, e)?),
             ComponentDefinedType::Flags(e) => InterfaceType::Flags(self.flags_type(e)),
             ComponentDefinedType::Enum(e) => InterfaceType::Enum(self.enum_type(e)),
@@ -456,8 +463,8 @@ impl ComponentTypesBuilder {
             ComponentDefinedType::Stream(ty) => {
                 InterfaceType::Stream(self.stream_table_type(types, ty)?)
             }
-            ComponentDefinedType::FixedSizeList(..) => {
-                bail!("support not implemented for fixed-size-lists");
+            ComponentDefinedType::FixedLengthList(ty, size) => {
+                InterfaceType::FixedLengthList(self.fixed_length_list_type(types, ty, *size)?)
             }
         };
         let info = self.type_information(&ret);
@@ -531,11 +538,6 @@ impl ComponentTypesBuilder {
             .cases
             .iter()
             .map(|(name, case)| {
-                // FIXME: need to implement `refines`, not sure what that
-                // is at this time.
-                if case.refines.is_some() {
-                    bail!("refines is not supported at this time");
-                }
                 Ok((
                     name.to_string(),
                     match &case.ty.as_ref() {
@@ -570,6 +572,34 @@ impl ComponentTypesBuilder {
                 .map(|ty| self.component_types.canonical_abi(ty)),
         );
         self.add_tuple_type(TypeTuple { types, abi })
+    }
+
+    fn fixed_length_list_type(
+        &mut self,
+        types: TypesRef<'_>,
+        ty: &ComponentValType,
+        size: u32,
+    ) -> Result<TypeFixedLengthListIndex> {
+        assert_eq!(types.id(), self.module_types.validator_id());
+        let element = self.valtype(types, ty)?;
+        Ok(self.new_fixed_length_list_type(element, size))
+    }
+
+    pub(crate) fn new_fixed_length_list_type(
+        &mut self,
+        element: InterfaceType,
+        size: u32,
+    ) -> TypeFixedLengthListIndex {
+        let element_abi = self.component_types.canonical_abi(&element);
+        let mut abi = element_abi.clone();
+        // this assumes that size32 is already rounded up to alignment
+        abi.size32 = element_abi.size32.saturating_mul(size);
+        abi.size64 = element_abi.size64.saturating_mul(size);
+        abi.flat_count = element_abi
+            .flat_count
+            .zip(u8::try_from(size).ok())
+            .and_then(|(flat_count, size)| flat_count.checked_mul(size));
+        self.add_fixed_length_list_type(TypeFixedLengthList { element, size, abi })
     }
 
     fn flags_type(&mut self, flags: &IndexSet<KebabString>) -> TypeFlagsIndex {
@@ -662,6 +692,36 @@ impl ComponentTypesBuilder {
         Ok(self.add_list_type(TypeList { element }))
     }
 
+    fn map_type(
+        &mut self,
+        types: TypesRef<'_>,
+        key: &ComponentValType,
+        value: &ComponentValType,
+    ) -> Result<TypeMapIndex> {
+        assert_eq!(types.id(), self.module_types.validator_id());
+        let key_ty = self.valtype(types, key)?;
+        let value_ty = self.valtype(types, value)?;
+        let key_abi = self.component_types.canonical_abi(&key_ty);
+        let value_abi = self.component_types.canonical_abi(&value_ty);
+        let entry_abi = CanonicalAbiInfo::record([key_abi, value_abi].into_iter());
+
+        let mut offset32 = 0;
+        key_abi.next_field32(&mut offset32);
+        let value_offset32 = value_abi.next_field32(&mut offset32);
+
+        let mut offset64 = 0;
+        key_abi.next_field64(&mut offset64);
+        let value_offset64 = value_abi.next_field64(&mut offset64);
+
+        Ok(self.add_map_type(TypeMap {
+            key: key_ty,
+            value: value_ty,
+            entry_abi,
+            value_offset32,
+            value_offset64,
+        }))
+    }
+
     /// Converts a wasmparser `id`, which must point to a resource, to its
     /// corresponding `TypeResourceTableIndex`.
     pub fn resource_id(&mut self, id: ResourceId) -> TypeResourceTableIndex {
@@ -688,6 +748,14 @@ impl ComponentTypesBuilder {
         intern_and_fill_flat_types!(self, tuples, ty)
     }
 
+    /// Interns a new tuple type within this type information.
+    pub fn add_fixed_length_list_type(
+        &mut self,
+        ty: TypeFixedLengthList,
+    ) -> TypeFixedLengthListIndex {
+        intern_and_fill_flat_types!(self, fixed_length_lists, ty)
+    }
+
     /// Interns a new variant type within this type information.
     pub fn add_variant_type(&mut self, ty: TypeVariant) -> TypeVariantIndex {
         intern_and_fill_flat_types!(self, variants, ty)
@@ -711,6 +779,11 @@ impl ComponentTypesBuilder {
     /// Interns a new list type within this type information.
     pub fn add_list_type(&mut self, ty: TypeList) -> TypeListIndex {
         intern_and_fill_flat_types!(self, lists, ty)
+    }
+
+    /// Interns a new map type within this type information.
+    pub fn add_map_type(&mut self, ty: TypeMap) -> TypeMapIndex {
+        intern_and_fill_flat_types!(self, maps, ty)
     }
 
     /// Interns a new future type within this type information.
@@ -816,6 +889,7 @@ impl ComponentTypesBuilder {
             }
 
             InterfaceType::List(i) => &self.type_info.lists[*i],
+            InterfaceType::Map(i) => &self.type_info.maps[*i],
             InterfaceType::Record(i) => &self.type_info.records[*i],
             InterfaceType::Variant(i) => &self.type_info.variants[*i],
             InterfaceType::Tuple(i) => &self.type_info.tuples[*i],
@@ -823,6 +897,7 @@ impl ComponentTypesBuilder {
             InterfaceType::Enum(i) => &self.type_info.enums[*i],
             InterfaceType::Option(i) => &self.type_info.options[*i],
             InterfaceType::Result(i) => &self.type_info.results[*i],
+            InterfaceType::FixedLengthList(i) => &self.type_info.fixed_length_lists[*i],
         }
     }
 }
@@ -932,6 +1007,8 @@ struct TypeInformationCache {
     options: PrimaryMap<TypeOptionIndex, TypeInformation>,
     results: PrimaryMap<TypeResultIndex, TypeInformation>,
     lists: PrimaryMap<TypeListIndex, TypeInformation>,
+    maps: PrimaryMap<TypeMapIndex, TypeInformation>,
+    fixed_length_lists: PrimaryMap<TypeFixedLengthListIndex, TypeInformation>,
 }
 
 struct TypeInformation {
@@ -1081,6 +1158,24 @@ impl TypeInformation {
         self.build_record(ty.types.iter().map(|t| types.type_information(t)));
     }
 
+    fn fixed_length_lists(&mut self, types: &ComponentTypesBuilder, ty: &TypeFixedLengthList) {
+        let element_info = types.type_information(&ty.element);
+        self.depth = 1 + element_info.depth;
+        self.has_borrow = element_info.has_borrow;
+        match element_info.flat.as_flat_types() {
+            Some(types) => {
+                'outer: for _ in 0..ty.size {
+                    for (t32, t64) in types.memory32.iter().zip(types.memory64) {
+                        if !self.flat.push(*t32, *t64) {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+            None => self.flat.len = u8::try_from(MAX_FLAT_TYPES + 1).unwrap(),
+        }
+    }
+
     fn enums(&mut self, _types: &ComponentTypesBuilder, _ty: &TypeEnum) {
         self.depth = 1;
         self.flat.push(FlatType::I32, FlatType::I32);
@@ -1125,5 +1220,16 @@ impl TypeInformation {
         let info = types.type_information(&ty.element);
         self.depth += info.depth;
         self.has_borrow = info.has_borrow;
+    }
+
+    fn maps(&mut self, types: &ComponentTypesBuilder, ty: &TypeMap) {
+        // Maps are represented as list<tuple<k, v>> in canonical ABI
+        // So we use POINTER_PAIR like lists, and calculate depth/borrow from key and value
+        *self = TypeInformation::string();
+        let key_info = types.type_information(&ty.key);
+        let value_info = types.type_information(&ty.value);
+        // Depth is max of key/value depths, plus 1 for the extra map layer.
+        self.depth = key_info.depth.max(value_info.depth) + 1;
+        self.has_borrow = key_info.has_borrow || value_info.has_borrow;
     }
 }

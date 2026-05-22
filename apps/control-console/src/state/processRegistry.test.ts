@@ -62,4 +62,58 @@ describe("processRegistry", () => {
       expect(processIds.has(id)).toBe(true);
     }
   });
+
+  it("exposes proof-at-execution as an operator tool", () => {
+    const proofProcess = processes.find((p) => p.id === "execution-proof");
+    expect(proofProcess?.name).toBe("Proof at Execution");
+    expect(desktopIcons.some((icon) => icon.processId === "execution-proof")).toBe(true);
+  });
+
+  it("exposes privacy reports as an operator tool", () => {
+    const privacyProcess = processes.find((p) => p.id === "privacy-report");
+    expect(privacyProcess?.name).toBe("Privacy Report");
+    expect(desktopIcons.some((icon) => icon.processId === "privacy-report")).toBe(true);
+  });
+
+  it("exposes causal finding groups as an operator tool", () => {
+    const causalProcess = processes.find((p) => p.id === "causal-groups");
+    expect(causalProcess?.name).toBe("Causal Groups");
+    expect(desktopIcons.some((icon) => icon.processId === "causal-groups")).toBe(true);
+  });
+
+  it("exposes process cause as an operator tool", () => {
+    const processCause = processes.find((p) => p.id === "process-cause");
+    expect(processCause?.name).toBe("Process Cause");
+    expect(desktopIcons.some((icon) => icon.processId === "process-cause")).toBe(true);
+  });
+
+  it("exposes policy replay as an operator tool", () => {
+    const policyReplay = processes.find((p) => p.id === "policy-replay");
+    expect(policyReplay?.name).toBe("Policy Replay");
+    expect(desktopIcons.some((icon) => icon.processId === "policy-replay")).toBe(true);
+  });
+
+  it("exposes rule impact as an operator tool", () => {
+    const ruleImpact = processes.find((p) => p.id === "rule-impact");
+    expect(ruleImpact?.name).toBe("Rule Impact");
+    expect(desktopIcons.some((icon) => icon.processId === "rule-impact")).toBe(true);
+  });
+
+  it("exposes local containment as an operator tool", () => {
+    const localContainment = processes.find((p) => p.id === "local-containment");
+    expect(localContainment?.name).toBe("Local Containment");
+    expect(desktopIcons.some((icon) => icon.processId === "local-containment")).toBe(true);
+  });
+
+  it("exposes agent secret touches as an operator tool", () => {
+    const agentSecretTouches = processes.find((p) => p.id === "agent-secret-touches");
+    expect(agentSecretTouches?.name).toBe("Agent Secret Touches");
+    expect(desktopIcons.some((icon) => icon.processId === "agent-secret-touches")).toBe(true);
+  });
+
+  it("exposes fleet cases as an operator tool", () => {
+    const fleetCases = processes.find((p) => p.id === "fleet-cases");
+    expect(fleetCases?.name).toBe("Fleet Cases");
+    expect(desktopIcons.some((icon) => icon.processId === "fleet-cases")).toBe(true);
+  });
 });

@@ -64,4 +64,23 @@ execution:
     - "rm -rf /*"
     - "curl.*|.*bash"
 
+tools:
+  allowed:
+    - read
+    - read_file
+    - list_dir
+    - list_directory
+    - search
+    - grep
+    - web_search
+  denied:
+    - shell_exec
+    - run_command
+  require_confirmation:
+    - file_write
+    - git_push
+    - deploy
+    - publish
+  default_action: block
+
 on_violation: cancel

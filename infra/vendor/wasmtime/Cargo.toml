@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "wasmtime"
-version = "41.0.4"
+version = "44.0.1"
 authors = ["The Wasmtime Project Developers"]
 build = "build.rs"
 autolib = false
@@ -42,10 +42,15 @@ all-arch = [
     "wasmtime-winch?/all-arch",
     "pulley",
 ]
+anyhow = ["wasmtime-environ/anyhow"]
 async = [
     "dep:wasmtime-fiber",
     "wasmtime-component-macro?/async",
     "runtime",
+]
+backtrace = [
+    "std",
+    "wasmtime-environ/backtrace",
 ]
 cache = [
     "dep:wasmtime-cache",
@@ -53,6 +58,7 @@ cache = [
 ]
 call-hook = []
 compile-time-builtins = [
+    "anyhow",
     "dep:wasm-compose",
     "dep:tempfile",
 ]
@@ -96,7 +102,9 @@ debug = [
 ]
 debug-builtins = ["wasmtime-jit-debug/gdb_jit_int"]
 default = [
+    "anyhow",
     "async",
+    "backtrace",
     "cache",
     "gc",
     "gc-drc",
@@ -119,10 +127,7 @@ default = [
     "debug",
     "compile-time-builtins",
 ]
-demangle = [
-    "wasmtime-environ/demangle",
-    "std",
-]
+demangle = ["wasmtime-environ/demangle"]
 gc = [
     "wasmtime-environ/gc",
     "wasmtime-cranelift?/gc",
@@ -154,8 +159,10 @@ pooling-allocator = [
     "std",
 ]
 profile-pulley = [
-    "pulley",
+    "anyhow",
     "profiling",
+    "pulley",
+    "pulley-interpreter/interp",
     "pulley-interpreter/profile",
 ]
 profiling = [
@@ -169,12 +176,15 @@ profiling = [
 ]
 pulley = []
 reexport-wasmparser = []
+rr = [
+    "component-model",
+    "wasmtime-environ/rr",
+]
 runtime = [
     "dep:cc",
     "dep:smallvec",
     "dep:mach2",
     "dep:memfd",
-    "dep:wasmtime-slab",
     "dep:wasmtime-versioned-export-macros",
     "dep:windows-sys",
     "pulley-interpreter/interp",
@@ -191,11 +201,12 @@ stack-switching = [
 std = [
     "postcard/use-std",
     "wasmtime-environ/std",
+    "wasmtime-core/std",
     "object/std",
     "once_cell",
     "wasmtime-fiber?/std",
     "pulley-interpreter/std",
-    "wasmtime-math/std",
+    "wasmtime-core/std",
     "addr2line?/std",
     "dep:rustix",
     "wasmtime-jit-icache-coherence",
@@ -210,6 +221,7 @@ trace-log = ["wasmtime-cranelift?/trace-log"]
 wave = [
     "dep:wasm-wave",
     "component-model",
+    "std",
 ]
 winch = [
     "dep:wasmtime-winch",
@@ -251,12 +263,8 @@ name = "unload-engine"
 path = "tests/unload-engine.rs"
 
 [dependencies.addr2line]
-version = "0.25.1"
+version = "0.26.0"
 optional = true
-default-features = false
-
-[dependencies.anyhow]
-version = "1.0.100"
 default-features = false
 
 [dependencies.async-trait]
@@ -267,10 +275,10 @@ optional = true
 version = "2.9.4"
 
 [dependencies.bumpalo]
-version = "3.11.0"
+version = "3.20.0"
 
 [dependencies.bytes]
-version = "1.10.1"
+version = "1.11.1"
 optional = true
 default-features = false
 
@@ -292,18 +300,9 @@ version = "0.8.1"
 optional = true
 
 [dependencies.gimli]
-version = "0.32.3"
+version = "0.33.0"
 features = ["read"]
 optional = true
-default-features = false
-
-[dependencies.hashbrown]
-version = "0.15"
-features = ["default-hasher"]
-default-features = false
-
-[dependencies.indexmap]
-version = "2.11.4"
 default-features = false
 
 [dependencies.libc]
@@ -315,7 +314,7 @@ version = "0.4.28"
 default-features = false
 
 [dependencies.object]
-version = "0.37.3"
+version = "0.39.0"
 features = [
     "read_core",
     "elf",
@@ -333,7 +332,7 @@ features = ["alloc"]
 default-features = false
 
 [dependencies.pulley-interpreter]
-version = "=41.0.4"
+version = "=44.0.1"
 
 [dependencies.rayon]
 version = "1.5.3"
@@ -369,95 +368,92 @@ version = "3.23.0"
 optional = true
 
 [dependencies.wasm-compose]
-version = "0.243.0"
+version = "0.246.1"
 optional = true
+default-features = false
 
 [dependencies.wasm-encoder]
-version = "0.243.0"
+version = "0.246.1"
 optional = true
 
 [dependencies.wasm-wave]
-version = "0.243.0"
+version = "0.246.1"
 optional = true
 
 [dependencies.wasmparser]
-version = "0.243.0"
+version = "0.246.1"
 features = ["simd"]
 default-features = false
 
 [dependencies.wasmtime-cache]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-cache"
 
 [dependencies.wasmtime-component-macro]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-component-macro"
 
 [dependencies.wasmtime-component-util]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-component-util"
 
+[dependencies.wasmtime-core]
+version = "=44.0.1"
+features = ["serde"]
+package = "wasmtime-internal-core"
+
 [dependencies.wasmtime-cranelift]
-version = "=41.0.4"
+version = "=44.0.1"
 features = ["pulley"]
 optional = true
 package = "wasmtime-internal-cranelift"
 
 [dependencies.wasmtime-environ]
-version = "=41.0.4"
+version = "=44.0.1"
 
 [dependencies.wasmtime-fiber]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-fiber"
 
 [dependencies.wasmtime-jit-debug]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-jit-debug"
 
 [dependencies.wasmtime-jit-icache-coherence]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-jit-icache-coherence"
 
-[dependencies.wasmtime-math]
-version = "=41.0.4"
-package = "wasmtime-internal-math"
-
-[dependencies.wasmtime-slab]
-version = "=41.0.4"
-optional = true
-package = "wasmtime-internal-slab"
-
 [dependencies.wasmtime-unwinder]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-unwinder"
 
 [dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.4"
+version = "=44.0.1"
 package = "wasmtime-internal-versioned-export-macros"
 
 [dependencies.wasmtime-winch]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-winch"
 
 [dependencies.wasmtime-wmemcheck]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-wmemcheck"
 
 [dependencies.wat]
-version = "1.243.0"
+version = "1.246.1"
 optional = true
 
 [dev-dependencies.cranelift-native]
-version = "0.128.4"
+version = "0.131.1"
 
 [dev-dependencies.env_logger]
 version = "0.11.5"
@@ -490,7 +486,7 @@ version = "1.2.41"
 optional = true
 
 [build-dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 package = "wasmtime-internal-versioned-export-macros"
 
@@ -570,4 +566,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

@@ -91,6 +91,16 @@ pub struct RuntimeRegistrySettings {
     pub runtimes: Vec<RuntimeAgentRegistration>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ControlApiSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalApiSecuritySettings {
     #[serde(default = "default_local_api_token_rotation_interval_hours")]
@@ -247,6 +257,9 @@ impl Default for BrokerdSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(skip)]
+    pub(crate) settings_path_override: Option<PathBuf>,
+
     #[serde(default = "default_policy_path")]
     pub policy_path: PathBuf,
 
@@ -301,6 +314,9 @@ pub struct Settings {
 
     #[serde(default)]
     pub runtime_registry: RuntimeRegistrySettings,
+
+    #[serde(default)]
+    pub control_api: ControlApiSettings,
 
     #[serde(default)]
     pub local_api_security: LocalApiSecuritySettings,
@@ -437,6 +453,7 @@ fn default_ota_check_interval_minutes() -> u32 {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            settings_path_override: None,
             policy_path: default_policy_path(),
             daemon_port: default_daemon_port(),
             mcp_port: default_mcp_port(),
@@ -455,6 +472,7 @@ impl Default for Settings {
             local_agent_id: None,
             integrations: IntegrationSettings::default(),
             runtime_registry: RuntimeRegistrySettings::default(),
+            control_api: ControlApiSettings::default(),
             local_api_security: LocalApiSecuritySettings::default(),
             ota_enabled: default_ota_enabled(),
             ota_mode: default_ota_mode(),
@@ -497,7 +515,10 @@ impl Settings {
     }
 
     pub fn save(&self) -> Result<()> {
-        let path = get_settings_path();
+        let path = self
+            .settings_path_override
+            .clone()
+            .unwrap_or_else(get_settings_path);
 
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
@@ -624,6 +645,9 @@ mod tests {
         assert_eq!(settings.integrations.siem.provider, "datadog");
         assert!(!settings.integrations.siem.enabled);
         assert!(!settings.integrations.webhooks.enabled);
+        assert!(!settings.control_api.enabled);
+        assert!(settings.control_api.url.is_none());
+        assert!(settings.control_api.api_key.is_none());
     }
 
     #[test]

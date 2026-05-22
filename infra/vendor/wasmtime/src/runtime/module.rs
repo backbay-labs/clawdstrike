@@ -22,7 +22,7 @@ use wasmparser::{Parser, ValidPayload, Validator};
 use wasmtime_environ::FrameTable;
 use wasmtime_environ::{
     CompiledFunctionsTable, CompiledModuleInfo, EntityIndex, HostPtr, ModuleTypes, ObjectKind,
-    TypeTrace, VMOffsets, VMSharedTypeIndex,
+    TypeTrace, VMOffsets, VMSharedTypeIndex, WasmChecksum,
 };
 #[cfg(feature = "gc")]
 use wasmtime_unwinder::ExceptionTable;
@@ -73,7 +73,7 @@ pub use registry::*;
 ///
 /// ```no_run
 /// # use wasmtime::*;
-/// # fn main() -> anyhow::Result<()> {
+/// # fn main() -> Result<()> {
 /// let engine = Engine::default();
 /// let module = Module::from_file(&engine, "path/to/foo.wasm")?;
 /// # Ok(())
@@ -84,7 +84,7 @@ pub use registry::*;
 ///
 /// ```no_run
 /// # use wasmtime::*;
-/// # fn main() -> anyhow::Result<()> {
+/// # fn main() -> Result<()> {
 /// let engine = Engine::default();
 /// // Now we're using the WebAssembly text extension: `.wat`!
 /// let module = Module::from_file(&engine, "path/to/foo.wat")?;
@@ -97,7 +97,7 @@ pub use registry::*;
 ///
 /// ```no_run
 /// # use wasmtime::*;
-/// # fn main() -> anyhow::Result<()> {
+/// # fn main() -> Result<()> {
 /// let engine = Engine::default();
 /// # let wasm_bytes: Vec<u8> = Vec::new();
 /// let module = Module::new(&engine, &wasm_bytes)?;
@@ -112,7 +112,7 @@ pub use registry::*;
 ///
 /// ```no_run
 /// # use wasmtime::*;
-/// # fn main() -> anyhow::Result<()> {
+/// # fn main() -> Result<()> {
 /// let engine = Engine::default();
 /// # let wasm_bytes: Vec<u8> = Vec::new();
 /// let module = Module::new(&engine, &wasm_bytes)?;
@@ -161,6 +161,9 @@ struct ModuleInner {
 
     /// Runtime offset information for `VMContext`.
     offsets: VMOffsets<HostPtr>,
+
+    /// The checksum of the source binary from which this module was compiled.
+    checksum: WasmChecksum,
 }
 
 impl fmt::Debug for Module {
@@ -225,7 +228,7 @@ impl Module {
     ///
     /// ```no_run
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// # let wasm_bytes: Vec<u8> = Vec::new();
     /// let module = Module::new(&engine, &wasm_bytes)?;
@@ -238,7 +241,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let module = Module::new(&engine, "(module (func))")?;
     /// # Ok(())
@@ -262,7 +265,7 @@ impl Module {
     ///
     /// ```no_run
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// let engine = Engine::default();
     /// let module = Module::from_file(&engine, "./path/to/foo.wasm")?;
     /// # Ok(())
@@ -273,7 +276,7 @@ impl Module {
     ///
     /// ```no_run
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let module = Module::from_file(&engine, "./path/to/foo.wat")?;
     /// # Ok(())
@@ -299,7 +302,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let wasm = b"\0asm\x01\0\0\0";
     /// let module = Module::from_binary(&engine, wasm)?;
@@ -311,7 +314,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// assert!(Module::from_binary(&engine, b"(module)").is_err());
     /// # Ok(())
@@ -515,13 +518,13 @@ impl Module {
         // Note that the unsafety here should be ok since the `trampolines`
         // field should only point to valid trampoline function pointers
         // within the text section.
-        let signatures =
-            engine.register_and_canonicalize_types(&mut types, core::iter::once(&mut info.module));
+        let signatures = engine
+            .register_and_canonicalize_types(&mut types, core::iter::once(&mut info.module))?;
 
         // Package up all our data into an `EngineCode` and delegate to the final
         // step of module compilation.
-        let code = Arc::new(EngineCode::new(code_memory, signatures, types.into()));
-        let index = Arc::new(index);
+        let code = try_new::<Arc<_>>(EngineCode::new(code_memory, signatures, types.into())?)?;
+        let index = try_new::<Arc<_>>(index)?;
         Module::from_parts_raw(engine, code, info, index, true)
     }
 
@@ -532,6 +535,7 @@ impl Module {
         index: Arc<CompiledFunctionsTable>,
         serializable: bool,
     ) -> Result<Self> {
+        let checksum = info.checksum;
         let module = CompiledModule::from_artifacts(code.clone(), info, index, engine.profiler())?;
 
         // Validate the module can be used with the current instance allocator.
@@ -543,7 +547,7 @@ impl Module {
         let _ = serializable;
 
         Ok(Self {
-            inner: Arc::new(ModuleInner {
+            inner: try_new::<Arc<_>>(ModuleInner {
                 engine: engine.clone(),
                 code,
                 memory_images: OnceLock::new(),
@@ -551,7 +555,8 @@ impl Module {
                 #[cfg(any(feature = "cranelift", feature = "winch"))]
                 serializable,
                 offsets,
-            }),
+                checksum,
+            })?,
         })
     }
 
@@ -666,7 +671,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let module = Module::new(&engine, "(module $foo)")?;
     /// assert_eq!(module.name(), Some("foo"));
@@ -678,7 +683,21 @@ impl Module {
     /// # }
     /// ```
     pub fn name(&self) -> Option<&str> {
-        self.compiled_module().module().name.as_deref()
+        let module = self.compiled_module().module();
+        let name = module.name?;
+        Some(&module.strings[name])
+    }
+
+    /// Returns the original Wasm bytecode for this module, if it is
+    /// available.
+    ///
+    /// Bytecode is only retained when the [`Engine`] was configured with
+    /// `guest-debug` support enabled (see [`Config::guest_debug`]). Returns
+    /// `None` when the module was compiled without that option.
+    ///
+    /// [`Config::guest_debug`]: crate::Config::guest_debug
+    pub fn debug_bytecode(&self) -> Option<&[u8]> {
+        self.compiled_module().bytecode()
     }
 
     /// Returns the list of imports that this [`Module`] has and must be
@@ -699,7 +718,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let module = Module::new(&engine, "(module)")?;
     /// assert_eq!(module.imports().len(), 0);
@@ -711,7 +730,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let wat = r#"
     ///     (module
@@ -736,14 +755,10 @@ impl Module {
         let module = self.compiled_module().module();
         let types = self.types();
         let engine = self.engine();
-        module
-            .imports()
-            .map(move |(imp_mod, imp_field, ty)| {
-                debug_assert!(ty.is_canonicalized_for_runtime_usage());
-                ImportType::new(imp_mod, imp_field, ty, types, engine)
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
+        module.imports().map(move |(imp_mod, imp_field, ty)| {
+            debug_assert!(ty.is_canonicalized_for_runtime_usage());
+            ImportType::new(imp_mod, imp_field, ty, types, engine)
+        })
     }
 
     /// Returns the list of exports that this [`Module`] has and will be
@@ -760,7 +775,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let module = Module::new(&engine, "(module)")?;
     /// assert!(module.exports().next().is_none());
@@ -772,7 +787,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let wat = r#"
     ///     (module
@@ -807,7 +822,12 @@ impl Module {
         let types = self.types();
         let engine = self.engine();
         module.exports.iter().map(move |(name, entity_index)| {
-            ExportType::new(name, module.type_of(*entity_index), types, engine)
+            ExportType::new(
+                &module.strings[name],
+                module.type_of(*entity_index),
+                types,
+                engine,
+            )
         })
     }
 
@@ -821,7 +841,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let module = Module::new(&engine, "(module)")?;
     /// assert!(module.get_export("foo").is_none());
@@ -833,7 +853,7 @@ impl Module {
     ///
     /// ```
     /// # use wasmtime::*;
-    /// # fn main() -> anyhow::Result<()> {
+    /// # fn main() -> Result<()> {
     /// # let engine = Engine::default();
     /// let wat = r#"
     ///     (module
@@ -856,7 +876,8 @@ impl Module {
     /// ```
     pub fn get_export(&self, name: &str) -> Option<ExternType> {
         let module = self.compiled_module().module();
-        let entity_index = module.exports.get(name)?;
+        let name = module.strings.get_atom(name)?;
+        let entity_index = module.exports.get(&name)?;
         Some(ExternType::from_wasmtime(
             self.engine(),
             self.types(),
@@ -873,7 +894,8 @@ impl Module {
     pub fn get_export_index(&self, name: &str) -> Option<ModuleExport> {
         let compiled_module = self.compiled_module();
         let module = compiled_module.module();
-        let entity = *module.exports.get(name)?;
+        let name = module.strings.get_atom(name)?;
+        let entity = *module.exports.get(&name)?;
         Some(ModuleExport {
             module: self.id(),
             entity,
@@ -883,6 +905,15 @@ impl Module {
     /// Returns the [`Engine`] that this [`Module`] was compiled by.
     pub fn engine(&self) -> &Engine {
         &self.inner.engine
+    }
+
+    #[allow(
+        unused,
+        reason = "used only for verification with wasmtime `rr` feature \
+        and requires a lot of unnecessary gating across crates"
+    )]
+    pub(crate) fn checksum(&self) -> &WasmChecksum {
+        &self.inner.checksum
     }
 
     /// Returns a summary of the resources required to instantiate this
@@ -1076,6 +1107,15 @@ impl Module {
 
     pub(crate) fn offsets(&self) -> &VMOffsets<HostPtr> {
         &self.inner.offsets
+    }
+
+    /// Return the unique-within-Engine ID for this module.
+    ///
+    /// Allows distinguishing module identities when introspecting
+    /// modules, e.g. via debug APIs.
+    #[cfg(feature = "debug")]
+    pub fn debug_index_in_engine(&self) -> u64 {
+        self.id().as_u64()
     }
 
     /// Return the address, in memory, of the trampoline that allows Wasm to

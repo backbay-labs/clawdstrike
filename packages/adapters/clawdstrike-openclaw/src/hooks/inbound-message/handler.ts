@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type {
   AdapterConfig,
   GenericInboundMessage,
@@ -14,6 +18,7 @@ import type {
   HookHandler,
   InboundMessageEvent,
   OpenClawHookContext,
+  PolicyEvent,
 } from "../../types.js";
 
 type ModernInboundEvent = {
@@ -58,8 +63,8 @@ function isInboundLegacyEvent(event: HookEvent | ModernInboundEvent): event is I
     typeof event === "object" &&
     event !== null &&
     "type" in event &&
-    (((event as { type?: unknown }).type === "inbound_message") ||
-      ((event as { type?: unknown }).type === "user_input"))
+    ((event as { type?: unknown }).type === "inbound_message" ||
+      (event as { type?: unknown }).type === "user_input")
   );
 }
 
@@ -115,7 +120,8 @@ function normalizeInboundMessage(
 
     const timestamp = asString(raw.timestamp) ?? event.timestamp;
     const parsedTimestamp = new Date(timestamp);
-    const sessionId = event.context.sessionId || hookCtx?.sessionKey || hookCtx?.agentId || "openclaw-runtime";
+    const sessionId =
+      event.context.sessionId || hookCtx?.sessionKey || hookCtx?.agentId || "openclaw-runtime";
 
     return {
       sessionId,
@@ -188,7 +194,7 @@ function applyDecisionToEvent(
   const messages = extractMessageList(event);
   const decisionWarning =
     result.decision.status === "warn" || result.decision.status === "sanitize"
-      ? result.decision.message ?? result.decision.reason
+      ? (result.decision.message ?? result.decision.reason)
       : undefined;
   const warning = result.warning ?? decisionWarning;
 
@@ -223,6 +229,186 @@ function applyDecisionToEvent(
   return;
 }
 
+type InboundTelemetryIdentity = {
+  hostId?: string;
+  userId?: string;
+  sessionId?: string;
+  agentId?: string;
+  workloadId?: string;
+  approvalId?: string;
+};
+
+function inboundTelemetryIdentity(
+  hookCtx: OpenClawHookContext | undefined,
+  sessionId: string,
+): InboundTelemetryIdentity {
+  return {
+    hostId: firstInboundString(
+      hookCtx?.hostId,
+      process.env.CLAWDSTRIKE_HOST_ID,
+      process.env.CLAWDSTRIKE_ENDPOINT_ID,
+    ),
+    userId: firstInboundString(
+      hookCtx?.userId,
+      process.env.CLAWDSTRIKE_USER_ID,
+      process.env.CLAWDSTRIKE_PRINCIPAL_ID,
+    ),
+    sessionId: firstInboundString(
+      sessionId,
+      hookCtx?.sessionKey,
+      process.env.CLAWDSTRIKE_SESSION_ID,
+    ),
+    agentId: firstInboundString(hookCtx?.agentId, process.env.CLAWDSTRIKE_AGENT_ID),
+    workloadId:
+      firstInboundString(hookCtx?.workloadId, process.env.CLAWDSTRIKE_WORKLOAD_ID) ??
+      "openclaw-inbound-message",
+    approvalId: firstInboundString(hookCtx?.approvalId, process.env.CLAWDSTRIKE_APPROVAL_ID),
+  };
+}
+
+function firstInboundString(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+export function buildInboundPolicyEventForEdr(
+  sessionId: string,
+  message: GenericInboundMessage,
+  inboundConfig: InboundConfig,
+  result: InboundInterceptResult,
+  identity: InboundTelemetryIdentity = {},
+): PolicyEvent {
+  const contentHash = sha256Hex(message.text);
+  const modifiedText = result.modifiedMessage?.text;
+  const modifiedContentHash =
+    typeof modifiedText === "string" && modifiedText !== message.text
+      ? sha256Hex(modifiedText)
+      : undefined;
+  const customType = inboundConfig.customType ?? "untrusted_text";
+
+  return {
+    eventId: `inbound-edr-${sessionId}-${message.id}-${contentHash.slice(0, 16)}`,
+    eventType: "custom",
+    timestamp: message.timestamp.toISOString(),
+    sessionId,
+    data: {
+      type: "custom",
+      customType,
+      source: message.source,
+      messageId: message.id,
+      contentHash,
+      contentSizeBytes: Buffer.byteLength(message.text, "utf8"),
+      contentOmitted: true,
+      ...(modifiedContentHash
+        ? {
+            modifiedContentHash,
+            modifiedContentSizeBytes: Buffer.byteLength(modifiedText ?? "", "utf8"),
+            modifiedContentOmitted: true,
+          }
+        : {}),
+      ...(message.senderId ? { senderId: message.senderId } : {}),
+      ...(message.channel ? { channel: message.channel } : {}),
+      ...(message.chatType ? { chatType: message.chatType } : {}),
+    },
+    metadata: {
+      collectorKind: "openclaw_inbound_message",
+      inbound: true,
+      postEvaluation: true,
+      rawContentOmitted: true,
+      messageId: message.id,
+      messageSource: message.source,
+      contentHash,
+      contentSizeBytes: Buffer.byteLength(message.text, "utf8"),
+      ...(modifiedContentHash ? { modifiedContentHash } : {}),
+      ...(message.senderId ? { senderId: message.senderId } : {}),
+      ...(message.senderName ? { senderNameHash: sha256Hex(message.senderName) } : {}),
+      ...(message.channel ? { channel: message.channel } : {}),
+      ...(message.chatType ? { chatType: message.chatType } : {}),
+      hostId: identity.hostId,
+      userId: identity.userId,
+      sessionId: identity.sessionId ?? sessionId,
+      agentId: identity.agentId,
+      workloadId: identity.workloadId ?? "openclaw-inbound-message",
+      approvalId: identity.approvalId,
+      policyAllowed: result.decision.status !== "deny",
+      policyStatus: result.decision.status,
+      policyGuard: result.decision.guard,
+      policySeverity: result.decision.severity,
+      policyReason: result.decision.reason,
+      policyMessage: result.decision.message,
+      durationMs: result.duration,
+    },
+  };
+}
+
+async function publishInboundPolicyEvent(policyEvent: PolicyEvent): Promise<void> {
+  const endpoint = resolvePolicyEventsEndpoint();
+  if (!endpoint) return;
+
+  try {
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${endpoint.token}`,
+      },
+      signal: AbortSignal.timeout(250),
+      body: JSON.stringify({ events: [policyEvent] }),
+    });
+    if (!response.ok) {
+      return;
+    }
+  } catch {
+    // Inbound EDR telemetry is evidence enrichment only. Prompt guard
+    // enforcement above remains the authoritative block/sanitize path.
+  }
+}
+
+function resolvePolicyEventsEndpoint(): { url: string; token: string } | null {
+  const token = localAgentToken();
+  if (!token) return null;
+
+  const explicitUrl = process.env.CLAWDSTRIKE_POLICY_EVENTS_URL?.trim();
+  if (explicitUrl) {
+    return { url: explicitUrl, token };
+  }
+
+  const baseUrl =
+    process.env.CLAWDSTRIKE_AGENT_URL?.trim() ??
+    process.env.CLAWDSTRIKE_APPROVAL_URL?.trim() ??
+    "http://127.0.0.1:9878";
+  return {
+    url: `${baseUrl.replace(/\/+$/, "")}/api/v1/agent/edr/policy-events`,
+    token,
+  };
+}
+
+function localAgentToken(): string | null {
+  const envToken = process.env.CLAWDSTRIKE_AGENT_TOKEN?.trim();
+  if (envToken) return envToken;
+
+  const tokenPath =
+    process.env.CLAWDSTRIKE_AGENT_TOKEN_PATH?.trim() ??
+    join(
+      process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config"),
+      "clawdstrike",
+      "agent-local-token",
+    );
+  try {
+    const token = readFileSync(tokenPath, "utf8").trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 const handler: HookHandler = async (
   event: HookEvent | ModernInboundEvent,
   hookCtx?: OpenClawHookContext,
@@ -231,6 +417,7 @@ const handler: HookHandler = async (
   if (!normalized) return;
   const inboundConfig = resolveInboundConfig(currentConfig);
   if (inboundConfig.enabled === false) return;
+  const telemetryIdentity = inboundTelemetryIdentity(hookCtx, normalized.sessionId);
 
   const engine = getSharedEngine(currentConfig);
   const adapterConfig: AdapterConfig = {
@@ -243,10 +430,24 @@ const handler: HookHandler = async (
     metadata: {
       framework: "openclaw",
       hookEvent: isInboundLegacyEvent(event) ? event.type : "inbound_message",
+      hostId: telemetryIdentity.hostId,
+      userId: telemetryIdentity.userId,
+      agentId: telemetryIdentity.agentId,
+      workloadId: telemetryIdentity.workloadId,
+      approvalId: telemetryIdentity.approvalId,
     },
   });
 
   const result = await interceptInboundMessage(engine, adapterConfig, context, normalized.message);
+  void publishInboundPolicyEvent(
+    buildInboundPolicyEventForEdr(
+      normalized.sessionId,
+      normalized.message,
+      inboundConfig,
+      result,
+      telemetryIdentity,
+    ),
+  );
   return applyDecisionToEvent(event, result);
 };
 

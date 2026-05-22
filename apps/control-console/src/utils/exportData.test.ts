@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { exportAsCSV, exportAsJSON } from "./exportData";
+import { downloadBlob, exportAsCSV, exportAsJSON } from "./exportData";
 
 let clickSpy: ReturnType<typeof vi.fn>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,6 +68,17 @@ describe("exportAsJSON", () => {
   it("creates a JSON blob and triggers download", () => {
     const data = [{ id: 1 }, { id: 2 }];
     exportAsJSON(data, "events");
+
+    expect(globalThis.URL.createObjectURL).toHaveBeenCalledOnce();
+    expect(appendSpy).toHaveBeenCalledOnce();
+    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(removeSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("downloadBlob", () => {
+  it("downloads an existing blob with the provided filename", () => {
+    downloadBlob(new Blob(["bundle"], { type: "application/zip" }), "caseexp-1.zip");
 
     expect(globalThis.URL.createObjectURL).toHaveBeenCalledOnce();
     expect(appendSpy).toHaveBeenCalledOnce();

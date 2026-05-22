@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { parseNetworkTarget } from "./network-target.js";
 import type { CuaEventData, EventType, PolicyEvent } from "./types.js";
 
@@ -17,6 +19,116 @@ function coerceValidPort(value: unknown): number | null {
   }
 
   return null;
+}
+
+function coerceNetworkProtocol(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+
+  const protocol = value.trim().replace(/:$/, "").toLowerCase();
+  return /^[a-z][a-z0-9+.-]*$/.test(protocol) ? protocol : undefined;
+}
+
+function inferProtocolFromNetworkTarget(value: string): string | undefined {
+  const schemeSeparator = value.trim().indexOf("://");
+  if (schemeSeparator === -1) return undefined;
+
+  return coerceNetworkProtocol(value.trim().slice(0, schemeSeparator));
+}
+
+function trimmedStringParameter(
+  parameters: Record<string, unknown>,
+  names: readonly string[],
+): string | undefined {
+  for (const name of names) {
+    const value = parameters[name];
+    if (typeof value !== "string") continue;
+
+    const trimmed = value.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return undefined;
+}
+
+function sha256ContentHash(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function sha256BytesHash(value: Buffer): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function decodedBase64Parameter(
+  parameters: Record<string, unknown>,
+  names: readonly string[],
+): Buffer | undefined {
+  for (const name of names) {
+    const value = parameters[name];
+    if (typeof value !== "string") continue;
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) continue;
+
+    return Buffer.from(trimmed, "base64");
+  }
+  return undefined;
+}
+
+function binaryContentParameter(value: unknown): Buffer | undefined {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) {
+    return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  }
+  return undefined;
+}
+
+function fileContentHash(parameters: Record<string, unknown>): string | undefined {
+  const contentBase64 = decodedBase64Parameter(parameters, ["contentBase64", "content_base64"]);
+  const binaryContent = binaryContentParameter(parameters.content);
+  return (
+    trimmedStringParameter(parameters, ["contentHash", "content_hash"]) ??
+    (typeof parameters.content === "string" ? sha256ContentHash(parameters.content) : undefined) ??
+    (binaryContent ? sha256BytesHash(binaryContent) : undefined) ??
+    (contentBase64 ? sha256BytesHash(contentBase64) : undefined)
+  );
+}
+
+function fileWriteContentForPolicy(parameters: Record<string, unknown>): {
+  content?: string;
+  contentBase64?: string;
+} {
+  const content = rawStringParameter(parameters, ["content", "text"]);
+  if (content !== undefined) {
+    return { content };
+  }
+
+  const contentBase64 = rawStringParameter(parameters, ["contentBase64", "content_base64"]);
+  if (contentBase64 !== undefined) {
+    return { contentBase64 };
+  }
+
+  const binaryContent = binaryContentParameter(parameters.content);
+  return binaryContent ? { contentBase64: binaryContent.toString("base64") } : {};
+}
+
+function rawStringParameter(
+  parameters: Record<string, unknown>,
+  names: readonly string[],
+): string | undefined {
+  for (const name of names) {
+    const value = parameters[name];
+    if (typeof value === "string") return value;
+  }
+  return undefined;
+}
+
+function patchContentHash(
+  parameters: Record<string, unknown>,
+  patchContent: string,
+): string | undefined {
+  return (
+    trimmedStringParameter(parameters, ["patchHash", "patch_hash"]) ??
+    (patchContent.length > 0 ? sha256ContentHash(patchContent) : undefined)
+  );
 }
 
 export class PolicyEventFactory {
@@ -214,6 +326,8 @@ export class PolicyEventFactory {
           path: String(
             parameters.path ?? parameters.file ?? parameters.filepath ?? parameters.filename ?? "",
           ),
+          contentHash: fileContentHash(parameters),
+          ...(eventType === "file_write" ? fileWriteContentForPolicy(parameters) : {}),
           operation: eventType === "file_read" ? "read" : "write",
         };
 
@@ -232,6 +346,10 @@ export class PolicyEventFactory {
         const url = String(parameters.url ?? parameters.endpoint ?? parameters.href ?? "");
         const explicitHost = parameters.host;
         const explicitPort = parameters.port;
+        const protocol =
+          coerceNetworkProtocol(parameters.protocol) ??
+          coerceNetworkProtocol(parameters.scheme) ??
+          inferProtocolFromNetworkTarget(url);
 
         const parsedTarget = parseNetworkTarget(url, { emptyPort: "default" });
         const host =
@@ -245,16 +363,26 @@ export class PolicyEventFactory {
           type: "network",
           host,
           port,
+          protocol,
           url,
+          method:
+            typeof parameters.method === "string" && parameters.method.trim().length > 0
+              ? parameters.method.trim().toUpperCase()
+              : undefined,
         };
       }
 
-      case "patch_apply":
+      case "patch_apply": {
+        const patchContent =
+          rawStringParameter(parameters, ["patch", "diff", "content"]) ??
+          String(parameters.patch ?? parameters.diff ?? parameters.content ?? "");
         return {
           type: "patch",
           filePath: String(parameters.path ?? parameters.file ?? ""),
-          patchContent: String(parameters.patch ?? parameters.diff ?? parameters.content ?? ""),
+          patchContent,
+          patchHash: patchContentHash(parameters, patchContent),
         };
+      }
 
       default:
         return {

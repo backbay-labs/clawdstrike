@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "cranelift-codegen-meta"
-version = "0.128.4"
+version = "0.131.1"
 authors = ["The Cranelift Project Developers"]
 build = false
 autolib = false
@@ -38,19 +38,19 @@ name = "cranelift_codegen_meta"
 path = "src/lib.rs"
 
 [dependencies.cranelift-assembler-x64-meta]
-version = "0.128.4"
+version = "0.131.1"
 
 [dependencies.cranelift-codegen-shared]
-version = "0.128.4"
+version = "0.131.1"
 
 [dependencies.cranelift-srcgen]
-version = "0.128.4"
+version = "0.131.1"
 
 [dependencies.heck]
 version = "0.5.0"
 
 [dependencies.pulley-interpreter]
-version = "=41.0.4"
+version = "=44.0.1"
 optional = true
 
 [lints.clippy]
@@ -88,4 +88,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

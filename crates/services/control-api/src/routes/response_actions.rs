@@ -4,6 +4,9 @@ use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
+use clawdstrike_policy_event::edr::{EndpointDecisionReceipt, EndpointDecisionReceiptFamily};
+use hush_core::receipt::PublicKeySet;
+use hush_core::{canonicalize_json, sha256, PublicKey, SignedReceipt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::row::Row;
@@ -19,6 +22,26 @@ use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
 
 const ACK_DEADLINE_MINUTES: i64 = 10;
+const ACTION_TYPE_MAX_BYTES: usize = 64;
+const TARGET_KIND_MAX_BYTES: usize = 64;
+const ACTION_TARGET_ID_MAX_BYTES: usize = 256;
+const ACTION_REASON_MAX_BYTES: usize = 2048;
+const ACTION_PAYLOAD_MAX_BYTES: usize = 65_536;
+const ACK_STATUS_MAX_BYTES: usize = 64;
+const ACK_TARGET_ID_MAX_BYTES: usize = 256;
+const ACK_TOKEN_MAX_BYTES: usize = 1024;
+const ACK_MESSAGE_MAX_BYTES: usize = 2048;
+const ACK_RESULTING_STATE_MAX_BYTES: usize = 256;
+const ACK_RAW_PAYLOAD_MAX_BYTES: usize = 65_536;
+const ACK_SIGNED_RECEIPT_MAX_BYTES: usize = 256 * 1024;
+const ACK_OBSERVED_AT_FUTURE_SKEW_SECONDS: i64 = 300;
+const ACK_OBSERVED_AT_MAX_AGE_SECONDS: i64 = 3600;
+const RESPONSE_TARGET_KIND_ALLOWLIST: &str =
+    "endpoint, runtime, session, principal, grant, swarm, project";
+const RESPONSE_ACTION_TYPE_ALLOWLIST: &str = "transition_posture, request_policy_reload, \
+terminate_session, kill_switch, quarantine_principal, revoke_grant, revoke_principal, \
+policy_rule_diff_validation";
+const ACK_STATUS_ALLOWLIST: &str = "acknowledged, rejected, failed, expired, rolled_back";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -28,6 +51,10 @@ pub fn router() -> Router<AppState> {
         .route("/response-actions/{id}/cancel", post(cancel_action))
         .route("/response-actions/{id}/retry", post(retry_action))
         .route("/response-actions/{id}/acks", post(record_ack))
+}
+
+pub fn public_ack_router() -> Router<AppState> {
+    Router::new().route("/response-actions/{id}/agent-acks", post(record_agent_ack))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +83,7 @@ impl ResponseTargetKind {
     }
 
     fn from_str(value: &str) -> Result<Self, ApiError> {
+        validate_control_discriminator_len("target.kind", value.trim(), TARGET_KIND_MAX_BYTES)?;
         match value {
             "endpoint" => Ok(Self::Endpoint),
             "runtime" => Ok(Self::Runtime),
@@ -64,8 +92,8 @@ impl ResponseTargetKind {
             "grant" => Ok(Self::Grant),
             "swarm" => Ok(Self::Swarm),
             "project" => Ok(Self::Project),
-            other => Err(ApiError::BadRequest(format!(
-                "unsupported target kind '{other}'"
+            _ => Err(ApiError::BadRequest(format!(
+                "unsupported target kind; allowed values: {RESPONSE_TARGET_KIND_ALLOWLIST}"
             ))),
         }
     }
@@ -81,6 +109,7 @@ pub enum ResponseActionType {
     QuarantinePrincipal,
     RevokeGrant,
     RevokePrincipal,
+    PolicyRuleDiffValidation,
 }
 
 impl ResponseActionType {
@@ -93,10 +122,12 @@ impl ResponseActionType {
             Self::QuarantinePrincipal => "quarantine_principal",
             Self::RevokeGrant => "revoke_grant",
             Self::RevokePrincipal => "revoke_principal",
+            Self::PolicyRuleDiffValidation => "policy_rule_diff_validation",
         }
     }
 
     fn from_str(value: &str) -> Result<Self, ApiError> {
+        validate_control_discriminator_len("action_type", value.trim(), ACTION_TYPE_MAX_BYTES)?;
         match value {
             "transition_posture" => Ok(Self::TransitionPosture),
             "request_policy_reload" => Ok(Self::RequestPolicyReload),
@@ -105,8 +136,9 @@ impl ResponseActionType {
             "quarantine_principal" => Ok(Self::QuarantinePrincipal),
             "revoke_grant" => Ok(Self::RevokeGrant),
             "revoke_principal" => Ok(Self::RevokePrincipal),
-            other => Err(ApiError::BadRequest(format!(
-                "unsupported action type '{other}'"
+            "policy_rule_diff_validation" => Ok(Self::PolicyRuleDiffValidation),
+            _ => Err(ApiError::BadRequest(format!(
+                "unsupported action type; allowed values: {RESPONSE_ACTION_TYPE_ALLOWLIST}"
             ))),
         }
     }
@@ -276,6 +308,7 @@ pub struct ResponseActionDetail {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateResponseActionRequest {
     pub action_type: String,
     pub target: ResponseTargetInput,
@@ -289,6 +322,7 @@ pub struct CreateResponseActionRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResponseTargetInput {
     pub kind: String,
     pub id: String,
@@ -296,6 +330,7 @@ pub struct ResponseTargetInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct RecordResponseAckRequest {
     pub target_kind: String,
     pub target_id: String,
@@ -305,6 +340,17 @@ pub struct RecordResponseAckRequest {
     pub message: Option<String>,
     pub resulting_state: Option<String>,
     pub raw_payload: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordAgentAckResponse {
+    pub accepted: bool,
+    pub action_id: Uuid,
+    pub target_kind: String,
+    pub target_id: String,
+    pub status: String,
+    pub observed_at: DateTime<Utc>,
 }
 
 struct ValidatedCreateAction {
@@ -335,6 +381,12 @@ struct AckSubmission {
 struct AckContext {
     action: ResponseActionRecord,
     delivery_id: Uuid,
+}
+
+struct VerifiedEndpointDecisionReceipt {
+    signed_receipt_hash: String,
+    endpoint_decision: EndpointDecisionReceipt,
+    endpoint_decision_value: Value,
 }
 
 struct PublishContext {
@@ -371,6 +423,29 @@ async fn create_action(
     tx.commit().await.map_err(ApiError::Database)?;
 
     Ok(Json(action))
+}
+
+pub async fn create_and_publish_internal_action(
+    state: &AppState,
+    auth: &AuthenticatedTenant,
+    input: CreateResponseActionRequest,
+) -> Result<ResponseActionDetail, ApiError> {
+    ensure_write_access(auth)?;
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let draft = prepare_create_action(&mut tx, auth, input).await?;
+    let action = insert_action(&mut tx, auth, draft).await?;
+    link_action_to_source_detection(
+        &mut tx,
+        auth.tenant_id,
+        action.id,
+        action.source_detection_id,
+    )
+    .await?;
+    tx.commit().await.map_err(ApiError::Database)?;
+
+    publish_action(state, &auth.slug, auth.tenant_id, action.id, false)
+        .await
+        .map(|Json(detail)| detail)
 }
 
 async fn list_actions(
@@ -491,9 +566,42 @@ async fn record_ack(
             ));
         }
     };
+    validate_endpoint_ack_signed_receipt(&mut tx, &context, &ack).await?;
     persist_ack_submission(&mut tx, &context, &ack).await?;
     tx.commit().await.map_err(ApiError::Database)?;
     get_action(State(state), auth, Path(id)).await
+}
+
+async fn record_agent_ack(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<RecordResponseAckRequest>,
+) -> Result<Json<RecordAgentAckResponse>, ApiError> {
+    let ack = parse_ack_submission(input)?;
+
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let tenant_id = load_ack_action_tenant_id(&mut tx, id).await?;
+    let context = match load_ack_context(&mut tx, tenant_id, id, &ack).await? {
+        Some(context) => context,
+        None => {
+            tx.commit().await.map_err(ApiError::Database)?;
+            return Err(ApiError::Conflict(
+                "acknowledgement window has expired".to_string(),
+            ));
+        }
+    };
+    validate_endpoint_ack_signed_receipt(&mut tx, &context, &ack).await?;
+    persist_ack_submission(&mut tx, &context, &ack).await?;
+    tx.commit().await.map_err(ApiError::Database)?;
+
+    Ok(Json(RecordAgentAckResponse {
+        accepted: true,
+        action_id: id,
+        target_kind: ack.target_kind.as_str().to_string(),
+        target_id: ack.target_id,
+        status: ack.ack_status.to_string(),
+        observed_at: ack.observed_at,
+    }))
 }
 
 async fn publish_action(
@@ -568,6 +676,19 @@ async fn prepare_create_action(
     })
 }
 
+async fn load_ack_action_tenant_id(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    action_id: Uuid,
+) -> Result<Uuid, ApiError> {
+    let row = sqlx::query::query("SELECT tenant_id FROM response_actions WHERE id = $1")
+        .bind(action_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::NotFound)?;
+    row.try_get("tenant_id").map_err(ApiError::Database)
+}
+
 async fn insert_action(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
     auth: &AuthenticatedTenant,
@@ -621,13 +742,28 @@ fn parse_ack_submission(input: RecordResponseAckRequest) -> Result<AckSubmission
     if target_id.is_empty() {
         return Err(ApiError::BadRequest("target_id is required".to_string()));
     }
+    validate_ack_field_len("target_id", target_id, ACK_TARGET_ID_MAX_BYTES)?;
 
     let ack_token = input.ack_token.trim();
     if ack_token.is_empty() {
         return Err(ApiError::BadRequest("ack_token is required".to_string()));
     }
+    validate_ack_field_len("ack_token", ack_token, ACK_TOKEN_MAX_BYTES)?;
 
-    let observed_at = input.observed_at.unwrap_or_else(Utc::now);
+    if let Some(message) = input.message.as_deref() {
+        validate_ack_field_len("message", message, ACK_MESSAGE_MAX_BYTES)?;
+    }
+    if let Some(resulting_state) = input.resulting_state.as_deref() {
+        validate_ack_field_len(
+            "resulting_state",
+            resulting_state,
+            ACK_RESULTING_STATE_MAX_BYTES,
+        )?;
+    }
+
+    let now = Utc::now();
+    let observed_at = input.observed_at.unwrap_or(now);
+    validate_ack_observed_at(observed_at, now)?;
     let raw_payload = input.raw_payload.unwrap_or_else(|| {
         json!({
             "status": ack_status,
@@ -635,6 +771,7 @@ fn parse_ack_submission(input: RecordResponseAckRequest) -> Result<AckSubmission
             "resulting_state": input.resulting_state.clone(),
         })
     });
+    validate_ack_raw_payload(&raw_payload)?;
 
     Ok(AckSubmission {
         target_kind,
@@ -646,6 +783,44 @@ fn parse_ack_submission(input: RecordResponseAckRequest) -> Result<AckSubmission
         resulting_state: input.resulting_state,
         raw_payload,
     })
+}
+
+fn validate_ack_field_len(field: &str, value: &str, max_len: usize) -> Result<(), ApiError> {
+    if value.len() > max_len {
+        return Err(ApiError::BadRequest(format!(
+            "acknowledgement {field} must be at most {max_len} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_ack_raw_payload(value: &Value) -> Result<(), ApiError> {
+    let serialized = serde_json::to_vec(value).map_err(|err| {
+        ApiError::BadRequest(format!("acknowledgement raw_payload is invalid: {err}"))
+    })?;
+    if serialized.len() > ACK_RAW_PAYLOAD_MAX_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "acknowledgement raw_payload must be at most {ACK_RAW_PAYLOAD_MAX_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_ack_observed_at(
+    observed_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<(), ApiError> {
+    if observed_at > now + Duration::seconds(ACK_OBSERVED_AT_FUTURE_SKEW_SECONDS) {
+        return Err(ApiError::BadRequest(format!(
+            "acknowledgement observed_at must not be more than {ACK_OBSERVED_AT_FUTURE_SKEW_SECONDS} seconds in the future"
+        )));
+    }
+    if observed_at < now - Duration::seconds(ACK_OBSERVED_AT_MAX_AGE_SECONDS) {
+        return Err(ApiError::BadRequest(format!(
+            "acknowledgement observed_at must be within the last {ACK_OBSERVED_AT_MAX_AGE_SECONDS} seconds"
+        )));
+    }
+    Ok(())
 }
 
 async fn load_ack_context(
@@ -738,6 +913,868 @@ async fn load_ack_context(
         action,
         delivery_id,
     }))
+}
+
+async fn validate_endpoint_ack_signed_receipt(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
+    if context.action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str() {
+        if ack.ack_status == "acknowledged" {
+            return validate_policy_rule_diff_ack_receipt(tx, context, ack).await;
+        }
+        validate_policy_rule_diff_error_payload_matches_action(
+            ack,
+            &context.action.payload,
+            &ack.target_id,
+        )?;
+        return validate_response_ack_signed_receipt(tx, context, ack).await;
+    }
+
+    if !requires_endpoint_ack_signed_receipt(&context.action, ack) {
+        return Ok(());
+    }
+
+    validate_response_ack_signed_receipt(tx, context, ack).await
+}
+
+async fn validate_response_ack_signed_receipt(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
+    let public_key =
+        load_endpoint_ack_public_key(tx, context.action.tenant_id, &ack.target_id).await?;
+
+    let signed_receipt_value = ack
+        .raw_payload
+        .get("signedReceipt")
+        .or_else(|| ack.raw_payload.get("signed_receipt"))
+        .cloned()
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "endpoint acknowledgement raw_payload must include signedReceipt".to_string(),
+            )
+        })?;
+    let verified = verify_endpoint_decision_signed_receipt_value(
+        signed_receipt_value,
+        &public_key,
+        "endpoint acknowledgement signedReceipt",
+    )?;
+
+    if let Some(local_receipt_hash) = ack
+        .raw_payload
+        .get("localReceiptHash")
+        .and_then(Value::as_str)
+    {
+        if local_receipt_hash != verified.signed_receipt_hash {
+            return Err(ApiError::BadRequest(
+                "endpoint acknowledgement localReceiptHash must match signedReceipt".to_string(),
+            ));
+        }
+    }
+
+    validate_endpoint_ack_receipt_contract(&verified, context, ack)
+}
+
+async fn load_endpoint_ack_public_key(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    agent_id: &str,
+) -> Result<PublicKey, ApiError> {
+    let public_key_hex = sqlx::query_scalar::query_scalar::<_, String>(
+        r#"SELECT public_key
+           FROM agents
+           WHERE tenant_id = $1
+             AND agent_id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(agent_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or_else(|| {
+        ApiError::BadRequest(
+            "endpoint acknowledgement target does not match a registered agent".to_string(),
+        )
+    })?;
+    let public_key = PublicKey::from_hex(public_key_hex.trim()).map_err(|_| {
+        ApiError::BadRequest("endpoint acknowledgement agent public_key is invalid".to_string())
+    })?;
+    Ok(public_key)
+}
+
+fn verify_endpoint_decision_signed_receipt_value(
+    signed_receipt_value: Value,
+    public_key: &PublicKey,
+    label: &str,
+) -> Result<VerifiedEndpointDecisionReceipt, ApiError> {
+    let canonical_signed_receipt = canonicalize_json(&signed_receipt_value).map_err(|err| {
+        ApiError::BadRequest(format!("{label} is not canonicalizable JSON: {err}"))
+    })?;
+    if canonical_signed_receipt.len() > ACK_SIGNED_RECEIPT_MAX_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "{label} must be no larger than {ACK_SIGNED_RECEIPT_MAX_BYTES} bytes"
+        )));
+    }
+    let signed_receipt: SignedReceipt = serde_json::from_value(signed_receipt_value.clone())
+        .map_err(|err| ApiError::BadRequest(format!("{label} is invalid: {err}")))?;
+    let verification = signed_receipt.verify(&PublicKeySet::new(public_key.clone()));
+    if !verification.valid {
+        let reason = if verification.errors.is_empty() {
+            "unknown verification error".to_string()
+        } else {
+            verification.errors.join("; ")
+        };
+        return Err(ApiError::BadRequest(format!(
+            "{label} failed verification: {reason}"
+        )));
+    }
+
+    let endpoint_decision_value = signed_receipt
+        .receipt
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("endpointDecision"))
+        .cloned()
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "{label} must include receipt.metadata.endpointDecision"
+            ))
+        })?;
+    let endpoint_decision: EndpointDecisionReceipt =
+        serde_json::from_value(endpoint_decision_value.clone()).map_err(|err| {
+            ApiError::BadRequest(format!("{label} endpointDecision is invalid: {err}"))
+        })?;
+    endpoint_decision.validate().map_err(|err| {
+        ApiError::BadRequest(format!("{label} endpointDecision failed validation: {err}"))
+    })?;
+
+    let canonical_endpoint_decision =
+        canonicalize_json(&endpoint_decision_value).map_err(|err| {
+            ApiError::BadRequest(format!(
+                "{label} endpointDecision is not canonicalizable JSON: {err}"
+            ))
+        })?;
+    let endpoint_decision_hash = sha256(canonical_endpoint_decision.as_bytes());
+    if signed_receipt.receipt.content_hash != endpoint_decision_hash {
+        return Err(ApiError::BadRequest(format!(
+            "{label} content_hash must match receipt.metadata.endpointDecision"
+        )));
+    }
+
+    let signer_public_key = endpoint_decision
+        .signer
+        .signer_public_key
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "{label} endpointDecision.signer.signerPublicKey is required"
+            ))
+        })?;
+    let metadata_public_key = PublicKey::from_hex(signer_public_key).map_err(|_| {
+        ApiError::BadRequest(format!(
+            "{label} endpointDecision.signer.signerPublicKey must be a valid Ed25519 public key hex"
+        ))
+    })?;
+    if metadata_public_key.to_hex() != public_key.to_hex() {
+        return Err(ApiError::BadRequest(format!(
+            "{label} endpointDecision.signer.signerPublicKey must match registered agent public_key"
+        )));
+    }
+
+    Ok(VerifiedEndpointDecisionReceipt {
+        signed_receipt_hash: sha256(canonical_signed_receipt.as_bytes()).to_hex_prefixed(),
+        endpoint_decision,
+        endpoint_decision_value,
+    })
+}
+
+async fn validate_policy_rule_diff_ack_receipt(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
+    validate_policy_rule_diff_ack_payload(ack)?;
+    if !matches!(ack.ack_status, "acknowledged") {
+        return Ok(());
+    }
+
+    let payload = policy_rule_diff_ack_payload_value(ack)?;
+    let signed_receipt_value = payload.get("receipt").cloned().ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include receipt".to_string(),
+        )
+    })?;
+    validate_policy_rule_diff_ack_matches_action_payload(
+        payload,
+        &context.action.payload,
+        &ack.target_id,
+    )?;
+    let public_key =
+        load_endpoint_ack_public_key(tx, context.action.tenant_id, &ack.target_id).await?;
+    let verified = verify_endpoint_decision_signed_receipt_value(
+        signed_receipt_value,
+        &public_key,
+        "policyRuleDiffValidation receipt",
+    )?;
+
+    if verified.endpoint_decision.receipt_family != EndpointDecisionReceiptFamily::Simulation {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation receipt endpointDecision.receiptFamily must be simulation"
+                .to_string(),
+        ));
+    }
+    if verified.endpoint_decision.decision.rule_id.as_deref()
+        != Some("endpoint.policy_event_impact")
+    {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation receipt endpointDecision.decision.ruleId must be endpoint.policy_event_impact"
+                .to_string(),
+        ));
+    }
+    if verified.endpoint_decision.actor.endpoint_id != ack.target_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation receipt endpoint id must match target_id".to_string(),
+        ));
+    }
+
+    let impact_id = payload
+        .pointer("/impact/impactId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include impactId".to_string(),
+            )
+        })?;
+    let receipt_impact_id = verified
+        .endpoint_decision
+        .decision
+        .finding_id
+        .as_deref()
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation receipt endpointDecision.decision.findingId is required"
+                    .to_string(),
+            )
+        })?;
+    if impact_id != receipt_impact_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation impactId must match the signed receipt findingId".to_string(),
+        ));
+    }
+    validate_policy_rule_diff_ack_impact_evidence(payload, &verified)
+}
+
+fn validate_policy_rule_diff_ack_matches_action_payload(
+    payload: &Value,
+    action_payload: &Value,
+    target_id: &str,
+) -> Result<(), ApiError> {
+    if let Some(expected_proposal_id) = action_payload.get("proposalId").and_then(Value::as_str) {
+        let actual_proposal_id = payload
+            .get("proposalId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                ApiError::BadRequest(
+                    "policyRuleDiffValidation acknowledgement must include proposalId".to_string(),
+                )
+            })?;
+        if actual_proposal_id != expected_proposal_id {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidation proposalId does not match the dispatched response action"
+                    .to_string(),
+            ));
+        }
+    }
+
+    if let Some(expected_plan_sha256) = action_payload
+        .get("validationPlanSha256")
+        .and_then(Value::as_str)
+    {
+        let actual_plan_sha256 = payload
+            .get("validationPlanSha256")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                ApiError::BadRequest(
+                    "policyRuleDiffValidation acknowledgement must include validationPlanSha256"
+                        .to_string(),
+                )
+            })?;
+        if actual_plan_sha256 != expected_plan_sha256 {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidation validationPlanSha256 does not match the dispatched response action"
+                    .to_string(),
+            ));
+        }
+    }
+
+    let actual_endpoint_agent_id = payload
+        .get("endpointAgentId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation acknowledgement must include endpointAgentId".to_string(),
+            )
+        })?;
+    if actual_endpoint_agent_id != target_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation endpointAgentId does not match target_id".to_string(),
+        ));
+    }
+    if let Some(expected_endpoint_agent_id) = action_payload
+        .get("endpointAgentId")
+        .and_then(Value::as_str)
+    {
+        if actual_endpoint_agent_id != expected_endpoint_agent_id {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidation endpointAgentId does not match the dispatched response action"
+                    .to_string(),
+            ));
+        }
+    }
+
+    if let Some(expected_request) = action_payload.get("request") {
+        let actual_request = payload.get("request").ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation acknowledgement must include request".to_string(),
+            )
+        })?;
+        let expected_request = canonicalize_json(expected_request).map_err(|err| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation dispatched request is not canonicalizable JSON: {err}"
+            ))
+        })?;
+        let actual_request = canonicalize_json(actual_request).map_err(|err| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation acknowledgement request is not canonicalizable JSON: {err}"
+            ))
+        })?;
+        if actual_request != expected_request {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidation request does not match the dispatched response action"
+                    .to_string(),
+            ));
+        }
+    }
+
+    if let Some(expected_receipt) = action_payload.get("expectedReceipt") {
+        let actual_expected_receipt = payload.get("expectedReceipt").ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation acknowledgement must include expectedReceipt".to_string(),
+            )
+        })?;
+        let expected_canonical = canonicalize_json(expected_receipt).map_err(|err| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation dispatched expectedReceipt is not canonicalizable JSON: {err}"
+            ))
+        })?;
+        let actual_canonical = canonicalize_json(actual_expected_receipt).map_err(|err| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation acknowledgement expectedReceipt is not canonicalizable JSON: {err}"
+            ))
+        })?;
+        if actual_canonical != expected_canonical {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidation expectedReceipt does not match the dispatched response action"
+                    .to_string(),
+            ));
+        }
+        validate_policy_rule_diff_ack_expected_policy_identity(payload, expected_receipt)?;
+    }
+
+    Ok(())
+}
+
+fn validate_policy_rule_diff_ack_expected_policy_identity(
+    payload: &Value,
+    expected_receipt: &Value,
+) -> Result<(), ApiError> {
+    let Some(expected_policy_hash) = expected_receipt
+        .get("proposedPolicyHash")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+    let Some(expected_policy_epoch) = expected_receipt
+        .get("proposedPolicyEpoch")
+        .and_then(Value::as_u64)
+    else {
+        return Ok(());
+    };
+
+    let actual_expected_receipt = payload.get("expectedReceipt").ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include expectedReceipt".to_string(),
+        )
+    })?;
+    let actual_expected_policy_hash = actual_expected_receipt
+        .get("proposedPolicyHash")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation expectedReceipt must include proposedPolicyHash"
+                    .to_string(),
+            )
+        })?;
+    if actual_expected_policy_hash != expected_policy_hash {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation expectedReceipt proposedPolicyHash does not match the dispatched response action"
+                .to_string(),
+        ));
+    }
+    let actual_expected_policy_epoch = actual_expected_receipt
+        .get("proposedPolicyEpoch")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation expectedReceipt must include proposedPolicyEpoch"
+                    .to_string(),
+            )
+        })?;
+    if actual_expected_policy_epoch != expected_policy_epoch {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation expectedReceipt proposedPolicyEpoch does not match the dispatched response action"
+                .to_string(),
+        ));
+    }
+
+    let impact = payload.get("impact").ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include impact".to_string(),
+        )
+    })?;
+    let impact_policy_hash = impact
+        .get("proposedPolicyHash")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include proposedPolicyHash".to_string(),
+            )
+        })?;
+    if impact_policy_hash != expected_policy_hash {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation impact proposedPolicyHash does not match expectedReceipt"
+                .to_string(),
+        ));
+    }
+    let impact_policy_epoch = impact
+        .get("proposedPolicyEpoch")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include proposedPolicyEpoch".to_string(),
+            )
+        })?;
+    if impact_policy_epoch != expected_policy_epoch {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation impact proposedPolicyEpoch does not match expectedReceipt"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn policy_rule_diff_error_payload_value(ack: &AckSubmission) -> Result<&Value, ApiError> {
+    ack.raw_payload
+        .get("policyRuleDiffValidationError")
+        .or_else(|| ack.raw_payload.get("policy_rule_diff_validation_error"))
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "acknowledgement raw_payload must include policyRuleDiffValidationError"
+                    .to_string(),
+            )
+        })
+}
+
+fn validate_policy_rule_diff_error_payload_matches_action(
+    ack: &AckSubmission,
+    action_payload: &Value,
+    target_id: &str,
+) -> Result<(), ApiError> {
+    let payload = policy_rule_diff_error_payload_value(ack)?;
+    if !payload.is_object() {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidationError must be an object".to_string(),
+        ));
+    }
+
+    require_policy_rule_diff_error_str_matches_action(
+        payload,
+        action_payload,
+        "proposalId",
+        "proposalId",
+    )?;
+    require_policy_rule_diff_error_str_matches_action(
+        payload,
+        action_payload,
+        "validationPlanSha256",
+        "validationPlanSha256",
+    )?;
+    let endpoint_agent_id = required_policy_rule_diff_error_str(payload, "endpointAgentId")?;
+    if endpoint_agent_id != target_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidationError endpointAgentId does not match target_id".to_string(),
+        ));
+    }
+    let expected_endpoint_agent_id =
+        required_policy_rule_diff_action_str(action_payload, "endpointAgentId")?;
+    if endpoint_agent_id != expected_endpoint_agent_id {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidationError endpointAgentId does not match the dispatched response action"
+                .to_string(),
+        ));
+    }
+
+    let expected_request = action_payload.get("request").ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation dispatched response action must include request".to_string(),
+        )
+    })?;
+    let actual_request = payload.get("request").ok_or_else(|| {
+        ApiError::BadRequest("policyRuleDiffValidationError must include request".to_string())
+    })?;
+    let expected_request = canonicalize_json(expected_request).map_err(|err| {
+        ApiError::BadRequest(format!(
+            "policyRuleDiffValidation dispatched request is not canonicalizable JSON: {err}"
+        ))
+    })?;
+    let actual_request = canonicalize_json(actual_request).map_err(|err| {
+        ApiError::BadRequest(format!(
+            "policyRuleDiffValidationError request is not canonicalizable JSON: {err}"
+        ))
+    })?;
+    if actual_request != expected_request {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidationError request does not match the dispatched response action"
+                .to_string(),
+        ));
+    }
+
+    let message = payload
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidationError must include a non-empty message".to_string(),
+            )
+        })?;
+    if let Some(ack_message) = ack
+        .message
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if message != ack_message {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidationError message must match acknowledgement message"
+                    .to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn require_policy_rule_diff_error_str_matches_action(
+    payload: &Value,
+    action_payload: &Value,
+    payload_key: &str,
+    action_key: &str,
+) -> Result<(), ApiError> {
+    let actual = required_policy_rule_diff_error_str(payload, payload_key)?;
+    let expected = required_policy_rule_diff_action_str(action_payload, action_key)?;
+    if actual != expected {
+        return Err(ApiError::BadRequest(format!(
+            "policyRuleDiffValidationError {payload_key} does not match the dispatched response action"
+        )));
+    }
+    Ok(())
+}
+
+fn required_policy_rule_diff_error_str<'a>(
+    payload: &'a Value,
+    key: &str,
+) -> Result<&'a str, ApiError> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!("policyRuleDiffValidationError must include {key}"))
+        })
+}
+
+fn required_policy_rule_diff_action_str<'a>(
+    payload: &'a Value,
+    key: &str,
+) -> Result<&'a str, ApiError> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation dispatched response action must include {key}"
+            ))
+        })
+}
+
+fn validate_policy_rule_diff_ack_impact_evidence(
+    payload: &Value,
+    verified: &VerifiedEndpointDecisionReceipt,
+) -> Result<(), ApiError> {
+    let impact = payload.get("impact").ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include impact".to_string(),
+        )
+    })?;
+    for key in [
+        "impactId",
+        "eventStreamHash",
+        "currentResultHash",
+        "proposedResultHash",
+        "impactHash",
+        "proposedPolicyHash",
+        "proposedPolicyEpoch",
+        "eventCount",
+        "changedCount",
+        "allowToBlockCount",
+        "trackPosture",
+    ] {
+        let raw_value = policy_rule_diff_ack_impact_evidence_value(impact, key)?;
+        require_policy_rule_diff_ack_receipt_evidence_hash(
+            &verified.endpoint_decision_value,
+            key,
+            &raw_value,
+        )?;
+    }
+    Ok(())
+}
+
+fn policy_rule_diff_ack_impact_evidence_value(
+    impact: &Value,
+    key: &str,
+) -> Result<String, ApiError> {
+    let value = match key {
+        "proposedPolicyHash" => impact
+            .pointer("/proposedPolicy/policyHash")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        "proposedPolicyEpoch" => impact
+            .pointer("/proposedPolicy/policyEpoch")
+            .and_then(Value::as_u64)
+            .map(|value| value.to_string()),
+        "eventCount" | "changedCount" | "allowToBlockCount" => impact
+            .get(key)
+            .and_then(Value::as_u64)
+            .map(|value| value.to_string()),
+        "trackPosture" => impact
+            .get(key)
+            .and_then(Value::as_bool)
+            .map(|value| value.to_string()),
+        _ => impact.get(key).and_then(Value::as_str).map(str::to_string),
+    };
+    value.ok_or_else(|| {
+        ApiError::BadRequest(format!(
+            "policyRuleDiffValidation impact must include {key}"
+        ))
+    })
+}
+
+fn require_policy_rule_diff_ack_receipt_evidence_hash(
+    endpoint_decision: &Value,
+    key: &str,
+    raw_value: &str,
+) -> Result<(), ApiError> {
+    let expected_hash = sha256(raw_value.as_bytes()).to_hex_prefixed();
+    let evidence_hash = endpoint_decision
+        .get("evidence")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                if item.get("key").and_then(Value::as_str) == Some(key) {
+                    item.get("valueHash").and_then(Value::as_str)
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation receipt evidence is missing {key}"
+            ))
+        })?;
+    if evidence_hash != expected_hash {
+        return Err(ApiError::BadRequest(format!(
+            "policyRuleDiffValidation impact {key} does not match signed receipt evidence"
+        )));
+    }
+    Ok(())
+}
+
+fn policy_rule_diff_ack_payload_value(ack: &AckSubmission) -> Result<&Value, ApiError> {
+    ack.raw_payload
+        .get("policyRuleDiffValidation")
+        .or_else(|| ack.raw_payload.get("policy_rule_diff_validation"))
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "acknowledgement raw_payload must include policyRuleDiffValidation".to_string(),
+            )
+        })
+}
+
+fn requires_endpoint_ack_signed_receipt(
+    action: &ResponseActionRecord,
+    ack: &AckSubmission,
+) -> bool {
+    action.target.kind.as_str() == "endpoint"
+        && matches!(
+            ack.ack_status,
+            "acknowledged" | "rolled_back" | "failed" | "rejected" | "expired"
+        )
+}
+
+fn validate_policy_rule_diff_ack_payload(ack: &AckSubmission) -> Result<(), ApiError> {
+    if !matches!(ack.ack_status, "acknowledged") {
+        return Ok(());
+    }
+
+    let payload = policy_rule_diff_ack_payload_value(ack)?;
+
+    if payload.get("receipt").is_none() {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include receipt".to_string(),
+        ));
+    }
+    if payload.get("impact").is_none() {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include impact".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_endpoint_ack_receipt_contract(
+    verified: &VerifiedEndpointDecisionReceipt,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
+    let endpoint_decision = &verified.endpoint_decision;
+    if endpoint_decision.receipt_family != EndpointDecisionReceiptFamily::ResponseAcknowledgement {
+        return Err(ApiError::BadRequest(
+            "endpoint acknowledgement signedReceipt must be a response_acknowledgement receipt"
+                .to_string(),
+        ));
+    }
+    if endpoint_decision.actor.endpoint_id != ack.target_id {
+        return Err(ApiError::BadRequest(
+            "endpoint acknowledgement signedReceipt endpoint id must match target_id".to_string(),
+        ));
+    }
+
+    let endpoint_decision_value = &verified.endpoint_decision_value;
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision_value,
+        "controlResponseActionId",
+        &context.action.id.to_string(),
+    )?;
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision_value,
+        "controlTargetId",
+        &ack.target_id,
+    )?;
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision_value,
+        "controlAckStatus",
+        ack.ack_status,
+    )?;
+    if let Some(resulting_state) = ack.resulting_state.as_deref() {
+        require_endpoint_ack_receipt_evidence_hash(
+            endpoint_decision_value,
+            "controlResultingState",
+            resulting_state,
+        )?;
+    }
+    let acknowledged_status = ack
+        .resulting_state
+        .as_deref()
+        .map(endpoint_acknowledged_status_from_resulting_state)
+        .unwrap_or(ack.ack_status);
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision_value,
+        "acknowledgedStatus",
+        acknowledged_status,
+    )?;
+    require_endpoint_ack_receipt_evidence_hash(
+        endpoint_decision_value,
+        "controlAckTokenHash",
+        &sha256(ack.ack_token.as_bytes()).to_hex_prefixed(),
+    )?;
+    if let Some(local_execution_id) = ack
+        .raw_payload
+        .get("localExecutionId")
+        .and_then(Value::as_str)
+    {
+        require_endpoint_ack_receipt_evidence_hash(
+            endpoint_decision_value,
+            "executionId",
+            local_execution_id,
+        )?;
+    }
+    Ok(())
+}
+
+fn endpoint_acknowledged_status_from_resulting_state(resulting_state: &str) -> &str {
+    resulting_state
+        .rsplit_once(':')
+        .map(|(_, status)| status)
+        .unwrap_or(resulting_state)
+}
+
+fn require_endpoint_ack_receipt_evidence_hash(
+    endpoint_decision: &Value,
+    key: &str,
+    raw_value: &str,
+) -> Result<(), ApiError> {
+    let expected_hash = sha256(raw_value.as_bytes()).to_hex_prefixed();
+    let evidence_hash = endpoint_decision
+        .get("evidence")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                if item.get("key").and_then(Value::as_str) == Some(key) {
+                    item.get("valueHash").and_then(Value::as_str)
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "endpoint acknowledgement signedReceipt evidence is missing {key}"
+            ))
+        })?;
+    if evidence_hash != expected_hash {
+        return Err(ApiError::BadRequest(format!(
+            "endpoint acknowledgement signedReceipt evidence {key} does not match acknowledgement"
+        )));
+    }
+    Ok(())
 }
 
 async fn ensure_ack_window_open(
@@ -902,6 +1939,7 @@ async fn prepare_publish(
     .ok_or(ApiError::NotFound)?;
     let action = ResponseActionRecord::from_row(row).map_err(ApiError::Database)?;
     ensure_publishable(&action.status, allow_retry)?;
+    validate_publish_delivery_contract(&action)?;
 
     if action
         .expires_at
@@ -1157,18 +2195,50 @@ fn validate_create_request(
     target_kind: &ResponseTargetKind,
     require_acknowledgement: bool,
 ) -> Result<(), ApiError> {
-    if input.reason.trim().is_empty() {
+    let reason = input.reason.trim();
+    if reason.is_empty() {
         return Err(ApiError::BadRequest("reason is required".to_string()));
     }
-    if input.target.id.trim().is_empty() {
+    validate_response_action_field_len("reason", reason, ACTION_REASON_MAX_BYTES)?;
+
+    let target_id = input.target.id.trim();
+    if target_id.is_empty() {
         return Err(ApiError::BadRequest("target.id is required".to_string()));
     }
+    validate_response_action_field_len("target.id", target_id, ACTION_TARGET_ID_MAX_BYTES)?;
+
+    if let Some(payload) = input.payload.as_ref() {
+        validate_response_action_payload(payload)?;
+    }
+
     if let Some(expires_at) = input.expires_at {
         if expires_at <= Utc::now() {
             return Err(ApiError::BadRequest(
                 "expires_at must be in the future".to_string(),
             ));
         }
+    }
+    if require_acknowledgement
+        && !matches!(action_type, ResponseActionType::PolicyRuleDiffValidation)
+    {
+        return Err(ApiError::BadRequest(
+            "response acknowledgements are not supported for the current executor set".to_string(),
+        ));
+    }
+    if matches!(action_type, ResponseActionType::PolicyRuleDiffValidation)
+        && !require_acknowledgement
+    {
+        return Err(ApiError::BadRequest(
+            "policy_rule_diff_validation actions require acknowledgement".to_string(),
+        ));
+    }
+    if matches!(target_kind, ResponseTargetKind::Endpoint)
+        && !endpoint_delivery_action_supported(action_type)
+    {
+        return Err(ApiError::BadRequest(
+            "endpoint response-action delivery currently supports only policy_rule_diff_validation"
+                .to_string(),
+        ));
     }
     if matches!(action_type, ResponseActionType::TransitionPosture)
         && transition_posture_value(input.payload.as_ref().unwrap_or(&Value::Null)).is_none()
@@ -1177,16 +2247,9 @@ fn validate_create_request(
             "transition_posture actions require payload.toState or payload.posture".to_string(),
         ));
     }
-    if require_acknowledgement {
-        return Err(ApiError::BadRequest(
-            "response acknowledgements are not supported for the current executor set".to_string(),
-        ));
-    }
 
     match (action_type, target_kind) {
-        (ResponseActionType::TransitionPosture, ResponseTargetKind::Endpoint)
-        | (ResponseActionType::RequestPolicyReload, ResponseTargetKind::Endpoint)
-        | (ResponseActionType::KillSwitch, ResponseTargetKind::Endpoint)
+        (ResponseActionType::PolicyRuleDiffValidation, ResponseTargetKind::Endpoint)
         | (ResponseActionType::QuarantinePrincipal, ResponseTargetKind::Principal)
         | (ResponseActionType::RevokeGrant, ResponseTargetKind::Grant)
         | (ResponseActionType::RevokePrincipal, ResponseTargetKind::Principal) => Ok(()),
@@ -1195,6 +2258,67 @@ fn validate_create_request(
             input.action_type, input.target.kind
         ))),
     }
+}
+
+fn endpoint_delivery_action_supported(action_type: &ResponseActionType) -> bool {
+    matches!(action_type, ResponseActionType::PolicyRuleDiffValidation)
+}
+
+fn validate_publish_delivery_contract(action: &ResponseActionRecord) -> Result<(), ApiError> {
+    if matches!(action.target.kind, ResponseTargetKind::Endpoint)
+        && action.action_type != ResponseActionType::PolicyRuleDiffValidation.as_str()
+    {
+        return Err(ApiError::BadRequest(
+            "endpoint response-action delivery currently supports only policy_rule_diff_validation"
+                .to_string(),
+        ));
+    }
+    if action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str()
+        && !action.require_acknowledgement
+    {
+        return Err(ApiError::BadRequest(
+            "policy_rule_diff_validation actions require acknowledgement".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_response_action_field_len(
+    field: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), ApiError> {
+    if value.len() > max_len {
+        return Err(ApiError::BadRequest(format!(
+            "response-action {field} must be at most {max_len} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_response_action_payload(value: &Value) -> Result<(), ApiError> {
+    let serialized = serde_json::to_vec(value).map_err(|err| {
+        ApiError::BadRequest(format!("response-action payload is invalid: {err}"))
+    })?;
+    if serialized.len() > ACTION_PAYLOAD_MAX_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "response-action payload must be at most {ACTION_PAYLOAD_MAX_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_control_discriminator_len(
+    field: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), ApiError> {
+    if value.len() > max_len {
+        return Err(ApiError::BadRequest(format!(
+            "control {field} must be at most {max_len} bytes"
+        )));
+    }
+    Ok(())
 }
 
 async fn resolve_action_target_id(
@@ -1332,13 +2456,16 @@ async fn validate_action_links(
 }
 
 fn normalize_ack_status(status: &str) -> Result<&'static str, ApiError> {
-    match status.trim() {
+    let status = status.trim();
+    validate_control_discriminator_len("status", status, ACK_STATUS_MAX_BYTES)?;
+    match status {
         "acknowledged" => Ok("acknowledged"),
         "rejected" => Ok("rejected"),
         "failed" => Ok("failed"),
         "expired" => Ok("expired"),
-        other => Err(ApiError::BadRequest(format!(
-            "unsupported ack status '{other}'"
+        "rolled_back" => Ok("rolled_back"),
+        _ => Err(ApiError::BadRequest(format!(
+            "unsupported ack status; allowed values: {ACK_STATUS_ALLOWLIST}"
         ))),
     }
 }
@@ -1827,12 +2954,222 @@ async fn link_action_to_source_detection(
 mod tests {
     use super::*;
 
+    fn test_response_action(
+        target_kind: ResponseTargetKind,
+        action_type: &str,
+    ) -> ResponseActionRecord {
+        ResponseActionRecord {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            action_type: action_type.to_string(),
+            target: ResponseTarget {
+                kind: target_kind,
+                id: "endpoint-1".to_string(),
+            },
+            requested_by: RequestedBy {
+                actor_type: "user".to_string(),
+                actor_id: "alice".to_string(),
+            },
+            requested_at: Utc::now(),
+            expires_at: None,
+            reason: "test".to_string(),
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: true,
+            payload: json!({}),
+            status: "published".to_string(),
+            metadata: json!({}),
+        }
+    }
+
+    fn test_ack(status: &str, target_kind: &str) -> AckSubmission {
+        parse_ack_submission(RecordResponseAckRequest {
+            target_kind: target_kind.to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: status.to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: Some(json!({ "status": status })),
+        })
+        .expect("test acknowledgement parses")
+    }
+
+    fn policy_rule_diff_action_payload() -> Value {
+        json!({
+            "operation": "policy_rule_diff_validation",
+            "proposalId": "proposal-test",
+            "validationPlanSha256": "sha256:plan",
+            "endpointAgentId": "endpoint-1",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/edr/policy/event-impact",
+                "body": {
+                    "limit": 10,
+                    "trackPosture": true
+                }
+            }
+        })
+    }
+
+    fn policy_rule_diff_error_ack(mut error_payload: Value) -> AckSubmission {
+        error_payload["message"] = json!("local validation failed");
+        parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "failed".to_string(),
+            observed_at: None,
+            message: Some("local validation failed".to_string()),
+            resulting_state: Some("policy_rule_diff_validation:failed".to_string()),
+            raw_payload: Some(json!({
+                "policyRuleDiffValidationError": error_payload
+            })),
+        })
+        .expect("test policy rule-diff failure acknowledgement parses")
+    }
+
     #[test]
-    fn delivery_plan_uses_response_subject_for_endpoint_actions() {
+    fn endpoint_terminal_ack_statuses_require_signed_receipts() {
+        let action = test_response_action(
+            ResponseTargetKind::Endpoint,
+            ResponseActionType::TerminateSession.as_str(),
+        );
+
+        for status in [
+            "acknowledged",
+            "rolled_back",
+            "failed",
+            "rejected",
+            "expired",
+        ] {
+            let ack = test_ack(status, "endpoint");
+            assert!(
+                requires_endpoint_ack_signed_receipt(&action, &ack),
+                "endpoint {status} acknowledgements must be signed"
+            );
+        }
+    }
+
+    #[test]
+    fn policy_rule_diff_non_ack_terminal_statuses_require_signed_receipts() {
+        let action = test_response_action(
+            ResponseTargetKind::Endpoint,
+            ResponseActionType::PolicyRuleDiffValidation.as_str(),
+        );
+
+        for status in ["failed", "rejected", "expired"] {
+            let ack = test_ack(status, "endpoint");
+            assert!(
+                requires_endpoint_ack_signed_receipt(&action, &ack),
+                "policy rule-diff {status} terminal acknowledgements must include an endpoint signed receipt"
+            );
+        }
+    }
+
+    #[test]
+    fn cloud_only_targets_do_not_require_endpoint_receipts() {
+        let action = test_response_action(
+            ResponseTargetKind::Principal,
+            ResponseActionType::RevokePrincipal.as_str(),
+        );
+        let ack = test_ack("acknowledged", "principal");
+
+        assert!(!requires_endpoint_ack_signed_receipt(&action, &ack));
+    }
+
+    #[test]
+    fn policy_rule_diff_error_payload_must_be_bound_to_dispatched_action() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let action_payload = policy_rule_diff_action_payload();
+        let empty_payload = parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "failed".to_string(),
+            observed_at: None,
+            message: Some("local validation failed".to_string()),
+            resulting_state: Some("policy_rule_diff_validation:failed".to_string()),
+            raw_payload: Some(json!({})),
+        })
+        .expect("empty raw payload parses");
+        let message = bad_request_message(
+            validate_policy_rule_diff_error_payload_matches_action(
+                &empty_payload,
+                &action_payload,
+                "endpoint-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("must include policyRuleDiffValidationError"));
+
+        let wrong_plan = policy_rule_diff_error_ack(json!({
+            "proposalId": "proposal-test",
+            "validationPlanSha256": "sha256:wrong-plan",
+            "endpointAgentId": "endpoint-1",
+            "request": action_payload["request"].clone()
+        }));
+        let message = bad_request_message(
+            validate_policy_rule_diff_error_payload_matches_action(
+                &wrong_plan,
+                &action_payload,
+                "endpoint-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("validationPlanSha256 does not match"));
+
+        let wrong_request = policy_rule_diff_error_ack(json!({
+            "proposalId": "proposal-test",
+            "validationPlanSha256": "sha256:plan",
+            "endpointAgentId": "endpoint-1",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/edr/policy/event-impact",
+                "body": {
+                    "limit": 999,
+                    "trackPosture": true
+                }
+            }
+        }));
+        let message = bad_request_message(
+            validate_policy_rule_diff_error_payload_matches_action(
+                &wrong_request,
+                &action_payload,
+                "endpoint-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("request does not match"));
+
+        let valid = policy_rule_diff_error_ack(json!({
+            "proposalId": "proposal-test",
+            "validationPlanSha256": "sha256:plan",
+            "endpointAgentId": "endpoint-1",
+            "request": action_payload["request"].clone()
+        }));
+        validate_policy_rule_diff_error_payload_matches_action(
+            &valid,
+            &action_payload,
+            "endpoint-1",
+        )
+        .expect("bound policy rule-diff error payload should validate");
+    }
+
+    #[test]
+    fn delivery_plan_uses_response_subject_for_supported_endpoint_actions() {
         let action = ResponseActionRecord {
             id: Uuid::new_v4(),
             tenant_id: Uuid::new_v4(),
-            action_type: "transition_posture".to_string(),
+            action_type: "policy_rule_diff_validation".to_string(),
             target: ResponseTarget {
                 kind: ResponseTargetKind::Endpoint,
                 id: "agent-123".to_string(),
@@ -1848,7 +3185,7 @@ mod tests {
             source_detection_id: None,
             source_approval_id: None,
             require_acknowledgement: true,
-            payload: json!({"toState": "restricted"}),
+            payload: json!({"operation": "policy_rule_diff_validation"}),
             status: "queued".to_string(),
             metadata: json!({}),
         };
@@ -1858,15 +3195,47 @@ mod tests {
             plan.delivery_subject.as_deref(),
             Some("tenant-acme.clawdstrike.response.command.endpoint.agent-123")
         );
-        assert_eq!(
-            plan.metadata["compat_mirror_subject"],
-            "tenant-acme.clawdstrike.posture.command.agent-123"
-        );
+        assert!(plan.metadata["compat_mirror_subject"].is_null());
         assert_eq!(
             plan.metadata["canonical_subject"],
             "tenant-acme.clawdstrike.response.command.endpoint.agent-123"
         );
         assert!(plan.metadata["ack_token"].is_string());
+    }
+
+    #[test]
+    fn publish_contract_rejects_legacy_endpoint_actions() {
+        let action = ResponseActionRecord {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            action_type: "request_policy_reload".to_string(),
+            target: ResponseTarget {
+                kind: ResponseTargetKind::Endpoint,
+                id: "agent-123".to_string(),
+            },
+            requested_by: RequestedBy {
+                actor_type: "user".to_string(),
+                actor_id: "alice".to_string(),
+            },
+            requested_at: Utc::now(),
+            expires_at: None,
+            reason: "reload".to_string(),
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: false,
+            payload: json!({}),
+            status: "queued".to_string(),
+            metadata: json!({}),
+        };
+
+        let err = validate_publish_delivery_contract(&action).unwrap_err();
+        match err {
+            ApiError::BadRequest(message) => {
+                assert!(message.contains("policy_rule_diff_validation"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1927,11 +3296,101 @@ mod tests {
     }
 
     #[test]
+    fn create_validation_rejects_endpoint_actions_without_agent_executor() {
+        let input = CreateResponseActionRequest {
+            action_type: "request_policy_reload".to_string(),
+            target: ResponseTargetInput {
+                kind: "endpoint".to_string(),
+                id: "agent-1".to_string(),
+            },
+            reason: "reload".to_string(),
+            expires_at: None,
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(false),
+            payload: None,
+        };
+
+        let err = validate_create_request(
+            &input,
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            false,
+        )
+        .unwrap_err();
+        match err {
+            ApiError::BadRequest(message) => {
+                assert!(message.contains("policy_rule_diff_validation"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_validation_requires_policy_rule_diff_acknowledgement() {
+        let input = CreateResponseActionRequest {
+            action_type: "policy_rule_diff_validation".to_string(),
+            target: ResponseTargetInput {
+                kind: "endpoint".to_string(),
+                id: "agent-1".to_string(),
+            },
+            reason: "validate proposal".to_string(),
+            expires_at: None,
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(false),
+            payload: Some(json!({"operation": "policy_rule_diff_validation"})),
+        };
+
+        let err = validate_create_request(
+            &input,
+            &ResponseActionType::PolicyRuleDiffValidation,
+            &ResponseTargetKind::Endpoint,
+            false,
+        )
+        .unwrap_err();
+        match err {
+            ApiError::BadRequest(message) => {
+                assert!(message.contains("require acknowledgement"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_validation_accepts_policy_rule_diff_endpoint_contract() {
+        let input = CreateResponseActionRequest {
+            action_type: "policy_rule_diff_validation".to_string(),
+            target: ResponseTargetInput {
+                kind: "endpoint".to_string(),
+                id: "agent-1".to_string(),
+            },
+            reason: "validate proposal".to_string(),
+            expires_at: Some(Utc::now() + Duration::minutes(5)),
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(true),
+            payload: Some(json!({"operation": "policy_rule_diff_validation"})),
+        };
+
+        validate_create_request(
+            &input,
+            &ResponseActionType::PolicyRuleDiffValidation,
+            &ResponseTargetKind::Endpoint,
+            true,
+        )
+        .expect("policy_rule_diff_validation endpoint command should be accepted");
+    }
+
+    #[test]
     fn transition_posture_requires_target_state_in_payload() {
         let input = CreateResponseActionRequest {
             action_type: "transition_posture".to_string(),
             target: ResponseTargetInput {
-                kind: "endpoint".to_string(),
+                kind: "project".to_string(),
                 id: "agent-1".to_string(),
             },
             reason: "contain".to_string(),
@@ -1946,11 +3405,16 @@ mod tests {
         let err = validate_create_request(
             &input,
             &ResponseActionType::TransitionPosture,
-            &ResponseTargetKind::Endpoint,
+            &ResponseTargetKind::Project,
             false,
         )
         .unwrap_err();
-        assert!(matches!(err, ApiError::BadRequest(_)));
+        match err {
+            ApiError::BadRequest(message) => {
+                assert!(message.contains("payload.toState"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
     }
 
     #[test]
@@ -2005,6 +3469,428 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn create_validation_rejects_oversized_request_fields() {
+        let oversized_target = match validate_create_request(
+            &CreateResponseActionRequest {
+                action_type: "request_policy_reload".to_string(),
+                target: ResponseTargetInput {
+                    kind: "endpoint".to_string(),
+                    id: "e".repeat(257),
+                },
+                reason: "reload".to_string(),
+                expires_at: None,
+                case_id: None,
+                source_detection_id: None,
+                source_approval_id: None,
+                require_acknowledgement: Some(false),
+                payload: None,
+            },
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            false,
+        ) {
+            Ok(_) => panic!("oversized response-action target id was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_target, ApiError::BadRequest(_)));
+
+        let oversized_reason = match validate_create_request(
+            &CreateResponseActionRequest {
+                action_type: "request_policy_reload".to_string(),
+                target: ResponseTargetInput {
+                    kind: "endpoint".to_string(),
+                    id: "agent-1".to_string(),
+                },
+                reason: "r".repeat(2049),
+                expires_at: None,
+                case_id: None,
+                source_detection_id: None,
+                source_approval_id: None,
+                require_acknowledgement: Some(false),
+                payload: None,
+            },
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            false,
+        ) {
+            Ok(_) => panic!("oversized response-action reason was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_reason, ApiError::BadRequest(_)));
+
+        let oversized_payload = match validate_create_request(
+            &CreateResponseActionRequest {
+                action_type: "request_policy_reload".to_string(),
+                target: ResponseTargetInput {
+                    kind: "endpoint".to_string(),
+                    id: "agent-1".to_string(),
+                },
+                reason: "reload".to_string(),
+                expires_at: None,
+                case_id: None,
+                source_detection_id: None,
+                source_approval_id: None,
+                require_acknowledgement: Some(false),
+                payload: Some(json!({
+                    "blob": "p".repeat(65_536)
+                })),
+            },
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            false,
+        ) {
+            Ok(_) => panic!("oversized response-action payload was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_payload, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn control_discriminator_errors_do_not_echo_oversized_values() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let oversized_action_type = "a".repeat(2048);
+        let action_message =
+            bad_request_message(ResponseActionType::from_str(&oversized_action_type).unwrap_err());
+        assert!(!action_message.contains(&oversized_action_type));
+        assert!(action_message.len() < 256);
+
+        let oversized_target_kind = "t".repeat(2048);
+        let target_message =
+            bad_request_message(ResponseTargetKind::from_str(&oversized_target_kind).unwrap_err());
+        assert!(!target_message.contains(&oversized_target_kind));
+        assert!(target_message.len() < 256);
+
+        let oversized_ack_status = "s".repeat(2048);
+        let status_message =
+            bad_request_message(normalize_ack_status(&oversized_ack_status).unwrap_err());
+        assert!(!status_message.contains(&oversized_ack_status));
+        assert!(status_message.len() < 256);
+    }
+
+    #[test]
+    fn control_discriminators_reject_oversized_values_with_length_errors() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let action_message =
+            bad_request_message(ResponseActionType::from_str(&"a".repeat(65)).unwrap_err());
+        assert!(action_message.contains("action_type"));
+        assert!(action_message.contains("at most"));
+
+        let target_message =
+            bad_request_message(ResponseTargetKind::from_str(&"t".repeat(65)).unwrap_err());
+        assert!(target_message.contains("target.kind"));
+        assert!(target_message.contains("at most"));
+
+        let status_message =
+            bad_request_message(normalize_ack_status(&"s".repeat(65)).unwrap_err());
+        assert!(status_message.contains("status"));
+        assert!(status_message.contains("at most"));
+    }
+
+    #[test]
+    fn response_action_requests_reject_unknown_fields() {
+        let create_err = serde_json::from_value::<CreateResponseActionRequest>(json!({
+            "actionType": "request_policy_reload",
+            "target": {
+                "kind": "endpoint",
+                "id": "agent-1"
+            },
+            "reason": "reload",
+            "dryRun": true
+        }))
+        .expect_err("unknown create request field should be rejected");
+        assert!(create_err.to_string().contains("unknown field"));
+
+        let target_err = serde_json::from_value::<CreateResponseActionRequest>(json!({
+            "actionType": "request_policy_reload",
+            "target": {
+                "kind": "endpoint",
+                "id": "agent-1",
+                "displayName": "Endpoint One"
+            },
+            "reason": "reload"
+        }))
+        .expect_err("unknown target field should be rejected");
+        assert!(target_err.to_string().contains("unknown field"));
+
+        let ack_err = serde_json::from_value::<RecordResponseAckRequest>(json!({
+            "targetKind": "endpoint",
+            "targetId": "agent-1",
+            "ackToken": "ack-token",
+            "status": "acknowledged",
+            "receiptHash": "abc123"
+        }))
+        .expect_err("unknown acknowledgement field should be rejected");
+        assert!(ack_err.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn parse_ack_submission_rejects_untrusted_observed_at() {
+        let future_observed_at = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: Some(Utc::now() + Duration::minutes(6)),
+            message: None,
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("future acknowledgement observed_at was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(future_observed_at, ApiError::BadRequest(_)));
+
+        let stale_observed_at = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: Some(Utc::now() - Duration::hours(2)),
+            message: None,
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("stale acknowledgement observed_at was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(stale_observed_at, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn normalize_ack_status_accepts_rollback_acknowledgement() {
+        assert_eq!(normalize_ack_status("rolled_back").unwrap(), "rolled_back");
+    }
+
+    #[test]
+    fn parse_ack_submission_rejects_oversized_ack_fields() {
+        let oversized_target = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "e".repeat(257),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("oversized acknowledgement target id was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_target, ApiError::BadRequest(_)));
+
+        let oversized_token = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "t".repeat(1025),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("oversized acknowledgement token was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_token, ApiError::BadRequest(_)));
+
+        let oversized_message = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: Some("m".repeat(2049)),
+            resulting_state: None,
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("oversized acknowledgement message was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_message, ApiError::BadRequest(_)));
+
+        let oversized_resulting_state = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: Some("s".repeat(257)),
+            raw_payload: None,
+        }) {
+            Ok(_) => panic!("oversized acknowledgement resulting state was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_resulting_state, ApiError::BadRequest(_)));
+
+        let oversized_raw_payload = match parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: Some(json!({
+                "blob": "r".repeat(65_536)
+            })),
+        }) {
+            Ok(_) => panic!("oversized acknowledgement raw payload was accepted"),
+            Err(err) => err,
+        };
+        assert!(matches!(oversized_raw_payload, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn policy_rule_diff_ack_payload_requires_receipt_and_impact_for_success() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let missing_receipt = parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: Some(json!({
+                "policyRuleDiffValidation": {
+                    "impact": {
+                        "impactId": "impact-test"
+                    }
+                }
+            })),
+        })
+        .expect("ack payload parses");
+        let message = bad_request_message(
+            validate_policy_rule_diff_ack_payload(&missing_receipt).unwrap_err(),
+        );
+        assert!(message.contains("policyRuleDiffValidation acknowledgement must include receipt"));
+
+        let complete = parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "acknowledged".to_string(),
+            observed_at: None,
+            message: None,
+            resulting_state: None,
+            raw_payload: Some(json!({
+                "policyRuleDiffValidation": {
+                    "impact": {
+                        "impactId": "impact-test"
+                    },
+                    "receipt": {
+                        "receipt": {
+                            "receipt_id": "receipt-test"
+                        }
+                    }
+                }
+            })),
+        })
+        .expect("ack payload parses");
+        validate_policy_rule_diff_ack_payload(&complete)
+            .expect("complete policy rule-diff acknowledgement payload");
+
+        let failed_without_receipt = parse_ack_submission(RecordResponseAckRequest {
+            target_kind: "endpoint".to_string(),
+            target_id: "endpoint-1".to_string(),
+            ack_token: "ack-token".to_string(),
+            status: "failed".to_string(),
+            observed_at: None,
+            message: Some("local validation failed".to_string()),
+            resulting_state: None,
+            raw_payload: Some(json!({
+                "policyRuleDiffValidationError": {
+                    "message": "local validation failed"
+                }
+            })),
+        })
+        .expect("ack payload parses");
+        validate_policy_rule_diff_ack_payload(&failed_without_receipt).expect(
+            "error payload shape validation is separate from terminal signed-receipt enforcement",
+        );
+    }
+
+    #[test]
+    fn policy_rule_diff_ack_binds_dispatched_expected_receipt() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let expected_receipt = json!({
+            "receiptFamily": "policy_event_impact",
+            "ruleId": "endpoint.policy_event.impact",
+            "graphProcessNodeId": "fleet-rule-diff",
+            "proposedPolicyHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "proposedPolicyEpoch": 42,
+            "requiredEvidenceKeys": [
+                "impactId",
+                "proposedPolicyHash",
+                "proposedPolicyEpoch"
+            ]
+        });
+        let action_payload = json!({
+            "expectedReceipt": expected_receipt.clone()
+        });
+        let payload = json!({
+            "endpointAgentId": "agent-1",
+            "expectedReceipt": expected_receipt,
+            "impact": {
+                "proposedPolicyHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "proposedPolicyEpoch": 42
+            }
+        });
+        validate_policy_rule_diff_ack_matches_action_payload(&payload, &action_payload, "agent-1")
+            .expect("expected receipt identity should match");
+
+        let mut mutated_expected = payload.clone();
+        mutated_expected["expectedReceipt"]["proposedPolicyHash"] =
+            json!("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        let message = bad_request_message(
+            validate_policy_rule_diff_ack_matches_action_payload(
+                &mutated_expected,
+                &action_payload,
+                "agent-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("expectedReceipt does not match"));
+
+        let mut mutated_impact = payload.clone();
+        mutated_impact["impact"]["proposedPolicyEpoch"] = json!(43);
+        let message = bad_request_message(
+            validate_policy_rule_diff_ack_matches_action_payload(
+                &mutated_impact,
+                &action_payload,
+                "agent-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("impact proposedPolicyEpoch"));
     }
 
     #[test]

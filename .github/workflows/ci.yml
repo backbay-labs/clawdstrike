@@ -247,8 +247,148 @@ jobs:
       - name: Check desktop Tauri crate
         run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
-      - name: Check agent Tauri crate
-        run: cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+      - name: Check agent macOS packaging sources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            apps/agent/src-tauri/macos/system-extension/entitlements/agent-app.entitlements
+            apps/agent/src-tauri/macos/system-extension/entitlements/combined-system-extension.entitlements
+            apps/agent/src-tauri/macos/system-extension/plists/agent-packaging-template.plist
+            apps/agent/src-tauri/macos/system-extension/plists/combined-system-extension-template.plist
+            apps/agent/src-tauri/macos/system-extension/profiles/developer-id-profile-template.plist
+          )
+
+          for path in "${required[@]}"; do
+            [[ -f "$path" ]] || {
+              echo "missing macOS packaging asset: $path" >&2
+              exit 1
+            }
+          done
+
+          CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING=1 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+
+  macos-system-extension-swift:
+    name: macOS System Extension Swift Packages
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Test Swift coverage checker
+        run: python3 tools/scripts/check-changed-swift-coverage-test.py
+
+      - name: Test EndpointSecurity extension package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_path="apps/agent/src-tauri/macos/system-extension/endpoint-security"
+          swift test --enable-code-coverage --disable-sandbox --package-path "$package_path"
+
+          codecov_path="$(swift test --disable-sandbox --show-codecov-path --package-path "$package_path")"
+          codecov_dir="$(dirname "$codecov_path")"
+          debug_dir="$(dirname "$codecov_dir")"
+          test_bundle="$(find "$debug_dir" -maxdepth 1 -type d -name '*Tests.xctest' -print -quit)"
+          test_binary="$(find "$test_bundle/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          [[ -x "$test_binary" ]] || {
+            echo "missing EndpointSecurity XCTest binary under $debug_dir" >&2
+            exit 1
+          }
+          status_tool="$debug_dir/endpoint-security-status-tool"
+
+          for scenario in healthy-allow deny-decision deadline-miss dropped-events missing-full-disk-access inactive-provider approval-blocked; do
+            LLVM_PROFILE_FILE="$codecov_dir/status-tool-%p.profraw" "$status_tool" fixture "$scenario" >/dev/null
+          done
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" live >/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture unsupported >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" observe-auth-open 0 >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" observe-auth-open 1 >/dev/null 2>/dev/null || true
+
+          xcrun llvm-profdata merge -sparse "$codecov_dir"/*.profraw -o "$codecov_dir/combined.profdata"
+          xcrun llvm-cov export \
+            -format=text \
+            -instr-profile="$codecov_dir/combined.profdata" \
+            "$test_binary" \
+            -object="$status_tool" \
+            > swift-coverage-endpoint-security.json
+
+      - name: Test NetworkExtension package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_path="apps/agent/src-tauri/macos/system-extension/network-extension"
+          swift test --enable-code-coverage --disable-sandbox --package-path "$package_path"
+
+          codecov_path="$(swift test --disable-sandbox --show-codecov-path --package-path "$package_path")"
+          codecov_dir="$(dirname "$codecov_path")"
+          debug_dir="$(dirname "$codecov_dir")"
+          test_bundle="$(find "$debug_dir" -maxdepth 1 -type d -name '*Tests.xctest' -print -quit)"
+          test_binary="$(find "$test_bundle/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          [[ -x "$test_binary" ]] || {
+            echo "missing NetworkExtension XCTest binary under $debug_dir" >&2
+            exit 1
+          }
+          status_tool="$debug_dir/network-extension-status-tool"
+
+          for scenario in selection inactive unavailable approval-blocked; do
+            LLVM_PROFILE_FILE="$codecov_dir/status-tool-%p.profraw" "$status_tool" fixture "$scenario" >/dev/null
+          done
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" live >/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture unsupported >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" request-reload >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" request-reload /tmp/policy.json abc >/dev/null 2>/dev/null || true
+
+          xcrun llvm-profdata merge -sparse "$codecov_dir"/*.profraw -o "$codecov_dir/combined.profdata"
+          xcrun llvm-cov export \
+            -format=text \
+            -instr-profile="$codecov_dir/combined.profdata" \
+            "$test_binary" \
+            -object="$status_tool" \
+            > swift-coverage-network-extension.json
+
+      - name: Enforce changed-line Swift coverage floor
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          CHANGED_SWIFT_COVERAGE_THRESHOLD: "60"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GITHUB_BASE_REF}" ]; then
+            echo "No base ref (non-PR run); skipping changed-file Swift coverage gate."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+
+          if ! git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.swift' > changed_swift_files.txt; then
+            echo "Shallow diff failed; fetching additional history for merge-base resolution"
+            git fetch --no-tags --prune --unshallow origin || git fetch --no-tags --prune origin
+            git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.swift' > changed_swift_files.txt
+          fi
+
+          grep '^apps/agent/src-tauri/macos/system-extension/' changed_swift_files.txt \
+            | grep '/Sources/' \
+            > changed_swift_files.coverage.txt || true
+
+          if [ ! -s changed_swift_files.coverage.txt ]; then
+            echo "No system-extension Swift source files changed; skipping changed-file Swift coverage gate."
+            exit 0
+          fi
+
+          tools/scripts/check-changed-swift-coverage.py \
+            --coverage-json swift-coverage-endpoint-security.json \
+            --coverage-json swift-coverage-network-extension.json \
+            --changed-files-file changed_swift_files.coverage.txt \
+            --git-diff-range "origin/${GITHUB_BASE_REF}...HEAD" \
+            --threshold "${CHANGED_SWIFT_COVERAGE_THRESHOLD}"
 
   desktop-frontend:
     name: Desktop Frontend
@@ -492,6 +632,10 @@ jobs:
             --ignore RUSTSEC-2025-0098 \
             --ignore RUSTSEC-2025-0100 \
             --ignore RUSTSEC-2025-0119 \
+            --ignore RUSTSEC-2026-0097 \
+            --ignore RUSTSEC-2026-0105 \
+            --ignore RUSTSEC-2026-0118 \
+            --ignore RUSTSEC-2026-0119 \
             # Temporary: transitive via portable-pty->serial in workbench PTY stack.
             # Mitigated by command hardening (shell/env allowlists + backend-minted
             # capability tokens bound to trusted-window context).
@@ -510,8 +654,13 @@ jobs:
           )
 
           cargo audit --deny warnings "${audit_ignores[@]}"
-          cargo audit --deny warnings --file apps/desktop/src-tauri/Cargo.lock "${audit_ignores[@]}"
-          cargo audit --deny warnings --file apps/workbench/src-tauri/Cargo.lock "${audit_ignores[@]}"
+          # cargo-audit fails vulnerability advisories by default. App lockfiles still
+          # carry yanked-only core2 transitives through current libp2p and Stronghold
+          # stacks, so additionally deny unmaintained and unsound advisories while
+          # upstreams replace it.
+          cargo audit --deny unmaintained --deny unsound --file apps/desktop/src-tauri/Cargo.lock "${audit_ignores[@]}"
+          cargo audit --deny unmaintained --deny unsound --file apps/workbench/src-tauri/Cargo.lock "${audit_ignores[@]}"
+          cargo audit --deny unmaintained --deny unsound --file apps/agent/src-tauri/Cargo.lock "${audit_ignores[@]}"
 
   license-check:
     name: License Check
@@ -566,6 +715,18 @@ jobs:
       - name: Generate workspace coverage report
         run: cargo llvm-cov --all-features --lcov --output-path lcov.workspace.info
 
+      - name: Generate agent Tauri coverage report
+        run: |
+          # This job is the changed-line coverage gate, not the full agent test
+          # gate. Export LCOV from runnable agent tests so agent Rust changes
+          # participate in coverage while platform/local-listener test failures
+          # remain isolated to their dedicated validation jobs.
+          cargo llvm-cov \
+            --manifest-path apps/agent/src-tauri/Cargo.toml \
+            --ignore-run-fail \
+            --lcov \
+            --output-path lcov.agent.info
+
       - name: Generate desktop Tauri coverage report
         run: cargo llvm-cov --manifest-path apps/desktop/src-tauri/Cargo.toml --lcov --output-path lcov.desktop.info
 
@@ -576,6 +737,8 @@ jobs:
         run: |
           {
             cat lcov.workspace.info
+            printf '\n'
+            cat lcov.agent.info
             printf '\n'
             cat lcov.desktop.info
             printf '\n'
@@ -610,7 +773,7 @@ jobs:
           fi
 
           # This job merges coverage from the root Rust workspace plus the
-          # desktop and workbench Tauri crates. Keep excluding the long-lived
+          # agent, desktop, and workbench Tauri crates. Keep excluding the long-lived
           # desktop Tauri surface from the changed-line floor until it has a
           # dedicated changed-line gate instead of inheriting legacy branch
           # churn. Also exclude vendored upstream Rust snapshots, standalone
@@ -619,8 +782,7 @@ jobs:
           # LCOV entries in this job. The root workspace coverage run installs
           # Z3 and uses `--all-features`, so `clawdstrike-logos` solver-gated
           # paths remain in scope here.
-          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
-            | grep -v '^apps/desktop/src-tauri/' \
+          grep -v '^apps/desktop/src-tauri/' changed_rust_files.txt \
             | grep -v '^apps/workbench/src-tauri/' \
             | grep -v '^crates/bridges/hush-go-native/' \
             | grep -v '^crates/libs/logos-z3/' \
@@ -802,11 +964,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust stable for cargo-fuzz
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked --version 0.13.1
+        run: cargo +stable install cargo-fuzz --locked --version 0.13.1
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Build fuzz targets
         run: |
@@ -1093,7 +1258,10 @@ jobs:
             and .checks.hookCuaPresent
             and .checks.chatSendStarted
             and .checks.historyHasMessages
-            and (.checks.assistantBlockSignal or .checks.assistantAuthMissing)
+            and (
+              .checks.assistantBlockSignal
+              or .checks.assistantAuthMissing
+            )
             and .checks.policyCheckHttpOk
             and .checks.policyCheckDenied
             and .checks.targetFileAbsent

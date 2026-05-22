@@ -31,6 +31,29 @@ const secureTool = wrapTool(tool, interceptor);
 await secureTool.invoke({ cmd: 'echo hello' });
 ```
 
+## Local EDR telemetry
+
+The modern `secureTool` and `secureTools` helpers accept adapter config, so LangChain wrappers can
+opt in to the same local EDR bridge used by adapter-core tool boundaries:
+
+```ts
+import { secureTool } from '@clawdstrike/langchain';
+
+const securedTool = secureTool(tool, engine, {
+  config: {
+    edr: {
+      enabled: true,
+      token: process.env.CLAWDSTRIKE_AGENT_TOKEN,
+      agentUrl: 'http://127.0.0.1:9878',
+    },
+  },
+});
+```
+
+When enabled, pre-execution decisions are posted as scrubbed `PolicyEvent` records to
+`/api/v1/agent/edr/policy-events`. Package-manager lifecycle commands and sensitive cloud-CLI
+commands are also emitted to `/api/v1/agent/edr/developer-activity` without raw secret values.
+
 ## Config overrides
 
 ```ts

@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "cranelift-frontend"
-version = "0.128.4"
+version = "0.131.1"
 authors = ["The Cranelift Project Developers"]
 build = false
 autolib = false
@@ -42,7 +42,7 @@ name = "cranelift_frontend"
 path = "src/lib.rs"
 
 [dependencies.cranelift-codegen]
-version = "0.128.4"
+version = "0.131.1"
 features = [
     "std",
     "unwind",
@@ -50,7 +50,7 @@ features = [
 default-features = false
 
 [dependencies.hashbrown]
-version = "0.15"
+version = "0.16"
 optional = true
 default-features = false
 
@@ -66,7 +66,7 @@ features = ["union"]
 version = "0.13.0"
 
 [dev-dependencies.cranelift-codegen]
-version = "0.128.4"
+version = "0.131.1"
 features = [
     "std",
     "unwind",
@@ -115,4 +115,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

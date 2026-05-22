@@ -138,6 +138,19 @@ openclaw_runtime_plugin_info_from_output() {
   ' 2>/dev/null || true
 }
 
+openclaw_runtime_plugin_info() {
+  local plugin_id="$1"
+  local output
+
+  if output="$(openclaw plugins inspect "$plugin_id" --runtime --json 2>&1)"; then
+    printf '%s\n' "$output"
+    return 0
+  fi
+
+  output="$(openclaw plugins info "$plugin_id" --json 2>&1 || true)"
+  printf '%s\n' "$output"
+}
+
 openclaw_runtime_version() {
   openclaw --version 2>&1 | tail -n 1 | tr -d '\r'
 }

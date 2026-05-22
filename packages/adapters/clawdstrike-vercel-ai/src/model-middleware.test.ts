@@ -1,8 +1,9 @@
-import type { PolicyEngineLike } from "@clawdstrike/adapter-core";
+import type { AuditEvent, PolicyEngineLike } from "@clawdstrike/adapter-core";
+import { createSecurityContext } from "@clawdstrike/adapter-core";
 import { getWasmModule, initWasm, isWasmBackend } from "@clawdstrike/sdk";
 import { describe, expect, it, vi } from "vitest";
-import { ClawdstrikePromptSecurityError } from "./errors.js";
-import { createClawdstrikeMiddleware } from "./middleware.js";
+import { ClawdstrikeBlockedError, ClawdstrikePromptSecurityError } from "./errors.js";
+import { buildPromptSecurityPolicyEventForEdr, createClawdstrikeMiddleware } from "./middleware.js";
 
 // Attempt WASM initialization — detection features require it.
 let wasmAvailable = false;
@@ -19,7 +20,7 @@ try {
 }
 
 describe("wrapLanguageModel", () => {
-  it("wraps doGenerate and annotates blocked tool calls", async () => {
+  it("wraps doGenerate and rejects blocked tool calls", async () => {
     const engine: PolicyEngineLike = {
       evaluate: (event) => ({
         status: event.eventType === "command_exec" ? "deny" : "allow",
@@ -53,11 +54,11 @@ describe("wrapLanguageModel", () => {
     };
 
     const model = security.wrapLanguageModel(baseModel);
-    const result = await (model as any).doGenerate({ prompt: [] });
+    await expect((model as any).doGenerate({ prompt: [] })).rejects.toBeInstanceOf(
+      ClawdstrikeBlockedError,
+    );
 
     expect(experimental_wrapLanguageModel).toHaveBeenCalledTimes(1);
-    expect(result.toolCalls[0].__clawdstrike_blocked).toBe(true);
-    expect(typeof result.toolCalls[0].__clawdstrike_reason).toBe("string");
   });
 
   it("wraps doStream and uses StreamingToolGuard when enabled", async () => {
@@ -116,16 +117,15 @@ describe("wrapLanguageModel", () => {
     const model = security.wrapLanguageModel(baseModel);
     const result = await (model as any).doStream({ prompt: [] });
 
-    const out: any[] = [];
     const reader = result.stream.getReader();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      out.push(value);
-    }
-
-    const toolCall = out.find((c) => c.type === "tool-call");
-    expect(toolCall.__clawdstrike_blocked).toBe(true);
+    await expect(
+      (async () => {
+        while (true) {
+          const { done } = await reader.read();
+          if (done) break;
+        }
+      })(),
+    ).rejects.toBeInstanceOf(ClawdstrikeBlockedError);
   });
 
   it.skipIf(!wasmAvailable)("blocks doGenerate on jailbreak detection in block mode", async () => {
@@ -178,122 +178,207 @@ describe("wrapLanguageModel", () => {
     expect(security.getAuditLog().some((e) => e.type === "prompt_security_jailbreak")).toBe(true);
   });
 
-  it.skipIf(!wasmAvailable)("sanitizes generated text when promptSecurity.outputSanitization is enabled", async () => {
-    const engine: PolicyEngineLike = {
-      evaluate: () => ({ allowed: true, denied: false, warn: false }),
-    };
+  it.skipIf(!wasmAvailable)(
+    "sanitizes generated text when promptSecurity.outputSanitization is enabled",
+    async () => {
+      const engine: PolicyEngineLike = {
+        evaluate: () => ({ allowed: true, denied: false, warn: false }),
+      };
 
-    const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
-      ...model,
-      doGenerate: (params: any) =>
-        middleware.wrapGenerate({
-          doGenerate: () => model.doGenerate(params),
-          params,
-          model,
-        }),
-    }));
+      const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+        ...model,
+        doGenerate: (params: any) =>
+          middleware.wrapGenerate({
+            doGenerate: () => model.doGenerate(params),
+            params,
+            model,
+          }),
+      }));
 
-    const security = createClawdstrikeMiddleware({
-      engine,
-      config: {
-        promptSecurity: {
-          enabled: true,
-          mode: "audit",
-          jailbreakDetection: { enabled: false },
-          instructionHierarchy: { enabled: false },
-          watermarking: { enabled: false },
-          outputSanitization: { enabled: true },
-        },
-      },
-      aiSdk: { experimental_wrapLanguageModel },
-    });
-
-    const key = `sk-${"a".repeat(48)}`;
-    const baseModel = {
-      async doGenerate(_params?: any) {
-        return { text: `hello ${key} bye` };
-      },
-    };
-
-    const model = security.wrapLanguageModel(baseModel);
-    const result = await (model as any).doGenerate({ prompt: [] });
-
-    expect(result.text).not.toContain(key);
-    expect(result.text).toContain("[REDACTED:openai_api_key]");
-    expect(result.__clawdstrike_redacted).toBe(true);
-    expect(security.getAuditLog().some((e) => e.type === "prompt_security_output_sanitized")).toBe(
-      true,
-    );
-  });
-
-  it.skipIf(!wasmAvailable)("sanitizes streaming text deltas when promptSecurity.outputSanitization is enabled", async () => {
-    const engine: PolicyEngineLike = {
-      evaluate: () => ({ allowed: true, denied: false, warn: false }),
-    };
-
-    const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
-      ...model,
-      doStream: (params: any) =>
-        middleware.wrapStream({
-          doStream: () => model.doStream(params),
-          params,
-          model,
-        }),
-    }));
-
-    const security = createClawdstrikeMiddleware({
-      engine,
-      config: {
-        promptSecurity: {
-          enabled: true,
-          mode: "audit",
-          jailbreakDetection: { enabled: false },
-          instructionHierarchy: { enabled: false },
-          watermarking: { enabled: false },
-          outputSanitization: { enabled: true },
-        },
-      },
-      aiSdk: { experimental_wrapLanguageModel },
-    });
-
-    const key = `sk-${"a".repeat(48)}`;
-    const chunk1 = key.slice(0, 10);
-    const chunk2 = key.slice(10);
-
-    const baseModel = {
-      async doStream(_params?: any) {
-        const stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue({ type: "text-delta", textDelta: `hello ${chunk1}` });
-            controller.enqueue({ type: "text-delta", textDelta: `${chunk2} bye` });
-            controller.enqueue({ type: "finish" });
-            controller.close();
+      const security = createClawdstrikeMiddleware({
+        engine,
+        config: {
+          promptSecurity: {
+            enabled: true,
+            mode: "audit",
+            jailbreakDetection: { enabled: false },
+            instructionHierarchy: { enabled: false },
+            watermarking: { enabled: false },
+            outputSanitization: { enabled: true },
           },
-        });
-        return { stream };
+        },
+        aiSdk: { experimental_wrapLanguageModel },
+      });
+
+      const key = `sk-${"a".repeat(48)}`;
+      const baseModel = {
+        async doGenerate(_params?: any) {
+          return { text: `hello ${key} bye` };
+        },
+      };
+
+      const model = security.wrapLanguageModel(baseModel);
+      const result = await (model as any).doGenerate({ prompt: [] });
+
+      expect(result.text).not.toContain(key);
+      expect(result.text).toContain("[REDACTED:openai_api_key]");
+      expect(result.__clawdstrike_redacted).toBe(true);
+      expect(
+        security.getAuditLog().some((e) => e.type === "prompt_security_output_sanitized"),
+      ).toBe(true);
+    },
+  );
+
+  it.skipIf(!wasmAvailable)(
+    "sanitizes streaming text deltas when promptSecurity.outputSanitization is enabled",
+    async () => {
+      const engine: PolicyEngineLike = {
+        evaluate: () => ({ allowed: true, denied: false, warn: false }),
+      };
+
+      const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+        ...model,
+        doStream: (params: any) =>
+          middleware.wrapStream({
+            doStream: () => model.doStream(params),
+            params,
+            model,
+          }),
+      }));
+
+      const security = createClawdstrikeMiddleware({
+        engine,
+        config: {
+          promptSecurity: {
+            enabled: true,
+            mode: "audit",
+            jailbreakDetection: { enabled: false },
+            instructionHierarchy: { enabled: false },
+            watermarking: { enabled: false },
+            outputSanitization: { enabled: true },
+          },
+        },
+        aiSdk: { experimental_wrapLanguageModel },
+      });
+
+      const key = `sk-${"a".repeat(48)}`;
+      const chunk1 = key.slice(0, 10);
+      const chunk2 = key.slice(10);
+
+      const baseModel = {
+        async doStream(_params?: any) {
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: "text-delta", textDelta: `hello ${chunk1}` });
+              controller.enqueue({ type: "text-delta", textDelta: `${chunk2} bye` });
+              controller.enqueue({ type: "finish" });
+              controller.close();
+            },
+          });
+          return { stream };
+        },
+      };
+
+      const model = security.wrapLanguageModel(baseModel);
+      const result = await (model as any).doStream({ prompt: [] });
+
+      const out: any[] = [];
+      const reader = result.stream.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        out.push(value);
+      }
+
+      const text = out
+        .filter((c) => c.type === "text-delta")
+        .map((c) => c.textDelta)
+        .join("");
+      expect(text).not.toContain(key);
+      expect(text).toContain("[REDACTED:openai_api_key]");
+      expect(
+        security.getAuditLog().some((e) => e.type === "prompt_security_output_sanitized"),
+      ).toBe(true);
+    },
+  );
+});
+
+describe("prompt-security EDR event builder", () => {
+  it("builds scrubbed local EDR policy events without raw prompt-security content", () => {
+    const context = createSecurityContext({
+      contextId: "ctx-edr",
+      sessionId: "sess-edr",
+      metadata: {
+        framework: "vercel-ai",
+        agentId: "agent-1",
+        prompt: "MY_RAW_PROMPT",
+        apiToken: "sk-raw-token-value-that-should-not-appear",
       },
-    };
+    });
+    const event = {
+      id: "psih-1",
+      type: "prompt_security_instruction_hierarchy",
+      timestamp: new Date("2026-05-15T00:00:00.000Z"),
+      contextId: context.id,
+      sessionId: context.sessionId,
+      details: {
+        valid: false,
+        conflicts: [
+          {
+            id: "conflict-1",
+            ruleId: "rule-1",
+            severity: "high",
+            action: "block",
+            triggers: ["MY_RAW_TRIGGER"],
+          },
+        ],
+        stats: {
+          conflicts: 1,
+          privateText: "MY_RAW_STATS",
+        },
+      },
+    } satisfies AuditEvent;
 
-    const model = security.wrapLanguageModel(baseModel);
-    const result = await (model as any).doStream({ prompt: [] });
-
-    const out: any[] = [];
-    const reader = result.stream.getReader();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      out.push(value);
-    }
-
-    const text = out
-      .filter((c) => c.type === "text-delta")
-      .map((c) => c.textDelta)
-      .join("");
-    expect(text).not.toContain(key);
-    expect(text).toContain("[REDACTED:openai_api_key]");
-    expect(security.getAuditLog().some((e) => e.type === "prompt_security_output_sanitized")).toBe(
-      true,
+    const policyEvent = buildPromptSecurityPolicyEventForEdr(
+      {
+        promptSecurity: {
+          enabled: true,
+          applicationId: "app-1",
+          mode: "block",
+        },
+      },
+      context,
+      event,
     );
+
+    expect(policyEvent.eventId).toBe("vercel-ai-prompt-security-psih-1");
+    expect(policyEvent.eventType).toBe("custom");
+    expect(policyEvent.data).toMatchObject({
+      type: "custom",
+      customType: "prompt_security_instruction_hierarchy",
+      auditEventId: "psih-1",
+      contextId: "ctx-edr",
+      promptContentOmitted: true,
+      modelOutputOmitted: true,
+      valid: false,
+      conflictCount: 1,
+      conflicts: [{ ruleId: "rule-1", severity: "high", action: "block", triggerCount: 1 }],
+    });
+    expect(policyEvent.metadata).toMatchObject({
+      framework: "vercel-ai",
+      agentId: "agent-1",
+      collectorKind: "vercel_ai_prompt_security",
+      source: "vercel-ai.prompt-security",
+      applicationId: "app-1",
+      mode: "block",
+      payloadScrubbed: true,
+    });
+
+    const serialized = JSON.stringify(policyEvent);
+    expect(serialized).not.toContain("MY_RAW_PROMPT");
+    expect(serialized).not.toContain("MY_RAW_TRIGGER");
+    expect(serialized).not.toContain("MY_RAW_STATS");
+    expect(serialized).not.toContain("sk-raw-token");
   });
 });
 

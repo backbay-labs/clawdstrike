@@ -75,11 +75,16 @@ async fn export_audit_log(
 
     match format {
         "csv" => {
-            let mut csv = String::from("tenant_id,event_type,quantity,recorded_at\n");
+            let mut csv = String::from("tenant_id,event_type,quantity,recorded_at,metadata\n");
             for entry in &entries {
+                let metadata = audit_metadata_string(&entry.metadata)?;
                 csv.push_str(&format!(
-                    "{},{},{},{}\n",
-                    entry.tenant_id, entry.event_type, entry.quantity, entry.recorded_at
+                    "{},{},{},{},{}\n",
+                    csv_field(&entry.tenant_id.to_string()),
+                    csv_field(&entry.event_type),
+                    entry.quantity,
+                    csv_field(&entry.recorded_at.to_rfc3339()),
+                    csv_field(&metadata)
                 ));
             }
             Ok((
@@ -97,13 +102,20 @@ async fn export_audit_log(
         "cef" => {
             let mut cef = String::new();
             for entry in &entries {
+                let metadata = audit_metadata_string(&entry.metadata)?;
+                let metadata_extension = if metadata.is_empty() {
+                    String::new()
+                } else {
+                    format!(" cs1Label=metadata cs1={}", cef_field(&metadata))
+                };
                 cef.push_str(&format!(
-                    "CEF:0|ClawdStrike|Cloud|1.0|{}|{}|1|tenant={} quantity={} rt={}\n",
+                    "CEF:0|ClawdStrike|Cloud|1.0|{}|{}|1|tenant={} quantity={} rt={}{}\n",
                     entry.event_type,
                     entry.event_type,
                     entry.tenant_id,
                     entry.quantity,
-                    entry.recorded_at.timestamp_millis()
+                    entry.recorded_at.timestamp_millis(),
+                    metadata_extension
                 ));
             }
             Ok((
@@ -134,6 +146,34 @@ async fn export_audit_log(
                 .into_response())
         }
     }
+}
+
+fn audit_metadata_string(metadata: &Option<serde_json::Value>) -> Result<String, ApiError> {
+    match metadata {
+        Some(metadata) => {
+            serde_json::to_string(metadata).map_err(|err| ApiError::Internal(err.to_string()))
+        }
+        None => Ok(String::new()),
+    }
+}
+
+fn csv_field(value: &str) -> String {
+    let needs_quotes =
+        value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r');
+    if needs_quotes {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+fn cef_field(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('=', "\\=")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace(' ', "\\ ")
 }
 
 #[derive(Debug, Serialize)]

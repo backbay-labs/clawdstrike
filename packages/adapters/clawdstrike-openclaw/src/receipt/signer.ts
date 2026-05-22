@@ -1,16 +1,14 @@
 /**
  * @clawdstrike/openclaw - Receipt Signer
  *
- * Stub signer that produces structured but unsigned receipts.
- * When the hush-wasm bridge is integrated, this class will delegate
- * to the Rust Ed25519 signing infrastructure for real cryptographic
- * attestation.
+ * Development receipt builder. Unsigned receipts are allowed only when
+ * cryptographic signing is not requested.
  */
 
 import { createHash } from "node:crypto";
 
 import type { Decision, PolicyEvent } from "../types.js";
-import type { DecisionReceipt, ReceiptSignerConfig } from "./types.js";
+import type { DecisionReceipt, ReceiptSignerConfig, ReceiptVerifyOptions } from "./types.js";
 
 /** Default configuration values for receipt signing */
 const DEFAULTS: Required<ReceiptSignerConfig> = {
@@ -22,9 +20,9 @@ const DEFAULTS: Required<ReceiptSignerConfig> = {
 /**
  * Creates structured receipt attestations for security decisions.
  *
- * Currently produces unsigned stub receipts. When the hush-wasm bridge
- * is ready, setting `sign: true` will produce real Ed25519 signatures
- * via the Rust hush-core cryptographic primitives.
+ * `sign: true` is intentionally fail-closed until the hush-wasm signing
+ * bridge is wired in. Returning an unsigned receipt from a signing-required
+ * configuration would create a false audit boundary.
  */
 export class ReceiptSigner {
   private readonly config: Required<ReceiptSignerConfig>;
@@ -50,15 +48,17 @@ export class ReceiptSigner {
     if (!this.config.enabled) {
       return null;
     }
+    if (this.config.sign) {
+      throw new Error(
+        "OpenClaw signed receipts require the hush-wasm Ed25519 signing bridge; unsigned fallback is disabled when sign=true",
+      );
+    }
 
     // Extract event metadata for the receipt envelope
     const eventData = event.data;
     const toolName = eventData.type === "tool" ? eventData.toolName : undefined;
     const resource = extractResource(eventData);
 
-    // TODO: When hush-wasm is integrated, this will produce real Ed25519
-    // signatures via SignedReceipt::sign() from hush-core. For now, we
-    // emit unsigned stub receipts that establish the type contract.
     return {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
@@ -92,13 +92,12 @@ export class ReceiptSigner {
   /**
    * Verify a receipt signature.
    *
-   * Stub implementation: always returns `true` for unsigned receipts
-   * (signature === null). When hush-wasm is integrated, this will
-   * perform real Ed25519 signature verification.
+   * Unsigned receipts are development artifacts, not verified attestations.
+   * Callers that need legacy local-dev behavior must opt in explicitly.
    */
-  static verify(receipt: DecisionReceipt): boolean {
+  static verify(receipt: DecisionReceipt, options: ReceiptVerifyOptions = {}): boolean {
     if (receipt.signature === null) {
-      return true;
+      return options.allowUnsignedDevReceipts === true;
     }
 
     // TODO: Delegate to hush-wasm Ed25519 verification when available.

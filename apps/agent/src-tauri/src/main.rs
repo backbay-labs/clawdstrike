@@ -15,9 +15,11 @@ mod approval_sync;
 mod brokerd;
 mod daemon;
 mod decision;
+mod edr;
 mod enrollment;
 mod events;
 mod integrations;
+mod macos;
 mod nats_client;
 mod nats_subjects;
 mod notifications;
@@ -25,6 +27,7 @@ mod openclaw;
 mod policy;
 mod policy_sync;
 mod posture_commands;
+mod response_action_commands;
 mod runtime_registry;
 mod security;
 mod session;
@@ -43,6 +46,7 @@ use daemon::{
 };
 use events::EventManager;
 use integrations::{ClaudeCodeIntegration, McpServer, OpenClawPluginIntegration};
+use macos::{start_status_collector, MacosHostService};
 use notifications::{
     show_hooks_installed_notification, show_openclaw_plugin_installed_notification,
     show_policy_reload_notification, show_startup_notification, show_toggle_notification,
@@ -75,6 +79,7 @@ struct AppState {
     policy_cache: Arc<PolicyCache>,
     audit_queue: Arc<AuditQueue>,
     updater: Arc<HushdUpdater>,
+    macos_host: Arc<MacosHostService>,
     shutdown_tx: broadcast::Sender<()>,
     agent_api_token: String,
     shutdown_complete: Arc<ShutdownComplete>,
@@ -247,6 +252,8 @@ fn main() {
     let policy_cache = Arc::new(PolicyCache::new());
     let audit_queue = Arc::new(AuditQueue::new());
     let updater = Arc::new(HushdUpdater::new(settings.clone(), daemon_manager.clone()));
+    let macos_host = Arc::new(MacosHostService::new());
+    tauri::async_runtime::block_on(macos_host.bootstrap_placeholder_state());
     let (shutdown_tx, _) = broadcast::channel::<()>(4);
     let shutdown_complete = Arc::new(ShutdownComplete::new());
 
@@ -261,6 +268,7 @@ fn main() {
         policy_cache,
         audit_queue,
         updater,
+        macos_host,
         shutdown_tx: shutdown_tx.clone(),
         agent_api_token,
         shutdown_complete: shutdown_complete.clone(),
@@ -279,6 +287,7 @@ fn main() {
         .manage(app_state.policy_cache.clone())
         .manage(app_state.audit_queue.clone())
         .manage(app_state.updater.clone())
+        .manage(app_state.macos_host.clone())
         .manage(app_state.shutdown_tx.clone())
         .manage(app_state.shutdown_complete.clone())
         .manage(AgentApiAuthToken(app_state.agent_api_token.clone()))
@@ -298,6 +307,7 @@ fn main() {
             let policy_cache = app_state.policy_cache.clone();
             let audit_queue = app_state.audit_queue.clone();
             let updater = app_state.updater.clone();
+            let macos_host = app_state.macos_host.clone();
             let settings = app_state.settings.clone();
             let shutdown_tx = app_state.shutdown_tx.clone();
             let agent_api_token = app_state.agent_api_token.clone();
@@ -315,6 +325,7 @@ fn main() {
                     policy_cache,
                     audit_queue,
                     updater,
+                    macos_host,
                     tray_manager,
                     settings,
                     shutdown_tx,
@@ -383,6 +394,7 @@ async fn run_agent<R: Runtime>(
     policy_cache: Arc<PolicyCache>,
     audit_queue: Arc<AuditQueue>,
     updater: Arc<HushdUpdater>,
+    macos_host: Arc<MacosHostService>,
     tray_manager: Arc<TrayManager<R>>,
     settings: Arc<RwLock<Settings>>,
     shutdown_tx: broadcast::Sender<()>,
@@ -398,11 +410,13 @@ async fn run_agent<R: Runtime>(
     // current session ID from shared state each tick (so daemon reconnect replacements do not
     // require restarting the loop).
     session_manager.start_heartbeat(daemon_url.clone(), api_key.clone(), shutdown_tx.subscribe());
+    start_status_collector(app.clone(), macos_host.clone(), shutdown_tx.subscribe());
     {
         let settings_for_local_hb = settings.clone();
         let session_for_local_hb = session_manager.clone();
         let policy_cache_for_local_hb = policy_cache.clone();
         let daemon_for_local_hb = daemon_manager.clone();
+        let macos_host_for_local_hb = macos_host.clone();
         let local_hb_shutdown = shutdown_tx.subscribe();
         tokio::spawn(async move {
             local_heartbeat_loop(
@@ -410,6 +424,7 @@ async fn run_agent<R: Runtime>(
                 session_for_local_hb,
                 policy_cache_for_local_hb,
                 daemon_for_local_hb,
+                macos_host_for_local_hb,
                 local_hb_shutdown,
             )
             .await;
@@ -501,6 +516,8 @@ async fn run_agent<R: Runtime>(
     // If NATS is enabled (either via static config or enrollment), connect and start
     // policy sync, telemetry publishing, and posture command handling.
     let mut approval_request_outbox: Option<Arc<approval_outbox::ApprovalRequestOutbox>> = None;
+    let mut fleet_hunt_publisher: Option<Arc<dyn api_server::FleetHuntEventPublisher>> = None;
+    let mut response_action_nats: Option<Arc<nats_client::NatsClient>> = None;
     let nats_enabled = {
         let guard = settings.read().await;
         guard.nats.enabled
@@ -556,6 +573,9 @@ async fn run_agent<R: Runtime>(
                     let telemetry =
                         Arc::new(telemetry_publisher::TelemetryPublisher::new(nats.clone()));
                     tracing::info!("NATS telemetry publisher initialized");
+                    let fleet_publisher: Arc<dyn api_server::FleetHuntEventPublisher> =
+                        telemetry.clone();
+                    fleet_hunt_publisher = Some(fleet_publisher);
 
                     // Posture command handler.
                     let posture_handler = posture_commands::PostureCommandHandler::new(
@@ -568,6 +588,8 @@ async fn run_agent<R: Runtime>(
                     tokio::spawn(async move {
                         posture_handler.start(posture_shutdown).await;
                     });
+
+                    response_action_nats = Some(nats.clone());
 
                     // Approval sync: ingest cloud decisions and apply them to local queue.
                     let approval_sync = approval_sync::ApprovalSync::new(
@@ -973,7 +995,8 @@ async fn run_agent<R: Runtime>(
         }
     });
 
-    let api_server = AgentApiServer::new(
+    let response_action_local_api_token = agent_api_token.clone();
+    let api_server = match AgentApiServer::try_new(
         api_port,
         AgentApiServerDeps {
             settings: settings.clone(),
@@ -981,17 +1004,42 @@ async fn run_agent<R: Runtime>(
             session_manager: session_manager.clone(),
             approval_queue: approval_queue.clone(),
             audit_queue: audit_queue.clone(),
+            macos_host: macos_host.clone(),
             openclaw: openclaw_manager.clone(),
             updater: updater.clone(),
+            fleet_hunt_publisher,
             auth_token: agent_api_token,
         },
-    );
+    ) {
+        Ok(api_server) => api_server,
+        Err(err) => {
+            tracing::error!(
+                error = %err,
+                "Failed to initialize durable Agent API EDR state; exiting instead of running with transient evidence"
+            );
+            app.exit(1);
+            return;
+        }
+    };
+    let control_ack_retry_sink = api_server.control_ack_postback_retry_sink();
     let api_shutdown = shutdown_tx.subscribe();
     tokio::spawn(async move {
         if let Err(err) = api_server.start(api_shutdown).await {
             tracing::error!("Agent API server error: {}", err);
         }
     });
+    if let Some(nats) = response_action_nats {
+        let handler = response_action_commands::ResponseActionCommandHandler::new(
+            nats,
+            settings.clone(),
+            response_action_local_api_token,
+            Some(control_ack_retry_sink),
+        );
+        let response_action_shutdown = shutdown_tx.subscribe();
+        tokio::spawn(async move {
+            handler.start(response_action_shutdown).await;
+        });
+    }
 
     let app_for_events = app.clone();
     let settings_for_events = settings.clone();
@@ -1196,6 +1244,7 @@ async fn local_heartbeat_loop(
     session_manager: Arc<SessionManager>,
     policy_cache: Arc<daemon::PolicyCache>,
     daemon_manager: Arc<DaemonManager>,
+    macos_host: Arc<MacosHostService>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     let client = reqwest::Client::builder()
@@ -1239,6 +1288,7 @@ async fn local_heartbeat_loop(
                 let session_state = session_manager.state().await;
                 let daemon_status = daemon_manager.status().await;
                 let policy_version = policy_cache.cached_policy_version().await;
+                let macos_host_status = macos_host.snapshot().await;
                 let heartbeat_base = serde_json::json!({
                     "endpoint_agent_id": endpoint_agent_id,
                     "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -1246,6 +1296,7 @@ async fn local_heartbeat_loop(
                     "posture": session_state.posture,
                     "policy_version": policy_version,
                     "daemon_version": daemon_status.version,
+                    "macos_host": macos_host_status,
                 });
 
                 let send_heartbeat = |payload: serde_json::Value| {

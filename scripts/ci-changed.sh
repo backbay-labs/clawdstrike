@@ -56,6 +56,7 @@ run_docs=0
 run_infra=0
 run_full=0
 run_slop_audit=0
+run_macos_provider_dogfood=0
 
 if matches "^(crates/|Cargo.toml$|Cargo.lock$|clippy.toml$|deny.toml$|scripts/cargo-offline.sh$)"; then
   run_rust=1
@@ -75,6 +76,9 @@ fi
 if matches "^scripts/slop-audit.sh$"; then
   run_slop_audit=1
 fi
+if matches "^scripts/(macos-provider-|endpoint-security-live-dogfood|network-extension-live-dogfood|endpoint-decision-engine-live-qualification\\.sh|endpoint-decision-engine-readiness-audit\\.py|endpoint-decision-engine-qualification-bundle\\.py|endpoint-decision-engine-supplemental-proof-bundle\\.py|policy-simulation-impact-proof\\.py|ai-agent-developer-workstation-proof\\.py|endpoint-deception-proof\\.py|supply-chain-runtime-guard-proof\\.py|privacy-preserving-telemetry-proof\\.py|operator-workflows-proof\\.py|cross-platform-sensor-breadth-proof\\.py|test-macos-provider-dogfood-contract\\.sh)"; then
+  run_macos_provider_dogfood=1
+fi
 if matches "^(mise.toml$|scripts/test-platform.sh$)"; then
   run_full=1
 fi
@@ -85,6 +89,11 @@ fi
 if [[ "$run_slop_audit" -eq 1 ]]; then
   bold "Slop audit"
   bash scripts/slop-audit.sh
+fi
+
+if [[ "$run_macos_provider_dogfood" -eq 1 ]]; then
+  bold "macOS provider dogfood contract"
+  bash scripts/test-macos-provider-dogfood-contract.sh
 fi
 
 if [[ "$run_full" -eq 1 ]]; then

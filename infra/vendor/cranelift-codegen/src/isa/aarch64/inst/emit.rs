@@ -3,6 +3,7 @@
 use cranelift_control::ControlPlane;
 
 use crate::ir::{self, types::*};
+use crate::isa::aarch64;
 use crate::isa::aarch64::inst::*;
 use crate::trace;
 
@@ -711,12 +712,15 @@ impl EmitState {
 }
 
 /// Constant state used during function compilation.
-pub struct EmitInfo(settings::Flags);
+pub struct EmitInfo {
+    flags: settings::Flags,
+    isa_flags: aarch64::settings::Flags,
+}
 
 impl EmitInfo {
     /// Create a constant state for emission of instructions.
-    pub fn new(flags: settings::Flags) -> Self {
-        Self(flags)
+    pub fn new(flags: settings::Flags, isa_flags: aarch64::settings::Flags) -> Self {
+        Self { flags, isa_flags }
     }
 }
 
@@ -3186,8 +3190,13 @@ impl MachInstEmit for Inst {
                     rm: ridx,
                 };
                 inst.emit(sink, emit_info, state);
-                // Prevent any data value speculation.
-                Inst::Csdb.emit(sink, emit_info, state);
+                // Prevent any data value speculation if spectre mitigations are
+                // enabled.
+                if emit_info.flags.enable_table_access_spectre_mitigation()
+                    && emit_info.isa_flags.use_csdb()
+                {
+                    Inst::Csdb.emit(sink, emit_info, state);
+                }
 
                 // Load address of jump table
                 let inst = Inst::Adr { rd: rtmp1, off: 16 };
@@ -3557,7 +3566,7 @@ impl MachInstEmit for Inst {
             }
 
             &Inst::StackProbeLoop { start, end, step } => {
-                assert!(emit_info.0.enable_probestack());
+                assert!(emit_info.flags.enable_probestack());
 
                 // The loop generated here uses `start` as a counter register to
                 // count backwards until negating it exceeds `end`. In other
@@ -3644,9 +3653,11 @@ fn emit_return_call_common_sequence<T>(
     state: &mut EmitState,
     info: &ReturnCallInfo<T>,
 ) {
-    for inst in
-        AArch64MachineDeps::gen_clobber_restore(CallConv::Tail, &emit_info.0, state.frame_layout())
-    {
+    for inst in AArch64MachineDeps::gen_clobber_restore(
+        CallConv::Tail,
+        &emit_info.flags,
+        state.frame_layout(),
+    ) {
         inst.emit(sink, emit_info, state);
     }
 

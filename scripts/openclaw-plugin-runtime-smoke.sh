@@ -46,7 +46,7 @@ cat >"$OPENCLAW_RUNTIME_CONFIG_PATH" <<JSON
 }
 JSON
 
-RAW_OUTPUT="$(openclaw plugins info clawdstrike-security --json 2>&1 || true)"
+RAW_OUTPUT="$(openclaw_runtime_plugin_info clawdstrike-security)"
 printf '%s\n' "$RAW_OUTPUT" >"$ARTIFACT_DIR/plugins-info.raw.txt"
 
 JSON_PAYLOAD="$(printf '%s\n' "$RAW_OUTPUT" | openclaw_runtime_plugin_info_from_output)"

@@ -9,6 +9,8 @@ use crate::runtime::vm::{
 };
 use crate::store::{AllocateInstanceKind, InstanceId, StoreOpaque, StoreResourceLimiter};
 use alloc::sync::Arc;
+use core::future::Future;
+use core::pin::Pin;
 use wasmtime_environ::{
     DefinedMemoryIndex, DefinedTableIndex, EntityIndex, HostPtr, Module, StaticModuleIndex,
     Tunables, VMOffsets,
@@ -33,14 +35,16 @@ pub async fn create_memory(
     // Create a memory, though it will never be used for constructing a memory
     // with an allocator: instead the memories are either preallocated (i.e.,
     // shared memory) or allocated manually below.
-    let memory_id = module.memories.push(*memory_ty.wasmtime_memory());
+    let memory_id = module.memories.push(*memory_ty.wasmtime_memory())?;
 
     // Since we have only associated a single memory with the "frankenstein"
     // instance, it will be exported at index 0.
     debug_assert_eq!(memory_id.as_u32(), 0);
+    let name = module.strings.insert("")?;
     module
         .exports
-        .insert(String::new(), EntityIndex::Memory(memory_id));
+        .insert(name, EntityIndex::Memory(memory_id))?;
+    let info = ModuleRuntimeInfo::bare(try_new::<Arc<_>>(module)?)?;
 
     // We create an instance in the on-demand allocator when creating handles
     // associated with external objects. The configured instance allocator
@@ -57,7 +61,7 @@ pub async fn create_memory(
                 AllocateInstanceKind::Dummy {
                     allocator: &allocator,
                 },
-                &ModuleRuntimeInfo::bare(Arc::new(module)),
+                &info,
                 Default::default(),
             )
             .await
@@ -115,7 +119,7 @@ impl RuntimeMemoryCreator for MemoryCreatorProxy {
                 usize::try_from(tunables.memory_guard_size).unwrap(),
             )
             .map(|mem| Box::new(LinearMemoryProxy { mem }) as Box<dyn RuntimeLinearMemory>)
-            .map_err(|e| anyhow!(e))
+            .map_err(|e| format_err!(e))
     }
 }
 
@@ -124,7 +128,6 @@ struct SingleMemoryInstance<'a> {
     ondemand: OnDemandInstanceAllocator,
 }
 
-#[async_trait::async_trait]
 unsafe impl InstanceAllocator for SingleMemoryInstance<'_> {
     #[cfg(feature = "component-model")]
     fn validate_component<'a>(
@@ -137,7 +140,7 @@ unsafe impl InstanceAllocator for SingleMemoryInstance<'_> {
     }
 
     fn validate_module(&self, module: &Module, offsets: &VMOffsets<HostPtr>) -> Result<()> {
-        anyhow::ensure!(
+        crate::ensure!(
             module.memories.len() == 1,
             "`SingleMemoryInstance` allocator can only be used for modules with a single memory"
         );
@@ -168,12 +171,12 @@ unsafe impl InstanceAllocator for SingleMemoryInstance<'_> {
         self.ondemand.decrement_core_instance_count();
     }
 
-    async fn allocate_memory(
-        &self,
-        request: &mut InstanceAllocationRequest<'_, '_>,
-        ty: &wasmtime_environ::Memory,
+    fn allocate_memory<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        request: &'a mut InstanceAllocationRequest<'b, 'c>,
+        ty: &'a wasmtime_environ::Memory,
         memory_index: Option<DefinedMemoryIndex>,
-    ) -> Result<(MemoryAllocationIndex, Memory)> {
+    ) -> Pin<Box<dyn Future<Output = Result<(MemoryAllocationIndex, Memory)>> + Send + 'a>> {
         if cfg!(debug_assertions) {
             let module = request.runtime_info.env_module();
             let offsets = request.runtime_info.offsets();
@@ -182,15 +185,13 @@ unsafe impl InstanceAllocator for SingleMemoryInstance<'_> {
         }
 
         match self.preallocation {
-            Some(shared_memory) => Ok((
-                MemoryAllocationIndex::default(),
-                shared_memory.clone().as_memory(),
-            )),
-            None => {
-                self.ondemand
-                    .allocate_memory(request, ty, memory_index)
-                    .await
-            }
+            Some(shared_memory) => crate::runtime::box_future(async move {
+                Ok((
+                    MemoryAllocationIndex::default(),
+                    shared_memory.clone().as_memory(),
+                ))
+            }),
+            None => self.ondemand.allocate_memory(request, ty, memory_index),
         }
     }
 
@@ -206,13 +207,13 @@ unsafe impl InstanceAllocator for SingleMemoryInstance<'_> {
         }
     }
 
-    async fn allocate_table(
-        &self,
-        req: &mut InstanceAllocationRequest<'_, '_>,
-        ty: &wasmtime_environ::Table,
+    fn allocate_table<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        req: &'a mut InstanceAllocationRequest<'b, 'c>,
+        ty: &'a wasmtime_environ::Table,
         table_index: DefinedTableIndex,
-    ) -> Result<(TableAllocationIndex, Table)> {
-        self.ondemand.allocate_table(req, ty, table_index).await
+    ) -> Pin<Box<dyn Future<Output = Result<(TableAllocationIndex, Table)>> + Send + 'a>> {
+        self.ondemand.allocate_table(req, ty, table_index)
     }
 
     unsafe fn deallocate_table(

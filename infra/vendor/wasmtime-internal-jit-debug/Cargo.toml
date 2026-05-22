@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.92.0"
 name = "wasmtime-internal-jit-debug"
-version = "41.0.4"
+version = "44.0.1"
 authors = ["The Wasmtime Project Developers"]
 build = "build.rs"
 autolib = false
@@ -46,7 +46,7 @@ name = "wasmtime_internal_jit_debug"
 path = "src/lib.rs"
 
 [dependencies.object]
-version = "0.37.3"
+version = "0.39.0"
 features = [
     "read_core",
     "elf",
@@ -55,14 +55,14 @@ optional = true
 default-features = false
 
 [dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.4"
+version = "=44.0.1"
 package = "wasmtime-internal-versioned-export-macros"
 
 [build-dependencies.cc]
 version = "1.2.41"
 
 [build-dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.4"
+version = "=44.0.1"
 package = "wasmtime-internal-versioned-export-macros"
 
 [target.'cfg(target_os = "linux")'.dependencies.rustix]
@@ -108,4 +108,6 @@ check-cfg = [
     "cfg(pulley_tail_calls)",
     "cfg(pulley_assume_llvm_makes_tail_calls)",
     "cfg(pulley_disable_interp_simd)",
+    "cfg(arc_try_new)",
+    "cfg(gc_zeal)",
 ]

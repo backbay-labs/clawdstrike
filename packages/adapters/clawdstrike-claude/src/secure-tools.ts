@@ -1,14 +1,12 @@
 import type { SecurityContext } from "@clawdstrike/adapter-core";
-import {
-  secureToolSet,
-  type SecuritySource,
-} from "@clawdstrike/adapter-core";
+import { type LocalEdrConfig, type SecuritySource, secureToolSet } from "@clawdstrike/adapter-core";
 
 import { claudeCuaTranslator } from "./claude-cua-translator.js";
 
 export interface SecureToolsOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
+  edr?: LocalEdrConfig;
 }
 
 type ClaudeToolLike<TInput = unknown, TOutput = unknown> = {
@@ -26,5 +24,6 @@ export function secureTools<TTools extends Record<string, ClaudeToolLike>>(
     translateToolCall: claudeCuaTranslator,
     context: options?.context,
     getContext: options?.getContext,
+    edr: options?.edr,
   });
 }

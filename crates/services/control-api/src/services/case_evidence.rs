@@ -14,15 +14,15 @@ use crate::db::PgPool;
 use crate::error::ApiError;
 #[cfg(test)]
 use crate::integration_tests::case_evidence::{
-    AddCaseArtifactRequest, CaseArtifactRef, CaseTimelineEvent, CreateFleetCaseRequest,
-    ExportEvidenceBundleRequest, FleetCase, FleetCaseDetail, FleetEvidenceBundle,
-    UpdateFleetCaseRequest,
+    AddCaseArtifactRequest, BulkUpdateFleetCasesRequest, CaseArtifactRef, CaseTimelineEvent,
+    CreateFleetCaseRequest, ExportEvidenceBundleRequest, FleetCase, FleetCaseDetail,
+    FleetEvidenceBundle, UpdateFleetCaseRequest,
 };
 #[cfg(not(test))]
 use crate::models::case_evidence::{
-    AddCaseArtifactRequest, CaseArtifactRef, CaseTimelineEvent, CreateFleetCaseRequest,
-    ExportEvidenceBundleRequest, FleetCase, FleetCaseDetail, FleetEvidenceBundle,
-    UpdateFleetCaseRequest,
+    AddCaseArtifactRequest, BulkUpdateFleetCasesRequest, CaseArtifactRef, CaseTimelineEvent,
+    CreateFleetCaseRequest, ExportEvidenceBundleRequest, FleetCase, FleetCaseDetail,
+    FleetEvidenceBundle, UpdateFleetCaseRequest,
 };
 
 const VALID_SEVERITIES: &[&str] = &["low", "medium", "high", "critical"];
@@ -36,6 +36,7 @@ const VALID_ARTIFACT_KINDS: &[&str] = &[
     "response_action",
     "grant",
     "graph_snapshot",
+    "endpoint_evidence_archive",
     "note",
     "bundle_export",
 ];
@@ -47,14 +48,75 @@ struct PreparedCaseArtifact {
     metadata: Value,
 }
 
-pub async fn list_cases(db: &PgPool, tenant_id: Uuid) -> Result<Vec<FleetCase>, ApiError> {
+#[derive(Debug, Default)]
+pub struct ListCasesFilter {
+    pub query: Option<String>,
+    pub status: Option<String>,
+    pub severity: Option<String>,
+}
+
+pub async fn list_cases(
+    db: &PgPool,
+    tenant_id: Uuid,
+    filter: ListCasesFilter,
+) -> Result<Vec<FleetCase>, ApiError> {
+    let status = normalize_optional_filter(filter.status);
+    if let Some(status) = status.as_deref() {
+        validate_status(status)?;
+    }
+
+    let severity = normalize_optional_filter(filter.severity);
+    if let Some(severity) = severity.as_deref() {
+        validate_severity(severity)?;
+    }
+
+    let query = normalize_optional_filter(filter.query)
+        .map(|query| format!("%{}%", escape_like(&query.to_lowercase())));
+
     let rows = sqlx::query::query(
         r#"SELECT *
            FROM fleet_cases
            WHERE tenant_id = $1
+             AND ($2::text IS NULL OR status = $2)
+             AND ($3::text IS NULL OR severity = $3)
+             AND (
+                 $4::text IS NULL
+                 OR lower(id::text) LIKE $4 ESCAPE '\'
+                 OR lower(title) LIKE $4 ESCAPE '\'
+                 OR lower(coalesce(summary, '')) LIKE $4 ESCAPE '\'
+                 OR lower(created_by) LIKE $4 ESCAPE '\'
+                 OR EXISTS (
+                     SELECT 1
+                     FROM unnest(tags) AS tag(value)
+                     WHERE lower(tag.value) LIKE $4 ESCAPE '\'
+                 )
+                 OR EXISTS (
+                     SELECT 1
+                     FROM unnest(principal_ids) AS principal(value)
+                     WHERE lower(principal.value) LIKE $4 ESCAPE '\'
+                 )
+                 OR EXISTS (
+                     SELECT 1
+                     FROM unnest(detection_ids) AS detection(value)
+                     WHERE lower(detection.value) LIKE $4 ESCAPE '\'
+                 )
+                 OR EXISTS (
+                     SELECT 1
+                     FROM unnest(response_action_ids) AS response_action(value)
+                     WHERE lower(response_action.value) LIKE $4 ESCAPE '\'
+                 )
+                 OR EXISTS (
+                     SELECT 1
+                     FROM unnest(grant_ids) AS grant_id(value)
+                     WHERE lower(grant_id.value) LIKE $4 ESCAPE '\'
+                 )
+             )
            ORDER BY updated_at DESC, created_at DESC"#,
     )
     .bind(tenant_id)
+    .bind(status.as_deref())
+    .bind(severity.as_deref())
+    .bind(query.as_deref())
     .fetch_all(db)
     .await
     .map_err(ApiError::Database)?;
@@ -296,6 +358,110 @@ pub async fn update_case(
     Ok(updated)
 }
 
+pub async fn bulk_update_case_status(
+    db: &PgPool,
+    tenant_id: Uuid,
+    actor_id: &str,
+    req: BulkUpdateFleetCasesRequest,
+) -> Result<Vec<FleetCase>, ApiError> {
+    let case_ids = normalize_case_ids(req.case_ids)?;
+    let status = req.status.trim().to_string();
+    validate_status(&status)?;
+
+    let mut tx = db.begin().await.map_err(ApiError::Database)?;
+    let before_rows = sqlx::query::query(
+        r#"SELECT *
+           FROM fleet_cases
+           WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+           ORDER BY array_position($2::uuid[], id)"#,
+    )
+    .bind(tenant_id)
+    .bind(&case_ids)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(ApiError::Database)?;
+
+    if before_rows.len() != case_ids.len() {
+        return Err(ApiError::NotFound);
+    }
+
+    let before_cases = before_rows
+        .into_iter()
+        .map(FleetCase::from_row)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(ApiError::Database)?;
+
+    let updated_rows = sqlx::query::query(
+        r#"WITH updated AS (
+               UPDATE fleet_cases
+               SET status = $3,
+                   updated_at = now()
+               WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+               RETURNING *
+           )
+           SELECT *
+           FROM updated
+           ORDER BY array_position($2::uuid[], id)"#,
+    )
+    .bind(tenant_id)
+    .bind(&case_ids)
+    .bind(&status)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(ApiError::Database)?;
+
+    let updated_cases = updated_rows
+        .into_iter()
+        .map(FleetCase::from_row)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(ApiError::Database)?;
+
+    for (before, updated) in before_cases.iter().zip(updated_cases.iter()) {
+        if before.status != updated.status {
+            insert_case_event(
+                &mut tx,
+                tenant_id,
+                updated.id,
+                "status_changed",
+                actor_id,
+                serde_json::json!({
+                    "previousStatus": before.status,
+                    "status": updated.status,
+                    "bulk": true,
+                }),
+            )
+            .await?;
+        }
+
+        let mut payload = serde_json::json!({
+            "title": updated.title,
+            "severity": updated.severity,
+            "status": updated.status,
+            "bulk": true,
+        });
+        if before.status != updated.status {
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert(
+                    "previousStatus".to_string(),
+                    Value::String(before.status.clone()),
+                );
+            }
+        }
+        insert_case_event(
+            &mut tx,
+            tenant_id,
+            updated.id,
+            "case_updated",
+            actor_id,
+            payload,
+        )
+        .await?;
+    }
+
+    tx.commit().await.map_err(ApiError::Database)?;
+    Ok(updated_cases)
+}
+
 pub async fn add_artifact(
     db: &PgPool,
     tenant_id: Uuid,
@@ -368,6 +534,9 @@ async fn prepare_case_artifact(
             resolve_response_action_artifact(tx, tenant_id, req.artifact_id.trim()).await
         }
         "grant" => resolve_grant_artifact(tx, tenant_id, req.artifact_id.trim()).await,
+        "endpoint_evidence_archive" => {
+            resolve_endpoint_evidence_archive_artifact(tx, tenant_id, req.artifact_id.trim()).await
+        }
         "note" => prepare_annotation_artifact(req, "operator_annotation"),
         "graph_snapshot" => prepare_annotation_artifact(req, "operator_annotation"),
         "bundle_export" => Err(ApiError::BadRequest(
@@ -836,6 +1005,73 @@ async fn resolve_grant_artifact(
     })
 }
 
+async fn resolve_endpoint_evidence_archive_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    archive_id: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT archive_id,
+                  raw_ref,
+                  archive_hash,
+                  bundle_id,
+                  endpoint_agent_id,
+                  event_id,
+                  content_hash,
+                  graph_slice_id,
+                  uploaded_at,
+                  expires_at,
+                  retention_days,
+                  size_bytes,
+                  verification,
+                  metadata
+           FROM endpoint_evidence_archives
+           WHERE tenant_id = $1 AND archive_id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(archive_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let expires_at: DateTime<Utc> = row.try_get("expires_at").map_err(ApiError::Database)?;
+    if expires_at <= Utc::now() {
+        return Err(ApiError::BadRequest(
+            "endpoint evidence archive has expired".to_string(),
+        ));
+    }
+
+    let archive_id: String = row.try_get("archive_id").map_err(ApiError::Database)?;
+    let bundle_id: String = row.try_get("bundle_id").map_err(ApiError::Database)?;
+    let uploaded_at: DateTime<Utc> = row.try_get("uploaded_at").map_err(ApiError::Database)?;
+    Ok(PreparedCaseArtifact {
+        artifact_kind: "endpoint_evidence_archive".to_string(),
+        artifact_id: archive_id.clone(),
+        summary: Some(format!("endpoint evidence archive {bundle_id}")),
+        metadata: json!({
+            "artifactClass": "verified_reference",
+            "sourceTable": "endpoint_evidence_archives",
+            "sourceFamily": "endpoint_evidence_archive",
+            "archiveId": archive_id,
+            "rawRef": row.try_get::<String, _>("raw_ref").map_err(ApiError::Database)?,
+            "archiveHash": row.try_get::<String, _>("archive_hash").map_err(ApiError::Database)?,
+            "bundleId": bundle_id,
+            "endpointAgentId": row.try_get::<Option<String>, _>("endpoint_agent_id").map_err(ApiError::Database)?,
+            "eventId": row.try_get::<Option<String>, _>("event_id").map_err(ApiError::Database)?,
+            "contentHash": row.try_get::<Option<String>, _>("content_hash").map_err(ApiError::Database)?,
+            "graphSliceId": row.try_get::<Option<String>, _>("graph_slice_id").map_err(ApiError::Database)?,
+            "timestamp": uploaded_at.to_rfc3339(),
+            "uploadedAt": uploaded_at.to_rfc3339(),
+            "expiresAt": expires_at.to_rfc3339(),
+            "retentionDays": row.try_get::<i32, _>("retention_days").map_err(ApiError::Database)?,
+            "sizeBytes": row.try_get::<i64, _>("size_bytes").map_err(ApiError::Database)?,
+            "verification": row.try_get::<Value, _>("verification").map_err(ApiError::Database)?,
+            "archiveMetadata": row.try_get::<Value, _>("metadata").map_err(ApiError::Database)?,
+        }),
+    })
+}
+
 fn parse_uuid_artifact_id(artifact_id: &str, artifact_kind: &str) -> Result<Uuid, ApiError> {
     Uuid::parse_str(artifact_id).map_err(|_| {
         ApiError::BadRequest(format!(
@@ -939,6 +1175,10 @@ pub async fn create_evidence_bundle(
     .await?;
     tx.commit().await.map_err(ApiError::Database)?;
 
+    let filtered_artifacts_for_audit = filter_artifacts(&case_detail.artifacts, &req);
+    let audit_events =
+        list_case_audit_events(db, tenant_id, case_id, &filtered_artifacts_for_audit, &req).await?;
+
     match build_case_bundle(
         BuildCaseBundleInput {
             tenant_id,
@@ -946,6 +1186,7 @@ pub async fn create_evidence_bundle(
             export_id: &export_id,
             case: &case_detail.case,
             artifacts: &case_detail.artifacts,
+            audit_events: &audit_events,
             req: &req,
             expires_at,
         },
@@ -1108,6 +1349,222 @@ pub async fn bundle_download_path(
     Ok(path)
 }
 
+pub async fn record_bundle_metadata_access_denied_audit(
+    db: &PgPool,
+    tenant_id: Uuid,
+    actor_id: &str,
+    actor_type: &str,
+    actor_role: &str,
+    export_id: &str,
+    denied_reason: &str,
+) -> Result<(), ApiError> {
+    record_bundle_access_denied_audit(
+        db,
+        tenant_id,
+        BundleAccessDeniedAudit {
+            event_type: "case_evidence_bundle.metadata_access_denied",
+            actor_id,
+            actor_type,
+            actor_role,
+            export_id,
+            denied_reason,
+        },
+    )
+    .await
+}
+
+pub async fn record_bundle_export_denied_audit(
+    db: &PgPool,
+    tenant_id: Uuid,
+    actor_id: &str,
+    actor_type: &str,
+    actor_role: &str,
+    case_id: Uuid,
+    denied_reason: &str,
+) -> Result<(), ApiError> {
+    sqlx::query::query(
+        r#"INSERT INTO usage_events (tenant_id, event_type, quantity, metadata)
+           VALUES ($1, 'case_evidence_bundle.export_denied', 1, $2)"#,
+    )
+    .bind(tenant_id)
+    .bind(serde_json::json!({
+        "caseId": case_id,
+        "actorId": actor_id,
+        "actorType": actor_type,
+        "actorRole": actor_role,
+        "deniedReason": denied_reason,
+    }))
+    .execute(db)
+    .await
+    .map_err(ApiError::Database)?;
+    Ok(())
+}
+
+pub async fn record_bundle_export_audit(
+    db: &PgPool,
+    tenant_id: Uuid,
+    actor_id: &str,
+    actor_type: &str,
+    actor_role: &str,
+    bundle: &FleetEvidenceBundle,
+) -> Result<(), ApiError> {
+    sqlx::query::query(
+        r#"INSERT INTO usage_events (tenant_id, event_type, quantity, metadata)
+           VALUES ($1, 'case_evidence_bundle.exported', 1, $2)"#,
+    )
+    .bind(tenant_id)
+    .bind(json!({
+        "exportId": &bundle.export_id,
+        "caseId": bundle.case_id,
+        "sha256": &bundle.sha256,
+        "sizeBytes": bundle.size_bytes,
+        "artifactCounts": &bundle.artifact_counts,
+        "actorId": actor_id,
+        "actorType": actor_type,
+        "actorRole": actor_role,
+    }))
+    .execute(db)
+    .await
+    .map_err(ApiError::Database)?;
+    Ok(())
+}
+
+pub async fn record_bundle_download_denied_audit(
+    db: &PgPool,
+    tenant_id: Uuid,
+    actor_id: &str,
+    actor_type: &str,
+    actor_role: &str,
+    export_id: &str,
+    denied_reason: &str,
+) -> Result<(), ApiError> {
+    record_bundle_access_denied_audit(
+        db,
+        tenant_id,
+        BundleAccessDeniedAudit {
+            event_type: "case_evidence_bundle.download_denied",
+            actor_id,
+            actor_type,
+            actor_role,
+            export_id,
+            denied_reason,
+        },
+    )
+    .await
+}
+
+pub async fn record_bundle_metadata_access_audit(
+    db: &PgPool,
+    tenant_id: Uuid,
+    actor_id: &str,
+    actor_type: &str,
+    actor_role: &str,
+    export_id: &str,
+) -> Result<(), ApiError> {
+    record_bundle_successful_access_audit(
+        db,
+        tenant_id,
+        BundleSuccessfulAccessAudit {
+            event_type: "case_evidence_bundle.metadata_accessed",
+            actor_id,
+            actor_type,
+            actor_role,
+            export_id,
+        },
+    )
+    .await
+}
+
+pub async fn record_bundle_download_audit(
+    db: &PgPool,
+    tenant_id: Uuid,
+    actor_id: &str,
+    actor_type: &str,
+    actor_role: &str,
+    export_id: &str,
+) -> Result<(), ApiError> {
+    record_bundle_successful_access_audit(
+        db,
+        tenant_id,
+        BundleSuccessfulAccessAudit {
+            event_type: "case_evidence_bundle.downloaded",
+            actor_id,
+            actor_type,
+            actor_role,
+            export_id,
+        },
+    )
+    .await
+}
+
+struct BundleSuccessfulAccessAudit<'a> {
+    event_type: &'a str,
+    actor_id: &'a str,
+    actor_type: &'a str,
+    actor_role: &'a str,
+    export_id: &'a str,
+}
+
+async fn record_bundle_successful_access_audit(
+    db: &PgPool,
+    tenant_id: Uuid,
+    audit: BundleSuccessfulAccessAudit<'_>,
+) -> Result<(), ApiError> {
+    let bundle = get_bundle(db, tenant_id, audit.export_id).await?;
+    sqlx::query::query(
+        r#"INSERT INTO usage_events (tenant_id, event_type, quantity, metadata)
+           VALUES ($1, $2, 1, $3)"#,
+    )
+    .bind(tenant_id)
+    .bind(audit.event_type)
+    .bind(json!({
+        "exportId": bundle.export_id,
+        "caseId": bundle.case_id,
+        "sha256": bundle.sha256,
+        "sizeBytes": bundle.size_bytes,
+        "actorId": audit.actor_id,
+        "actorType": audit.actor_type,
+        "actorRole": audit.actor_role,
+    }))
+    .execute(db)
+    .await
+    .map_err(ApiError::Database)?;
+    Ok(())
+}
+
+struct BundleAccessDeniedAudit<'a> {
+    event_type: &'a str,
+    actor_id: &'a str,
+    actor_type: &'a str,
+    actor_role: &'a str,
+    export_id: &'a str,
+    denied_reason: &'a str,
+}
+
+async fn record_bundle_access_denied_audit(
+    db: &PgPool,
+    tenant_id: Uuid,
+    audit: BundleAccessDeniedAudit<'_>,
+) -> Result<(), ApiError> {
+    sqlx::query::query(
+        r#"INSERT INTO usage_events (tenant_id, event_type, quantity, metadata)
+           VALUES ($1, $2, 1, $3)"#,
+    )
+    .bind(tenant_id)
+    .bind(audit.event_type)
+    .bind(serde_json::json!({
+        "exportId": audit.export_id,
+        "actorId": audit.actor_id,
+        "actorType": audit.actor_type,
+        "actorRole": audit.actor_role,
+        "deniedReason": audit.denied_reason,
+    }))
+    .execute(db)
+    .await
+    .map_err(ApiError::Database)?;
+    Ok(())
+}
+
 fn bundle_has_expired(bundle: &FleetEvidenceBundle, now: DateTime<Utc>) -> bool {
     bundle.status == "expired" || bundle.expires_at.is_some_and(|ts| ts <= now)
 }
@@ -1187,6 +1644,47 @@ fn validate_artifact_kind(artifact_kind: &str) -> Result<(), ApiError> {
     }
 }
 
+fn normalize_optional_filter(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn normalize_case_ids(case_ids: Vec<Uuid>) -> Result<Vec<Uuid>, ApiError> {
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::new();
+    for case_id in case_ids {
+        if case_id.is_nil() {
+            return Err(ApiError::BadRequest(
+                "caseIds cannot include nil UUIDs".to_string(),
+            ));
+        }
+        if seen.insert(case_id) {
+            normalized.push(case_id);
+        }
+    }
+
+    if normalized.is_empty() {
+        return Err(ApiError::BadRequest(
+            "caseIds must include at least one case id".to_string(),
+        ));
+    }
+    if normalized.len() > 100 {
+        return Err(ApiError::BadRequest(
+            "caseIds cannot include more than 100 case ids".to_string(),
+        ));
+    }
+
+    Ok(normalized)
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 fn normalize_strings(values: Vec<String>) -> Vec<String> {
     let mut values = values
         .into_iter()
@@ -1230,6 +1728,72 @@ fn export_filters_json(req: &ExportEvidenceBundleRequest) -> Value {
     })
 }
 
+async fn list_case_audit_events(
+    db: &PgPool,
+    tenant_id: Uuid,
+    case_id: Uuid,
+    artifacts: &[&CaseArtifactRef],
+    req: &ExportEvidenceBundleRequest,
+) -> Result<Vec<Value>, ApiError> {
+    let archive_ids = artifacts
+        .iter()
+        .filter(|artifact| artifact.artifact_kind == "endpoint_evidence_archive")
+        .map(|artifact| artifact.artifact_id.clone())
+        .collect::<Vec<_>>();
+    let rows = sqlx::query::query(
+        r#"WITH case_bundle_exports AS (
+               SELECT export_id
+               FROM fleet_evidence_bundles
+               WHERE tenant_id = $1 AND case_id = $2
+           )
+           SELECT event_type, quantity, metadata, recorded_at
+           FROM usage_events
+           WHERE tenant_id = $1
+             AND (
+                 (
+                     event_type LIKE 'endpoint_evidence_archive.raw_%'
+                     AND metadata->>'archiveId' = ANY($3::text[])
+                 )
+                 OR (
+                     event_type LIKE 'case_evidence_bundle.%'
+                     AND (
+                         metadata->>'caseId' = $2::text
+                         OR metadata->>'exportId' IN (
+                             SELECT export_id FROM case_bundle_exports
+                         )
+                     )
+                 )
+             )
+             AND ($4::timestamptz IS NULL OR recorded_at >= $4)
+             AND ($5::timestamptz IS NULL OR recorded_at <= $5)
+           ORDER BY recorded_at ASC, event_type ASC"#,
+    )
+    .bind(tenant_id)
+    .bind(case_id)
+    .bind(&archive_ids)
+    .bind(req.start)
+    .bind(req.end)
+    .fetch_all(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    rows.into_iter()
+        .map(|row| -> Result<Value, ApiError> {
+            let recorded_at: DateTime<Utc> =
+                row.try_get("recorded_at").map_err(ApiError::Database)?;
+            Ok(serde_json::json!({
+                "tenantId": tenant_id,
+                "eventType": row.try_get::<String, _>("event_type").map_err(ApiError::Database)?,
+                "quantity": row.try_get::<i32, _>("quantity").map_err(ApiError::Database)?,
+                "metadata": row.try_get::<Option<Value>, _>("metadata")
+                    .map_err(ApiError::Database)?
+                    .unwrap_or_else(|| Value::Object(Default::default())),
+                "recordedAt": recorded_at.to_rfc3339_opts(SecondsFormat::Nanos, true),
+            }))
+        })
+        .collect()
+}
+
 struct BuiltCaseBundle {
     completed_at: DateTime<Utc>,
     file_path: String,
@@ -1245,6 +1809,7 @@ struct BuildCaseBundleInput<'a> {
     export_id: &'a str,
     case: &'a FleetCase,
     artifacts: &'a [CaseArtifactRef],
+    audit_events: &'a [Value],
     req: &'a ExportEvidenceBundleRequest,
     expires_at: DateTime<Utc>,
 }
@@ -1254,10 +1819,13 @@ async fn build_case_bundle(
     signer: &hush_core::Keypair,
 ) -> Result<BuiltCaseBundle, ApiError> {
     let filtered_artifacts = filter_artifacts(input.artifacts, input.req);
-    let artifact_counts = artifact_counts(
+    let mut artifact_counts = artifact_counts(
         &filtered_artifacts,
         input.req.include_raw_envelopes.unwrap_or(false),
     );
+    if !input.audit_events.is_empty() {
+        artifact_counts["audit_event"] = json!(input.audit_events.len());
+    }
 
     let events = filtered_artifacts
         .iter()
@@ -1361,6 +1929,19 @@ async fn build_case_bundle(
         entries.push(GenericEvidenceBundleEntry {
             path: "ocsf.jsonl".to_string(),
             bytes: jsonl_bytes(&ocsf_lines),
+        });
+    }
+    if !input.audit_events.is_empty() {
+        let audit_event_lines = input
+            .audit_events
+            .iter()
+            .map(|value| {
+                serde_json::to_string(value).map_err(|err| ApiError::Internal(err.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        entries.push(GenericEvidenceBundleEntry {
+            path: "audit-events.jsonl".to_string(),
+            bytes: jsonl_bytes(&audit_event_lines),
         });
     }
 
@@ -1614,6 +2195,11 @@ fn artifact_matches_authoritative_closure(
             .get("rawRef")
             .and_then(Value::as_str)
             .is_some_and(|value| raw_ref_closure.contains(value)),
+        "endpoint_evidence_archive" => artifact
+            .metadata
+            .get("rawRef")
+            .and_then(Value::as_str)
+            .is_some_and(|value| raw_ref_closure.contains(value)),
         "graph_snapshot" | "note" => artifact_matches_seed_filters(
             artifact,
             principal_ids,
@@ -1703,6 +2289,11 @@ fn extend_case_artifact_closure(
             }
         }
         "raw_envelope" => {
+            if let Some(raw_ref) = artifact.metadata.get("rawRef").and_then(Value::as_str) {
+                raw_ref_closure.insert(raw_ref.to_string());
+            }
+        }
+        "endpoint_evidence_archive" => {
             if let Some(raw_ref) = artifact.metadata.get("rawRef").and_then(Value::as_str) {
                 raw_ref_closure.insert(raw_ref.to_string());
             }
@@ -1851,6 +2442,12 @@ mod tests {
             normalize_strings(vec![" b ".into(), "a".into(), "b".into(), "".into()]),
             vec!["a".to_string(), "b".to_string()]
         );
+    }
+
+    #[test]
+    fn validate_artifact_kind_accepts_endpoint_evidence_archive() {
+        validate_artifact_kind("endpoint_evidence_archive")
+            .expect("endpoint evidence archives should be attachable case artifacts");
     }
 
     #[test]

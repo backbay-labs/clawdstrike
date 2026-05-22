@@ -160,7 +160,7 @@ pub enum SideEffect {
     /// as traps and the core wasm `start` function which may call component
     /// imports. Instantiation order from the original component must be done in
     /// the same order.
-    Instance(InstanceId),
+    Instance(InstanceId, RuntimeComponentInstanceIndex),
 
     /// A resource was declared in this component.
     ///
@@ -267,6 +267,7 @@ pub enum CoreDef {
     InstanceFlags(RuntimeComponentInstanceIndex),
     Trampoline(TrampolineIndex),
     UnsafeIntrinsic(ModuleInternedTypeIndex, UnsafeIntrinsic),
+    TaskMayBlock,
 
     /// This is a special variant not present in `info::CoreDef` which
     /// represents that this definition refers to a fused adapter function. This
@@ -325,7 +326,6 @@ pub enum Trampoline {
         to: MemoryId,
         to64: bool,
     },
-    AlwaysTrap,
     ResourceNew {
         instance: RuntimeComponentInstanceIndex,
         ty: TypeResourceTableIndex,
@@ -460,8 +460,6 @@ pub enum Trampoline {
     },
     ResourceTransferOwn,
     ResourceTransferBorrow,
-    ResourceEnterCall,
-    ResourceExitCall,
     PrepareCall {
         memory: Option<MemoryId>,
     },
@@ -475,8 +473,9 @@ pub enum Trampoline {
     FutureTransfer,
     StreamTransfer,
     ErrorContextTransfer,
-    CheckBlocking,
     Trap,
+    EnterSyncCall,
+    ExitSyncCall,
     ContextGet {
         instance: RuntimeComponentInstanceIndex,
         slot: u32,
@@ -491,7 +490,7 @@ pub enum Trampoline {
         start_func_ty_idx: ComponentTypeIndex,
         start_func_table_id: TableId,
     },
-    ThreadSwitchTo {
+    ThreadSuspendToSuspended {
         instance: RuntimeComponentInstanceIndex,
         cancellable: bool,
     },
@@ -499,10 +498,14 @@ pub enum Trampoline {
         instance: RuntimeComponentInstanceIndex,
         cancellable: bool,
     },
-    ThreadResumeLater {
+    ThreadSuspendTo {
+        instance: RuntimeComponentInstanceIndex,
+        cancellable: bool,
+    },
+    ThreadUnsuspend {
         instance: RuntimeComponentInstanceIndex,
     },
-    ThreadYieldTo {
+    ThreadYieldToSuspended {
         instance: RuntimeComponentInstanceIndex,
         cancellable: bool,
     },
@@ -722,8 +725,8 @@ enum RuntimeInstance {
 impl LinearizeDfg<'_> {
     fn side_effect(&mut self, effect: &SideEffect) {
         match effect {
-            SideEffect::Instance(i) => {
-                self.instantiate(*i, &self.dfg.instances[*i]);
+            SideEffect::Instance(i, ci) => {
+                self.instantiate(*i, &self.dfg.instances[*i], *ci);
             }
             SideEffect::Resource(i) => {
                 self.resource(*i, &self.dfg.resources[*i]);
@@ -731,7 +734,12 @@ impl LinearizeDfg<'_> {
         }
     }
 
-    fn instantiate(&mut self, instance: InstanceId, args: &Instance) {
+    fn instantiate(
+        &mut self,
+        instance: InstanceId,
+        args: &Instance,
+        component_instance: RuntimeComponentInstanceIndex,
+    ) {
         log::trace!("creating instance {instance:?}");
         let instantiation = match args {
             Instance::Static(index, args) => InstantiateModule::Static(
@@ -752,8 +760,10 @@ impl LinearizeDfg<'_> {
             ),
         };
         let index = RuntimeInstanceIndex::new(self.runtime_instances.len());
-        self.initializers
-            .push(GlobalInitializer::InstantiateModule(instantiation));
+        self.initializers.push(GlobalInitializer::InstantiateModule(
+            instantiation,
+            Some(component_instance),
+        ));
         let prev = self
             .runtime_instances
             .insert(RuntimeInstance::Normal(instance), index);
@@ -905,6 +915,7 @@ impl LinearizeDfg<'_> {
                 }
                 info::CoreDef::UnsafeIntrinsic(*i)
             }
+            CoreDef::TaskMayBlock => info::CoreDef::TaskMayBlock,
         }
     }
 
@@ -944,7 +955,6 @@ impl LinearizeDfg<'_> {
                 to: self.runtime_memory(*to),
                 to64: *to64,
             },
-            Trampoline::AlwaysTrap => info::Trampoline::AlwaysTrap,
             Trampoline::ResourceNew { instance, ty } => info::Trampoline::ResourceNew {
                 instance: *instance,
                 ty: *ty,
@@ -1138,8 +1148,6 @@ impl LinearizeDfg<'_> {
             },
             Trampoline::ResourceTransferOwn => info::Trampoline::ResourceTransferOwn,
             Trampoline::ResourceTransferBorrow => info::Trampoline::ResourceTransferBorrow,
-            Trampoline::ResourceEnterCall => info::Trampoline::ResourceEnterCall,
-            Trampoline::ResourceExitCall => info::Trampoline::ResourceExitCall,
             Trampoline::PrepareCall { memory } => info::Trampoline::PrepareCall {
                 memory: memory.map(|v| self.runtime_memory(v)),
             },
@@ -1156,8 +1164,9 @@ impl LinearizeDfg<'_> {
             Trampoline::FutureTransfer => info::Trampoline::FutureTransfer,
             Trampoline::StreamTransfer => info::Trampoline::StreamTransfer,
             Trampoline::ErrorContextTransfer => info::Trampoline::ErrorContextTransfer,
-            Trampoline::CheckBlocking => info::Trampoline::CheckBlocking,
             Trampoline::Trap => info::Trampoline::Trap,
+            Trampoline::EnterSyncCall => info::Trampoline::EnterSyncCall,
+            Trampoline::ExitSyncCall => info::Trampoline::ExitSyncCall,
             Trampoline::ContextGet { instance, slot } => info::Trampoline::ContextGet {
                 instance: *instance,
                 slot: *slot,
@@ -1176,10 +1185,17 @@ impl LinearizeDfg<'_> {
                 start_func_ty_idx: *start_func_ty_idx,
                 start_func_table_idx: self.runtime_table(*start_func_table_id),
             },
-            Trampoline::ThreadSwitchTo {
+            Trampoline::ThreadSuspendToSuspended {
                 instance,
                 cancellable,
-            } => info::Trampoline::ThreadSwitchTo {
+            } => info::Trampoline::ThreadSuspendToSuspended {
+                instance: *instance,
+                cancellable: *cancellable,
+            },
+            Trampoline::ThreadSuspendTo {
+                instance,
+                cancellable,
+            } => info::Trampoline::ThreadSuspendTo {
                 instance: *instance,
                 cancellable: *cancellable,
             },
@@ -1190,13 +1206,13 @@ impl LinearizeDfg<'_> {
                 instance: *instance,
                 cancellable: *cancellable,
             },
-            Trampoline::ThreadResumeLater { instance } => info::Trampoline::ThreadResumeLater {
+            Trampoline::ThreadUnsuspend { instance } => info::Trampoline::ThreadUnsuspend {
                 instance: *instance,
             },
-            Trampoline::ThreadYieldTo {
+            Trampoline::ThreadYieldToSuspended {
                 instance,
                 cancellable,
-            } => info::Trampoline::ThreadYieldTo {
+            } => info::Trampoline::ThreadYieldToSuspended {
                 instance: *instance,
                 cancellable: *cancellable,
             },
@@ -1244,7 +1260,7 @@ impl LinearizeDfg<'_> {
                 let (module_index, args) = &me.dfg.adapter_modules[adapter_module];
                 let args = args.iter().map(|arg| me.core_def(arg)).collect();
                 let instantiate = InstantiateModule::Static(*module_index, args);
-                GlobalInitializer::InstantiateModule(instantiate)
+                GlobalInitializer::InstantiateModule(instantiate, None)
             },
             |_, init| init,
         )

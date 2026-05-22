@@ -243,7 +243,10 @@ pub enum GlobalInitializer {
     /// involve running the `start` function of the instance as well if it's
     /// specified. This largely delegates to the same standard instantiation
     /// process as the rest of the core wasm machinery already uses.
-    InstantiateModule(InstantiateModule),
+    ///
+    /// The second field represents the component instance to which the module
+    /// belongs, if applicable.  This will be `None` for adapter modules.
+    InstantiateModule(InstantiateModule, Option<RuntimeComponentInstanceIndex>),
 
     /// A host function is being lowered, creating a core wasm function.
     ///
@@ -389,6 +392,10 @@ pub enum CoreDef {
     Trampoline(TrampolineIndex),
     /// An intrinsic for compile-time builtins.
     UnsafeIntrinsic(UnsafeIntrinsic),
+    /// Reference to a wasm global which represents a runtime-managed boolean
+    /// indicating whether the currently-running task may perform a blocking
+    /// operation.
+    TaskMayBlock,
 }
 
 impl<T> From<CoreExport<T>> for CoreDef
@@ -653,6 +660,15 @@ impl FixedEncoding {
             FixedEncoding::Latin1 => 1,
         }
     }
+
+    /// Returns the alignment of strings using this encoding.
+    pub fn align(&self) -> u8 {
+        match self {
+            FixedEncoding::Utf8 => 1,
+            FixedEncoding::Utf16 => 2,
+            FixedEncoding::Latin1 => 2,
+        }
+    }
 }
 
 /// Description of a new resource declared in a `GlobalInitializer::Resource`
@@ -729,10 +745,6 @@ pub enum Trampoline {
         /// Whether or not the destination linear memory is 64-bit or not.
         to64: bool,
     },
-
-    /// A small adapter which simply traps, used for degenerate lift/lower
-    /// combinations.
-    AlwaysTrap,
 
     /// A `resource.new` intrinsic which will inject a new resource into the
     /// table specified.
@@ -1041,16 +1053,6 @@ pub enum Trampoline {
     /// Same as `ResourceTransferOwn` but for borrows.
     ResourceTransferBorrow,
 
-    /// An intrinsic used by FACT-generated modules which indicates that a call
-    /// is being entered and resource-related metadata needs to be configured.
-    ///
-    /// Note that this is currently only invoked when borrowed resources are
-    /// detected, otherwise this is "optimized out".
-    ResourceEnterCall,
-
-    /// Same as `ResourceEnterCall` except for when exiting a call.
-    ResourceExitCall,
-
     /// An intrinsic used by FACT-generated modules to prepare a call involving
     /// an async-lowered import and/or an async-lifted export.
     PrepareCall {
@@ -1105,13 +1107,16 @@ pub enum Trampoline {
     /// component does not invalidate the handle in the original component.
     ErrorContextTransfer,
 
-    /// An intrinsic used by FACT-generated modules to check whether an
-    /// async-typed function may be called via a sync lower.
-    CheckBlocking,
-
     /// An intrinsic used by FACT-generated modules to trap with a specified
     /// code.
     Trap,
+
+    /// An intrinsic used by FACT-generated modules to push a task onto the
+    /// stack for a sync-to-sync, guest-to-guest call.
+    EnterSyncCall,
+    /// An intrinsic used by FACT-generated modules to pop the task previously
+    /// pushed by `EnterSyncCall`.
+    ExitSyncCall,
 
     /// Intrinsic used to implement the `context.get` component model builtin.
     ///
@@ -1148,8 +1153,17 @@ pub enum Trampoline {
         start_func_table_idx: RuntimeTableIndex,
     },
 
-    /// Intrinsic used to implement the `thread.switch-to` component model builtin.
-    ThreadSwitchTo {
+    /// Intrinsic used to implement the `thread.suspend-to-suspended` component model builtin.
+    ThreadSuspendToSuspended {
+        /// The specific component instance which is calling the intrinsic.
+        instance: RuntimeComponentInstanceIndex,
+        /// If `true`, indicates the caller instance may receive notification
+        /// of task cancellation.
+        cancellable: bool,
+    },
+
+    /// Intrinsic used to implement the `thread.suspend-to` component model builtin.
+    ThreadSuspendTo {
         /// The specific component instance which is calling the intrinsic.
         instance: RuntimeComponentInstanceIndex,
         /// If `true`, indicates the caller instance may receive notification
@@ -1166,14 +1180,14 @@ pub enum Trampoline {
         cancellable: bool,
     },
 
-    /// Intrinsic used to implement the `thread.resume-later` component model builtin.
-    ThreadResumeLater {
+    /// Intrinsic used to implement the `thread.unsuspend` component model builtin.
+    ThreadUnsuspend {
         /// The specific component instance which is calling the intrinsic.
         instance: RuntimeComponentInstanceIndex,
     },
 
-    /// Intrinsic used to implement the `thread.yield-to` component model builtin.
-    ThreadYieldTo {
+    /// Intrinsic used to implement the `thread.yield-to-suspended` component model builtin.
+    ThreadYieldToSuspended {
         /// The specific component instance which is calling the intrinsic.
         instance: RuntimeComponentInstanceIndex,
         /// If `true`, indicates the caller instance may receive notification
@@ -1199,7 +1213,6 @@ impl Trampoline {
                 let to = if *to64 { "64" } else { "32" };
                 format!("component-transcode-{op}-m{from}-m{to}")
             }
-            AlwaysTrap => format!("component-always-trap"),
             ResourceNew { ty, .. } => format!("component-resource-new[{}]", ty.as_u32()),
             ResourceRep { ty, .. } => format!("component-resource-rep[{}]", ty.as_u32()),
             ResourceDrop { ty, .. } => format!("component-resource-drop[{}]", ty.as_u32()),
@@ -1234,24 +1247,24 @@ impl Trampoline {
             ErrorContextDrop { .. } => format!("error-context-drop"),
             ResourceTransferOwn => format!("component-resource-transfer-own"),
             ResourceTransferBorrow => format!("component-resource-transfer-borrow"),
-            ResourceEnterCall => format!("component-resource-enter-call"),
-            ResourceExitCall => format!("component-resource-exit-call"),
             PrepareCall { .. } => format!("component-prepare-call"),
             SyncStartCall { .. } => format!("component-sync-start-call"),
             AsyncStartCall { .. } => format!("component-async-start-call"),
             FutureTransfer => format!("future-transfer"),
             StreamTransfer => format!("stream-transfer"),
             ErrorContextTransfer => format!("error-context-transfer"),
-            CheckBlocking => format!("check-blocking"),
             Trap => format!("trap"),
+            EnterSyncCall => format!("enter-sync-call"),
+            ExitSyncCall => format!("exit-sync-call"),
             ContextGet { .. } => format!("context-get"),
             ContextSet { .. } => format!("context-set"),
             ThreadIndex => format!("thread-index"),
             ThreadNewIndirect { .. } => format!("thread-new-indirect"),
-            ThreadSwitchTo { .. } => format!("thread-switch-to"),
+            ThreadSuspendToSuspended { .. } => format!("thread-suspend-to-suspended"),
+            ThreadSuspendTo { .. } => format!("thread-suspend-to"),
             ThreadSuspend { .. } => format!("thread-suspend"),
-            ThreadResumeLater { .. } => format!("thread-resume-later"),
-            ThreadYieldTo { .. } => format!("thread-yield-to"),
+            ThreadUnsuspend { .. } => format!("thread-unsuspend"),
+            ThreadYieldToSuspended { .. } => format!("thread-yield-to-suspended"),
         }
     }
 }

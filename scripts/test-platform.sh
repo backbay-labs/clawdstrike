@@ -15,7 +15,7 @@ ensure_node_modules() {
   local pkg="$1"
   if [[ ! -d "$pkg/node_modules" ]]; then
     echo "[test-platform] installing deps: $pkg"
-    npm --prefix "$pkg" install
+    npm --prefix "$pkg" ci
   fi
 }
 
@@ -38,6 +38,9 @@ bash scripts/architecture-guardrails.sh
 
 bold "Slop audit"
 bash scripts/slop-audit.sh
+
+bold "macOS provider dogfood contract"
+bash scripts/test-macos-provider-dogfood-contract.sh
 
 bold "Rust workspace"
 cargo test --workspace

@@ -98,10 +98,6 @@ impl BrokerdManager {
         Ok(())
     }
 
-    pub fn health_url(&self) -> String {
-        self.config.health_url()
-    }
-
     async fn is_healthy(&self) -> bool {
         is_healthy_with_client(&self.http_client, &self.config).await
     }

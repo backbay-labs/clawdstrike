@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleIdentifier</key>
+  <string>dev.clawdstrike.agent.system-extension</string>
+  <key>CFBundleDisplayName</key>
+  <string>ClawdStrike Security Extension</string>
+  <key>CFBundleName</key>
+  <string>ClawdStrike Security Extension</string>
+  <key>CFBundlePackageType</key>
+  <string>SYSX</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.2.7</string>
+  <key>CFBundleSupportedPlatforms</key>
+  <array>
+    <string>MacOSX</string>
+  </array>
+  <key>CFBundleVersion</key>
+  <string>0.2.7</string>
+  <key>ClawdStrikeExtensionPoints</key>
+  <array>
+    <string>endpoint_security</string>
+    <string>network_extension_content_filter</string>
+  </array>
+  <key>ClawdStrikePackagingState</key>
+  <string>prebuilt_system_extension_required</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+  <key>NSSystemExtensionUsageDescription</key>
+  <string>ClawdStrike uses a signed system extension to run EndpointSecurity and NetworkExtension providers for local threat detection and network containment.</string>
+</dict>
+</plist>

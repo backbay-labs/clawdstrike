@@ -7,6 +7,14 @@ import type { SecurityContext } from "./context.js";
 import { DefaultOutputSanitizer } from "./default-output-sanitizer.js";
 import type { PolicyEngineLike } from "./engine.js";
 import type { InterceptResult, ProcessedOutput, ToolInterceptor } from "./interceptor.js";
+import {
+  buildAdapterCoreDecisionPolicyEventForEdr,
+  buildAdapterCoreDeveloperActivityForEdr,
+  buildAdapterCoreResultPolicyEventForEdr,
+  publishDeveloperActivityToLocalEdr,
+  publishPolicyEventToLocalEdr,
+  shouldPublishPolicyDecisionToLocalEdr,
+} from "./local-edr-publisher.js";
 import { PolicyEventFactory } from "./policy-event-factory.js";
 import type { OutputSanitizer, RedactionInfo } from "./sanitizer.js";
 import { allowDecision, type Decision, type PolicyEvent } from "./types.js";
@@ -38,11 +46,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
    * This preserves engine and sanitizer instances while applying overrides.
    */
   withConfig(config: AdapterConfig): BaseToolInterceptor {
-    return new BaseToolInterceptor(
-      this.engine,
-      { ...this.config, ...config },
-      this.sanitizer,
-    );
+    return new BaseToolInterceptor(this.engine, { ...this.config, ...config }, this.sanitizer);
   }
 
   async beforeExecute(
@@ -134,6 +138,23 @@ export class BaseToolInterceptor implements ToolInterceptor {
     let sanitizeOverrides: SanitizeExecutionOverrides | undefined;
 
     this.config.handlers?.onAfterEvaluate?.(toolCall, decision);
+    if (shouldPublishPolicyDecisionToLocalEdr(decision, this.config.edr)) {
+      void publishPolicyEventToLocalEdr(
+        buildAdapterCoreDecisionPolicyEventForEdr(event, normalizedName, decision, context),
+        this.config.edr,
+      );
+    }
+    if (this.config.edr?.includeDeveloperActivity !== false) {
+      const developerActivity = buildAdapterCoreDeveloperActivityForEdr(
+        event,
+        normalizedName,
+        decision,
+        context,
+      );
+      if (developerActivity) {
+        void publishDeveloperActivityToLocalEdr(developerActivity, this.config.edr);
+      }
+    }
 
     if (decision.status === "deny") {
       context.violationCount++;
@@ -336,6 +357,22 @@ export class BaseToolInterceptor implements ToolInterceptor {
       details: modified ? { redactions } : undefined,
     });
 
+    if (this.config.edr?.includeResults !== false) {
+      void publishPolicyEventToLocalEdr(
+        buildAdapterCoreResultPolicyEventForEdr(
+          normalizedName,
+          _input,
+          {
+            output: processedOutput,
+            modified,
+            redactions,
+          },
+          context,
+        ),
+        this.config.edr,
+      );
+    }
+
     return {
       output: processedOutput,
       modified,
@@ -504,7 +541,22 @@ export class BaseToolInterceptor implements ToolInterceptor {
   }
 
   private async emitAuditEvent(context: SecurityContext, event: AuditEvent): Promise<void> {
-    await emitAuditEventShared(context, this.config, event, (error) => {
+    const sanitizedEvent: AuditEvent = {
+      ...event,
+      parameters: event.parameters
+        ? (this.sanitizeForAudit(event.parameters) as Record<string, unknown>)
+        : undefined,
+      output:
+        event.output !== undefined ? this.sanitizeForAudit(event.output) : undefined,
+      decision: event.decision
+        ? (this.sanitizeForAudit(event.decision) as Decision)
+        : undefined,
+      details: event.details
+        ? (this.sanitizeForAudit(event.details) as Record<string, unknown>)
+        : undefined,
+    };
+
+    await emitAuditEventShared(context, this.config, sanitizedEvent, (error) => {
       this.config.handlers?.onError?.(error);
     });
   }

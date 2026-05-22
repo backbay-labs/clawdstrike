@@ -30,6 +30,7 @@ type LangChainToolLike = Partial<LangChainInvokeLike> &
 export interface WrapToolOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
+  config?: AdapterConfig;
 }
 
 /**
@@ -56,7 +57,7 @@ export function secureTool<TTool extends LangChainToolLike>(
   source: SecuritySource,
   options?: WrapToolOptions,
 ): TTool {
-  const interceptor = resolveInterceptor(source);
+  const interceptor = resolveInterceptor(source, options?.config);
   return wrapTool(tool, interceptor, options);
 }
 
@@ -74,7 +75,7 @@ export function secureTools<TTool extends LangChainToolLike>(
   source: SecuritySource,
   options?: WrapToolOptions,
 ): TTool[] {
-  const interceptor = resolveInterceptor(source);
+  const interceptor = resolveInterceptor(source, options?.config);
   return wrapTools(tools, interceptor, options);
 }
 

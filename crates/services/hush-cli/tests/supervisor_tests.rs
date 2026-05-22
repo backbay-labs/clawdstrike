@@ -27,14 +27,14 @@ fn resolve_hush_binary() -> PathBuf {
     if let Ok(path) = std::env::var("CARGO_BIN_EXE_hush") {
         return PathBuf::from(path);
     }
+    if let Some(path) = resolve_hush_binary_from_current_target() {
+        return path;
+    }
+
     let candidate = workspace_root()
         .join("target")
         .join("debug")
         .join(if cfg!(windows) { "hush.exe" } else { "hush" });
-
-    if candidate.exists() {
-        return candidate;
-    }
 
     let status = Command::new("cargo")
         .current_dir(workspace_root())
@@ -50,6 +50,13 @@ fn resolve_hush_binary() -> PathBuf {
         "failed to build hush binary for supervisor tests"
     );
     candidate
+}
+
+fn resolve_hush_binary_from_current_target() -> Option<PathBuf> {
+    let current_exe = std::env::current_exe().ok()?;
+    let target_dir = current_exe.parent()?.parent()?;
+    let candidate = target_dir.join(if cfg!(windows) { "hush.exe" } else { "hush" });
+    candidate.is_file().then_some(candidate)
 }
 
 fn create_temp_dir(prefix: &str) -> PathBuf {
@@ -222,7 +229,11 @@ fn receipt_contains_sandbox_attestation() {
     );
     assert!(
         platform["mechanism"].is_string(),
-        "platform.mechanism should be a string"
+        "platform.mechanism should preserve the legacy singular field"
+    );
+    assert!(
+        platform["mechanisms"].is_array(),
+        "platform.mechanisms should be an array"
     );
 
     // Verify capabilities schema
@@ -264,6 +275,119 @@ fn receipt_enforcement_level_is_kernel_for_static_sandbox() {
     assert_eq!(
         level, "kernel",
         "static sandbox should have enforcement_level=kernel"
+    );
+}
+
+#[test]
+fn supervised_receipt_reports_outer_contract_truthfully() {
+    let echo = match which("echo") {
+        Some(p) => p,
+        None => return,
+    };
+    let dir = create_temp_dir("hush-supervisor-degraded");
+    let policy = write_policy(&dir);
+    let result = run_hush_with_receipt("nono", true, &policy, &[&echo, "test"]);
+    let _ = fs::remove_dir_all(&dir);
+
+    if is_sandbox_unsupported(&result) {
+        return;
+    }
+
+    let receipt = result
+        .receipt_json
+        .expect("receipt should exist after supervised run");
+    let hush = &receipt["receipt"]["metadata"]["hush"];
+    let sandbox = &receipt["receipt"]["metadata"]["sandbox"];
+    let supervised_active = sandbox["runtime"]["supervised_active"]
+        .as_bool()
+        .expect("sandbox.runtime.supervised_active should be a bool");
+    let expected_note = if supervised_active {
+        "nono+supervised"
+    } else {
+        "nono+supervised-degraded"
+    };
+
+    assert_eq!(hush["sandbox"].as_str(), Some(expected_note));
+    assert!(
+        result.stdout.contains(&format!("Sandbox: {expected_note}")),
+        "stdout should disclose the effective supervised mode, got: {}",
+        result.stdout
+    );
+
+    if supervised_active {
+        assert_eq!(
+            receipt["receipt"]["verdict"]["passed"].as_bool(),
+            Some(true)
+        );
+    } else {
+        assert_eq!(
+            receipt["receipt"]["verdict"]["passed"].as_bool(),
+            Some(false)
+        );
+        let failure = hush["sandbox_failure"]
+            .as_str()
+            .expect("sandbox_failure should be present for degraded supervised runs");
+        assert!(
+            !failure.is_empty(),
+            "degraded supervised runs must record a failure reason"
+        );
+        assert!(
+            result
+                .stderr
+                .contains("supervised contract unavailable or degraded"),
+            "stderr should disclose degraded supervised contract, got: {}",
+            result.stderr
+        );
+        if cfg!(target_os = "macos") {
+            assert_ne!(
+                result.exit_code, 0,
+                "supervised runs must fail closed when the authorization contract is unavailable"
+            );
+            assert!(
+                failure.contains("macos_authorization_contract_unavailable"),
+                "expected degraded supervised failure detail, got: {failure}"
+            );
+        }
+    }
+}
+
+#[test]
+fn supervised_preflight_refuses_to_exec_child_when_contract_is_unavailable() {
+    if cfg!(target_os = "linux") {
+        return;
+    }
+
+    let shell = match which("sh") {
+        Some(path) => path,
+        None => return,
+    };
+    let dir = create_temp_dir("hush-supervisor-preflight");
+    let policy = write_policy(&dir);
+    let marker = dir.join("should-not-exist.txt");
+    let marker_arg = marker.to_string_lossy().into_owned();
+    let script = format!("printf touched > '{}'", marker_arg.replace('\'', "'\"'\"'"));
+    let result = run_hush_with_receipt("nono", true, &policy, &[&shell, "-c", &script]);
+    let marker_exists = marker.exists();
+    let _ = fs::remove_dir_all(&dir);
+
+    if is_sandbox_unsupported(&result) {
+        return;
+    }
+
+    assert_ne!(
+        result.exit_code, 0,
+        "supervised preflight refusal must be non-zero"
+    );
+    assert!(
+        !marker_exists,
+        "child command should not execute when supervised preflight is refused"
+    );
+    assert!(
+        result
+            .stderr
+            .contains("supervised contract unavailable or degraded"),
+        "stderr should disclose the supervised preflight refusal, got: {}",
+        result.stderr
     );
 }
 
@@ -397,6 +521,8 @@ fn attestation_with_supervisor_stats_serializes_correctly() {
         requests_total: 47,
         requests_granted: 42,
         requests_denied: 5,
+        deadline_miss_count: 0,
+        dropped_event_count: 0,
         never_grant_blocks: 2,
         rate_limit_blocks: 0,
     });
@@ -434,10 +560,10 @@ fn attestation_with_supervisor_stats_serializes_correctly() {
     );
 
     // Verify enforcement level
-    assert_eq!(
-        json["enforcement_level"].as_str().unwrap(),
-        "kernel_supervised"
-    );
+    let enforcement_level = json["enforcement_level"]
+        .as_str()
+        .expect("enforcement_level should be a string");
+    assert_eq!(enforcement_level, "kernel_supervised");
 }
 
 #[test]

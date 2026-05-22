@@ -181,6 +181,323 @@ function extractCommandPathCandidates(
   return { reads: uniq(reads), writes: uniq(writes) };
 }
 
+type CommandNetworkTarget = {
+  host: string;
+  port: number;
+  protocol?: string;
+  url?: string;
+};
+
+const URL_FETCH_COMMANDS = new Set(["curl", "wget", "fetch", "aria2c"]);
+const SSH_LIKE_COMMANDS = new Set(["ssh", "sftp", "scp", "rsync"]);
+const SOCKET_COMMANDS = new Set(["nc", "ncat", "netcat", "telnet"]);
+
+function splitCommandLikeTokens(value: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | "`" | null = null;
+  let escaped = false;
+
+  for (const ch of value) {
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (escaped) current += "\\";
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+function commandNetworkTokens(command: string, args: string[]): string[] {
+  return [command, ...args]
+    .map((value) => splitCommandLikeTokens(String(value ?? "")))
+    .flat()
+    .filter(Boolean);
+}
+
+function cleanNetworkToken(value: string): string {
+  return value
+    .trim()
+    .replace(/^[("'`]+/, "")
+    .replace(/[)"'`;,\}]+$/, "");
+}
+
+function normalizeToolToken(value: string): string {
+  return value
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
+type McpToolIdentity = {
+  server: string;
+  tool: string;
+};
+
+function parseMcpToolIdentity(value: string, allowWildcard = false): McpToolIdentity | null {
+  const parts = value.trim().split("__").filter(Boolean);
+  if (parts.length < 3 || parts[0].toLowerCase() !== "mcp") {
+    return null;
+  }
+
+  const normalizePart = (part: string): string =>
+    allowWildcard && part.trim() === "*" ? "*" : normalizeToolToken(part);
+
+  const server = normalizePart(parts[1]);
+  const tool = normalizePart(parts.slice(2).join("__"));
+  if (!server || !tool) {
+    return null;
+  }
+
+  return { server, tool };
+}
+
+function canonicalToolName(value: string): string {
+  const mcp = parseMcpToolIdentity(value);
+  return mcp?.tool ?? normalizeToolToken(value);
+}
+
+function allowedToolMatches(policyToolName: string, eventToolName: string): boolean {
+  const eventMcp = parseMcpToolIdentity(eventToolName);
+  const policyMcp = parseMcpToolIdentity(policyToolName, true);
+
+  if (eventMcp) {
+    if (!policyMcp) {
+      return false;
+    }
+    const serverMatches = policyMcp.server === "*" || policyMcp.server === eventMcp.server;
+    const toolMatches = policyMcp.tool === "*" || policyMcp.tool === eventMcp.tool;
+    return serverMatches && toolMatches;
+  }
+
+  if (policyMcp) {
+    return false;
+  }
+
+  return canonicalToolName(policyToolName) === canonicalToolName(eventToolName);
+}
+
+function commandNameFromToken(value: string): string {
+  const cleaned = cleanNetworkToken(value).toLowerCase();
+  const slash = Math.max(cleaned.lastIndexOf("/"), cleaned.lastIndexOf("\\"));
+  return slash === -1 ? cleaned : cleaned.slice(slash + 1);
+}
+
+function protocolFromTarget(value: string): string | null {
+  const match = value.match(/^([a-z][a-z0-9+.-]*):\/\//i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function parseExplicitPort(value: string): number | null {
+  if (!/^[0-9]+$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 65535 ? parsed : null;
+}
+
+function parsedCommandNetworkTarget(
+  input: string,
+  overridePort?: number,
+): CommandNetworkTarget | null {
+  const cleaned = cleanNetworkToken(input);
+  if (!cleaned || cleaned.startsWith("-")) return null;
+
+  const parsed = parseNetworkTarget(cleaned, { emptyPort: "default" });
+  const host = parsed.host.trim().toLowerCase();
+  if (!host) return null;
+
+  const protocol = protocolFromTarget(cleaned) ?? undefined;
+  const port = overridePort ?? parsed.port;
+  return {
+    host,
+    port,
+    ...(protocol ? { protocol } : {}),
+    ...(cleaned.includes("://") ? { url: cleaned } : {}),
+  };
+}
+
+function looksLikeUrlToken(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(cleanNetworkToken(value));
+}
+
+function looksLikeHostPortToken(value: string): boolean {
+  const cleaned = cleanNetworkToken(value);
+  return (
+    /^\[[^\]]+\]:[0-9]{1,5}(?:[/?#].*)?$/.test(cleaned) ||
+    /^[a-z0-9.-]+:[0-9]{1,5}(?:[/?#].*)?$/i.test(cleaned)
+  );
+}
+
+function looksLikeCommandHost(value: string): boolean {
+  const cleaned = cleanNetworkToken(value);
+  if (!cleaned || cleaned.startsWith("-")) return false;
+  if (looksLikePathToken(cleaned)) return false;
+  if (cleaned.includes("=")) return false;
+  if (cleaned.includes("://")) return false;
+  if (/^[0-9]+$/.test(cleaned)) return false;
+  if (cleaned.toLowerCase() === "localhost") return true;
+  if (/^[0-9]{1,3}(?:\.[0-9]{1,3}){3}$/.test(cleaned)) return true;
+  return /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(cleaned);
+}
+
+function addCommandNetworkTarget(
+  targets: CommandNetworkTarget[],
+  seen: Set<string>,
+  target: CommandNetworkTarget | null,
+): void {
+  if (!target) return;
+  const key = `${target.host}:${target.port}:${target.protocol ?? ""}:${target.url ?? ""}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  targets.push(target);
+}
+
+function tokenValueAfterEquals(value: string): string | null {
+  const eq = value.indexOf("=");
+  if (eq <= 0 || eq === value.length - 1) return null;
+  return value.slice(eq + 1);
+}
+
+function sshPortFromTokens(tokens: string[]): number | null {
+  for (let i = 1; i < tokens.length; i++) {
+    const token = cleanNetworkToken(tokens[i]);
+    if (token === "-p" || token === "-P") {
+      const next = tokens[i + 1];
+      if (next) {
+        const parsed = parseExplicitPort(cleanNetworkToken(next));
+        if (parsed) return parsed;
+      }
+      continue;
+    }
+    const compact = token.match(/^-p([0-9]+)$/i) ?? token.match(/^-P([0-9]+)$/);
+    if (compact?.[1]) {
+      const parsed = parseExplicitPort(compact[1]);
+      if (parsed) return parsed;
+    }
+  }
+  return null;
+}
+
+function hostFromSshLikeToken(value: string): string | null {
+  let cleaned = cleanNetworkToken(value);
+  if (!cleaned || cleaned.startsWith("-") || looksLikePathToken(cleaned)) return null;
+  if (cleaned.includes("://")) {
+    const parsed = parsedCommandNetworkTarget(cleaned);
+    return parsed?.host ?? null;
+  }
+
+  const at = cleaned.lastIndexOf("@");
+  if (at !== -1) cleaned = cleaned.slice(at + 1);
+
+  if (cleaned.startsWith("[") && cleaned.includes("]")) {
+    return cleaned.slice(1, cleaned.indexOf("]")).toLowerCase();
+  }
+
+  const colon = cleaned.indexOf(":");
+  if (colon !== -1) cleaned = cleaned.slice(0, colon);
+
+  return looksLikeCommandHost(cleaned) ? cleaned.toLowerCase() : null;
+}
+
+function extractCommandNetworkTargets(command: string, args: string[]): CommandNetworkTarget[] {
+  const tokens = commandNetworkTokens(command, args);
+  const targets: CommandNetworkTarget[] = [];
+  const seen = new Set<string>();
+  const rawCommandText = [command, ...args].map((value) => String(value ?? "")).join(" ");
+
+  for (const match of rawCommandText.matchAll(/[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>\])}]+/gi)) {
+    addCommandNetworkTarget(targets, seen, parsedCommandNetworkTarget(match[0]));
+  }
+
+  for (const token of tokens) {
+    const cleaned = cleanNetworkToken(token);
+    const equalValue = tokenValueAfterEquals(cleaned);
+    for (const candidate of [cleaned, equalValue].filter((v): v is string => Boolean(v))) {
+      if (looksLikeUrlToken(candidate) || looksLikeHostPortToken(candidate)) {
+        addCommandNetworkTarget(targets, seen, parsedCommandNetworkTarget(candidate));
+      }
+    }
+  }
+
+  const commandName = tokens.length > 0 ? commandNameFromToken(tokens[0]) : "";
+
+  if (URL_FETCH_COMMANDS.has(commandName)) {
+    for (const token of tokens.slice(1)) {
+      const cleaned = cleanNetworkToken(token);
+      if (!looksLikeCommandHost(cleaned)) continue;
+      addCommandNetworkTarget(targets, seen, parsedCommandNetworkTarget(cleaned));
+    }
+  }
+
+  if (SSH_LIKE_COMMANDS.has(commandName)) {
+    const port = sshPortFromTokens(tokens) ?? 22;
+    for (const token of tokens.slice(1)) {
+      const host = hostFromSshLikeToken(token);
+      if (!host) continue;
+      addCommandNetworkTarget(targets, seen, {
+        host,
+        port,
+        protocol: commandName === "rsync" ? "rsync" : "ssh",
+      });
+    }
+  }
+
+  if (SOCKET_COMMANDS.has(commandName)) {
+    const positional = tokens.slice(1).filter((token) => {
+      const cleaned = cleanNetworkToken(token);
+      return cleaned && !cleaned.startsWith("-");
+    });
+
+    for (let i = 0; i < positional.length; i++) {
+      const host = cleanNetworkToken(positional[i]);
+      if (!looksLikeCommandHost(host)) continue;
+      const port = positional[i + 1] ? parseExplicitPort(cleanNetworkToken(positional[i + 1])) : null;
+      addCommandNetworkTarget(targets, seen, {
+        host: host.toLowerCase(),
+        port: port ?? (commandName === "telnet" ? 23 : 443),
+        protocol: commandName === "telnet" ? "telnet" : "tcp",
+      });
+      if (port) i += 1;
+    }
+  }
+
+  return targets;
+}
+
 const POLICY_REASON_CODES = {
   POLICY_DENY: "ADC_POLICY_DENY",
   POLICY_WARN: "ADC_POLICY_WARN",
@@ -205,6 +522,7 @@ const POLICY_REASON_CODES = {
   FILESYSTEM_WRITE_ROOT_DENY: "OCLAW_FILESYSTEM_WRITE_ROOT_DENY",
   TOOL_DENIED: "OCLAW_TOOL_DENIED",
   TOOL_NOT_ALLOWLISTED: "OCLAW_TOOL_NOT_ALLOWLISTED",
+  TOOL_APPROVAL_REQUIRED: "OCLAW_TOOL_APPROVAL_REQUIRED",
 } as const;
 
 function denyDecision(
@@ -416,6 +734,11 @@ export class PolicyEngine {
       };
     }
 
+    const derivedToolDecision = this.checkDerivedToolCall(event);
+    if (derivedToolDecision.status === "deny" || derivedToolDecision.status === "warn") {
+      return derivedToolDecision;
+    }
+
     switch (event.eventType) {
       case "file_read":
       case "file_write":
@@ -442,6 +765,32 @@ export class PolicyEngine {
       default:
         return allowed;
     }
+  }
+
+  private checkDerivedToolCall(event: PolicyEvent): Decision {
+    const allowed: Decision = { status: "allow" };
+    if (event.eventType === "tool_call" || !this.config.guards.mcp_tool) {
+      return allowed;
+    }
+    const toolName =
+      typeof event.metadata?.toolName === "string"
+        ? event.metadata.toolName.trim()
+        : "";
+    if (!toolName) {
+      return allowed;
+    }
+    return this.checkToolCall({
+      eventId: `${event.eventId}:tool`,
+      eventType: "tool_call",
+      timestamp: event.timestamp,
+      sessionId: event.sessionId,
+      data: {
+        type: "tool",
+        toolName,
+        parameters: {},
+      },
+      metadata: { ...event.metadata, derivedFrom: event.eventType },
+    });
   }
 
   private checkCua(event: PolicyEvent): Decision {
@@ -724,21 +1073,17 @@ export class PolicyEngine {
   }
 
   private checkFilesystem(event: PolicyEvent): Decision {
-    if (!this.config.guards.forbidden_path) {
-      return { status: "allow" };
-    }
+    if (this.config.guards.forbidden_path) {
+      // First, enforce forbidden path patterns.
+      const forbidden = this.forbiddenPathGuard.checkSync(event, this.policy);
+      const mapped = this.guardResultToDecision(forbidden);
+      if (mapped.status === "deny" || mapped.status === "warn") {
+        return this.applyOnViolation(mapped);
+      }
 
-    // First, enforce forbidden path patterns.
-    const forbidden = this.forbiddenPathGuard.checkSync(event, this.policy);
-    const mapped = this.guardResultToDecision(forbidden);
-    if (mapped.status === "deny" || mapped.status === "warn") {
-      return this.applyOnViolation(mapped);
-    }
-
-    // Then, enforce write roots if configured.
-    if (event.eventType === "file_write" && event.data.type === "file") {
+      // Then, enforce write roots if configured.
       const allowedWriteRoots = this.policy.filesystem?.allowed_write_roots;
-      if (allowedWriteRoots && allowedWriteRoots.length > 0) {
+      if (event.eventType === "file_write" && event.data.type === "file" && allowedWriteRoots?.length) {
         const filePath = normalizePathForPrefix(event.data.path);
         const ok = allowedWriteRoots.some((root) => {
           const rootPath = normalizePathForPrefix(root);
@@ -755,6 +1100,13 @@ export class PolicyEngine {
           );
         }
       }
+    }
+
+    if (event.eventType === "file_write" && this.config.guards.secret_leak) {
+      const res = this.secretLeakGuard.checkSync(event, this.policy);
+      const mapped = this.guardResultToDecision(res);
+      const applied = this.applyOnViolation(mapped);
+      if (applied.status === "deny" || applied.status === "warn") return applied;
     }
 
     return { status: "allow" };
@@ -810,6 +1162,32 @@ export class PolicyEngine {
       }
     }
 
+    if (this.config.guards.egress && event.data.type === "command") {
+      const targets = extractCommandNetworkTargets(event.data.command, event.data.args);
+      const maxChecks = 32;
+      let checks = 0;
+
+      for (const target of targets) {
+        if (checks++ >= maxChecks) break;
+        const synthetic: PolicyEvent = {
+          eventId: `${event.eventId}:cmdegress:${checks}`,
+          eventType: "network_egress",
+          timestamp: event.timestamp,
+          sessionId: event.sessionId,
+          data: {
+            type: "network",
+            host: target.host,
+            port: target.port,
+            ...(target.protocol ? { protocol: target.protocol } : {}),
+            ...(target.url ? { url: target.url } : {}),
+          },
+          metadata: { ...event.metadata, derivedFrom: "command_exec" },
+        };
+        const d = this.checkEgress(synthetic);
+        if (d.status === "deny" || d.status === "warn") return d;
+      }
+    }
+
     if (!this.config.guards.patch_integrity) {
       return { status: "allow" };
     }
@@ -821,11 +1199,12 @@ export class PolicyEngine {
 
   private checkToolCall(event: PolicyEvent): Decision {
     // Optional tool allow/deny list.
-    if (event.data.type === "tool") {
+    if (this.config.guards.mcp_tool && event.data.type === "tool") {
       const tools = this.policy.tools;
-      const toolName = event.data.toolName.toLowerCase();
+      const rawToolName = event.data.toolName;
+      const toolName = canonicalToolName(rawToolName);
 
-      const deniedTools = tools?.denied?.map((x) => x.toLowerCase()) ?? [];
+      const deniedTools = tools?.denied?.map(canonicalToolName) ?? [];
       if (deniedTools.includes(toolName)) {
         return this.applyOnViolation(
           denyDecision(
@@ -837,12 +1216,39 @@ export class PolicyEngine {
         );
       }
 
-      const allowedTools = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
-      if (allowedTools.length > 0 && !allowedTools.includes(toolName)) {
+      const approvalTools =
+        tools?.require_confirmation?.map(canonicalToolName) ?? [];
+      if (approvalTools.includes(toolName)) {
+        return this.applyOnViolation(
+          denyDecision(
+            POLICY_REASON_CODES.TOOL_APPROVAL_REQUIRED,
+            `Tool '${event.data.toolName}' requires approval before execution`,
+            "mcp_tool",
+            "high",
+          ),
+        );
+      }
+
+      const allowedTools = tools?.allowed ?? [];
+      if (
+        allowedTools.length > 0 &&
+        !allowedTools.some((allowedTool) => allowedToolMatches(allowedTool, rawToolName))
+      ) {
         return this.applyOnViolation(
           denyDecision(
             POLICY_REASON_CODES.TOOL_NOT_ALLOWLISTED,
             `Tool '${event.data.toolName}' is not in allowed tool list`,
+            "mcp_tool",
+            "high",
+          ),
+        );
+      }
+
+      if ((tools?.default_action ?? "block") === "block" && allowedTools.length === 0) {
+        return this.applyOnViolation(
+          denyDecision(
+            POLICY_REASON_CODES.TOOL_NOT_ALLOWLISTED,
+            `Tool '${event.data.toolName}' is not explicitly allowed by policy`,
             "mcp_tool",
             "high",
           ),

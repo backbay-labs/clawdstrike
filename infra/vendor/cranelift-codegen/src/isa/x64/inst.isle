@@ -236,20 +236,15 @@
        ;;
        ;; For `AtomicRmwOp::Xchg`, use `Atomic128XchgSeq` instead.
        ;;
+       ;; This requires that `mem_high` addresses 8 bytes beyond `mem_low`.
+       ;;
        ;; This instruction sequence has fixed register uses as follows:
-       ;; - %rax (low), %rdx (high)  (written) the old value at `mem`
+       ;; - %rax (low), %rdx (high)  (written) the old value at `mem_low`
        ;; - %rbx (low), %rcx (high)  (written) used as temp registers to hold
        ;;   the replacement value
        ;; - %rflags is written.  Do not assume anything about it after the
        ;;   instruction.
-       (Atomic128RmwSeq (op Atomic128RmwSeqOp)
-                        (mem BoxSyntheticAmode)
-                        (operand_low Gpr)
-                        (operand_high Gpr)
-                        (temp_low WritableGpr)
-                        (temp_high WritableGpr)
-                        (dst_old_low WritableGpr)
-                        (dst_old_high WritableGpr))
+       (Atomic128RmwSeq (args BoxAtomic128RmwSeqArgs))
 
        ;; A synthetic instruction, based on a loop around a native `lock
        ;; cmpxchg16b` instruction.
@@ -258,16 +253,14 @@
        ;; replacement value is the same every time, this instruction doesn't
        ;; require any temporary registers.
        ;;
+       ;; This requires that `mem_high` addresses 8 bytes beyond `mem_low`.
+       ;;
        ;; This instruction sequence has fixed register uses as follows:
-       ;; - %rax (low), %rdx (high)  (written) the old value at `mem`
+       ;; - %rax (low), %rdx (high)  (written) the old value at `mem_low`
        ;; - %rbx (low), %rcx (high)  (read) the replacement value
        ;; - %rflags is written.  Do not assume anything about it after the
        ;;   instruction.
-       (Atomic128XchgSeq (mem SyntheticAmode)
-                         (operand_low Gpr)
-                         (operand_high Gpr)
-                         (dst_old_low WritableGpr)
-                         (dst_old_high WritableGpr))
+       (Atomic128XchgSeq (args BoxAtomic128XchgSeqArgs))
 
        ;; =========================================
        ;; Meta-instructions generating no code.
@@ -338,11 +331,8 @@
 (type BoxCallIndInfo extern (enum))
 (type BoxReturnCallInfo extern (enum))
 (type BoxReturnCallIndInfo extern (enum))
-(type BoxSyntheticAmode extern (enum))
-
-(decl pure box_synthetic_amode (SyntheticAmode) BoxSyntheticAmode)
-(extern constructor box_synthetic_amode box_synthetic_amode)
-(convert SyntheticAmode BoxSyntheticAmode box_synthetic_amode)
+(type BoxAtomic128RmwSeqArgs extern (enum))
+(type BoxAtomic128XchgSeqArgs extern (enum))
 
 ;; Get the `OperandSize` for a given `Type`, rounding smaller types up to 32 bits.
 (decl operand_size_of_type_32_64 (Type) OperandSize)
@@ -351,6 +341,16 @@
 ;; Get the true `OperandSize` for a given `Type`, with no rounding.
 (decl raw_operand_size_of_type (Type) OperandSize)
 (extern constructor raw_operand_size_of_type raw_operand_size_of_type)
+
+(decl atomic128_rmw_seq_args
+  (Atomic128RmwSeqOp SyntheticAmode SyntheticAmode Gpr Gpr WritableGpr WritableGpr WritableGpr WritableGpr)
+  BoxAtomic128RmwSeqArgs)
+(extern constructor atomic128_rmw_seq_args atomic128_rmw_seq_args)
+
+(decl atomic128_xchg_seq_args
+  (SyntheticAmode SyntheticAmode Gpr Gpr WritableGpr WritableGpr)
+  BoxAtomic128XchgSeqArgs)
+(extern constructor atomic128_xchg_seq_args atomic128_xchg_seq_args)
 
 ;; Get the bit width of an `OperandSize`.
 (decl operand_size_bits (OperandSize) u16)
@@ -509,11 +509,11 @@
 (decl to_amode (MemFlags Value Offset32) SyntheticAmode)
 (rule 0 (to_amode flags base offset)
         (amode_imm_reg flags base offset))
-(rule 1 (to_amode flags (iadd x y) offset)
+(rule 1 (to_amode flags (iadd _ x y) offset)
         (to_amode_add flags x y offset))
 
 (rule 2
-      (to_amode flags (stack_addr slot offset1) offset2)
+      (to_amode flags (stack_addr _ slot offset1) offset2)
       (stackslot_amode slot offset1 offset2))
 
 ;; Same as `to_amode`, except that the base address is computed via the addition
@@ -542,16 +542,16 @@
 (rule to_amode_add_const_lhs 2 (to_amode_add flags (i32_from_iconst c) x offset)
         (if-let sum (i32_checked_add offset c))
         (amode_imm_reg flags x sum))
-(rule to_amode_add_const_fold_iadd_lhs_rhs 3 (to_amode_add flags (iadd x (i32_from_iconst c)) y offset)
+(rule to_amode_add_const_fold_iadd_lhs_rhs 3 (to_amode_add flags (iadd _ x (i32_from_iconst c)) y offset)
         (if-let sum (i32_checked_add offset c))
         (amode_imm_reg_reg_shift flags x y sum))
-(rule to_amode_add_const_fold_iadd_lhs_lhs 4 (to_amode_add flags (iadd (i32_from_iconst c) x) y offset)
+(rule to_amode_add_const_fold_iadd_lhs_lhs 4 (to_amode_add flags (iadd _ (i32_from_iconst c) x) y offset)
         (if-let sum (i32_checked_add offset c))
         (amode_imm_reg_reg_shift flags x y sum))
-(rule to_amode_add_const_fold_iadd_rhs_rhs 5 (to_amode_add flags x (iadd y (i32_from_iconst c)) offset)
+(rule to_amode_add_const_fold_iadd_rhs_rhs 5 (to_amode_add flags x (iadd _ y (i32_from_iconst c)) offset)
         (if-let sum (i32_checked_add offset c))
         (amode_imm_reg_reg_shift flags x y sum))
-(rule to_amode_add_const_fold_iadd_rhs_lhs 6 (to_amode_add flags x (iadd (i32_from_iconst c) y) offset)
+(rule to_amode_add_const_fold_iadd_rhs_lhs 6 (to_amode_add flags x (iadd _ (i32_from_iconst c) y) offset)
         (if-let sum (i32_checked_add offset c))
         (amode_imm_reg_reg_shift flags x y sum))
 
@@ -565,7 +565,7 @@
 (decl amode_imm_reg (MemFlags Value Offset32) Amode)
 (rule amode_imm_reg_base 0 (amode_imm_reg flags base offset)
         (Amode.ImmReg offset base flags))
-(rule amode_imm_reg_iadd 1 (amode_imm_reg flags (iadd x y) offset)
+(rule amode_imm_reg_iadd 1 (amode_imm_reg flags (iadd _ x y) offset)
         (amode_imm_reg_reg_shift flags x y offset))
 
 (spec (amode_imm_reg_reg_shift flags x y offset)
@@ -579,17 +579,28 @@
 (decl amode_imm_reg_reg_shift (MemFlags Value Value Offset32) Amode)
 (rule amode_imm_reg_reg_shift_no_shift 0 (amode_imm_reg_reg_shift flags x y offset)
         (Amode.ImmRegRegShift offset x y 0 flags)) ;; 0 == y<<0 == "no shift"
-(rule amode_imm_reg_reg_shift_shl_rhs 1 (amode_imm_reg_reg_shift flags x (ishl y (iconst (uimm8 shift))) offset)
+(rule amode_imm_reg_reg_shift_shl_rhs 1 (amode_imm_reg_reg_shift flags x (ishl _ y (iconst _ (uimm8 shift))) offset)
         (if-let true (u32_lt_eq shift 3))
         (Amode.ImmRegRegShift offset x y shift flags))
-(rule amode_imm_reg_reg_shift_shl_lhs 2 (amode_imm_reg_reg_shift flags (ishl y (iconst (uimm8 shift))) x offset)
+(rule amode_imm_reg_reg_shift_shl_lhs 2 (amode_imm_reg_reg_shift flags (ishl _ y (iconst _ (uimm8 shift))) x offset)
         (if-let true (u32_lt_eq shift 3))
         (Amode.ImmRegRegShift offset x y shift flags))
 
 ;; Offsetting an Amode. Used when we need to do consecutive
 ;; loads/stores to adjacent addresses.
-(decl amode_offset (SyntheticAmode i32) SyntheticAmode)
-(extern constructor amode_offset amode_offset)
+;;
+;; Note that the input `Amode` might have a static offset that's too large to
+;; add the specified `i32` to so in the case of overflow a new `Amode` is
+;; generated entirely using `lea`
+(decl amode_offset (SyntheticAmode MemFlags i32) SyntheticAmode)
+(rule 1 (amode_offset base _flags offset)
+  (if-let new (amode_try_offset base offset))
+  new)
+(rule 0 (amode_offset base flags offset)
+  (Amode.ImmReg offset (x64_lea $I64 base) flags))
+
+(decl pure partial amode_try_offset (SyntheticAmode i32) SyntheticAmode)
+(extern constructor amode_try_offset amode_try_offset)
 
 ;; Return a zero offset as an `Offset32`.
 (spec (zero_offset) (provide (= result #x00000000)))
@@ -1219,7 +1230,7 @@
 ;; even not generate a zero-extended move in this case.
 (rule 2 (extend_to_gpr src @ (value_type $I32) $I64 (ExtendKind.Zero))
         (if-let true (value32_zeros_upper32 src))
-        (add_range_fact src 64 0 0xffff_ffff))
+        src)
 
 ;; Both extend instructions are guaranteed to load exactly the source type's size.
 ;; So we can use `sinkable_load_exact` here to sink loads for small types (<= 16 bits).
@@ -1258,15 +1269,15 @@
 ;; be a 32-bit operation, will automatically zero the upper 32-bits of the
 ;; destination register that `Value` is placed in.
 (decl pure value32_zeros_upper32 (Value) bool)
-(rule (value32_zeros_upper32 (iadd _ _)) true)
-(rule (value32_zeros_upper32 (isub _ _)) true)
-(rule (value32_zeros_upper32 (imul _ _)) true)
-(rule (value32_zeros_upper32 (band _ _)) true)
-(rule (value32_zeros_upper32 (bor _ _)) true)
-(rule (value32_zeros_upper32 (bxor _ _)) true)
-(rule (value32_zeros_upper32 (ishl _ _)) true)
-(rule (value32_zeros_upper32 (ushr _ _)) true)
-(rule (value32_zeros_upper32 (uload32 _ _ _)) true)
+(rule (value32_zeros_upper32 (iadd _ _ _)) true)
+(rule (value32_zeros_upper32 (isub _ _ _)) true)
+(rule (value32_zeros_upper32 (imul _ _ _)) true)
+(rule (value32_zeros_upper32 (band _ _ _)) true)
+(rule (value32_zeros_upper32 (bor _ _ _)) true)
+(rule (value32_zeros_upper32 (bxor _ _ _)) true)
+(rule (value32_zeros_upper32 (ishl _ _ _)) true)
+(rule (value32_zeros_upper32 (ushr _ _ _)) true)
+(rule (value32_zeros_upper32 (uload32 _ _ _ _)) true)
 (rule -1 (value32_zeros_upper32 _) false)
 
 ;;;; Helpers for Working SSE tidbits ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1355,33 +1366,14 @@
 
 ;;;; Helpers for Emitting Loads ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Load a value into a register.
-(decl x64_load (Type SyntheticAmode ExtKind) Reg)
-
-(rule 1 (x64_load (fits_in_32 ty) addr (ExtKind.SignExtend))
-      (x64_movsx (ext_mode (ty_bytes ty) 8)
-             addr))
-
-(rule 2 (x64_load $I64 addr _ext_kind)
-      (x64_movq_rm addr))
-
-(rule 2 (x64_load $F32 addr _ext_kind)
-      (x64_movss_load addr))
-
-(rule 2 (x64_load $F64 addr _ext_kind)
-      (x64_movsd_load addr))
-
-(rule 2 (x64_load $F128 addr _ext_kind)
-      (x64_movdqu_load addr))
-
-(rule 2 (x64_load $F32X4 addr _ext_kind)
-      (x64_movups_load addr))
-
-(rule 2 (x64_load $F64X2 addr _ext_kind)
-      (x64_movupd_load addr))
-
-(rule 0 (x64_load (multi_lane _bits _lanes) addr _ext_kind)
-      (x64_movdqu_load addr))
+;; Load a value into an XMM register.
+(decl x64_load_xmm (Type SyntheticAmode) Xmm)
+(rule 1 (x64_load_xmm $F32 addr) (x64_movss_load addr))
+(rule 1 (x64_load_xmm $F64 addr) (x64_movsd_load addr))
+(rule 1 (x64_load_xmm $F128 addr) (x64_movdqu_load addr))
+(rule 1 (x64_load_xmm $F32X4 addr) (x64_movups_load addr))
+(rule 1 (x64_load_xmm $F64X2 addr) (x64_movupd_load addr))
+(rule 0 (x64_load_xmm (multi_lane _bits _lanes) addr) (x64_movdqu_load addr))
 
 (decl x64_mov (SyntheticAmode) Reg)
 (spec (x64_mov addr)
@@ -1521,7 +1513,7 @@
 ;; Load a constant into an XMM register.
 (decl x64_xmm_load_const (Type VCodeConstant) Xmm)
 (rule (x64_xmm_load_const ty const)
-      (x64_load ty (const_to_synthetic_amode const) (ExtKind.None)))
+      (x64_load_xmm ty (const_to_synthetic_amode const)))
 
 
 ;;;; Flag Helpers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1929,7 +1921,9 @@
 ;;
 ;; Note that if `Type` is less than 64-bits then the upper bits of the `imm`
 ;; argument will be set to zero and lost.
-(decl imm (Type u64) Reg)
+;;
+;; Recursion: at most once to implement floats with integer bit patterns.
+(decl rec imm (Type u64) Reg)
 
 ;; Base case: integers of up to at most 32-bits.
 ;;
@@ -3346,7 +3340,9 @@
       (ConsumesFlags.ConsumesFlagsSideEffect (MInst.JmpCondOr cc1 cc2 taken not_taken)))
 
 ;; Conditional jump based on a `CondResult`
-(decl jmp_cond_result (CondResult MachLabel MachLabel) SideEffectNoResult)
+;;
+;; Recursion: at most to convert `And` into `Or`.
+(decl rec jmp_cond_result (CondResult MachLabel MachLabel) SideEffectNoResult)
 (rule (jmp_cond_result (CondResult.CC producer cc) taken not_taken)
       (with_flags_side_effect producer (jmp_cond cc taken not_taken)))
 (rule (jmp_cond_result cond @ (CondResult.And _ _ _) taken not_taken)
@@ -3438,11 +3434,11 @@
 
 ;; Special case some instructions where lowerings directly produce condition
 ;; codes.
-(rule 2 (is_nonzero (vall_true vec)) (is_vall_true vec))
-(rule 2 (is_nonzero (vany_true vec)) (is_vany_true vec))
-(rule 2 (is_nonzero (uextend (vall_true vec))) (is_vall_true vec))
-(rule 2 (is_nonzero (uextend (vany_true vec))) (is_vany_true vec))
-(rule 2 (is_nonzero (band a @ (value_type (ty_int (fits_in_64 ty))) b))
+(rule 2 (is_nonzero (vall_true _ vec)) (is_vall_true vec))
+(rule 2 (is_nonzero (vany_true _ vec)) (is_vany_true vec))
+(rule 2 (is_nonzero (uextend _ (vall_true _ vec))) (is_vall_true vec))
+(rule 2 (is_nonzero (uextend _ (vany_true _ vec))) (is_vany_true vec))
+(rule 2 (is_nonzero (band _ a @ (value_type (ty_int (fits_in_64 ty))) b))
       (is_nonzero_band ty a b))
 
 
@@ -3451,10 +3447,10 @@
 ;; avoid unbounded recursion.
 (decl is_nonzero_cmp (Value) CondResult)
 
-(rule 1 (is_nonzero_cmp (fcmp cc a b)) (emit_fcmp cc a b))
-(rule 1 (is_nonzero_cmp (icmp cc a b)) (emit_cmp cc a b))
-(rule 1 (is_nonzero_cmp (uextend (fcmp cc a b))) (emit_fcmp cc a b))
-(rule 1 (is_nonzero_cmp (uextend (icmp cc a b))) (emit_cmp cc a b))
+(rule 1 (is_nonzero_cmp (fcmp _ cc a b)) (emit_fcmp cc a b))
+(rule 1 (is_nonzero_cmp (icmp _ cc a b)) (emit_cmp cc a b))
+(rule 1 (is_nonzero_cmp (uextend _ (fcmp _ cc a b))) (emit_fcmp cc a b))
+(rule 1 (is_nonzero_cmp (uextend _ (icmp _ cc a b))) (emit_cmp cc a b))
 (rule 0 (is_nonzero_cmp val) (is_nonzero val))
 
 (decl is_nonzero_band (Type Value Value) CondResult)
@@ -3465,7 +3461,7 @@
 ;; same semantics this requires that `a` is in a register which forces `bt` to
 ;; use modulo semantics for the second operand `b`, thus `put_in_gpr` is
 ;; manually used.
-(rule 1 (is_nonzero_band (ty_32_or_64 ty) a (ishl (u64_from_iconst 1) b))
+(rule 1 (is_nonzero_band (ty_32_or_64 ty) a (ishl _ (u64_from_iconst 1) b))
   (CondResult.CC (x64_bt ty (put_in_gpr a) b) (CC.B)))
 
 ;; If a value is and'd one shifted by a variable value that matches `bt` as
@@ -3549,7 +3545,8 @@
 (rule 5 (emit_cmp (IntCC.NotEqual) a (u64_from_iconst 0)) (is_nonzero a))
 (rule 6 (emit_cmp (IntCC.NotEqual) (u64_from_iconst 0) a) (is_nonzero a))
 
-(decl emit_cmp_i128 (CC Gpr Gpr Gpr Gpr) CondResult)
+; Recursion: at most one to eliminate "or equal" cases.
+(decl rec emit_cmp_i128 (CC Gpr Gpr Gpr Gpr) CondResult)
 ;; Eliminate cases which compare something "or equal" by swapping arguments.
 (rule 2 (emit_cmp_i128 (CC.NLE) a_hi a_lo b_hi b_lo)
         (emit_cmp_i128 (CC.L)   b_hi b_lo a_hi a_lo))
@@ -3707,32 +3704,38 @@
             (_ Unit (emit (MInst.AtomicRmwSeq ty op mem input tmp dst))))
         dst))
 
-(decl x64_atomic_128_rmw_seq (AtomicRmwOp SyntheticAmode ValueRegs) ValueRegs)
-(rule (x64_atomic_128_rmw_seq op mem input)
+(decl x64_atomic_128_rmw_seq (AtomicRmwOp SyntheticAmode MemFlags ValueRegs) ValueRegs)
+(rule (x64_atomic_128_rmw_seq op mem_low flags input)
       (let ((dst_low WritableGpr (temp_writable_gpr))
             (dst_high WritableGpr (temp_writable_gpr))
             (tmp_low WritableGpr (temp_writable_gpr))
             (tmp_high WritableGpr (temp_writable_gpr))
             (input_low Gpr (value_regs_get_gpr input 0))
             (input_high Gpr (value_regs_get_gpr input 1))
-            (_ Unit (emit (MInst.Atomic128RmwSeq (atomic_128_rmw_seq_op op) mem input_low input_high tmp_low tmp_high dst_low dst_high))))
+            (mem_high SyntheticAmode (amode_offset mem_low flags 8))
+            (args BoxAtomic128RmwSeqArgs (atomic128_rmw_seq_args (atomic_128_rmw_seq_op op) mem_low mem_high input_low input_high tmp_low tmp_high dst_low dst_high))
+            (_ Unit (emit (MInst.Atomic128RmwSeq args))))
         (value_regs dst_low dst_high)))
 
-(rule 1 (x64_atomic_128_rmw_seq (AtomicRmwOp.Xchg) mem input)
+(rule 1 (x64_atomic_128_rmw_seq (AtomicRmwOp.Xchg) mem_low flags input)
         (let ((dst_low WritableGpr (temp_writable_gpr))
               (dst_high WritableGpr (temp_writable_gpr))
               (input_low Gpr (value_regs_get_gpr input 0))
               (input_high Gpr (value_regs_get_gpr input 1))
-              (_ Unit (emit (MInst.Atomic128XchgSeq mem input_low input_high dst_low dst_high))))
+              (mem_high SyntheticAmode (amode_offset mem_low flags 8))
+              (args BoxAtomic128XchgSeqArgs (atomic128_xchg_seq_args mem_low mem_high input_low input_high dst_low dst_high))
+              (_ Unit (emit (MInst.Atomic128XchgSeq args))))
           (value_regs dst_low dst_high)))
 
-(decl x64_atomic_128_store_seq (SyntheticAmode ValueRegs) SideEffectNoResult)
-(rule (x64_atomic_128_store_seq mem input)
+(decl x64_atomic_128_store_seq (SyntheticAmode MemFlags ValueRegs) SideEffectNoResult)
+(rule (x64_atomic_128_store_seq mem_low flags input)
         (let ((dst_low WritableGpr (temp_writable_gpr))
               (dst_high WritableGpr (temp_writable_gpr))
               (input_low Gpr (value_regs_get_gpr input 0))
-              (input_high Gpr (value_regs_get_gpr input 1)))
-          (SideEffectNoResult.Inst (MInst.Atomic128XchgSeq mem input_low input_high dst_low dst_high))))
+              (input_high Gpr (value_regs_get_gpr input 1))
+              (mem_high SyntheticAmode (amode_offset mem_low flags 8))
+              (args BoxAtomic128XchgSeqArgs (atomic128_xchg_seq_args mem_low mem_high input_low input_high dst_low dst_high)))
+          (SideEffectNoResult.Inst (MInst.Atomic128XchgSeq args))))
 
 
 (type AtomicRmwSeqOp

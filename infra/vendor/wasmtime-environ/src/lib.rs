@@ -16,6 +16,8 @@
 extern crate std;
 extern crate alloc;
 
+pub mod collections;
+pub mod graphs;
 pub mod prelude;
 
 mod address_map;
@@ -35,6 +37,7 @@ mod ref_bits;
 mod scopevec;
 mod stack_map;
 mod stack_switching;
+mod string_pool;
 mod trap_encoding;
 mod tunables;
 mod types;
@@ -56,6 +59,7 @@ pub use crate::ref_bits::*;
 pub use crate::scopevec::ScopeVec;
 pub use crate::stack_map::*;
 pub use crate::stack_switching::*;
+pub use crate::string_pool::{Atom, StringPool};
 pub use crate::trap_encoding::*;
 pub use crate::tunables::*;
 pub use crate::types::*;
@@ -80,9 +84,17 @@ pub mod fact;
 // one of three and making sure you're using the right one.
 pub use cranelift_entity::*;
 
-// Temporarily re-export `anyhow` as `wasmtime_environ::error` to ease the
-// migration to the `wasmtime-internal-error` crate.
-pub use anyhow as error;
+// Reexport the error module for convenience.
+pub use self::error::ToWasmtimeResult;
+#[doc(inline)]
+pub use wasmtime_core::error;
+
+pub use wasmtime_core::{alloc::PanicOnOom, non_max, undo::Undo};
+
+// Only for use with `bindgen!`-generated code.
+#[doc(hidden)]
+#[cfg(feature = "anyhow")]
+pub use anyhow;
 
 /// Version number of this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

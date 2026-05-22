@@ -161,7 +161,7 @@ impl<R: Reader> EhFrameHdr<R> {
             fde_count = 0
         } else {
             if fde_count_enc != fde_count_enc.format() {
-                return Err(Error::UnsupportedPointerEncoding);
+                return Err(Error::UnsupportedPointerEncoding(fde_count_enc));
             }
             fde_count = parse_encoded_value(fde_count_enc, &parameters, &mut reader)?;
         }
@@ -256,13 +256,10 @@ impl<'a, 'bases, R: Reader> EhHdrTableIter<'a, 'bases, R> {
     pub fn nth(&mut self, n: usize) -> Result<Option<(Pointer, Pointer)>> {
         use core::convert::TryFrom;
         let size = match self.hdr.table_enc.format() {
-            constants::DW_EH_PE_uleb128 | constants::DW_EH_PE_sleb128 => {
-                return Err(Error::VariableLengthSearchTable);
-            }
             constants::DW_EH_PE_sdata2 | constants::DW_EH_PE_udata2 => 2,
             constants::DW_EH_PE_sdata4 | constants::DW_EH_PE_udata4 => 4,
             constants::DW_EH_PE_sdata8 | constants::DW_EH_PE_udata8 => 8,
-            _ => return Err(Error::UnknownPointerEncoding(self.hdr.table_enc)),
+            _ => return Err(Error::UnsupportedPointerEncoding(self.hdr.table_enc)),
         };
 
         let row_size = size * 2;
@@ -291,6 +288,26 @@ impl<'a, 'bases, R: Reader> fallible_iterator::FallibleIterator for EhHdrTableIt
 
     fn nth(&mut self, n: usize) -> Result<Option<Self::Item>> {
         EhHdrTableIter::nth(self, n)
+    }
+}
+
+impl<'a, 'bases, R: Reader> Iterator for EhHdrTableIter<'a, 'bases, R> {
+    type Item = Result<(Pointer, Pointer)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        EhHdrTableIter::next(self).transpose()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        use core::convert::TryInto;
+        (
+            self.remain.try_into().unwrap_or(0),
+            self.remain.try_into().ok(),
+        )
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        EhHdrTableIter::nth(self, n).transpose()
     }
 }
 
@@ -323,13 +340,10 @@ impl<'a, R: Reader + 'a> EhHdrTable<'a, R> {
     /// To be sure, you **must** call `contains` on the FDE.
     pub fn lookup(&self, address: u64, bases: &BaseAddresses) -> Result<Pointer> {
         let size = match self.hdr.table_enc.format() {
-            constants::DW_EH_PE_uleb128 | constants::DW_EH_PE_sleb128 => {
-                return Err(Error::VariableLengthSearchTable);
-            }
             constants::DW_EH_PE_sdata2 | constants::DW_EH_PE_udata2 => 2,
             constants::DW_EH_PE_sdata4 | constants::DW_EH_PE_udata4 => 4,
             constants::DW_EH_PE_sdata8 | constants::DW_EH_PE_udata8 => 8,
-            _ => return Err(Error::UnknownPointerEncoding(self.hdr.table_enc)),
+            _ => return Err(Error::UnsupportedPointerEncoding(self.hdr.table_enc)),
         };
 
         let row_size = size * 2;
@@ -426,26 +440,6 @@ impl<'a, R: Reader + 'a> EhHdrTable<'a, R> {
         } else {
             Err(Error::NoUnwindInfoForAddress)
         }
-    }
-
-    #[inline]
-    #[doc(hidden)]
-    #[deprecated(note = "Method renamed to fde_for_address; use that instead.")]
-    pub fn lookup_and_parse<F>(
-        &self,
-        address: u64,
-        bases: &BaseAddresses,
-        frame: EhFrame<R>,
-        get_cie: F,
-    ) -> Result<FrameDescriptionEntry<R>>
-    where
-        F: FnMut(
-            &EhFrame<R>,
-            &BaseAddresses,
-            EhFrameOffset<R::Offset>,
-        ) -> Result<CommonInformationEntry<R>>,
-    {
-        self.fde_for_address(&frame, bases, address, get_cie)
     }
 
     /// Returns the frame unwind information for the given address,
@@ -639,9 +633,6 @@ pub trait UnwindSection<R: Reader>: Clone + Debug + _UnwindSectionPrivate<R> {
 
     /// Iterate over the `CommonInformationEntry`s and `FrameDescriptionEntry`s
     /// in this `.debug_frame` section.
-    ///
-    /// Can be [used with
-    /// `FallibleIterator`](./index.html#using-with-fallibleiterator).
     fn entries<'bases>(&self, bases: &'bases BaseAddresses) -> CfiEntriesIter<'bases, Self, R> {
         CfiEntriesIter {
             section: self.clone(),
@@ -659,7 +650,7 @@ pub trait UnwindSection<R: Reader>: Clone + Debug + _UnwindSectionPrivate<R> {
         let offset = UnwindOffset::into(offset);
         let input = &mut self.section().clone();
         input.skip(offset)?;
-        CommonInformationEntry::parse(bases, self, input)
+        CommonInformationEntry::parse(self, bases, input, offset)
     }
 
     /// Parse the `PartialFrameDescriptionEntry` at the given offset.
@@ -671,7 +662,7 @@ pub trait UnwindSection<R: Reader>: Clone + Debug + _UnwindSectionPrivate<R> {
         let offset = UnwindOffset::into(offset);
         let input = &mut self.section().clone();
         input.skip(offset)?;
-        PartialFrameDescriptionEntry::parse_partial(self, bases, input)
+        PartialFrameDescriptionEntry::parse_partial(self, bases, input, offset)
     }
 
     /// Parse the `FrameDescriptionEntry` at the given offset.
@@ -963,9 +954,6 @@ impl BaseAddresses {
 /// default, none are provided. If a relative pointer is encountered for a base
 /// address that is unknown, an `Err` will be returned and iteration will abort.
 ///
-/// Can be [used with
-/// `FallibleIterator`](./index.html#using-with-fallibleiterator).
-///
 /// ```
 /// use gimli::{BaseAddresses, EhFrame, EndianSlice, NativeEndian, UnwindSection};
 ///
@@ -1017,7 +1005,7 @@ where
                 return Ok(None);
             }
 
-            match parse_cfi_entry(self.bases, &self.section, &mut self.input) {
+            match parse_cfi_entry(&self.section, self.bases, &mut self.input) {
                 Ok(Some(entry)) => return Ok(Some(entry)),
                 Err(e) => {
                     self.input.empty();
@@ -1054,6 +1042,18 @@ where
     }
 }
 
+impl<'bases, Section, R> Iterator for CfiEntriesIter<'bases, Section, R>
+where
+    R: Reader,
+    Section: UnwindSection<R>,
+{
+    type Item = Result<CieOrFde<'bases, Section, R>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        CfiEntriesIter::next(self).transpose()
+    }
+}
+
 /// Either a `CommonInformationEntry` (CIE) or a `FrameDescriptionEntry` (FDE).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CieOrFde<'bases, Section, R>
@@ -1070,10 +1070,45 @@ where
 }
 
 fn parse_cfi_entry<'bases, Section, R>(
-    bases: &'bases BaseAddresses,
     section: &Section,
+    bases: &'bases BaseAddresses,
     input: &mut R,
 ) -> Result<Option<CieOrFde<'bases, Section, R>>>
+where
+    R: Reader,
+    Section: UnwindSection<R>,
+{
+    let Some(prefix) = parse_cfi_entry_prefix(section, input)? else {
+        return Ok(None);
+    };
+
+    if Section::is_cie(prefix.format, prefix.cie_id_or_offset) {
+        let cie = CommonInformationEntry::from_prefix(section, bases, prefix)?;
+        Ok(Some(CieOrFde::Cie(cie)))
+    } else {
+        let fde = PartialFrameDescriptionEntry::from_prefix(section, bases, prefix)?;
+        Ok(Some(CieOrFde::Fde(fde)))
+    }
+}
+
+/// The common prefix of a CIE or FDE.
+#[derive(Clone, Debug)]
+struct CfiEntryPrefix<R>
+where
+    R: Reader,
+{
+    offset: R::Offset,
+    length: R::Offset,
+    format: Format,
+    cie_offset_base: R::Offset,
+    cie_id_or_offset: u64,
+    rest: R,
+}
+
+fn parse_cfi_entry_prefix<Section, R>(
+    section: &Section,
+    input: &mut R,
+) -> Result<Option<CfiEntryPrefix<R>>>
 where
     R: Reader,
     Section: UnwindSection<R>,
@@ -1091,28 +1126,14 @@ where
         CieOffsetEncoding::U64 => rest.read_u64()?,
     };
 
-    if Section::is_cie(format, cie_id_or_offset) {
-        let cie = CommonInformationEntry::parse_rest(offset, length, format, bases, section, rest)?;
-        Ok(Some(CieOrFde::Cie(cie)))
-    } else {
-        let cie_offset = R::Offset::from_u64(cie_id_or_offset)?;
-        let cie_offset = match section.resolve_cie_offset(cie_offset_base, cie_offset) {
-            None => return Err(Error::OffsetOutOfBounds),
-            Some(cie_offset) => cie_offset,
-        };
-
-        let fde = PartialFrameDescriptionEntry {
-            offset,
-            length,
-            format,
-            cie_offset: cie_offset.into(),
-            rest,
-            section: section.clone(),
-            bases,
-        };
-
-        Ok(Some(CieOrFde::Fde(fde)))
-    }
+    Ok(Some(CfiEntryPrefix {
+        offset,
+        length,
+        format,
+        cie_offset_base,
+        cie_id_or_offset,
+        rest,
+    }))
 }
 
 /// We support the z-style augmentation [defined by `.eh_frame`][ehframe].
@@ -1307,25 +1328,26 @@ where
 
 impl<R: Reader> CommonInformationEntry<R> {
     fn parse<Section: UnwindSection<R>>(
-        bases: &BaseAddresses,
         section: &Section,
+        bases: &BaseAddresses,
         input: &mut R,
+        offset: R::Offset,
     ) -> Result<CommonInformationEntry<R>> {
-        match parse_cfi_entry(bases, section, input)? {
-            Some(CieOrFde::Cie(cie)) => Ok(cie),
-            Some(CieOrFde::Fde(_)) => Err(Error::NotCieId),
-            None => Err(Error::NoEntryAtGivenOffset),
+        let Some(prefix) = parse_cfi_entry_prefix(section, input)? else {
+            return Err(Error::NoEntryAtGivenOffset(offset.into_u64()));
+        };
+        if !Section::is_cie(prefix.format, prefix.cie_id_or_offset) {
+            return Err(Error::NotCieId(offset.into_u64()));
         }
+        CommonInformationEntry::from_prefix(section, bases, prefix)
     }
 
-    fn parse_rest<Section: UnwindSection<R>>(
-        offset: R::Offset,
-        length: R::Offset,
-        format: Format,
-        bases: &BaseAddresses,
+    fn from_prefix<Section: UnwindSection<R>>(
         section: &Section,
-        mut rest: R,
+        bases: &BaseAddresses,
+        prefix: CfiEntryPrefix<R>,
     ) -> Result<CommonInformationEntry<R>> {
+        let mut rest = prefix.rest;
         let version = rest.read_u8()?;
 
         // Version 1 of `.debug_frame` corresponds to DWARF 2, and then for
@@ -1342,7 +1364,7 @@ impl<R: Reader> CommonInformationEntry<R> {
             let address_size = rest.read_address_size()?;
             let segment_size = rest.read_u8()?;
             if segment_size != 0 {
-                return Err(Error::UnsupportedSegmentSize);
+                return Err(Error::UnsupportedSegmentSize(segment_size));
             }
             address_size
         } else {
@@ -1371,9 +1393,9 @@ impl<R: Reader> CommonInformationEntry<R> {
         };
 
         let entry = CommonInformationEntry {
-            offset,
-            length,
-            format,
+            offset: prefix.offset,
+            length: prefix.length,
+            format: prefix.format,
             version,
             augmentation,
             address_size,
@@ -1412,9 +1434,6 @@ impl<R: Reader> CommonInformationEntry<R> {
     }
 
     /// Iterate over this CIE's initial instructions.
-    ///
-    /// Can be [used with
-    /// `FallibleIterator`](./index.html#using-with-fallibleiterator).
     pub fn instructions<'a, Section>(
         &self,
         section: &'a Section,
@@ -1460,7 +1479,7 @@ impl<R: Reader> CommonInformationEntry<R> {
 
     /// True if this CIE's FDEs have a LSDA.
     pub fn has_lsda(&self) -> bool {
-        self.augmentation.map_or(false, |a| a.lsda.is_some())
+        self.augmentation.is_some_and(|a| a.lsda.is_some())
     }
 
     /// Return the encoding of the LSDA address for this CIE's FDEs.
@@ -1490,7 +1509,7 @@ impl<R: Reader> CommonInformationEntry<R> {
 
     /// True if this CIE's FDEs are trampolines for signal handlers.
     pub fn is_signal_trampoline(&self) -> bool {
-        self.augmentation.map_or(false, |a| a.is_signal_trampoline)
+        self.augmentation.is_some_and(|a| a.is_signal_trampoline)
     }
 
     /// > A constant that is factored out of all advance location instructions
@@ -1540,12 +1559,38 @@ where
         section: &Section,
         bases: &'bases BaseAddresses,
         input: &mut R,
+        offset: R::Offset,
     ) -> Result<PartialFrameDescriptionEntry<'bases, Section, R>> {
-        match parse_cfi_entry(bases, section, input)? {
-            Some(CieOrFde::Cie(_)) => Err(Error::NotFdePointer),
-            Some(CieOrFde::Fde(partial)) => Ok(partial),
-            None => Err(Error::NoEntryAtGivenOffset),
+        let Some(prefix) = parse_cfi_entry_prefix(section, input)? else {
+            return Err(Error::NoEntryAtGivenOffset(offset.into_u64()));
+        };
+        if Section::is_cie(prefix.format, prefix.cie_id_or_offset) {
+            return Err(Error::NotCiePointer(offset.into_u64()));
         }
+        Self::from_prefix(section, bases, prefix)
+    }
+
+    fn from_prefix(
+        section: &Section,
+        bases: &'bases BaseAddresses,
+        prefix: CfiEntryPrefix<R>,
+    ) -> Result<PartialFrameDescriptionEntry<'bases, Section, R>> {
+        let cie_offset = R::Offset::from_u64(prefix.cie_id_or_offset)?;
+        let Some(cie_offset) = section.resolve_cie_offset(prefix.cie_offset_base, cie_offset)
+        else {
+            return Err(Error::OffsetOutOfBounds(cie_offset.into_u64()));
+        };
+
+        let fde = PartialFrameDescriptionEntry {
+            offset: prefix.offset,
+            length: prefix.length,
+            format: prefix.format,
+            cie_offset: cie_offset.into(),
+            rest: prefix.rest,
+            section: section.clone(),
+            bases,
+        };
+        Ok(fde)
     }
 
     /// Fully parse this FDE.
@@ -1769,9 +1814,6 @@ impl<R: Reader> FrameDescriptionEntry<R> {
     ///
     /// Will not include the CIE's initial instructions, if you want those do
     /// `fde.cie().instructions()` first.
-    ///
-    /// Can be [used with
-    /// `FallibleIterator`](./index.html#using-with-fallibleiterator).
     pub fn instructions<'a, Section>(
         &self,
         section: &'a Section,
@@ -1966,7 +2008,7 @@ where
     // `DW_CFA_restore`. Otherwise, when we are currently evaluating a CIE's
     // initial instructions, `is_initialized` will be `false` and initial rules
     // cannot be read.
-    initial_rule: Option<(Register, RegisterRule<T>)>,
+    initial_rule: Option<Option<(Register, RegisterRule<T>)>>,
 
     is_initialized: bool,
 }
@@ -2063,10 +2105,8 @@ where
     fn save_initial_rules(&mut self) -> Result<()> {
         debug_assert!(!self.is_initialized);
         self.initial_rule = match *self.stack.last().unwrap().registers.rules {
-            // All rules are default (undefined). In this case just synthesize
-            // an undefined rule.
-            [] => Some((Register(0), RegisterRule::Undefined)),
-            [ref rule] => Some(rule.clone()),
+            [] => Some(None),
+            [ref rule] => Some(Some(rule.clone())),
             _ => {
                 let rules = self.stack.last().unwrap().clone();
                 self.stack
@@ -2084,25 +2124,29 @@ where
     }
 
     fn set_start_address(&mut self, start_address: u64) {
-        let row = self.row_mut();
-        row.start_address = start_address;
+        self.row_mut().start_address = start_address;
     }
 
     fn set_register_rule(&mut self, register: Register, rule: RegisterRule<T>) -> Result<()> {
-        let row = self.row_mut();
-        row.registers.set(register, rule)
+        self.row_mut().registers.set(register, rule)
+    }
+
+    fn clear_register_rule(&mut self, register: Register) -> Result<()> {
+        self.row_mut().registers.clear(register)
     }
 
     /// Returns `None` if we have not completed evaluation of a CIE's initial
     /// instructions.
-    fn get_initial_rule(&self, register: Register) -> Option<RegisterRule<T>> {
+    ///
+    /// Returns `Some(None)` for the default rule.
+    fn get_initial_rule(&self, register: Register) -> Option<Option<RegisterRule<T>>> {
         if !self.is_initialized {
             return None;
         }
         Some(match self.initial_rule {
             None => self.stack[0].registers.get(register),
-            Some((r, ref rule)) if r == register => rule.clone(),
-            _ => RegisterRule::Undefined,
+            Some(Some((r, ref rule))) if r == register => Some(rule.clone()),
+            _ => None,
         })
     }
 
@@ -2270,7 +2314,7 @@ where
     /// Evaluate call frame instructions until the next row of the table is
     /// completed, and return it.
     ///
-    /// Unfortunately, this cannot be used with `FallibleIterator` because of
+    /// Unfortunately, this cannot be used with `Iterator` because of
     /// the restricted lifetime of the yielded item.
     pub fn next_row(&mut self) -> Result<Option<&UnwindTableRow<R::Offset, S>>> {
         assert!(!self.ctx.stack.is_empty());
@@ -2323,7 +2367,7 @@ where
             // address for the next row.
             SetLoc { address } => {
                 if address < self.ctx.start_address() {
-                    return Err(Error::InvalidAddressRange);
+                    return Err(Error::InvalidCfiSetLoc(address));
                 }
 
                 self.next_start_address = address;
@@ -2458,15 +2502,13 @@ where
                 self.ctx.set_register_rule(register, expression)?;
             }
             Restore { register } => {
-                let initial_rule = if let Some(rule) = self.ctx.get_initial_rule(register) {
-                    rule
-                } else {
+                match self.ctx.get_initial_rule(register) {
                     // Can't restore the initial rule when we are
                     // evaluating the initial rules!
-                    return Err(Error::CfiInstructionInInvalidContext);
-                };
-
-                self.ctx.set_register_rule(register, initial_rule)?;
+                    None => return Err(Error::CfiInstructionInInvalidContext),
+                    Some(None) => self.ctx.clear_register_rule(register)?,
+                    Some(Some(rule)) => self.ctx.set_register_rule(register, rule)?,
+                }
             }
 
             // Row push and pop instructions.
@@ -2490,8 +2532,8 @@ where
             NegateRaState => {
                 let register = crate::AArch64::RA_SIGN_STATE;
                 let value = match self.ctx.row().register(register) {
-                    RegisterRule::Undefined => 0,
-                    RegisterRule::Constant(value) => value,
+                    None => 0,
+                    Some(RegisterRule::Constant(value)) => value,
                     _ => return Err(Error::CfiInstructionInInvalidContext),
                 };
                 self.ctx
@@ -2512,11 +2554,6 @@ where
 // a vector indexed by register number (which would lead to filling lots of
 // empty entries), we store them as a vec of (register number, register rule)
 // pairs.
-//
-// Additionally, because every register's default rule is implicitly
-// `RegisterRule::Undefined`, we never store a register's rule in this vec if it
-// is undefined and save a little bit more space and do a little fewer
-// comparisons that way.
 //
 // The maximum number of rules preallocated by libunwind is 97 for AArch64, 128
 // for ARM, and even 188 for MIPS. It is extremely unlikely to encounter this
@@ -2584,33 +2621,28 @@ where
         self.rules.is_empty()
     }
 
-    fn get(&self, register: Register) -> RegisterRule<T> {
+    fn get(&self, register: Register) -> Option<RegisterRule<T>> {
         self.rules
             .iter()
             .find(|rule| rule.0 == register)
-            .map(|r| {
-                debug_assert!(r.1.is_defined());
-                r.1.clone()
-            })
-            .unwrap_or(RegisterRule::Undefined)
+            .map(|rule| rule.1.clone())
+    }
+
+    fn clear(&mut self, register: Register) -> Result<()> {
+        let idx = self
+            .rules
+            .iter()
+            .enumerate()
+            .find(|&(_, r)| r.0 == register)
+            .map(|(i, _)| i);
+        if let Some(idx) = idx {
+            self.rules.swap_remove(idx);
+        }
+        Ok(())
     }
 
     fn set(&mut self, register: Register, rule: RegisterRule<T>) -> Result<()> {
-        if !rule.is_defined() {
-            let idx = self
-                .rules
-                .iter()
-                .enumerate()
-                .find(|&(_, r)| r.0 == register)
-                .map(|(i, _)| i);
-            if let Some(idx) = idx {
-                self.rules.swap_remove(idx);
-            }
-            return Ok(());
-        }
-
         for &mut (reg, ref mut old_rule) in &mut *self.rules {
-            debug_assert!(old_rule.is_defined());
             if reg == register {
                 *old_rule = rule;
                 return Ok(());
@@ -2654,16 +2686,14 @@ where
     S: UnwindContextStorage<T>,
 {
     fn eq(&self, rhs: &Self) -> bool {
-        for &(reg, ref rule) in &*self.rules {
-            debug_assert!(rule.is_defined());
-            if *rule != rhs.get(reg) {
+        for (reg, rule) in &*self.rules {
+            if Some(rule) != rhs.get(*reg).as_ref() {
                 return false;
             }
         }
 
-        for &(reg, ref rhs_rule) in &*rhs.rules {
-            debug_assert!(rhs_rule.is_defined());
-            if *rhs_rule != self.get(reg) {
+        for (reg, rhs_rule) in &*rhs.rules {
+            if Some(rhs_rule) != self.get(*reg).as_ref() {
                 return false;
             }
         }
@@ -2805,6 +2835,9 @@ where
 
     /// Get the register recovery rule for the given register number.
     ///
+    /// Returns `None` if the register has the default rule, the value of which depends
+    /// on the ABI or compilation system.
+    ///
     /// The register number mapping is architecture dependent. For example, in
     /// the x86-64 ABI the register number mapping is defined in Figure 3.36:
     ///
@@ -2847,15 +2880,15 @@ where
     /// >   <tr><td>Vector Mask Registers 0–7</td>        <td>118-125</td> <td>%k0–%k7</td></tr>
     /// >   <tr><td>Reserved</td>                         <td>126-129</td> <td></td></tr>
     /// > </table>
-    pub fn register(&self, register: Register) -> RegisterRule<T> {
+    pub fn register(&self, register: Register) -> Option<RegisterRule<T>> {
         self.registers.get(register)
     }
 
-    /// Iterate over all defined register `(number, rule)` pairs.
+    /// Iterate over all non-default register `(number, rule)` pairs.
     ///
     /// The rules are not iterated in any guaranteed order. Any register that
-    /// does not make an appearance in the iterator implicitly has the rule
-    /// `RegisterRule::Undefined`.
+    /// does not make an appearance in the iterator implicitly has the default
+    /// rule, the value of which depends on the ABI or compilation system.
     ///
     /// ```
     /// # use gimli::{EndianSlice, LittleEndian, UnwindTableRow};
@@ -2912,7 +2945,6 @@ impl<T: ReaderOffset> CfaRule<T> {
 /// has been saved and the rule to find the value for the register in the
 /// previous frame."
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum RegisterRule<T: ReaderOffset> {
     /// > A register that has this rule has no recoverable value in the previous
     /// > frame. (By convention, it is not preserved by a callee.)
@@ -3464,9 +3496,6 @@ impl<T: ReaderOffset> CallFrameInstruction<T> {
 }
 
 /// A lazy iterator parsing call frame instructions.
-///
-/// Can be [used with
-/// `FallibleIterator`](./index.html#using-with-fallibleiterator).
 #[derive(Clone, Debug)]
 pub struct CallFrameInstructionIter<'a, R: Reader> {
     input: R,
@@ -3504,6 +3533,14 @@ impl<'a, R: Reader> fallible_iterator::FallibleIterator for CallFrameInstruction
 
     fn next(&mut self) -> ::core::result::Result<Option<Self::Item>, Self::Error> {
         CallFrameInstructionIter::next(self)
+    }
+}
+
+impl<'a, R: Reader> Iterator for CallFrameInstructionIter<'a, R> {
+    type Item = Result<CallFrameInstruction<R::Offset>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        CallFrameInstructionIter::next(self).transpose()
     }
 }
 
@@ -3609,7 +3646,7 @@ impl Pointer {
     pub fn direct(self) -> Result<u64> {
         match self {
             Pointer::Direct(p) => Ok(p),
-            Pointer::Indirect(_) => Err(Error::UnsupportedPointerEncoding),
+            Pointer::Indirect(_) => Err(Error::UnsupportedIndirectPointer),
         }
     }
 
@@ -3676,7 +3713,7 @@ fn parse_encoded_pointer<R: Reader>(
                 return Err(Error::FuncRelativePointerInBadContext);
             }
         }
-        constants::DW_EH_PE_aligned => return Err(Error::UnsupportedPointerEncoding),
+        constants::DW_EH_PE_aligned => return Err(Error::UnsupportedPointerEncoding(encoding)),
         _ => unreachable!(),
     };
 
@@ -3717,7 +3754,7 @@ fn parse_encoded_value<R: Reader>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::{parse_cfi_entry, AugmentationData, RegisterRuleMap, UnwindContext};
+    use super::{AugmentationData, RegisterRuleMap, UnwindContext, parse_cfi_entry};
     use crate::common::Format;
     use crate::constants;
     use crate::endianity::{BigEndian, Endianity, LittleEndian, NativeEndian};
@@ -3783,9 +3820,9 @@ mod tests {
         F: FnMut(&Section, &BaseAddresses, O) -> Result<CommonInformationEntry<R>>,
     {
         let bases = Default::default();
-        match parse_cfi_entry(&bases, &section, input) {
+        match parse_cfi_entry(&section, &bases, input) {
             Ok(Some(CieOrFde::Fde(partial))) => partial.parse(get_cie),
-            Ok(_) => Err(Error::NoEntryAtGivenOffset),
+            Ok(_) => Err(Error::NoEntryAtGivenOffset(0)),
             Err(e) => Err(e),
         }
     }
@@ -3989,7 +4026,7 @@ mod tests {
         debug_frame.set_address_size(address_size);
         let input = &mut EndianSlice::new(&section, E::default());
         let bases = Default::default();
-        let result = CommonInformationEntry::parse(&bases, &debug_frame, input);
+        let result = CommonInformationEntry::parse(&debug_frame, &bases, input, 0);
         let result = result.map(|cie| (*input, cie)).map_eof(&section);
         assert_eq!(result, expected);
     }
@@ -4043,7 +4080,7 @@ mod tests {
             .B32(4)
             // Not the CIE Id.
             .B32(0xbad1_bad2);
-        assert_parse_cie(kind, section, 8, Err(Error::NotCieId));
+        assert_parse_cie(kind, section, 8, Err(Error::NotCieId(0)));
     }
 
     #[test]
@@ -4182,9 +4219,10 @@ mod tests {
         let bases = Default::default();
         assert_eq!(
             CommonInformationEntry::parse(
-                &bases,
                 &debug_frame,
-                &mut EndianSlice::new(&contents, LittleEndian)
+                &bases,
+                &mut EndianSlice::new(&contents, LittleEndian),
+                0,
             )
             .map_eof(&contents),
             Err(Error::UnexpectedEof(ReaderOffsetId(4)))
@@ -4360,7 +4398,7 @@ mod tests {
 
         let bases = Default::default();
         assert_eq!(
-            parse_cfi_entry(&bases, &debug_frame, rest),
+            parse_cfi_entry(&debug_frame, &bases, rest),
             Ok(Some(CieOrFde::Cie(cie)))
         );
         assert_eq!(*rest, EndianSlice::new(&expected_rest, BigEndian));
@@ -4406,7 +4444,7 @@ mod tests {
         let rest = &mut EndianSlice::new(&section, BigEndian);
 
         let bases = Default::default();
-        match parse_cfi_entry(&bases, &debug_frame, rest) {
+        match parse_cfi_entry(&debug_frame, &bases, rest) {
             Ok(Some(CieOrFde::Fde(partial))) => {
                 assert_eq!(*rest, EndianSlice::new(&expected_rest, BigEndian));
 
@@ -5363,7 +5401,7 @@ mod tests {
         ctx.row_mut().start_address = 999;
         let expected = ctx.clone();
         let instructions = [(
-            Err(Error::InvalidAddressRange),
+            Err(Error::InvalidCfiSetLoc(42)),
             CallFrameInstruction::SetLoc { address: 42 },
         )];
         assert_eval(ctx, expected, cie, None, instructions);
@@ -5888,8 +5926,7 @@ mod tests {
             .rows(section, bases, &mut ctx)
             .expect("Should run initial program OK");
         assert!(table.ctx.is_initialized);
-        let expected_initial_rule = (Register(0), RegisterRule::Undefined);
-        assert_eq!(table.ctx.initial_rule, Some(expected_initial_rule));
+        assert_eq!(table.ctx.initial_rule, Some(None));
 
         {
             let row = table.next_row().expect("Should evaluate first row OK");
@@ -5962,7 +5999,7 @@ mod tests {
             .expect("Should run initial program OK");
         assert!(table.ctx.is_initialized);
         let expected_initial_rule = (Register(3), RegisterRule::Offset(4));
-        assert_eq!(table.ctx.initial_rule, Some(expected_initial_rule));
+        assert_eq!(table.ctx.initial_rule, Some(Some(expected_initial_rule)));
 
         {
             let row = table.next_row().expect("Should evaluate first row OK");
@@ -6069,7 +6106,7 @@ mod tests {
         assert!(ctx.is_initialized);
         assert_eq!(ctx.stack.len(), 1);
         let expected_initial_rule = (Register(3), RegisterRule::Offset(4));
-        assert_eq!(ctx.initial_rule, Some(expected_initial_rule));
+        assert_eq!(ctx.initial_rule, Some(Some(expected_initial_rule)));
     }
 
     #[test]
@@ -6460,7 +6497,9 @@ mod tests {
         let table = table.unwrap();
         assert_eq!(
             table.lookup(0, &bases),
-            Err(Error::VariableLengthSearchTable)
+            Err(Error::UnsupportedPointerEncoding(
+                constants::DW_EH_PE_uleb128
+            ))
         );
     }
 
@@ -6477,7 +6516,12 @@ mod tests {
         let bases = BaseAddresses::default();
         let result = EhFrameHdr::new(&section, LittleEndian).parse(&bases, 8);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), Error::UnsupportedPointerEncoding);
+        assert_eq!(
+            result.unwrap_err(),
+            Error::UnsupportedPointerEncoding(
+                constants::DW_EH_PE_indirect | constants::DW_EH_PE_udata4
+            )
+        );
     }
 
     #[test]
@@ -6504,7 +6548,7 @@ mod tests {
         let table = table.unwrap();
         assert_eq!(
             table.lookup(0, &bases),
-            Err(Error::UnsupportedPointerEncoding)
+            Err(Error::UnsupportedIndirectPointer)
         );
     }
 
@@ -6697,7 +6741,7 @@ mod tests {
 
         assert_eq!(
             eh_frame.cie_from_offset(&bases, EhFrameOffset(0)),
-            Err(Error::NoEntryAtGivenOffset)
+            Err(Error::NoEntryAtGivenOffset(0))
         );
     }
 
@@ -6719,7 +6763,7 @@ mod tests {
 
         assert_eq!(
             debug_frame.cie_from_offset(&bases, DebugFrameOffset(0)),
-            Err(Error::NoEntryAtGivenOffset)
+            Err(Error::NoEntryAtGivenOffset(0))
         );
     }
 
@@ -6746,7 +6790,7 @@ mod tests {
         let input = &mut EndianSlice::new(&section[buf.len()..], LittleEndian);
 
         let bases = Default::default();
-        match parse_cfi_entry(&bases, &eh_frame, input) {
+        match parse_cfi_entry(&eh_frame, &bases, input) {
             Ok(Some(CieOrFde::Fde(partial))) => Ok(partial.cie_offset.0),
             Err(e) => Err(e),
             otherwise => panic!("Unexpected result: {:#?}", otherwise),
@@ -6769,7 +6813,7 @@ mod tests {
         let buf = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         assert_eq!(
             resolve_cie_offset(&buf, buf.len() + 4 + 2),
-            Err(Error::OffsetOutOfBounds)
+            Err(Error::OffsetOutOfBounds(buf.len() as u64 + 4 + 2))
         );
     }
 
@@ -6778,7 +6822,7 @@ mod tests {
         let buf = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         assert_eq!(
             resolve_cie_offset(&buf, usize::MAX),
-            Err(Error::OffsetOutOfBounds)
+            Err(Error::OffsetOutOfBounds(u32::MAX as u64))
         );
     }
 
@@ -6859,7 +6903,7 @@ mod tests {
         let section = Section::with_endian(kind.endian())
             .cie(kind, None, &mut cie)
             .mark(&end_of_cie)
-            .fde(kind, 99_999_999_999_999, &mut fde);
+            .fde(kind, 99_999_999, &mut fde);
 
         section.start().set_const(0);
         let section = section.get_contents().unwrap();
@@ -6871,7 +6915,7 @@ mod tests {
             &mut section.range_from(end_of_cie.value().unwrap() as usize..),
             UnwindSection::cie_from_offset,
         );
-        assert_eq!(result, Err(Error::OffsetOutOfBounds));
+        assert_eq!(result, Err(Error::OffsetOutOfBounds(99_999_999)));
     }
 
     #[test]
@@ -7321,13 +7365,13 @@ mod tests {
         assert!(map3 != map4);
         assert!(map4 != map3);
 
-        // One has undefined explicitly set, other implicitly has undefined.
+        // One has undefined explicitly set, other implicitly has default rule.
         let mut map5 = RegisterRuleMap::<usize>::default();
         map5.set(Register(0), RegisterRule::SameValue).unwrap();
         map5.set(Register(0), RegisterRule::Undefined).unwrap();
         let map6 = RegisterRuleMap::<usize>::default();
-        assert_eq!(map5, map6);
-        assert_eq!(map6, map5);
+        assert!(map5 != map6);
+        assert!(map6 != map5);
     }
 
     #[test]
@@ -7893,7 +7937,7 @@ mod tests {
         };
         assert_eq!(
             parse_encoded_pointer(encoding, &parameters, &mut rest),
-            Err(Error::UnsupportedPointerEncoding)
+            Err(Error::UnsupportedPointerEncoding(encoding))
         );
     }
 

@@ -8,12 +8,14 @@
 //! - [`synth`] - Policy synthesis from observed events
 //! - [`simulate`] - Replay events against a policy
 //! - [`bridge`] - PolicyEvent to TimelineEvent conversion
+//! - [`edr`] - endpoint detection, deception, and causal graph primitives
 //! - [`ocsf`] - PolicyEvent to OCSF conversion
 //! - [`facade`] - JSON-in/JSON-out facade for cross-language bindings
 
 #[cfg(feature = "timeline")]
 pub mod bridge;
 mod decision;
+pub mod edr;
 pub mod event;
 pub mod facade;
 pub mod ocsf;

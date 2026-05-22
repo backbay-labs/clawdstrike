@@ -554,16 +554,13 @@ pub async fn cmd_run(
             match sandbox_nono::spawn_sandboxed_child(&caps, &command, &env_overrides) {
                 Ok(result) => SandboxRunResult {
                     child_status: exit_status_from_code(result.exit_code),
-                    sandbox_attestation_json: serde_json::to_value(
-                        clawdstrike::sandbox::build_attestation(
-                            &caps,
-                            clawdstrike::sandbox::SandboxRuntimeState::static_mode(
-                                result.sandbox_applied,
-                                result.sandbox_error.clone(),
-                            ),
+                    sandbox_attestation: Some(clawdstrike::sandbox::build_attestation(
+                        &caps,
+                        clawdstrike::sandbox::SandboxRuntimeState::static_mode(
+                            result.sandbox_applied,
+                            result.sandbox_error.clone(),
                         ),
-                    )
-                    .ok(),
+                    )),
                     sandbox_failure: result.sandbox_error,
                 },
                 Err(e) => {
@@ -601,32 +598,45 @@ pub async fn cmd_run(
                 never_grant,
             ) {
                 Ok(result) => {
-                    let mut attestation = clawdstrike::sandbox::build_attestation(
-                        &caps,
-                        clawdstrike::sandbox::SandboxRuntimeState::supervised_mode(
-                            result.sandbox_applied,
-                            result.supervised_active,
-                            result.sandbox_error.clone(),
-                        ),
-                    );
-                    if result.supervised_active {
+                    let mut attestation =
+                        clawdstrike::sandbox::build_attestation(&caps, result.runtime.clone());
+                    if !result.runtime.supervised_active
+                        || matches!(
+                            attestation.enforcement_level,
+                            clawdstrike::sandbox::EnforcementLevel::Degraded
+                        )
+                    {
+                        let degraded_summary = if attestation.runtime.degraded_reasons.is_empty() {
+                            "unknown reason".to_string()
+                        } else {
+                            attestation.runtime.degraded_reasons.join(", ")
+                        };
+                        let _ = writeln!(
+                            stderr,
+                            "[nono] supervised contract unavailable or degraded: {}",
+                            degraded_summary
+                        );
+                    }
+                    if result.runtime.supervised_active {
                         attestation.supervisor = Some(result.stats.clone());
                     }
                     if !result.denials.is_empty() {
                         attestation.denials = result.denials.clone();
                     }
-                    let _ = writeln!(
-                        stderr,
-                        "[nono] supervisor stats: {} requests ({} granted, {} denied, {} never-grant)",
-                        result.stats.requests_total,
-                        result.stats.requests_granted,
-                        result.stats.requests_denied,
-                        result.stats.never_grant_blocks,
-                    );
+                    if result.stats.enabled || result.stats.requests_total > 0 {
+                        let _ = writeln!(
+                            stderr,
+                            "[nono] supervisor stats: {} requests ({} granted, {} denied, {} never-grant)",
+                            result.stats.requests_total,
+                            result.stats.requests_granted,
+                            result.stats.requests_denied,
+                            result.stats.never_grant_blocks,
+                        );
+                    }
                     SandboxRunResult {
                         child_status: exit_status_from_code(result.exit_code),
-                        sandbox_attestation_json: serde_json::to_value(&attestation).ok(),
-                        sandbox_failure: result.sandbox_error,
+                        sandbox_attestation: Some(attestation),
+                        sandbox_failure: result.runtime.failure_reason.clone(),
                     }
                 }
                 Err(e) => {
@@ -652,7 +662,7 @@ pub async fn cmd_run(
             {
                 Ok(status) => SandboxRunResult {
                     child_status: status,
-                    sandbox_attestation_json: None,
+                    sandbox_attestation: None,
                     sandbox_failure: None,
                 },
                 Err(e) => {
@@ -678,7 +688,7 @@ pub async fn cmd_run(
             {
                 Ok(status) => SandboxRunResult {
                     child_status: status,
-                    sandbox_attestation_json: None,
+                    sandbox_attestation: None,
                     sandbox_failure: None,
                 },
                 Err(e) => {
@@ -696,11 +706,23 @@ pub async fn cmd_run(
 
     let SandboxRunResult {
         child_status,
-        sandbox_attestation_json,
-        sandbox_failure,
+        mut sandbox_attestation,
+        mut sandbox_failure,
     } = sandbox_run;
 
     let child_exit_code = child_exit_code(child_status);
+    let dropped_events = event_emitter.dropped_count();
+    let rejected_proxy_connections = proxy_rejected_connections
+        .as_ref()
+        .map(|count| count.load(Ordering::Relaxed))
+        .unwrap_or(0);
+    apply_dropped_events_to_sandbox_attestation(&mut sandbox_attestation, dropped_events);
+    let (effective_sandbox_note, effective_sandbox_failure) = finalize_sandbox_contract_status(
+        &sandbox_note,
+        sandbox_failure.clone(),
+        sandbox_attestation.as_ref(),
+    );
+    sandbox_failure = effective_sandbox_failure;
 
     // Emit a best-effort session end marker.
     let mut extra = serde_json::Map::new();
@@ -714,21 +736,16 @@ pub async fn cmd_run(
     );
     extra.insert(
         "sandbox".to_string(),
-        serde_json::Value::String(sandbox_note.clone()),
+        serde_json::Value::String(effective_sandbox_note.clone()),
     );
     extra.insert(
         "proxy".to_string(),
         serde_json::Value::Bool(env_proxy_url.is_some()),
     );
-    let dropped_events = event_emitter.dropped_count();
     extra.insert(
         "droppedEventCount".to_string(),
         serde_json::Value::Number((dropped_events as u64).into()),
     );
-    let rejected_proxy_connections = proxy_rejected_connections
-        .as_ref()
-        .map(|count| count.load(Ordering::Relaxed))
-        .unwrap_or(0);
     extra.insert(
         "proxyRejectedConnections".to_string(),
         serde_json::Value::Number((rejected_proxy_connections as u64).into()),
@@ -790,10 +807,12 @@ pub async fn cmd_run(
                     "command": command,
                     "events": events_out,
                     "proxy": env_proxy_url,
-                    "sandbox": sandbox_note,
+                    "sandbox": effective_sandbox_note,
                     "sandbox_failure": sandbox_failure.clone(),
                     "child_exit_code": child_exit_code,
                     "policy_exit_code": outcome.exit_code(),
+                    "dropped_event_count": dropped_events,
+                    "proxy_rejected_connections": rejected_proxy_connections,
                 }
             })),
         Err(e) => {
@@ -803,7 +822,9 @@ pub async fn cmd_run(
     };
 
     // Merge sandbox attestation into receipt metadata
-    let receipt = if let Some(sandbox_json) = sandbox_attestation_json {
+    let receipt = if let Some(attestation) = sandbox_attestation {
+        let sandbox_json = serde_json::to_value(attestation)
+            .unwrap_or_else(|_| serde_json::json!({"serialization_error":"sandbox_attestation"}));
         receipt.merge_metadata(serde_json::json!({ "sandbox": sandbox_json }))
     } else {
         receipt
@@ -870,7 +891,7 @@ pub async fn cmd_run(
     } else {
         let _ = writeln!(stdout, "Proxy: disabled");
     }
-    let _ = writeln!(stdout, "Sandbox: {}", sandbox_note);
+    let _ = writeln!(stdout, "Sandbox: {}", effective_sandbox_note);
 
     // Exit behavior:
     // - Policy outcomes (warn/block) override child process exit.
@@ -1030,8 +1051,61 @@ struct SupervisedData {
 
 struct SandboxRunResult {
     child_status: std::process::ExitStatus,
-    sandbox_attestation_json: Option<serde_json::Value>,
+    sandbox_attestation: Option<clawdstrike::sandbox::SandboxAttestation>,
     sandbox_failure: Option<String>,
+}
+
+fn apply_dropped_events_to_sandbox_attestation(
+    sandbox_attestation: &mut Option<clawdstrike::sandbox::SandboxAttestation>,
+    dropped_events: usize,
+) {
+    let Some(attestation) = sandbox_attestation.as_mut() else {
+        return;
+    };
+    let dropped_event_count = u64::try_from(dropped_events).unwrap_or(u64::MAX);
+    if dropped_event_count == 0 {
+        return;
+    }
+
+    let total_dropped_events = attestation
+        .runtime
+        .dropped_event_count
+        .saturating_add(dropped_event_count);
+    attestation
+        .runtime
+        .set_dropped_event_count(total_dropped_events);
+    attestation.recompute_status();
+}
+
+fn finalize_sandbox_contract_status(
+    sandbox_note: &str,
+    sandbox_failure: Option<String>,
+    sandbox_attestation: Option<&clawdstrike::sandbox::SandboxAttestation>,
+) -> (String, Option<String>) {
+    let Some(attestation) = sandbox_attestation else {
+        return (sandbox_note.to_string(), sandbox_failure);
+    };
+
+    let supervised_contract_degraded = attestation.runtime.supervised_requested
+        && (!attestation.runtime.supervised_active
+            || matches!(
+                attestation.enforcement_level,
+                clawdstrike::sandbox::EnforcementLevel::Degraded
+                    | clawdstrike::sandbox::EnforcementLevel::None
+            ));
+    if !supervised_contract_degraded {
+        return (sandbox_note.to_string(), sandbox_failure);
+    }
+
+    let failure = sandbox_failure.or_else(|| {
+        Some(if attestation.runtime.degraded_reasons.is_empty() {
+            "supervised_contract_degraded".to_string()
+        } else {
+            attestation.runtime.degraded_reasons.join(", ")
+        })
+    });
+
+    (format!("{sandbox_note}-degraded"), failure)
 }
 
 /// Execution mode for the child process sandbox.
@@ -1954,6 +2028,22 @@ mod tests {
     use super::*;
     use clawdstrike::Policy;
 
+    fn degraded_supervised_attestation() -> clawdstrike::sandbox::SandboxAttestation {
+        let caps = nono::CapabilitySet::new().block_network();
+        clawdstrike::sandbox::build_attestation(
+            &caps,
+            clawdstrike::sandbox::SandboxRuntimeState::supervised_mode(true, false, None),
+        )
+    }
+
+    fn expected_supervised_degraded_reason() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "macos_authorization_contract_unavailable"
+        } else {
+            "supervised_interception_inactive"
+        }
+    }
+
     fn test_custom_event(id: usize) -> PolicyEvent {
         PolicyEvent {
             event_id: format!("event-{id}"),
@@ -1988,6 +2078,62 @@ mod tests {
         let profile = generate_macos_sandbox_profile(Some(home), workspace);
         assert!(profile.contains("(deny file-read* (subpath \"/Users/alice\"))"));
         assert!(profile.contains("(deny file-write* (subpath \"/Users/alice\"))"));
+    }
+
+    #[test]
+    fn finalize_sandbox_contract_status_marks_degraded_supervised_runs() {
+        let attestation = degraded_supervised_attestation();
+        let (note, failure) =
+            finalize_sandbox_contract_status("nono+supervised", None, Some(&attestation));
+
+        assert_eq!(note, "nono+supervised-degraded");
+        assert_eq!(
+            failure.as_deref(),
+            Some(expected_supervised_degraded_reason())
+        );
+    }
+
+    #[test]
+    fn dropped_events_degrade_attestation_before_contract_status_is_finalized() {
+        let caps = nono::CapabilitySet::new().block_network();
+        let mut attestation = Some(clawdstrike::sandbox::build_attestation(
+            &caps,
+            clawdstrike::sandbox::SandboxRuntimeState::supervised_mode(true, true, None),
+        ));
+
+        apply_dropped_events_to_sandbox_attestation(&mut attestation, 2);
+
+        let Some(attestation) = attestation else {
+            panic!("expected attestation to remain present");
+        };
+        assert_eq!(attestation.runtime.dropped_event_count, 2);
+        assert!(attestation
+            .runtime
+            .degraded_reasons
+            .iter()
+            .any(|reason| reason == "dropped_enforcement_events"));
+        assert_eq!(
+            attestation.enforcement_level,
+            clawdstrike::sandbox::EnforcementLevel::Degraded
+        );
+        assert!(!attestation.enforced);
+
+        let (note, failure) =
+            finalize_sandbox_contract_status("nono+supervised", None, Some(&attestation));
+        assert_eq!(note, "nono+supervised-degraded");
+        assert_eq!(failure.as_deref(), Some("dropped_enforcement_events"));
+    }
+
+    #[test]
+    fn finalize_sandbox_contract_status_preserves_non_supervised_runs() {
+        let attestation = clawdstrike::sandbox::build_attestation(
+            &nono::CapabilitySet::new().block_network(),
+            clawdstrike::sandbox::SandboxRuntimeState::static_mode(true, None),
+        );
+        let (note, failure) = finalize_sandbox_contract_status("nono", None, Some(&attestation));
+
+        assert_eq!(note, "nono");
+        assert!(failure.is_none());
     }
 
     #[tokio::test]

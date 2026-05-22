@@ -80,6 +80,7 @@ use crate::translate::stack::{ControlStackFrame, ElseData};
 use crate::translate::translation_utils::{
     block_with_params, blocktype_params_results, f32_translation, f64_translation,
 };
+use crate::trap::TranslateTrap;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::Offset32;
 use cranelift_codegen::ir::{
@@ -202,31 +203,47 @@ pub fn translate_operator(
         Operator::Drop => {
             environ.stacks.pop1();
         }
-        Operator::Select => {
-            let (mut arg1, mut arg2, cond) = environ.stacks.pop3();
-            if builder.func.dfg.value_type(arg1).is_vector() {
-                arg1 = optionally_bitcast_vector(arg1, I8X16, builder);
-            }
-            if builder.func.dfg.value_type(arg2).is_vector() {
-                arg2 = optionally_bitcast_vector(arg2, I8X16, builder);
-            }
-            environ.stacks.push1(builder.ins().select(cond, arg1, arg2));
+        Operator::Nop => {
+            // We do nothing
         }
-        Operator::TypedSelect { ty: _ } => {
+        Operator::Select
+        | Operator::TypedSelect {
             // We ignore the explicit type parameter as it is only needed for
             // validation, which we require to have been performed before
             // translation.
+            ty: _,
+        } => {
             let (mut arg1, mut arg2, cond) = environ.stacks.pop3();
+
             if builder.func.dfg.value_type(arg1).is_vector() {
                 arg1 = optionally_bitcast_vector(arg1, I8X16, builder);
             }
             if builder.func.dfg.value_type(arg2).is_vector() {
                 arg2 = optionally_bitcast_vector(arg2, I8X16, builder);
             }
-            environ.stacks.push1(builder.ins().select(cond, arg1, arg2));
-        }
-        Operator::Nop => {
-            // We do nothing
+
+            let val = builder.ins().select(cond, arg1, arg2);
+
+            // If either of the input types need inclusion in stack maps, then
+            // the result will as well.
+            //
+            // Note that we don't need to check whether the result's type needs
+            // inclusion in stack maps (that would be a conservative over
+            // approximation) because the input types give us more-precise
+            // information than the result type does. For example, the result
+            // does not need inclusion in stack maps in the scenario where both
+            // inputs are `i31ref`s and the result is an `anyref`. Even though
+            // `anyref`s normally do require inclusion in stack maps, in this
+            // particular case, we know that we are dealing with an `anyref`
+            // that doesn't actually require inclusion.
+            if operand_types
+                .iter()
+                .any(|ty| environ.val_ty_needs_stack_map(*ty))
+            {
+                builder.declare_value_needs_stack_map(val);
+            }
+
+            environ.stacks.push1(val);
         }
         Operator::Unreachable => {
             environ.trap(builder, crate::TRAP_UNREACHABLE);
@@ -663,8 +680,13 @@ pub fn translate_operator(
             let mut args = environ.stacks.peekn(num_args).to_vec();
             bitcast_wasm_params(environ, sig_ref, &mut args, builder);
 
-            let inst_results =
-                environ.translate_call(builder, srcloc, function_index, sig_ref, &args)?;
+            let inst_results = environ.translate_call(
+                builder,
+                environ.next_srcloc,
+                function_index,
+                sig_ref,
+                &args,
+            )?;
 
             debug_assert_eq!(
                 inst_results.len(),
@@ -692,7 +714,7 @@ pub fn translate_operator(
 
             let inst_results = environ.translate_call_indirect(
                 builder,
-                srcloc,
+                environ.next_srcloc,
                 validator.features(),
                 TableIndex::from_u32(*table_index),
                 type_index,
@@ -2481,13 +2503,13 @@ pub fn translate_operator(
             // op.
             environ.stacks.push1(
                 if environ.relaxed_simd_deterministic()
-                    || !environ.use_x86_blendv_for_relaxed_laneselect(ty)
+                    || !environ.use_blendv_for_relaxed_laneselect(ty)
                 {
                     // Deterministic semantics are a `bitselect` along the lines
                     // of the wasm `v128.bitselect` instruction.
                     builder.ins().bitselect(c, a, b)
                 } else {
-                    builder.ins().x86_blendv(c, a, b)
+                    builder.ins().blendv(c, a, b)
                 },
             );
         }
@@ -2631,7 +2653,7 @@ pub fn translate_operator(
             bitcast_wasm_params(environ, sigref, &mut args, builder);
 
             let inst_results =
-                environ.translate_call_ref(builder, srcloc, sigref, callee, &args)?;
+                environ.translate_call_ref(builder, environ.next_srcloc, sigref, callee, &args)?;
 
             debug_assert_eq!(
                 inst_results.len(),
@@ -3614,11 +3636,6 @@ fn prepare_addr(
     let mut flags = MemFlags::new();
     flags.set_endianness(ir::Endianness::Little);
 
-    if heap.pcc_memory_type.is_some() {
-        // Proof-carrying code is enabled; check this memory access.
-        flags.set_checked();
-    }
-
     // The access occurs to the `heap` disjoint category of abstract
     // state. This may allow alias analysis to merge redundant loads,
     // etc. when heap accesses occur interleaved with other (table,
@@ -3645,8 +3662,7 @@ fn align_atomic_addr(
     // alignment check itself. This can probably be optimized better and we
     // should do so in the future as well.
     if loaded_bytes > 1 {
-        let addr = environ.stacks.pop1(); // "peek" via pop then push
-        environ.stacks.push1(addr);
+        let addr = environ.stacks.peek1();
         let effective_addr = if memarg.offset == 0 {
             addr
         } else {

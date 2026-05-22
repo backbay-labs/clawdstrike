@@ -4,7 +4,7 @@ use std::ffi::c_void;
 pub use std::io::Result;
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
-pub use anyhow::Result;
+pub use wasmtime_core::error::Result;
 
 #[cfg(all(
     target_arch = "aarch64",

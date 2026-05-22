@@ -8,9 +8,7 @@ import type { ToolInterceptor } from "./interceptor.js";
  * an interceptor factory method.
  */
 export interface ClawdstrikeLike {
-  createInterceptor?: (
-    config?: AdapterConfig,
-  ) => Partial<ToolInterceptor> | ToolInterceptor;
+  createInterceptor?: (config?: AdapterConfig) => Partial<ToolInterceptor> | ToolInterceptor;
 }
 
 /**
@@ -68,9 +66,13 @@ function withAdapterConfig(source: ToolInterceptor, config?: AdapterConfig): Too
     return source.withConfig(config);
   }
 
-  if (config.translateToolCall !== undefined || config.broker !== undefined) {
+  if (
+    config.translateToolCall !== undefined ||
+    config.broker !== undefined ||
+    config.edr !== undefined
+  ) {
     throw new Error(
-      "ToolInterceptor source does not support adapter translator config or broker config. " +
+      "ToolInterceptor source does not support adapter translator, broker, or EDR config. " +
         "Use a PolicyEngineLike/ClawdstrikeLike source or a configurable interceptor.",
     );
   }
@@ -92,9 +94,7 @@ function withDefaultOnError(interceptor: Partial<ToolInterceptor>): ToolIntercep
     beforeExecute: interceptor.beforeExecute,
     afterExecute: interceptor.afterExecute,
     onError:
-      typeof interceptor.onError === "function"
-        ? interceptor.onError
-        : async () => undefined,
+      typeof interceptor.onError === "function" ? interceptor.onError : async () => undefined,
   };
 }
 
@@ -116,7 +116,9 @@ export function isClawdstrikeLike(value: unknown): value is ClawdstrikeLike {
   );
 }
 
-function isConfigurableToolInterceptor(value: ToolInterceptor): value is ConfigurableToolInterceptor {
+function isConfigurableToolInterceptor(
+  value: ToolInterceptor,
+): value is ConfigurableToolInterceptor {
   return (
     value instanceof BaseToolInterceptor ||
     typeof (value as Partial<ConfigurableToolInterceptor>).withConfig === "function"

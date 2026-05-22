@@ -19,7 +19,9 @@ use crate::runtime::vm::{
     GcStore, HostResult, Imports, ModuleRuntimeInfo, SendSyncPtr, VMGlobalKind, VMStore,
     VMStoreRawPtr, VmPtr, VmSafe, WasmFault, catch_unwind_and_record_trap,
 };
-use crate::store::{InstanceId, StoreId, StoreInstanceId, StoreOpaque, StoreResourceLimiter};
+use crate::store::{
+    Asyncness, InstanceId, StoreId, StoreInstanceId, StoreOpaque, StoreResourceLimiter,
+};
 use crate::vm::VMWasmCallFunction;
 use alloc::sync::Arc;
 use core::alloc::Layout;
@@ -32,11 +34,12 @@ use core::sync::atomic::AtomicU64;
 use core::{mem, ptr};
 #[cfg(feature = "gc")]
 use wasmtime_environ::ModuleInternedTypeIndex;
+use wasmtime_environ::error::OutOfMemory;
 use wasmtime_environ::{
     DataIndex, DefinedGlobalIndex, DefinedMemoryIndex, DefinedTableIndex, DefinedTagIndex,
-    ElemIndex, EntityIndex, EntityRef, EntitySet, FuncIndex, GlobalIndex, HostPtr, MemoryIndex,
-    Module, PrimaryMap, PtrSize, TableIndex, TableInitialValue, TableSegmentElements, TagIndex,
-    Trap, VMCONTEXT_MAGIC, VMOffsets, VMSharedTypeIndex, packed_option::ReservedValue,
+    ElemIndex, EntityIndex, EntityRef, FuncIndex, GlobalIndex, HostPtr, MemoryIndex, PtrSize,
+    TableIndex, TableInitialValue, TableSegmentElements, TagIndex, Trap, VMCONTEXT_MAGIC,
+    VMOffsets, VMSharedTypeIndex, packed_option::ReservedValue,
 };
 #[cfg(feature = "wmemcheck")]
 use wasmtime_wmemcheck::Wmemcheck;
@@ -97,6 +100,12 @@ pub struct Instance {
     /// lazy initialization. This provides access to the underlying
     /// Wasm module entities, the compiled JIT code, metadata about
     /// functions, lazy initialization state, etc.
+    //
+    // SAFETY: this field cannot be overwritten after an instance is created. It
+    // must contain this exact same value for the entire lifetime of this
+    // instance. This enables borrowing the info's `Module` and this instance at
+    // the same time (instance mutably, module not). Additionally it enables
+    // borrowing a store mutably at the same time as a contained instance.
     runtime_info: ModuleRuntimeInfo,
 
     /// WebAssembly linear memory data.
@@ -107,7 +116,7 @@ pub struct Instance {
     /// The `MemoryAllocationIndex` was given from our `InstanceAllocator` and
     /// must be given back to the instance allocator when deallocating each
     /// memory.
-    memories: PrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
+    memories: TryPrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
 
     /// WebAssembly table data.
     ///
@@ -117,15 +126,15 @@ pub struct Instance {
     /// The `TableAllocationIndex` was given from our `InstanceAllocator` and
     /// must be given back to the instance allocator when deallocating each
     /// table.
-    tables: PrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
+    tables: TryPrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
 
     /// Stores the dropped passive element segments in this instantiation by index.
     /// If the index is present in the set, the segment has been dropped.
-    dropped_elements: EntitySet<ElemIndex>,
+    dropped_elements: TryEntitySet<ElemIndex>,
 
     /// Stores the dropped passive data segments in this instantiation by index.
     /// If the index is present in the set, the segment has been dropped.
-    dropped_data: EntitySet<DataIndex>,
+    dropped_data: TryEntitySet<DataIndex>,
 
     // TODO: add support for multiple memories; `wmemcheck_state` corresponds to
     // memory 0.
@@ -157,14 +166,27 @@ impl Instance {
     /// and `tables` must have been allocated for `req.store`.
     unsafe fn new(
         req: InstanceAllocationRequest,
-        memories: PrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
-        tables: PrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
-        memory_tys: &PrimaryMap<MemoryIndex, wasmtime_environ::Memory>,
-    ) -> InstanceHandle {
+        memories: TryPrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)>,
+        tables: TryPrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)>,
+    ) -> Result<InstanceHandle, OutOfMemory> {
         let module = req.runtime_info.env_module();
-        let dropped_elements = EntitySet::with_capacity(module.passive_elements.len());
-        let dropped_data = EntitySet::with_capacity(module.passive_data_map.len());
+        let memory_tys = &module.memories;
+        let dropped_elements = TryEntitySet::with_capacity(module.passive_elements.len())?;
+        let dropped_data = TryEntitySet::with_capacity(module.passive_data_map.len())?;
 
+        #[cfg(feature = "wmemcheck")]
+        let wmemcheck_state = if req.store.engine().config().wmemcheck {
+            let size = memory_tys
+                .iter()
+                .next()
+                .map(|memory| memory.1.limits.min)
+                .unwrap_or(0)
+                * 64
+                * 1024;
+            Some(Wmemcheck::new(size.try_into().unwrap()))
+        } else {
+            None
+        };
         #[cfg(not(feature = "wmemcheck"))]
         let _ = memory_tys;
 
@@ -176,35 +198,17 @@ impl Instance {
             dropped_elements,
             dropped_data,
             #[cfg(feature = "wmemcheck")]
-            wmemcheck_state: {
-                if req.store.engine().config().wmemcheck {
-                    let size = memory_tys
-                        .iter()
-                        .next()
-                        .map(|memory| memory.1.limits.min)
-                        .unwrap_or(0)
-                        * 64
-                        * 1024;
-                    Some(Wmemcheck::new(size.try_into().unwrap()))
-                } else {
-                    None
-                }
-            },
+            wmemcheck_state,
             store: None,
             vmctx: OwnedVMContext::new(),
-        });
+        })?;
 
         // SAFETY: this vmctx was allocated with the same layout above, so it
         // should be safe to initialize with the same values here.
         unsafe {
-            ret.get_mut().initialize_vmctx(
-                module,
-                req.runtime_info.offsets(),
-                req.store,
-                req.imports,
-            );
+            ret.get_mut().initialize_vmctx(req.store, req.imports);
         }
-        ret
+        Ok(ret)
     }
 
     /// Converts a raw `VMContext` pointer into a raw `Instance` pointer.
@@ -675,6 +679,20 @@ impl Instance {
                     index,
                 )
             }
+            #[cfg(feature = "component-model")]
+            VMGlobalKind::TaskMayBlock => {
+                // SAFETY: validity of this `&Instance` means validity of its
+                // imports meaning we can read the id of the vmctx within.
+                let id = unsafe {
+                    let vmctx = super::component::VMComponentContext::from_opaque(
+                        import.vmctx.unwrap().as_non_null(),
+                    );
+                    super::component::ComponentInstance::vmctx_instance_id(vmctx)
+                };
+                crate::Global::from_task_may_block(
+                    crate::component::store::StoreComponentInstanceId::new(store, id),
+                )
+            }
         }
     }
 
@@ -695,15 +713,6 @@ impl Instance {
             (id, import.index)
         };
         crate::Tag::from_raw(StoreInstanceId::new(store, id), def_index)
-    }
-
-    /// Return an iterator over the exports of this instance.
-    ///
-    /// Specifically, it provides access to the key-value pairs, where the keys
-    /// are export names, and the values are export declarations which can be
-    /// resolved `lookup_by_declaration`.
-    pub fn exports(&self) -> wasmparser::collections::index_map::Iter<'_, String, EntityIndex> {
-        self.env_module().exports.iter()
     }
 
     /// Grow memory by the specified amount of pages.
@@ -937,6 +946,7 @@ impl Instance {
     pub(crate) async fn table_init(
         store: &mut StoreOpaque,
         limiter: Option<&mut StoreResourceLimiter<'_>>,
+        asyncness: Asyncness,
         instance: InstanceId,
         table_index: TableIndex,
         elem_index: ElemIndex,
@@ -952,6 +962,7 @@ impl Instance {
         Self::table_init_segment(
             store,
             limiter,
+            asyncness,
             instance,
             &mut const_evaluator,
             table_index,
@@ -966,6 +977,7 @@ impl Instance {
     pub(crate) async fn table_init_segment(
         store: &mut StoreOpaque,
         mut limiter: Option<&mut StoreResourceLimiter<'_>>,
+        asyncness: Asyncness,
         elements_instance_id: InstanceId,
         const_evaluator: &mut ConstExprEvaluator,
         table_index: TableIndex,
@@ -1016,7 +1028,7 @@ impl Instance {
                     .get(src..)
                     .and_then(|s| s.get(..len))
                     .ok_or(Trap::TableOutOfBounds)?;
-                let mut context = ConstEvalContext::new(elements_instance_id);
+                let mut context = ConstEvalContext::new(elements_instance_id, asyncness);
                 for (i, expr) in positions.zip(exprs) {
                     let element = const_evaluator
                         .eval(&mut store, limiter.as_deref_mut(), &mut context, expr)
@@ -1030,13 +1042,18 @@ impl Instance {
     }
 
     /// Drop an element.
-    pub(crate) fn elem_drop(self: Pin<&mut Self>, elem_index: ElemIndex) {
+    pub(crate) fn elem_drop(
+        self: Pin<&mut Self>,
+        elem_index: ElemIndex,
+    ) -> Result<(), OutOfMemory> {
         // https://webassembly.github.io/reference-types/core/exec/instructions.html#exec-elem-drop
 
-        self.dropped_elements_mut().insert(elem_index);
+        self.dropped_elements_mut().insert(elem_index)?;
 
         // Note that we don't check that we actually removed a segment because
         // dropping a non-passive segment is a no-op (not a trap).
+
+        Ok(())
     }
 
     /// Get a locally-defined memory.
@@ -1198,11 +1215,16 @@ impl Instance {
     }
 
     /// Drop the given data segment, truncating its length to zero.
-    pub(crate) fn data_drop(self: Pin<&mut Self>, data_index: DataIndex) {
-        self.dropped_data_mut().insert(data_index);
+    pub(crate) fn data_drop(
+        self: Pin<&mut Self>,
+        data_index: DataIndex,
+    ) -> Result<(), OutOfMemory> {
+        self.dropped_data_mut().insert(data_index)?;
 
         // Note that we don't check that we actually removed a segment because
         // dropping a non-passive segment is a no-op (not a trap).
+
+        Ok(())
     }
 
     /// Get a table by index regardless of whether it is locally-defined
@@ -1308,30 +1330,42 @@ impl Instance {
         }
     }
 
+    /// Same as `self.runtime_info.env_module()` but additionally returns the
+    /// `Pin<&mut Self>` with the same original lifetime.
+    pub fn module_and_self(self: Pin<&mut Self>) -> (&wasmtime_environ::Module, Pin<&mut Self>) {
+        // SAFETY: this function is projecting both `&Module` and the same
+        // pointer both connected to the same lifetime. This is safe because
+        // it's a contract of `Pin<&mut Self>` that the `runtime_info` field is
+        // never written, meaning it's effectively unsafe to have `&mut Module`
+        // projected from `Pin<&mut Self>`. Consequently it's safe to have a
+        // read-only view of the field while still retaining mutable access to
+        // all other fields.
+        let module = self.runtime_info.env_module();
+        let module = &raw const *module;
+        let module = unsafe { &*module };
+        (module, self)
+    }
+
     /// Initialize the VMContext data associated with this Instance.
     ///
     /// The `VMContext` memory is assumed to be uninitialized; any field
     /// that we need in a certain state will be explicitly written by this
     /// function.
-    unsafe fn initialize_vmctx(
-        mut self: Pin<&mut Self>,
-        module: &Module,
-        offsets: &VMOffsets<HostPtr>,
-        store: &StoreOpaque,
-        imports: Imports,
-    ) {
-        assert!(ptr::eq(module, self.env_module().as_ref()));
+    unsafe fn initialize_vmctx(self: Pin<&mut Self>, store: &StoreOpaque, imports: Imports) {
+        let (module, mut instance) = self.module_and_self();
 
         // SAFETY: the type of the magic field is indeed `u32` and this function
         // is initializing its value.
         unsafe {
-            self.vmctx_plus_offset_raw::<u32>(offsets.ptr.vmctx_magic())
+            let offsets = instance.runtime_info.offsets();
+            instance
+                .vmctx_plus_offset_raw::<u32>(offsets.ptr.vmctx_magic())
                 .write(VMCONTEXT_MAGIC);
         }
 
         // SAFETY: it's up to the caller to provide a valid store pointer here.
         unsafe {
-            self.as_mut().set_store(store);
+            instance.as_mut().set_store(store);
         }
 
         // Initialize shared types
@@ -1339,8 +1373,8 @@ impl Instance {
         // SAFETY: validity of the vmctx means it should be safe to write to it
         // here.
         unsafe {
-            let types = NonNull::from(self.runtime_info.type_ids());
-            self.type_ids_array().write(types.cast().into());
+            let types = NonNull::from(instance.runtime_info.type_ids());
+            instance.type_ids_array().write(types.cast().into());
         }
 
         // Initialize the built-in functions
@@ -1351,7 +1385,9 @@ impl Instance {
         unsafe {
             static BUILTINS: VMBuiltinFunctionsArray = VMBuiltinFunctionsArray::INIT;
             let ptr = BUILTINS.expose_provenance();
-            self.vmctx_plus_offset_raw(offsets.ptr.vmctx_builtin_functions())
+            let offsets = instance.runtime_info.offsets();
+            instance
+                .vmctx_plus_offset_raw(offsets.ptr.vmctx_builtin_functions())
                 .write(VmPtr::from(ptr));
         }
 
@@ -1361,37 +1397,43 @@ impl Instance {
         // validity of each item itself is a contract the caller must uphold.
         debug_assert_eq!(imports.functions.len(), module.num_imported_funcs);
         unsafe {
+            let offsets = instance.runtime_info.offsets();
             ptr::copy_nonoverlapping(
                 imports.functions.as_ptr(),
-                self.vmctx_plus_offset_raw(offsets.vmctx_imported_functions_begin())
+                instance
+                    .vmctx_plus_offset_raw(offsets.vmctx_imported_functions_begin())
                     .as_ptr(),
                 imports.functions.len(),
             );
             debug_assert_eq!(imports.tables.len(), module.num_imported_tables);
             ptr::copy_nonoverlapping(
                 imports.tables.as_ptr(),
-                self.vmctx_plus_offset_raw(offsets.vmctx_imported_tables_begin())
+                instance
+                    .vmctx_plus_offset_raw(offsets.vmctx_imported_tables_begin())
                     .as_ptr(),
                 imports.tables.len(),
             );
             debug_assert_eq!(imports.memories.len(), module.num_imported_memories);
             ptr::copy_nonoverlapping(
                 imports.memories.as_ptr(),
-                self.vmctx_plus_offset_raw(offsets.vmctx_imported_memories_begin())
+                instance
+                    .vmctx_plus_offset_raw(offsets.vmctx_imported_memories_begin())
                     .as_ptr(),
                 imports.memories.len(),
             );
             debug_assert_eq!(imports.globals.len(), module.num_imported_globals);
             ptr::copy_nonoverlapping(
                 imports.globals.as_ptr(),
-                self.vmctx_plus_offset_raw(offsets.vmctx_imported_globals_begin())
+                instance
+                    .vmctx_plus_offset_raw(offsets.vmctx_imported_globals_begin())
                     .as_ptr(),
                 imports.globals.len(),
             );
             debug_assert_eq!(imports.tags.len(), module.num_imported_tags);
             ptr::copy_nonoverlapping(
                 imports.tags.as_ptr(),
-                self.vmctx_plus_offset_raw(offsets.vmctx_imported_tags_begin())
+                instance
+                    .vmctx_plus_offset_raw(offsets.vmctx_imported_tags_begin())
                     .as_ptr(),
                 imports.tags.len(),
             );
@@ -1408,8 +1450,9 @@ impl Instance {
         // here and the various types of pointers and such here should all be
         // valid.
         unsafe {
-            let mut ptr = self.vmctx_plus_offset_raw(offsets.vmctx_tables_begin());
-            let tables = self.as_mut().tables_mut();
+            let offsets = instance.runtime_info.offsets();
+            let mut ptr = instance.vmctx_plus_offset_raw(offsets.vmctx_tables_begin());
+            let tables = instance.as_mut().tables_mut();
             for i in 0..module.num_defined_tables() {
                 ptr.write(tables[DefinedTableIndex::new(i)].1.vmtable());
                 ptr = ptr.add(1);
@@ -1426,9 +1469,11 @@ impl Instance {
         // here and the various types of pointers and such here should all be
         // valid.
         unsafe {
-            let mut ptr = self.vmctx_plus_offset_raw(offsets.vmctx_memories_begin());
-            let mut owned_ptr = self.vmctx_plus_offset_raw(offsets.vmctx_owned_memories_begin());
-            let memories = self.as_mut().memories_mut();
+            let offsets = instance.runtime_info.offsets();
+            let mut ptr = instance.vmctx_plus_offset_raw(offsets.vmctx_memories_begin());
+            let mut owned_ptr =
+                instance.vmctx_plus_offset_raw(offsets.vmctx_owned_memories_begin());
+            let memories = instance.as_mut().memories_mut();
             for i in 0..module.num_defined_memories() {
                 let defined_memory_index = DefinedMemoryIndex::new(i);
                 let memory_index = module.memory_index(defined_memory_index);
@@ -1461,7 +1506,7 @@ impl Instance {
         // leaving this undefined.
         unsafe {
             for (index, _init) in module.global_initializers.iter() {
-                self.global_ptr(index).write(VMGlobalDefinition::new());
+                instance.global_ptr(index).write(VMGlobalDefinition::new());
             }
         }
 
@@ -1471,7 +1516,8 @@ impl Instance {
         // here and the various types of pointers and such here should all be
         // valid.
         unsafe {
-            let mut ptr = self.vmctx_plus_offset_raw(offsets.vmctx_tags_begin());
+            let offsets = instance.runtime_info.offsets();
+            let mut ptr = instance.vmctx_plus_offset_raw(offsets.vmctx_tags_begin());
             for i in 0..module.num_defined_tags() {
                 let defined_index = DefinedTagIndex::new(i);
                 let tag_index = module.tag_index(defined_index);
@@ -1580,26 +1626,26 @@ impl Instance {
         unsafe { &mut self.get_unchecked_mut().store }
     }
 
-    fn dropped_elements_mut(self: Pin<&mut Self>) -> &mut EntitySet<ElemIndex> {
+    fn dropped_elements_mut(self: Pin<&mut Self>) -> &mut TryEntitySet<ElemIndex> {
         // SAFETY: see `store_mut` above.
         unsafe { &mut self.get_unchecked_mut().dropped_elements }
     }
 
-    fn dropped_data_mut(self: Pin<&mut Self>) -> &mut EntitySet<DataIndex> {
+    fn dropped_data_mut(self: Pin<&mut Self>) -> &mut TryEntitySet<DataIndex> {
         // SAFETY: see `store_mut` above.
         unsafe { &mut self.get_unchecked_mut().dropped_data }
     }
 
     fn memories_mut(
         self: Pin<&mut Self>,
-    ) -> &mut PrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)> {
+    ) -> &mut TryPrimaryMap<DefinedMemoryIndex, (MemoryAllocationIndex, Memory)> {
         // SAFETY: see `store_mut` above.
         unsafe { &mut self.get_unchecked_mut().memories }
     }
 
     pub(crate) fn tables_mut(
         self: Pin<&mut Self>,
-    ) -> &mut PrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)> {
+    ) -> &mut TryPrimaryMap<DefinedTableIndex, (TableAllocationIndex, Table)> {
         // SAFETY: see `store_mut` above.
         unsafe { &mut self.get_unchecked_mut().tables }
     }
@@ -1668,7 +1714,7 @@ pub struct OwnedVMContext<T> {
     /// The long version of why this field exists is that the rules that MIRI
     /// uses to ensure pointers are used correctly have various conditions on
     /// them depend on how pointers are used. More specifically if `*mut T` is
-    /// derived from `&mut T`, then that invalidates all prior pointers drived
+    /// derived from `&mut T`, then that invalidates all prior pointers derived
     /// from the `&mut T`. This means that while we liberally want to re-acquire
     /// a `*mut VMContext` throughout the implementation of `Instance` the
     /// trivial way, a function `fn vmctx(Pin<&mut Instance>) -> *mut VMContext`
@@ -1847,7 +1893,7 @@ impl<T: InstanceLayout> OwnedInstance<T> {
     /// Allocates a new `OwnedInstance` and places `instance` inside of it.
     ///
     /// This will `instance`
-    pub(super) fn new(mut instance: T) -> OwnedInstance<T> {
+    pub(super) fn new(mut instance: T) -> Result<OwnedInstance<T>, OutOfMemory> {
         let layout = instance.layout();
         debug_assert!(layout.size() >= size_of_val(&instance));
         debug_assert!(layout.align() >= align_of_val(&instance));
@@ -1862,10 +1908,9 @@ impl<T: InstanceLayout> OwnedInstance<T> {
                 alloc::alloc::alloc(layout)
             }
         };
-        if ptr.is_null() {
-            alloc::alloc::handle_alloc_error(layout);
-        }
-        let instance_ptr = NonNull::new(ptr.cast::<T>()).unwrap();
+        let Some(instance_ptr) = NonNull::new(ptr.cast::<T>()) else {
+            return Err(OutOfMemory::new(layout.size()));
+        };
 
         // SAFETY: it's part of the unsafe contract of `InstanceLayout` that the
         // `add` here is appropriate for the layout allocated.
@@ -1894,7 +1939,7 @@ impl<T: InstanceLayout> OwnedInstance<T> {
         );
         debug_assert_eq!(vmctx_self_reference.addr(), ret.get().vmctx().addr());
 
-        ret
+        Ok(ret)
     }
 
     /// Gets the raw underlying `&Instance` from this handle.

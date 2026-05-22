@@ -182,7 +182,7 @@ impl<T> VMHostArray<T> {
 pub type VMPayloads = VMHostArray<u128>;
 
 /// Type for a list of handlers, represented by the handled tag. Thus, the
-/// stored data is actually `*mut VMTagDefinition`, but we don't havr access to
+/// stored data is actually `*mut VMTagDefinition`, but we don't have access to
 /// that here.
 pub type VMHandlerList = VMHostArray<*mut u8>;
 
@@ -302,7 +302,7 @@ pub fn cont_new(
     func: *mut u8,
     param_count: u32,
     result_count: u32,
-) -> anyhow::Result<*mut VMContRef> {
+) -> crate::Result<*mut VMContRef> {
     let instance = store.instance_mut(instance);
     let caller_vmctx = instance.vmctx();
 

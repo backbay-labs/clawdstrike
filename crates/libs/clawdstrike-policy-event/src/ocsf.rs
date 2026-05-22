@@ -297,6 +297,25 @@ fn classify_event(
             None,
             None,
         ),
+        (PolicyEventType::Custom, PolicyEventData::Custom(c))
+            if c.custom_type == "endpoint.dns_lookup" =>
+        {
+            let query = c
+                .extra
+                .get("endpointEvent")
+                .and_then(|event| event.get("query"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("dns_lookup")
+                .to_string();
+            (
+                "dns_lookup",
+                "network",
+                query.clone(),
+                None,
+                Some(query),
+                None,
+            )
+        }
         _ => (
             "custom",
             "configuration",
@@ -418,7 +437,9 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
-    use crate::event::{FileEventData, NetworkEventData, SecretEventData, ToolEventData};
+    use crate::event::{
+        CustomEventData, FileEventData, NetworkEventData, SecretEventData, ToolEventData,
+    };
     use chrono::Utc;
 
     #[test]
@@ -463,6 +484,36 @@ mod tests {
 
         let json = policy_event_to_ocsf(&event).unwrap();
         assert_eq!(json["class_uid"], 2004);
+    }
+
+    #[test]
+    fn endpoint_dns_lookup_projects_to_network_finding() {
+        let event = PolicyEvent {
+            event_id: "evt-dns".to_string(),
+            event_type: PolicyEventType::Custom,
+            timestamp: Utc::now(),
+            session_id: None,
+            data: PolicyEventData::Custom(CustomEventData {
+                custom_type: "endpoint.dns_lookup".to_string(),
+                extra: serde_json::json!({
+                    "endpointEvent": {
+                        "type": "dns_lookup",
+                        "query": "packages.example.invalid",
+                        "record_type": "A"
+                    }
+                })
+                .as_object()
+                .cloned()
+                .unwrap(),
+            }),
+            metadata: None,
+            context: None,
+        };
+
+        let json = policy_event_to_ocsf(&event).unwrap();
+        assert_eq!(json["class_uid"], 2004);
+        assert_eq!(json["resources"][0]["type"], "network");
+        assert_eq!(json["resources"][0]["name"], "packages.example.invalid");
     }
 
     #[test]

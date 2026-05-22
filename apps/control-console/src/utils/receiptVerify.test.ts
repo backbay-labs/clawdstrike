@@ -182,6 +182,64 @@ describe("verifyReceipt", () => {
     expect(result.error).toBe("Something else went wrong");
   });
 
+  it("verifies a SignedReceipt using endpoint-decision signer metadata", async () => {
+    importKeyStub.mockResolvedValue({ type: "public" });
+    verifyStub.mockResolvedValue(true);
+
+    const signedReceipt = {
+      receipt: {
+        version: "hush.receipt.v1",
+        receipt_id: "response-execution:1",
+        timestamp: "2026-05-16T12:00:00Z",
+        content_hash: "00".repeat(32),
+        verdict: "allow",
+        metadata: {
+          endpointDecision: {
+            receiptFamily: "response_execution",
+            signer: {
+              signerIdentity: "local-edr:test",
+              signerPublicKey: "11".repeat(32),
+            },
+            policy: {
+              policyHash: "22".repeat(32),
+              policyEpoch: 42,
+            },
+            decision: {
+              actionType: "collect_evidence",
+            },
+          },
+        },
+      },
+      signatures: {
+        signer: "33".repeat(64),
+      },
+    };
+
+    const result = await verifyReceipt(JSON.stringify(signedReceipt));
+
+    expect(result.valid).toBe(true);
+    expect(result.receipt?.signer_public_key).toBe("11".repeat(32));
+    expect(result.receipt?.decision).toBe("response_execution");
+    expect(result.receipt?.action_type).toBe("collect_evidence");
+    expect(result.receipt?.policy_hash).toBe("22".repeat(32));
+    expect(result.receipt?.signature).toBe("33".repeat(64));
+    expect(importKeyStub).toHaveBeenCalledWith(
+      "raw",
+      new Uint8Array(32).fill(0x11),
+      { name: "Ed25519" },
+      false,
+      ["verify"],
+    );
+    expect(verifyStub).toHaveBeenCalledOnce();
+    const verifyArgs = verifyStub.mock.calls[0];
+    expect(verifyArgs[0]).toBe("Ed25519");
+    expect(verifyArgs[1]).toEqual({ type: "public" });
+    expect(new Uint8Array(verifyArgs[2] as ArrayBuffer)).toEqual(new Uint8Array(64).fill(0x33));
+    expect(new TextDecoder().decode(verifyArgs[3] as ArrayBuffer)).toContain(
+      '"receipt_id":"response-execution:1"',
+    );
+  });
+
   // ---- (i) Canonical JSON ordering ----
   it("produces the same verification regardless of field order", async () => {
     importKeyStub.mockResolvedValue({ type: "public" });

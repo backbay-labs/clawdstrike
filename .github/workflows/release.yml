@@ -20,7 +20,7 @@ env:
   CIBUILDWHEEL_VERSION: "2.23.3"
 
 concurrency:
-  group: release-${{ github.ref_name || inputs.version }}
+  group: release-${{ github.workflow }}-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -71,8 +71,59 @@ jobs:
       - name: Validate version consistency
         run: scripts/release-preflight.sh "${{ needs.resolve-version.outputs.version }}"
 
+      - name: Validate macOS packaging sources are release-capable
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            apps/agent/src-tauri/macos/system-extension/entitlements/agent-app.entitlements
+            apps/agent/src-tauri/macos/system-extension/entitlements/combined-system-extension.entitlements
+            apps/agent/src-tauri/macos/system-extension/plists/agent-packaging-template.plist
+            apps/agent/src-tauri/macos/system-extension/plists/combined-system-extension-template.plist
+            apps/agent/src-tauri/macos/system-extension/profiles/developer-id-profile-template.plist
+          )
+
+          for path in "${required[@]}"; do
+            [[ -f "$path" ]] || {
+              echo "missing macOS packaging asset: $path" >&2
+              exit 1
+            }
+          done
+
+          placeholder_pattern='(__[A-Z0-9_]+__|_{5,})'
+          placeholder_hits=0
+          while IFS= read -r -d '' path; do
+            if grep -I -nE "$placeholder_pattern" "$path"; then
+              placeholder_hits=1
+            fi
+          done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
+          if (( placeholder_hits != 0 )); then
+            echo "macOS combined-system-extension packaging still contains placeholders; replace them before release." >&2
+            exit 1
+          fi
+
+          scaffold_hits=0
+          while IFS= read -r -d '' path; do
+            if grep -I -n "scaffold_only" "$path"; then
+              scaffold_hits=1
+            fi
+          done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
+          if (( scaffold_hits != 0 )); then
+            echo "macOS packaging sources still declare scaffold_only state; release requires concrete source metadata plus a real embedded system extension bundle." >&2
+            exit 1
+          fi
+
       - name: Run tests
         run: cargo test --workspace
+
+      - name: Verify vendored offline Rust dependency graph
+        run: CARGO_NET_OFFLINE=true scripts/cargo-offline.sh metadata --locked --format-version 1
+
+      - name: Test vendored offline Rust workspace
+        run: scripts/cargo-offline.sh test --workspace --all-targets
+        env:
+          CARGO_NET_OFFLINE: "true"
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -939,6 +990,20 @@ jobs:
     name: Build Agent DMG
     runs-on: macos-latest
     needs: preflight
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      NOTARYTOOL_PROFILE: ${{ secrets.NOTARYTOOL_PROFILE }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_SIGNING_KEYCHAIN_PASSWORD }}
+      CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING: "1"
+      CLAWDSTRIKE_SYSTEM_EXTENSION_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH: ${{ vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH }}
+      CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256: ${{ vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 || secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 }}
+      NOTARIZE_OUT_DIR: ${{ github.workspace }}/.github-artifacts/clawdstrike-notarization
     steps:
       - uses: actions/checkout@v6
 
@@ -950,11 +1015,142 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --locked --version '^2'
+        run: cargo install tauri-cli --locked --version '2.10.2'
 
-      - name: Build agent DMG bundle
-        working-directory: apps/agent
-        run: cargo tauri build --bundles dmg
+      - name: Test macOS system extension Swift packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/endpoint-security
+          swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/network-extension
+
+      - name: Import Apple signing certificate
+        if: ${{ env.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}
+        shell: bash
+        env:
+          KEYCHAIN_PATH: ${{ runner.temp }}/clawdstrike-signing.keychain-db
+          CERT_PATH: ${{ runner.temp }}/developer-id-application.p12
+        run: |
+          set -euo pipefail
+          keychain_password="${APPLE_SIGNING_KEYCHAIN_PASSWORD:-$(uuidgen)}"
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          certificate = os.environ["APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64"]
+          Path(os.environ["CERT_PATH"]).write_bytes(base64.b64decode(certificate))
+          PY
+          security create-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          existing_keychains="$(security list-keychains -d user | sed 's/[\" ]//g')"
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $existing_keychains
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$keychain_password" \
+            "$KEYCHAIN_PATH"
+
+      - name: Validate notarytool profile credentials
+        if: ${{ env.NOTARYTOOL_PROFILE != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$APPLE_ID" ]] || missing+=(APPLE_ID)
+          [[ -n "$APPLE_PASSWORD" ]] || missing+=(APPLE_PASSWORD)
+          [[ -n "$APPLE_TEAM_ID" ]] || missing+=(APPLE_TEAM_ID)
+          if (( ${#missing[@]} > 0 )); then
+            printf 'NOTARYTOOL_PROFILE requires %s so this fresh runner can create the keychain profile.\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Store notarytool credentials
+        if: ${{ env.NOTARYTOOL_PROFILE != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun notarytool store-credentials "$NOTARYTOOL_PROFILE" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID"
+
+      - name: Provision prebuilt system extension bundle
+        shell: bash
+        env:
+          SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64: ${{ secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64 }}
+        run: |
+          set -euo pipefail
+          sysext_path="${CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH:-}"
+          if [[ -n "$sysext_path" && "$sysext_path" != /* ]]; then
+            sysext_path="${GITHUB_WORKSPACE}/${sysext_path}"
+          fi
+
+          if [[ -z "$sysext_path" ]]; then
+            if [[ -z "$SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64" ]]; then
+              {
+                echo "A signed prebuilt .systemextension bundle is required before notarization."
+                echo "Set vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH to a checked-out bundle path"
+                echo "or set secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64 to a base64-encoded zip containing exactly one .systemextension directory."
+              } >&2
+              exit 1
+            fi
+            sysext_zip="${RUNNER_TEMP}/clawdstrike-system-extension.zip"
+            sysext_unpack_dir="${RUNNER_TEMP}/clawdstrike-system-extension"
+            mkdir -p "$sysext_unpack_dir"
+            ZIP_PATH="$sysext_zip" python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["ZIP_PATH"]).write_bytes(
+              base64.b64decode(os.environ["SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64"])
+          )
+          PY
+            unzip -q "$sysext_zip" -d "$sysext_unpack_dir"
+            candidates_file="${RUNNER_TEMP}/clawdstrike-system-extension-candidates.txt"
+            find "$sysext_unpack_dir" -type d -name '*.systemextension' | sort > "$candidates_file"
+            candidate_count="$(wc -l < "$candidates_file" | tr -d '[:space:]')"
+            if [[ "$candidate_count" != "1" ]]; then
+              echo "Expected exactly one .systemextension in CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64, found ${candidate_count}." >&2
+              cat "$candidates_file" >&2
+              exit 1
+            fi
+            sysext_path="$(sed -n '1p' "$candidates_file")"
+          fi
+
+          if [[ ! -d "$sysext_path" ]]; then
+            echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH does not exist on this runner: $sysext_path" >&2
+            exit 1
+          fi
+          if [[ "$sysext_path" != *.systemextension ]]; then
+            echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH must end in .systemextension: $sysext_path" >&2
+            exit 1
+          fi
+          echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH=$sysext_path" >> "$GITHUB_ENV"
+          echo "Using prebuilt system extension bundle: $sysext_path"
+
+      - name: Build and notarize agent app bundle
+        run: bash scripts/notarize-agent-macos.sh
+
+      - name: Cleanup Apple signing keychain
+        if: ${{ always() && env.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}
+        shell: bash
+        env:
+          KEYCHAIN_PATH: ${{ runner.temp }}/clawdstrike-signing.keychain-db
+          CERT_PATH: ${{ runner.temp }}/developer-id-application.p12
+        run: |
+          set -euo pipefail
+          rm -f "$CERT_PATH"
+          security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
 
       - name: Upload agent DMG artifact
         uses: actions/upload-artifact@v6
@@ -962,6 +1158,14 @@ jobs:
           name: clawdstrike-agent-dmg
           path: apps/agent/src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+
+      - name: Upload notarization evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: clawdstrike-agent-notarization
+          path: ${{ env.NOTARIZE_OUT_DIR }}/
+          if-no-files-found: ignore
 
   create-release:
     name: Create GitHub Release

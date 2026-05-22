@@ -28,7 +28,8 @@ pub struct LruNode {
 }
 
 impl Lru {
-    pub fn new(regclass: RegClass, regs: &[PReg]) -> Self {
+    pub fn new(regclass: RegClass, regs: &PRegSet) -> Self {
+        let regs = regs.into_iter().collect::<Vec<_>>();
         let mut data = vec![
             LruNode {
                 prev: u8::MAX,
@@ -248,7 +249,7 @@ impl fmt::Debug for Lru {
             while node != self.head {
                 if seen.contains(&node) {
                     panic!(
-                        "The {:?} LRU is messed up: 
+                        "The {:?} LRU is messed up:
                        head: {:?}, {:?} -> p{node}, actual data: {:?}",
                         self.regclass, self.head, data_str, self.data
                     );
@@ -298,7 +299,7 @@ impl<T: PartialEq> PartialEq for PartedByRegClass<T> {
 pub type Lrus = PartedByRegClass<Lru>;
 
 impl Lrus {
-    pub fn new(int_regs: &[PReg], float_regs: &[PReg], vec_regs: &[PReg]) -> Self {
+    pub fn new(int_regs: &PRegSet, float_regs: &PRegSet, vec_regs: &PRegSet) -> Self {
         Self {
             items: [
                 Lru::new(RegClass::Int, int_regs),
