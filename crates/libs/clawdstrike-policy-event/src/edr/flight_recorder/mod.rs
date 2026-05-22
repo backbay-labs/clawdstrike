@@ -434,6 +434,7 @@ impl EndpointFlightRecorder {
                     retained.len(),
                     observation_count
                 ),
+                manifest_hash: None,
                 pre_compaction_head: pre_compaction_chain.previous_record_hash.clone(),
                 pre_compaction_record_count: pre_compaction_chain.record_count(),
                 post_compaction_head: post_compaction_chain.previous_record_hash.clone(),
@@ -444,6 +445,7 @@ impl EndpointFlightRecorder {
                     .collect(),
                 removed_records: records.clone(),
             };
+            let manifest = seal_endpoint_flight_recorder_compaction_manifest(manifest)?;
             append_endpoint_flight_recorder_compaction_manifest(&path, &manifest)?;
             Some(manifest)
         } else {
@@ -603,6 +605,12 @@ fn read_endpoint_observations(path: &Path) -> Result<Vec<EndpointObservation>> {
     let mut observations = Vec::new();
     let (mut chain_state, compaction_manifest) =
         endpoint_flight_recorder_compaction_initial_state(path)?;
+    let expected_retained_observation_count = compaction_manifest
+        .as_ref()
+        .map(|manifest| manifest.retained_observation_ids.len())
+        .unwrap_or_default();
+    let mut observed_retained_observation_ids =
+        Vec::with_capacity(expected_retained_observation_count);
     let mut observed_compaction_tail =
         observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state);
     for (idx, line) in contents.lines().enumerate() {
@@ -623,6 +631,9 @@ fn read_endpoint_observations(path: &Path) -> Result<Vec<EndpointObservation>> {
                 idx + 1
             )
         })?;
+        if observed_retained_observation_ids.len() < expected_retained_observation_count {
+            observed_retained_observation_ids.push(observation.observation_id.clone());
+        }
         observed_compaction_tail = observed_compaction_tail
             .or_else(|| observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state));
         observations.push(observation);
@@ -632,6 +643,9 @@ fn read_endpoint_observations(path: &Path) -> Result<Vec<EndpointObservation>> {
         compaction_manifest.as_ref(),
         &chain_state,
         observed_compaction_tail.as_ref(),
+        compaction_manifest
+            .as_ref()
+            .map(|_| observed_retained_observation_ids.as_slice()),
     )?;
     Ok(observations)
 }
@@ -652,6 +666,12 @@ fn read_endpoint_flight_recorder_log_chain_state(
     let reader = BufReader::new(file);
     let (mut chain_state, compaction_manifest) =
         endpoint_flight_recorder_compaction_initial_state(path)?;
+    let expected_retained_observation_count = compaction_manifest
+        .as_ref()
+        .map(|manifest| manifest.retained_observation_ids.len())
+        .unwrap_or_default();
+    let mut observed_retained_observation_ids =
+        Vec::with_capacity(expected_retained_observation_count);
     let mut observed_compaction_tail =
         observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state);
     for (idx, line) in reader.lines().enumerate() {
@@ -666,12 +686,13 @@ fn read_endpoint_flight_recorder_log_chain_state(
         if trimmed.is_empty() {
             continue;
         }
-        let _ = parse_endpoint_flight_recorder_log_line(
-            path,
-            idx + 1,
-            trimmed,
-            Some(&mut chain_state),
-        )?;
+        if let Some(observation) =
+            parse_endpoint_flight_recorder_log_line(path, idx + 1, trimmed, Some(&mut chain_state))?
+        {
+            if observed_retained_observation_ids.len() < expected_retained_observation_count {
+                observed_retained_observation_ids.push(observation.observation_id);
+            }
+        }
         observed_compaction_tail = observed_compaction_tail
             .or_else(|| observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state));
     }
@@ -680,6 +701,9 @@ fn read_endpoint_flight_recorder_log_chain_state(
         compaction_manifest.as_ref(),
         &chain_state,
         observed_compaction_tail.as_ref(),
+        compaction_manifest
+            .as_ref()
+            .map(|_| observed_retained_observation_ids.as_slice()),
     )?;
     Ok(chain_state)
 }
@@ -1253,7 +1277,16 @@ fn rebuild_endpoint_observation_index(
     let mut byte_offset = 0u64;
     let mut line = String::new();
     let mut line_number = 0usize;
-    let mut chain_state = EndpointFlightRecorderLogChainState::default();
+    let (mut chain_state, compaction_manifest) =
+        endpoint_flight_recorder_compaction_initial_state(path)?;
+    let expected_retained_observation_count = compaction_manifest
+        .as_ref()
+        .map(|manifest| manifest.retained_observation_ids.len())
+        .unwrap_or_default();
+    let mut observed_retained_observation_ids =
+        Vec::with_capacity(expected_retained_observation_count);
+    let mut observed_compaction_tail =
+        observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state);
 
     loop {
         line.clear();
@@ -1283,6 +1316,12 @@ fn rebuild_endpoint_observation_index(
                     line_number
                 )
             })?;
+            if observed_retained_observation_ids.len() < expected_retained_observation_count {
+                observed_retained_observation_ids.push(observation.observation_id.clone());
+            }
+            observed_compaction_tail = observed_compaction_tail.or_else(|| {
+                observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state)
+            });
             entries.push(endpoint_observation_index_entry(
                 &observation,
                 byte_offset,
@@ -1291,6 +1330,16 @@ fn rebuild_endpoint_observation_index(
         }
         byte_offset = byte_offset.saturating_add(byte_len as u64);
     }
+
+    validate_endpoint_flight_recorder_compaction_tail(
+        path,
+        compaction_manifest.as_ref(),
+        &chain_state,
+        observed_compaction_tail.as_ref(),
+        compaction_manifest
+            .as_ref()
+            .map(|_| observed_retained_observation_ids.as_slice()),
+    )?;
 
     Ok(entries)
 }
@@ -1566,6 +1615,46 @@ fn append_endpoint_flight_recorder_compaction_manifest(
     Ok(())
 }
 
+fn seal_endpoint_flight_recorder_compaction_manifest(
+    mut manifest: EndpointFlightRecorderCompactionManifest,
+) -> Result<EndpointFlightRecorderCompactionManifest> {
+    manifest.manifest_hash = None;
+    manifest.manifest_hash = Some(endpoint_flight_recorder_compaction_manifest_hash(
+        &manifest,
+    )?);
+    Ok(manifest)
+}
+
+fn endpoint_flight_recorder_compaction_manifest_hash(
+    manifest: &EndpointFlightRecorderCompactionManifest,
+) -> Result<String> {
+    let mut payload = manifest.clone();
+    payload.manifest_hash = None;
+    let bytes = serde_json::to_vec(&payload)
+        .context("serialize endpoint flight recorder compaction manifest hash payload")?;
+    Ok(sha256(&bytes).to_hex_prefixed())
+}
+
+fn validate_endpoint_flight_recorder_compaction_manifest_hash(
+    path: &Path,
+    manifest: &EndpointFlightRecorderCompactionManifest,
+) -> Result<()> {
+    let expected = manifest.manifest_hash.as_deref().ok_or_else(|| {
+        anyhow!(
+            "endpoint flight recorder compaction manifest for {} is missing manifest hash",
+            path.display()
+        )
+    })?;
+    let actual = endpoint_flight_recorder_compaction_manifest_hash(manifest)?;
+    if expected != actual {
+        return Err(anyhow!(
+            "endpoint flight recorder compaction manifest for {} manifest hash mismatch",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 fn read_endpoint_flight_recorder_compaction_manifests(
     path: &Path,
 ) -> Result<Vec<EndpointFlightRecorderCompactionManifest>> {
@@ -1619,6 +1708,7 @@ fn endpoint_flight_recorder_compaction_initial_state(
             manifest.schema_version
         ));
     }
+    validate_endpoint_flight_recorder_compaction_manifest_hash(path, &manifest)?;
     let retained_count = manifest
         .post_compaction_record_count
         .checked_sub(manifest.pre_compaction_record_count)
@@ -1648,6 +1738,7 @@ fn validate_endpoint_flight_recorder_compaction_tail(
     manifest: Option<&EndpointFlightRecorderCompactionManifest>,
     chain_state: &EndpointFlightRecorderLogChainState,
     observed_compaction_tail: Option<&Option<String>>,
+    observed_retained_observation_ids: Option<&[String]>,
 ) -> Result<()> {
     let Some(manifest) = manifest else {
         return Ok(());
@@ -1663,6 +1754,18 @@ fn validate_endpoint_flight_recorder_compaction_tail(
     if observed_compaction_tail != &manifest.post_compaction_head {
         return Err(anyhow!(
             "endpoint flight recorder compaction manifest for {} post-compaction head mismatch",
+            path.display()
+        ));
+    }
+    let Some(observed_retained_observation_ids) = observed_retained_observation_ids else {
+        return Err(anyhow!(
+            "endpoint flight recorder compaction manifest for {} retained observation identities were not validated",
+            path.display()
+        ));
+    };
+    if observed_retained_observation_ids != manifest.retained_observation_ids.as_slice() {
+        return Err(anyhow!(
+            "endpoint flight recorder compaction manifest for {} retained observation identity mismatch",
             path.display()
         ));
     }
@@ -2202,14 +2305,17 @@ mod tests {
                 .with_timezone(&Utc),
         )?;
         let manifest_path = endpoint_flight_recorder_compaction_manifest_path(&path);
-        let mut manifest: serde_json::Value = serde_json::from_str(
+        let mut manifest: EndpointFlightRecorderCompactionManifest = serde_json::from_str(
             fs::read_to_string(&manifest_path)?
                 .lines()
                 .next()
                 .unwrap_or_default(),
         )
         .context("parse persisted compaction manifest")?;
-        manifest["preCompactionRecordCount"] = serde_json::json!(0);
+        manifest.pre_compaction_record_count = 0;
+        manifest.manifest_hash = Some(endpoint_flight_recorder_compaction_manifest_hash(
+            &manifest,
+        )?);
         fs::write(
             &manifest_path,
             format!("{}\n", serde_json::to_string(&manifest)?),
@@ -2227,6 +2333,150 @@ mod tests {
         let _ = fs::remove_file(endpoint_flight_recorder_graph_index_path(&path));
         let _ = fs::remove_file(endpoint_flight_recorder_graph_edge_index_path(&path));
         let _ = fs::remove_file(manifest_path);
+        Ok(())
+    }
+
+    #[test]
+    fn compacted_log_rebuilds_missing_history_sidecar_after_compaction() -> Result<()> {
+        let path = unique_test_path("compact-rebuild-missing-index")?;
+        let mut recorder = EndpointFlightRecorder::open(&path)?;
+        recorder.append_observations(&[
+            test_observation_with_id("obs-compact-rebuild-1", "2026-05-20T12:00:00Z")?,
+            test_observation_with_id("obs-compact-rebuild-2", "2026-05-20T12:01:00Z")?,
+        ])?;
+
+        let _ = recorder.compact(
+            Some(1),
+            0,
+            &BTreeSet::new(),
+            false,
+            DateTime::parse_from_rfc3339("2026-05-20T12:02:00Z")
+                .context("parse compaction time")?
+                .with_timezone(&Utc),
+        )?;
+        let history_index_path = endpoint_flight_recorder_index_path(&path);
+        fs::remove_file(&history_index_path).context("remove history sidecar")?;
+
+        let window = recorder.read_indexed_observation_window(10, |_| true)?;
+        assert_eq!(window.selection_mode, "sidecar_index_seek");
+        assert_eq!(window.selected_observations.len(), 1);
+        assert_eq!(
+            window.selected_observations[0].observation_id,
+            "obs-compact-rebuild-2"
+        );
+        assert!(
+            history_index_path.exists(),
+            "expected missing sidecar to be rebuilt"
+        );
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(history_index_path);
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_index_path(&path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_edge_index_path(&path));
+        let _ = fs::remove_file(endpoint_flight_recorder_compaction_manifest_path(&path));
+        Ok(())
+    }
+
+    #[test]
+    fn compacted_log_rejects_tampered_retained_or_removed_manifest_identity() -> Result<()> {
+        let removed_tamper_path = unique_test_path("compact-manifest-removed-id-tamper")?;
+        let mut removed_tamper_recorder = EndpointFlightRecorder::open(&removed_tamper_path)?;
+        removed_tamper_recorder.append_observations(&[
+            test_observation_with_id("obs-removed-id-tamper-1", "2026-05-20T12:00:00Z")?,
+            test_observation_with_id("obs-removed-id-tamper-2", "2026-05-20T12:01:00Z")?,
+        ])?;
+        let _ = removed_tamper_recorder.compact(
+            Some(1),
+            0,
+            &BTreeSet::new(),
+            false,
+            DateTime::parse_from_rfc3339("2026-05-20T12:02:00Z")
+                .context("parse compaction time")?
+                .with_timezone(&Utc),
+        )?;
+        let removed_manifest_path =
+            endpoint_flight_recorder_compaction_manifest_path(&removed_tamper_path);
+        let mut removed_manifest: serde_json::Value = serde_json::from_str(
+            fs::read_to_string(&removed_manifest_path)?
+                .lines()
+                .next()
+                .unwrap_or_default(),
+        )
+        .context("parse removed tamper manifest")?;
+        removed_manifest["removedRecords"][0]["observationId"] =
+            serde_json::json!("obs-forged-removed-id");
+        fs::write(
+            &removed_manifest_path,
+            format!("{}\n", serde_json::to_string(&removed_manifest)?),
+        )
+        .context("write removed identity tamper manifest")?;
+
+        let removed_err = EndpointFlightRecorder::open(&removed_tamper_path).unwrap_err();
+        assert!(
+            removed_err.to_string().contains("manifest hash mismatch"),
+            "unexpected removed identity tamper error: {removed_err}"
+        );
+
+        let retained_tamper_path = unique_test_path("compact-manifest-retained-id-tamper")?;
+        let mut retained_tamper_recorder = EndpointFlightRecorder::open(&retained_tamper_path)?;
+        retained_tamper_recorder.append_observations(&[
+            test_observation_with_id("obs-retained-id-tamper-1", "2026-05-20T12:00:00Z")?,
+            test_observation_with_id("obs-retained-id-tamper-2", "2026-05-20T12:01:00Z")?,
+        ])?;
+        let _ = retained_tamper_recorder.compact(
+            Some(1),
+            0,
+            &BTreeSet::new(),
+            false,
+            DateTime::parse_from_rfc3339("2026-05-20T12:02:00Z")
+                .context("parse compaction time")?
+                .with_timezone(&Utc),
+        )?;
+        let retained_manifest_path =
+            endpoint_flight_recorder_compaction_manifest_path(&retained_tamper_path);
+        let mut retained_manifest: EndpointFlightRecorderCompactionManifest = serde_json::from_str(
+            fs::read_to_string(&retained_manifest_path)?
+                .lines()
+                .next()
+                .unwrap_or_default(),
+        )
+        .context("parse retained tamper manifest")?;
+        retained_manifest.retained_observation_ids[0] = "obs-forged-retained-id".to_string();
+        retained_manifest.manifest_hash = Some(endpoint_flight_recorder_compaction_manifest_hash(
+            &retained_manifest,
+        )?);
+        fs::write(
+            &retained_manifest_path,
+            format!("{}\n", serde_json::to_string(&retained_manifest)?),
+        )
+        .context("write retained identity tamper manifest")?;
+
+        let retained_err = EndpointFlightRecorder::open(&retained_tamper_path).unwrap_err();
+        assert!(
+            retained_err
+                .to_string()
+                .contains("retained observation identity mismatch"),
+            "unexpected retained identity tamper error: {retained_err}"
+        );
+
+        let _ = fs::remove_file(&removed_tamper_path);
+        let _ = fs::remove_file(endpoint_flight_recorder_index_path(&removed_tamper_path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_index_path(
+            &removed_tamper_path,
+        ));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_edge_index_path(
+            &removed_tamper_path,
+        ));
+        let _ = fs::remove_file(removed_manifest_path);
+        let _ = fs::remove_file(&retained_tamper_path);
+        let _ = fs::remove_file(endpoint_flight_recorder_index_path(&retained_tamper_path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_index_path(
+            &retained_tamper_path,
+        ));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_edge_index_path(
+            &retained_tamper_path,
+        ));
+        let _ = fs::remove_file(retained_manifest_path);
         Ok(())
     }
 
