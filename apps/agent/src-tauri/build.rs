@@ -24,6 +24,8 @@ const REQUIRED_MACOS_ENTITLEMENTS: &str =
 const VALIDATE_MACOS_PACKAGING_ENV: &str = "CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING";
 const REQUIRE_CONCRETE_MACOS_PACKAGING_ENV: &str = "CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING";
 const SYSTEM_EXTENSION_BUNDLE_PATH_ENV: &str = "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH";
+const SYSTEM_EXTENSION_TEAM_ID_ENV: &str = "CLAWDSTRIKE_SYSTEM_EXTENSION_TEAM_ID";
+const APPLE_TEAM_ID_ENV: &str = "APPLE_TEAM_ID";
 
 #[cfg(not(test))]
 fn main() {
@@ -31,6 +33,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed={VALIDATE_MACOS_PACKAGING_ENV}");
     println!("cargo:rerun-if-env-changed={REQUIRE_CONCRETE_MACOS_PACKAGING_ENV}");
     println!("cargo:rerun-if-env-changed={SYSTEM_EXTENSION_BUNDLE_PATH_ENV}");
+    println!("cargo:rerun-if-env-changed={SYSTEM_EXTENSION_TEAM_ID_ENV}");
+    println!("cargo:rerun-if-env-changed={APPLE_TEAM_ID_ENV}");
     for relative_path in REQUIRED_MACOS_PACKAGING_FILES {
         println!("cargo:rerun-if-changed={relative_path}");
     }
@@ -185,12 +189,20 @@ fn validate_concrete_system_extension_bundle(manifest_dir: &Path) -> Result<(), 
         ));
     }
 
-    validate_system_extension_codesign(&bundle_path)?;
+    let expected_team_id = expected_system_extension_team_id().ok_or_else(|| {
+        format!(
+            "{SYSTEM_EXTENSION_TEAM_ID_ENV} or {APPLE_TEAM_ID_ENV} must identify the Apple team that signed the prebuilt .systemextension bundle when {REQUIRE_CONCRETE_MACOS_PACKAGING_ENV}=1"
+        )
+    })?;
+    validate_system_extension_codesign(&bundle_path, &expected_team_id)?;
 
     Ok(())
 }
 
-fn validate_system_extension_codesign(bundle_path: &Path) -> Result<(), String> {
+fn validate_system_extension_codesign(
+    bundle_path: &Path,
+    expected_team_id: &str,
+) -> Result<(), String> {
     let verify = Command::new("/usr/bin/codesign")
         .arg("--verify")
         .arg("--strict")
@@ -210,12 +222,26 @@ fn validate_system_extension_codesign(bundle_path: &Path) -> Result<(), String> 
         .arg(bundle_path)
         .output()
         .map_err(|error| format!("failed to inspect system extension signature: {error}"))?;
+    if !details.status.success() {
+        return Err(format!(
+            "failed to inspect system extension signature: {}",
+            String::from_utf8_lossy(&details.stderr).trim()
+        ));
+    }
     let details_text = String::from_utf8_lossy(&details.stderr);
-    if details_text.contains("Signature=adhoc") || !details_text.contains("TeamIdentifier=") {
+    if details_text.contains("Signature=adhoc") {
         return Err(
             "prebuilt system extension must be signed with a team identity, not an ad-hoc signature"
                 .to_string(),
         );
+    }
+    let actual_team_id = codesign_team_identifier(&details_text).ok_or_else(|| {
+        "prebuilt system extension signature is missing TeamIdentifier".to_string()
+    })?;
+    if actual_team_id != expected_team_id {
+        return Err(format!(
+            "prebuilt system extension TeamIdentifier {actual_team_id} does not match expected Apple team {expected_team_id}"
+        ));
     }
 
     let entitlements = Command::new("/usr/bin/codesign")
@@ -246,6 +272,23 @@ fn validate_system_extension_entitlements_output(contents: &str) -> Result<(), S
         );
     }
     Ok(())
+}
+
+fn expected_system_extension_team_id() -> Option<String> {
+    env::var(SYSTEM_EXTENSION_TEAM_ID_ENV)
+        .ok()
+        .or_else(|| env::var(APPLE_TEAM_ID_ENV).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn codesign_team_identifier(contents: &str) -> Option<String> {
+    contents.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("TeamIdentifier=")
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })
 }
 
 fn read_plist_xml(path: &Path) -> Result<String, String> {
@@ -398,8 +441,8 @@ fn array_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a [Value]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_release_placeholder, validate_system_extension_entitlements_output,
-        validate_tauri_config,
+        codesign_team_identifier, contains_release_placeholder,
+        validate_system_extension_entitlements_output, validate_tauri_config,
     };
 
     #[test]
@@ -478,6 +521,31 @@ mod tests {
             panic!("expected entitlement validation to reject missing ES/NE entitlements");
         };
         assert!(error.contains("endpoint-security"));
+    }
+
+    #[test]
+    fn extracts_codesign_team_identifier() {
+        let details = r#"
+Executable=/tmp/ClawdStrikeEndpointSecurity.systemextension/Contents/MacOS/ClawdStrikeEndpointSecurity
+Identifier=com.backbay.clawdstrike.agent.extension
+Format=bundle with Mach-O universal
+CodeDirectory v=20500 size=123 flags=0x10000(runtime) hashes=1+7 location=embedded
+Signature size=9001
+Authority=Developer ID Application: Backbay Labs, Inc. (ABCDE12345)
+TeamIdentifier=ABCDE12345
+Runtime Version=14.0.0
+"#;
+
+        assert_eq!(
+            codesign_team_identifier(details).as_deref(),
+            Some("ABCDE12345")
+        );
+    }
+
+    #[test]
+    fn ignores_blank_codesign_team_identifier() {
+        assert_eq!(codesign_team_identifier("TeamIdentifier=   "), None);
+        assert_eq!(codesign_team_identifier("Signature=adhoc"), None);
     }
 
     #[cfg(target_os = "macos")]

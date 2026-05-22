@@ -606,6 +606,9 @@ jobs:
       - name: Generate workspace coverage report
         run: cargo llvm-cov --all-features --lcov --output-path lcov.workspace.info
 
+      - name: Generate agent Tauri coverage report
+        run: cargo llvm-cov --manifest-path apps/agent/src-tauri/Cargo.toml --lcov --output-path lcov.agent.info
+
       - name: Generate desktop Tauri coverage report
         run: cargo llvm-cov --manifest-path apps/desktop/src-tauri/Cargo.toml --lcov --output-path lcov.desktop.info
 
@@ -616,6 +619,8 @@ jobs:
         run: |
           {
             cat lcov.workspace.info
+            printf '\n'
+            cat lcov.agent.info
             printf '\n'
             cat lcov.desktop.info
             printf '\n'
@@ -650,7 +655,7 @@ jobs:
           fi
 
           # This job merges coverage from the root Rust workspace plus the
-          # desktop and workbench Tauri crates. Keep excluding the long-lived
+          # agent, desktop, and workbench Tauri crates. Keep excluding the long-lived
           # desktop Tauri surface from the changed-line floor until it has a
           # dedicated changed-line gate instead of inheriting legacy branch
           # churn. Also exclude vendored upstream Rust snapshots, standalone
@@ -659,8 +664,7 @@ jobs:
           # LCOV entries in this job. The root workspace coverage run installs
           # Z3 and uses `--all-features`, so `clawdstrike-logos` solver-gated
           # paths remain in scope here.
-          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
-            | grep -v '^apps/desktop/src-tauri/' \
+          grep -v '^apps/desktop/src-tauri/' changed_rust_files.txt \
             | grep -v '^apps/workbench/src-tauri/' \
             | grep -v '^crates/bridges/hush-go-native/' \
             | grep -v '^crates/libs/logos-z3/' \

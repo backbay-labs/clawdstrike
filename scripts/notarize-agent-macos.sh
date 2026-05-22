@@ -39,6 +39,52 @@ print(digest.hexdigest())
 PY
 }
 
+validate_codesign_team_identifier() {
+  local signed_path="$1"
+  local expected_team_id="$2"
+  local label="$3"
+  local details_path="$4"
+  local actual_team_id
+
+  if [[ -z "$expected_team_id" ]]; then
+    echo "[notarize] expected Apple team ID is required before validating ${label}" >&2
+    exit 1
+  fi
+
+  if ! codesign -dv --verbose=4 "$signed_path" > "$details_path" 2>&1; then
+    cat "$details_path" >&2
+    echo "[notarize] failed to inspect ${label} code signature" >&2
+    exit 1
+  fi
+
+  if grep -q '^Signature=adhoc$' "$details_path"; then
+    echo "[notarize] ${label} must be signed with a Developer ID team identity, not an ad-hoc signature" \
+      >&2
+    exit 1
+  fi
+
+  actual_team_id="$(
+    awk -F= '/^TeamIdentifier=/{
+      value=$2
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      print value
+      exit
+    }' "$details_path"
+  )"
+  if [[ -z "$actual_team_id" ]]; then
+    echo "[notarize] ${label} code signature is missing TeamIdentifier" >&2
+    exit 1
+  fi
+  if [[ "$actual_team_id" != "$expected_team_id" ]]; then
+    {
+      echo "[notarize] ${label} TeamIdentifier does not match APPLE_TEAM_ID"
+      echo "[notarize] expected: $expected_team_id"
+      echo "[notarize] actual:   $actual_team_id"
+    } >&2
+    exit 1
+  fi
+}
+
 validate_source_packaging_assets() {
   if grep -R -nE "__[A-Z0-9_]+__" apps/agent/src-tauri/macos/system-extension >/dev/null; then
     echo "[notarize] packaging assets still contain placeholders; concrete source metadata is required before notarization" >&2
@@ -132,6 +178,11 @@ validate_prebuilt_system_extension_bundle() {
     echo "[notarize] prebuilt system extension must be signed before embedding" >&2
     exit 1
   fi
+  validate_codesign_team_identifier \
+    "$sysext_path" \
+    "$TEAM_ID" \
+    "prebuilt system extension" \
+    "$out_dir/prebuilt-system-extension-codesign-details.txt"
 }
 
 embed_system_extension_bundle() {
@@ -240,6 +291,16 @@ validate_embedded_system_extension() {
   fi
 
   codesign --verify --verbose=2 "$sysext_path" | tee "$out_dir/codesign-verify-system-extension.txt"
+  validate_codesign_team_identifier \
+    "$app_path" \
+    "$TEAM_ID" \
+    "signed app bundle" \
+    "$out_dir/app-codesign-details.txt"
+  validate_codesign_team_identifier \
+    "$sysext_path" \
+    "$TEAM_ID" \
+    "embedded system extension" \
+    "$out_dir/system-extension-codesign-details.txt"
   codesign -d --entitlements :- "$app_path" > "$out_dir/app-entitlements.plist" 2>/dev/null
   codesign -d --entitlements :- "$sysext_path" > "$out_dir/system-extension-entitlements.plist" 2>/dev/null
 
@@ -343,6 +404,7 @@ echo "[notarize] building signed app bundle"
 pushd apps/agent/src-tauri >/dev/null
 APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY" \
 APPLE_TEAM_ID="$TEAM_ID" \
+CLAWDSTRIKE_SYSTEM_EXTENSION_TEAM_ID="$TEAM_ID" \
 CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING=1 \
 CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH="$SYSTEM_EXTENSION_BUNDLE_PATH" \
 cargo tauri build --bundles app
