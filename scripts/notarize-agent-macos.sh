@@ -86,12 +86,24 @@ validate_codesign_team_identifier() {
 }
 
 validate_source_packaging_assets() {
-  if grep -R -nE "__[A-Z0-9_]+__" apps/agent/src-tauri/macos/system-extension >/dev/null; then
+  local placeholder_hits=0
+  while IFS= read -r -d '' path; do
+    if grep -I -nE "__[A-Z0-9_]+__" "$path"; then
+      placeholder_hits=1
+    fi
+  done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
+  if (( placeholder_hits != 0 )); then
     echo "[notarize] packaging assets still contain placeholders; concrete source metadata is required before notarization" >&2
     exit 1
   fi
 
-  if grep -R -n "scaffold_only" apps/agent/src-tauri/macos/system-extension >/dev/null; then
+  local scaffold_hits=0
+  while IFS= read -r -d '' path; do
+    if grep -I -n "scaffold_only" "$path"; then
+      scaffold_hits=1
+    fi
+  done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
+  if (( scaffold_hits != 0 )); then
     echo "[notarize] packaging assets still declare scaffold_only state; notarization requires concrete source metadata plus a real embedded system extension bundle" >&2
     exit 1
   fi
