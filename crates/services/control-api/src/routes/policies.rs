@@ -573,19 +573,21 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
 ) -> Result<Json<DispatchPolicyProposalFleetRuleDiffResponse>, ApiError> {
     ensure_policy_deployer(&auth)?;
 
-    let mut proposal = fetch_policy_proposal_row(&state, auth.tenant_id, id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if proposal.status != "pending" {
-        return Err(ApiError::NotFound);
-    }
-
     let endpoint_filter = req
         .endpoint_agent_ids
         .into_iter()
         .map(|value| require_non_empty_policy_impact_field("endpoint_agent_ids", value))
         .collect::<Result<BTreeSet<_>, _>>()?;
-    let validation_plan = proposal
+
+    let mut reservation_tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let locked_proposal =
+        fetch_policy_proposal_row_for_update(&mut reservation_tx, auth.tenant_id, id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    if locked_proposal.status != "pending" {
+        return Err(ApiError::NotFound);
+    }
+    let validation_plan = locked_proposal
         .preview
         .get("fleetRuleDiffValidation")
         .ok_or_else(|| {
@@ -612,12 +614,12 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
         .unwrap_or_else(|| {
             format!(
                 "collect signed fleet rule-diff validation receipts for policy proposal {}",
-                proposal.id
+                locked_proposal.id
             )
         });
 
     let reservation_preview = reserve_policy_rule_diff_dispatch(
-        proposal.preview.clone(),
+        locked_proposal.preview.clone(),
         validation_plan_sha256.as_deref(),
         &endpoint_requests,
     )?;
@@ -633,11 +635,12 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
     .bind(auth.tenant_id)
     .bind(id)
     .bind(&reservation_preview)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *reservation_tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
-    proposal = policy_proposal_from_row(reserved_row).map_err(ApiError::Database)?;
+    reservation_tx.commit().await.map_err(ApiError::Database)?;
+    let mut proposal = policy_proposal_from_row(reserved_row).map_err(ApiError::Database)?;
 
     let mut dispatches = Vec::with_capacity(endpoint_requests.len());
     for endpoint_request in &endpoint_requests {
@@ -827,12 +830,19 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
             .collect::<Vec<_>>(),
     });
 
+    let attached_by = auth.actor_id();
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let latest_proposal = fetch_policy_proposal_row_for_update(&mut tx, auth.tenant_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if latest_proposal.status != "pending" {
+        return Err(ApiError::NotFound);
+    }
     let preview = append_policy_rule_diff_collection(
-        proposal.preview.clone(),
+        latest_proposal.preview,
         validation_plan_sha256.as_deref(),
         &impact["fleetRuleDiffCollection"],
     )?;
-    let attached_by = auth.actor_id();
     let row = sqlx::query::query(
         r#"UPDATE policy_proposals
            SET impact = $3,
@@ -850,10 +860,11 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
     .bind(&impact)
     .bind(&attached_by)
     .bind(&preview)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
+    tx.commit().await.map_err(ApiError::Database)?;
 
     let collected_endpoint_count = collected
         .iter()
