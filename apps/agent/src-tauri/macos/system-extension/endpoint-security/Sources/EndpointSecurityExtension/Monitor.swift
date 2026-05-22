@@ -165,9 +165,6 @@ public final class EndpointSecurityMonitor {
     public static func probeFullDiskAccessGranted() -> Bool? {
         #if os(macOS)
         let tccDatabasePath = "/Library/Application Support/com.apple.TCC/TCC.db"
-        guard FileManager.default.fileExists(atPath: tccDatabasePath) else {
-            return nil
-        }
         return FileManager.default.isReadableFile(atPath: tccDatabasePath)
         #else
         return nil
