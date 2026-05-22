@@ -58,6 +58,53 @@ pub(crate) fn endpoint_security_event_observation(
     })
 }
 
+pub(crate) fn endpoint_security_auth_open_credential_observation(
+    event: &EdrEndpointSecurityEvent,
+    index: usize,
+) -> Result<Option<EndpointObservation>, (StatusCode, String)> {
+    if !matches!(event.kind, EdrEndpointSecurityEventKind::AuthOpen) {
+        return Ok(None);
+    }
+    let path = required_endpoint_security_event_string(event, "path", event.path.as_deref())?;
+    let Some(kind) = endpoint_security_credential_kind_for_path(&path) else {
+        return Ok(None);
+    };
+    let process = endpoint_security_event_process(event)?;
+    let timestamp = event.observed_at.unwrap_or_else(chrono::Utc::now);
+    let timestamp_text = timestamp.to_rfc3339();
+    let index_text = index.to_string();
+    let observation_id = local_stable_id(
+        "escredential",
+        [
+            event.event_id.as_deref().unwrap_or_default(),
+            event.session_id.as_deref().unwrap_or_default(),
+            path.as_str(),
+            timestamp_text.as_str(),
+            index_text.as_str(),
+        ],
+    );
+    let mut metadata = endpoint_security_event_metadata(event);
+    metadata.insert(
+        "derivedFrom".to_string(),
+        serde_json::Value::String("endpoint_security_auth_open".to_string()),
+    );
+
+    Ok(Some(EndpointObservation {
+        observation_id,
+        timestamp,
+        host_id: trimmed_owned(event.host_id.as_deref()),
+        user_id: trimmed_owned(event.user_id.as_deref()),
+        session_id: trimmed_owned(event.session_id.as_deref()),
+        process,
+        event: EndpointEvent::CredentialAccess {
+            kind,
+            path: Some(path),
+            name: None,
+        },
+        metadata,
+    }))
+}
+
 pub(crate) fn endpoint_security_endpoint_event(
     event: &EdrEndpointSecurityEvent,
 ) -> Result<EndpointEvent, (StatusCode, String)> {
@@ -537,6 +584,15 @@ mod tests {
         event
     }
 
+    fn auth_open_event(path: &str) -> EdrEndpointSecurityEvent {
+        let mut event = process_exec_event("2026-05-20T12:00:00Z");
+        event.kind = EdrEndpointSecurityEventKind::AuthOpen;
+        event.event_id = Some(format!("auth-open-{path}"));
+        event.path = Some(path.to_string());
+        event.decision = Some("deny".to_string());
+        event
+    }
+
     #[test]
     fn fallback_observation_id_includes_durable_timestamp() {
         let first =
@@ -622,5 +678,31 @@ mod tests {
             }
             other => panic!("expected file access for secret write, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn endpoint_security_auth_open_secret_paths_emit_derived_credential_observations() {
+        let observation = endpoint_security_auth_open_credential_observation(
+            &auth_open_event("/Users/alice/.ssh/id_rsa"),
+            0,
+        )
+        .expect("auth open conversion")
+        .expect("derived credential observation");
+
+        match observation.event {
+            EndpointEvent::CredentialAccess {
+                kind,
+                path: Some(path),
+                ..
+            } => {
+                assert_eq!(kind, CredentialKind::SshKey);
+                assert_eq!(path, "/Users/alice/.ssh/id_rsa");
+            }
+            other => panic!("expected credential access for auth_open secret, got {other:?}"),
+        }
+        assert_eq!(
+            observation.metadata["derivedFrom"],
+            "endpoint_security_auth_open"
+        );
     }
 }

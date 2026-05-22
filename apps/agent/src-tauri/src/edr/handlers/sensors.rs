@@ -444,12 +444,15 @@ pub(crate) async fn agent_edr_endpoint_security_events(
 ) -> Result<Json<EdrEndpointSecurityEventsResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
     validate_edr_request_sizes(input.events.len(), input.honey_artifacts.len())?;
-    let observations = input
-        .events
-        .iter()
-        .enumerate()
-        .map(|(index, event)| endpoint_security_event_observation(event, index))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut observations = Vec::with_capacity(input.events.len());
+    for (index, event) in input.events.iter().enumerate() {
+        observations.push(endpoint_security_event_observation(event, index)?);
+        if let Some(credential_observation) =
+            endpoint_security_auth_open_credential_observation(event, index)?
+        {
+            observations.push(credential_observation);
+        }
+    }
     let recorded_observations = redact_endpoint_observations(&observations);
     let evaluated = evaluate_record_and_receipt_edr_observations(
         &state,

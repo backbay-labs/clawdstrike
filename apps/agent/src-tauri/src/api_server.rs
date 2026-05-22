@@ -37959,7 +37959,7 @@ guards:
         let payload: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("failed to decode EndpointSecurity event response: {e}"));
         assert_eq!(payload["eventCount"], 3);
-        assert_eq!(payload["observationCount"], 3);
+        assert_eq!(payload["observationCount"], 4);
         let observations = payload["observations"]
             .as_array()
             .unwrap_or_else(|| panic!("missing EndpointSecurity observations"));
@@ -38031,11 +38031,29 @@ guards:
         assert_eq!(auth_observation["event"]["guard"], "endpoint_security_auth");
         assert_eq!(auth_observation["metadata"]["deadlineMissed"], false);
         assert_eq!(auth_observation["metadata"]["deadlineMs"], 50);
-        assert_eq!(payload["receiptCount"], 4);
+
+        let credential_observation = observations
+            .iter()
+            .find(|observation| observation["event"]["type"] == "credential_access")
+            .unwrap_or_else(|| panic!("missing EndpointSecurity auth credential observation"));
+        assert_eq!(
+            credential_observation["event"]["path"],
+            "/Users/alice/.ssh/id_rsa"
+        );
+        assert_eq!(credential_observation["event"]["kind"], "ssh_key");
+        assert_eq!(
+            credential_observation["metadata"]["derivedFrom"],
+            "endpoint_security_auth_open"
+        );
+
+        assert!(
+            payload["receiptCount"].as_u64().unwrap_or_default() >= 5,
+            "expected observation and policy receipts for derived auth credential"
+        );
         let observation_receipts = payload["observationReceipts"]
             .as_array()
             .unwrap_or_else(|| panic!("missing EndpointSecurity observation receipts"));
-        assert_eq!(observation_receipts.len(), 3);
+        assert_eq!(observation_receipts.len(), 4);
         let auth_observation_id = auth_observation["observationId"]
             .as_str()
             .unwrap_or_else(|| panic!("missing EndpointSecurity auth observation id"));
@@ -38120,6 +38138,9 @@ guards:
         assert!(graph_nodes
             .values()
             .any(|node| node["kind"] == "policy_decision"));
+        assert!(graph_nodes.values().any(
+            |node| node["kind"] == "credential" && node["label"] == "/Users/alice/.ssh/id_rsa"
+        ));
         assert!(payload["graph"]["edges"]
             .as_array()
             .unwrap_or_else(|| panic!("missing EndpointSecurity graph edges"))
