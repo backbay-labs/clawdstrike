@@ -83,9 +83,9 @@ fn validate_macos_packaging() -> Result<(), String> {
 
         for path in macos_packaging_source_files(&manifest_dir)? {
             let relative_path = relative_path(&manifest_dir, &path);
-            let contents = fs::read_to_string(&path).map_err(|error| {
-                format!("failed to read macOS packaging source {relative_path}: {error}")
-            })?;
+            let Some(contents) = read_macos_packaging_text(&path, &relative_path)? else {
+                continue;
+            };
             if contains_release_placeholder(&contents) {
                 files_with_placeholders.push(relative_path.clone());
             }
@@ -159,6 +159,17 @@ fn relative_path(manifest_dir: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
+}
+
+fn read_macos_packaging_text(path: &Path, relative_path: &str) -> Result<Option<String>, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!("failed to read macOS packaging source {relative_path}: {error}")
+    })?;
+    if bytes.contains(&0) {
+        return Ok(None);
+    }
+
+    Ok(String::from_utf8(bytes).ok())
 }
 
 fn validate_concrete_system_extension_bundle(manifest_dir: &Path) -> Result<(), String> {
@@ -509,7 +520,7 @@ fn array_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a [Value]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        codesign_team_identifier, contains_release_placeholder,
+        codesign_team_identifier, contains_release_placeholder, read_macos_packaging_text,
         validate_system_extension_entitlements_output, validate_tauri_config,
     };
 
@@ -560,6 +571,36 @@ mod tests {
         assert!(!contains_release_placeholder("____"));
         assert!(!contains_release_placeholder("__TEAM_ID_"));
         assert!(!contains_release_placeholder("__TEAM-id__"));
+    }
+
+    #[test]
+    fn skips_binary_macos_packaging_sources() -> Result<(), String> {
+        let dir = temp_test_dir("binary-packaging-source")?;
+        let binary_path = dir.join("hushd");
+        std::fs::write(&binary_path, b"\xcf\xfa\xed\xfe\0__TEAM_ID__")
+            .map_err(|error| format!("failed to write binary fixture: {error}"))?;
+
+        let contents = read_macos_packaging_text(&binary_path, "macos/system-extension/bin/hushd")?;
+        assert!(contents.is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[test]
+    fn reads_text_macos_packaging_sources() -> Result<(), String> {
+        let dir = temp_test_dir("text-packaging-source")?;
+        let text_path = dir.join("profile.plist");
+        std::fs::write(&text_path, "<string>__TEAM_ID__</string>")
+            .map_err(|error| format!("failed to write text fixture: {error}"))?;
+
+        let contents =
+            read_macos_packaging_text(&text_path, "macos/system-extension/profiles/profile.plist")?
+                .ok_or_else(|| "expected UTF-8 packaging source to be scanned".to_string())?;
+        assert!(contains_release_placeholder(&contents));
+
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
     }
 
     #[test]
@@ -616,6 +657,20 @@ Runtime Version=14.0.0
     fn ignores_blank_codesign_team_identifier() {
         assert_eq!(codesign_team_identifier("TeamIdentifier=   "), None);
         assert_eq!(codesign_team_identifier("Signature=adhoc"), None);
+    }
+
+    fn temp_test_dir(name: &str) -> Result<std::path::PathBuf, String> {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| format!("system time is before UNIX_EPOCH: {error}"))?
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "clawdstrike-build-{name}-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir)
+            .map_err(|error| format!("failed to create temp dir: {error}"))?;
+        Ok(dir)
     }
 
     #[cfg(target_os = "macos")]
