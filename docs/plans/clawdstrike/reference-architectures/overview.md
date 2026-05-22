@@ -26,11 +26,6 @@ Clawdstrike is a security SDK for AI agents that provides:
 | [Enterprise Deployment](./enterprise-deployment.md) | Organization-wide rollout | High | 4-8 weeks |
 | [Cloud-Native](./cloud-native.md) | K8s/Serverless deployment | Medium-High | 2-4 weeks |
 
-For the repo-grounded next-generation EDR direction, read
-[`Endpoint Decision Engine`](../endpoint-decision-engine/README.md). It supersedes the generic
-"Build Your Own EDR" reference architecture when the goal is local runtime integrity, causal
-evidence, graph-aware policy simulation, controlled endpoint response, and signed receipts.
-
 ## Architecture Selection Guide
 
 ```

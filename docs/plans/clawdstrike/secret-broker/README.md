@@ -150,14 +150,10 @@ OpenAI path attaches fields such as `operation`, `request_model`, `response_id`,
 executions emit a `started` evidence record before the response body is handed to the caller and a
 `completed` evidence record with final bytes, hash, and chunk count after the stream closes.
 
-The broker now also supports typed GitHub and Slack provider execution, plus Generic HTTPS secret
-descriptors with an optional provider-side revocation contract:
+The broker now also supports typed GitHub and Slack provider execution:
 
 - `github` validates and forwards typed issue creation, issue-comment creation, and check-run creation requests
 - `slack` validates and forwards typed `chat.postMessage` and `chat.update` requests
-- `generic_https` bearer/header envelopes may include `revocation.path` plus optional `method`
-  (`POST` or `DELETE`) so capability revocation can call the same provider host without exposing the
-  token to the operator response surface
 - these providers still use capability-scoped host/path/method authorization from `hushd`, but brokerd now rejects malformed request bodies before any upstream call is attempted
 
 ### Broker operator APIs
@@ -165,7 +161,7 @@ descriptors with an optional provider-side revocation contract:
 `clawdstrike-brokerd` now exposes local operator surfaces for the current execution plane:
 
 - `GET /v1/capabilities` returns the active capability wallet plus local revoke and freeze state
-- `POST /v1/capabilities/{capability_id}/revoke` locally revokes a capability so future executions fail closed; for known brokered GitHub App installation tokens, Slack tokens, and configured Generic HTTPS bearer/header secrets with `revocation.path`, it also calls the provider revocation endpoint and returns a non-secret provider revocation report
+- `POST /v1/capabilities/{capability_id}/revoke` locally revokes a capability so future executions fail closed
 - `GET /v1/executions` returns the latest execution records and timeline events
 - `POST /v1/admin/freeze` toggles a local execution freeze that blocks new broker executions
 

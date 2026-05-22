@@ -24,9 +24,6 @@ swarm_repo_name() {
   parent_name="$(basename "$repo_parent")"
 
   case "$parent_name" in
-    .worktrees)
-      basename "$(dirname "$repo_parent")"
-      ;;
     *-worktrees)
       printf '%s\n' "${parent_name%-worktrees}"
       ;;
@@ -37,199 +34,6 @@ swarm_repo_name() {
       basename "$repo_root"
       ;;
   esac
-}
-
-swarm_orchestrator_lane() {
-  local repo_root="${1:-$(swarm_repo_root)}"
-  local lane
-
-  lane="$(
-    awk -F '\t' '
-      NR == 1 {
-        for (i = 1; i <= NF; i++) {
-          idx[$i] = i
-        }
-        next
-      }
-      ("role" in idx) && $(idx["role"]) == "workstream_orchestrator" {
-        print $1
-        exit
-      }
-    ' "$(swarm_lane_table "$repo_root")"
-  )"
-  if [[ -n "$lane" ]]; then
-    printf '%s\n' "$lane"
-    return
-  fi
-
-  lane="$(
-    awk -F '\t' '
-      NR == 1 {
-        for (i = 1; i <= NF; i++) {
-          idx[$i] = i
-        }
-        next
-      }
-      ("profile" in idx) && $(idx["profile"]) == "swarm-orchestrator" {
-        print $1
-        exit
-      }
-    ' "$(swarm_lane_table "$repo_root")"
-  )"
-  if [[ -n "$lane" ]]; then
-    printf '%s\n' "$lane"
-    return
-  fi
-
-  awk -F '\t' '
-    NR == 1 {
-      for (i = 1; i <= NF; i++) {
-        idx[$i] = i
-      }
-      next
-    }
-    tolower($1) == "orch" {
-      print $1
-      exit
-    }
-    ("brief_id" in idx) && toupper($(idx["brief_id"])) == "ORCH" {
-      print $1
-      exit
-    }
-  ' "$(swarm_lane_table "$repo_root")"
-}
-
-swarm_orchestrator_lane_count() {
-  local repo_root="${1:-$(swarm_repo_root)}"
-
-  awk -F '\t' '
-    NR == 1 {
-      for (i = 1; i <= NF; i++) {
-        idx[$i] = i
-      }
-      next
-    }
-    (("role" in idx) && $(idx["role"]) == "workstream_orchestrator") ||
-    (("profile" in idx) && $(idx["profile"]) == "swarm-orchestrator") ||
-    tolower($1) == "orch" ||
-    (("brief_id" in idx) && toupper($(idx["brief_id"])) == "ORCH") {
-      count++
-    }
-    END {
-      print count + 0
-    }
-  ' "$(swarm_lane_table "$repo_root")"
-}
-
-swarm_lane_namespaces() {
-  local repo_root="$1"
-  local selected_lanes="${2:-}"
-
-  awk -F '\t' -v selected_lanes="$selected_lanes" '
-    BEGIN {
-      selected_count = split(selected_lanes, lane_list, /[,[:space:]]+/)
-      for (i = 1; i <= selected_count; i++) {
-        if (lane_list[i] != "") {
-          selected[lane_list[i]] = 1
-        }
-      }
-    }
-    NR == 1 {
-      for (i = 1; i <= NF; i++) {
-        idx[$i] = i
-      }
-      next
-    }
-    ("swarm" in idx) && $(idx["swarm"]) != "" {
-      if (selected_lanes == "" || ($1 in selected)) {
-        namespaces[$(idx["swarm"])] = 1
-      }
-    }
-    END {
-      for (namespace in namespaces) {
-        print namespace
-      }
-    }
-  ' "$(swarm_lane_table "$repo_root")" | sort -u
-}
-
-swarm_single_namespace_from_lanes() {
-  local repo_root="$1"
-  local selected_lanes="${2:-}"
-  local namespace
-  local namespace_count
-
-  namespace="$(swarm_lane_namespaces "$repo_root" "$selected_lanes")"
-  if [[ -z "$namespace" ]]; then
-    return 1
-  fi
-  namespace_count="$(printf '%s\n' "$namespace" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
-  if [[ "$namespace_count" != "1" ]]; then
-    if [[ -n "$selected_lanes" ]]; then
-      printf 'Selected swarm lanes span multiple namespaces:\n%s\n' "$namespace" >&2
-      return 2
-    fi
-    return 1
-  fi
-  swarm_assert_safe_namespace_name "$namespace"
-  printf '%s\n' "$namespace"
-}
-
-swarm_namespace() {
-  local repo_root
-  local namespace
-  local orch_lane
-  local orch_worktree
-  local orch_branch
-  local selected_lanes
-  local namespace_status
-  repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
-  if [[ -n "${CLAWDSTRIKE_SWARM_NAMESPACE:-}" ]]; then
-    swarm_assert_safe_namespace_name "$CLAWDSTRIKE_SWARM_NAMESPACE"
-    printf '%s\n' "$CLAWDSTRIKE_SWARM_NAMESPACE"
-    return
-  fi
-  selected_lanes="${CLAWDSTRIKE_SWARM_SELECTED_LANES:-}"
-  if [[ -n "$selected_lanes" ]]; then
-    namespace_status=0
-    namespace="$(swarm_single_namespace_from_lanes "$repo_root" "$selected_lanes")" || namespace_status=$?
-    if [[ "$namespace_status" == "0" ]]; then
-      printf '%s\n' "$namespace"
-      return
-    elif [[ "$namespace_status" == "2" ]]; then
-      exit 1
-    fi
-  fi
-  namespace_status=0
-  namespace="$(swarm_single_namespace_from_lanes "$repo_root")" || namespace_status=$?
-  if [[ "$namespace_status" == "0" ]]; then
-    printf '%s\n' "$namespace"
-    return
-  fi
-  if [[ "$(swarm_orchestrator_lane_count "$repo_root")" == "1" ]]; then
-    orch_lane="$(swarm_orchestrator_lane "$repo_root")"
-    orch_worktree="$(swarm_lane_field "$orch_lane" worktree "$repo_root")"
-    if [[ "$orch_worktree" == *-orch ]]; then
-      namespace="${orch_worktree%-orch}"
-      swarm_assert_safe_namespace_name "$namespace"
-      printf '%s\n' "$namespace"
-      return
-    fi
-    orch_branch="$(swarm_lane_field "$orch_lane" branch "$repo_root")"
-    if [[ -n "$orch_branch" ]]; then
-      namespace="${orch_branch##*/}"
-      namespace="${namespace%-orchestrator}"
-      namespace="${namespace%-orch}"
-      if [[ -n "$namespace" ]] && [[ "${namespace,,}" != "orch" ]]; then
-        swarm_assert_safe_namespace_name "$namespace"
-        printf '%s\n' "$namespace"
-        return
-      fi
-    fi
-  fi
-  namespace="$(swarm_repo_name "$repo_root")"
-  swarm_assert_safe_namespace_name "$namespace"
-  printf '%s\n' "$namespace"
 }
 
 swarm_worktrees_dir() {
@@ -262,11 +66,11 @@ swarm_orchestration_dir() {
   local repo_root
   local repo_parent
   local parent_name
-  local namespace
+  local repo_name
   repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
   repo_parent="$(swarm_repo_parent_dir "$repo_root")"
   parent_name="$(basename "$repo_parent")"
-  namespace="$(swarm_namespace "$repo_root")"
+  repo_name="$(swarm_repo_name "$repo_root")"
   if [[ -n "${CLAWDSTRIKE_SWARM_ORCH_DIR:-}" ]]; then
     printf '%s\n' "$CLAWDSTRIKE_SWARM_ORCH_DIR"
     return
@@ -276,10 +80,10 @@ swarm_orchestration_dir() {
       printf '%s\n' "$repo_parent"
       ;;
     *-worktrees)
-      printf '%s/%s-orchestration\n' "$(dirname "$repo_parent")" "$namespace"
+      printf '%s/%s-orchestration\n' "$(dirname "$repo_parent")" "$repo_name"
       ;;
     *)
-      printf '%s/%s-orchestration\n' "$repo_parent" "$namespace"
+      printf '%s/%s-orchestration\n' "$repo_parent" "$repo_name"
       ;;
   esac
 }
@@ -327,46 +131,9 @@ swarm_lane_docs() {
   printf '%s\n' "$docs" | tr ',' '\n' | sed '/^$/d'
 }
 
-swarm_assert_safe_lane_name() {
-  local lane="$1"
-  if [[ ! "$lane" =~ ^[A-Za-z0-9_-]+$ ]]; then
-    printf 'Unsafe lane name: %s\n' "$lane" >&2
-    exit 1
-  fi
-}
-
-swarm_assert_safe_worktree_name() {
-  local worktree="$1"
-  if [[ -z "$worktree" || "$worktree" == /* || "$worktree" == *..* || "$worktree" =~ [[:space:]] || ! "$worktree" =~ ^[A-Za-z0-9._-]+$ ]]; then
-    printf 'Unsafe worktree name: %s\n' "$worktree" >&2
-    exit 1
-  fi
-}
-
-swarm_assert_safe_namespace_name() {
-  local namespace="$1"
-  if [[ -z "$namespace" || "$namespace" == /* || "$namespace" == *..* || "$namespace" =~ [[:space:]] || ! "$namespace" =~ ^[A-Za-z0-9._-]+$ ]]; then
-    printf 'Unsafe swarm namespace: %s\n' "$namespace" >&2
-    exit 1
-  fi
-}
-
-swarm_assert_safe_branch_name() {
-  local branch="$1"
-  if [[ -z "$branch" || "$branch" == /* || "$branch" == *..* || "$branch" == *'@{'* || "$branch" =~ [[:space:]] || ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
-    printf 'Unsafe branch name: %s\n' "$branch" >&2
-    exit 1
-  fi
-  if ! git check-ref-format --branch "$branch" >/dev/null 2>&1; then
-    printf 'Invalid branch name: %s\n' "$branch" >&2
-    exit 1
-  fi
-}
-
 swarm_require_lane() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"
-  swarm_assert_safe_lane_name "$lane"
   if [[ -z "$(swarm_lane_field "$lane" lane "$repo_root")" ]]; then
     printf 'Unknown lane: %s\n' "$lane" >&2
     exit 1
@@ -401,27 +168,16 @@ swarm_wave_lanes() {
 swarm_lane_worktree_path() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"
-  local worktree_name
-  worktree_name="$(swarm_lane_field "$lane" worktree "$repo_root")"
-  swarm_assert_safe_worktree_name "$worktree_name"
   printf '%s/%s\n' \
     "$(swarm_worktrees_dir "$repo_root")" \
-    "$worktree_name"
+    "$(swarm_lane_field "$lane" worktree "$repo_root")"
 }
 
 swarm_lane_orch_dir() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"
-  local orchestration_dir
-  if [[ -n "${CLAWDSTRIKE_SWARM_SELECTED_LANES:-}" ]]; then
-    orchestration_dir="$(swarm_orchestration_dir "$repo_root")"
-  else
-    orchestration_dir="$(
-      CLAWDSTRIKE_SWARM_SELECTED_LANES="$lane" swarm_orchestration_dir "$repo_root"
-    )"
-  fi
   printf '%s/%s\n' \
-    "$orchestration_dir" \
+    "$(swarm_orchestration_dir "$repo_root")" \
     "$lane"
 }
 
@@ -435,6 +191,7 @@ swarm_ensure_dirs() {
   local repo_root="${1:-$(swarm_repo_root)}"
   local lane
   mkdir -p "$(swarm_worktrees_dir "$repo_root")"
+  mkdir -p "$(swarm_orchestration_dir "$repo_root")"
   while IFS= read -r lane; do
     mkdir -p "$(swarm_lane_orch_dir "$lane" "$repo_root")"
   done < <(swarm_all_lanes "$repo_root")
@@ -452,6 +209,8 @@ swarm_codex_profile_args() {
   case "$profile" in
     swarm-docs)
       printf '%s\n' \
+        --enable \
+        multi_agent \
         --sandbox \
         read-only \
         -c \
@@ -459,6 +218,8 @@ swarm_codex_profile_args() {
       ;;
     swarm-orchestrator)
       printf '%s\n' \
+        --enable \
+        multi_agent \
         --sandbox \
         workspace-write \
         -c \
@@ -466,6 +227,8 @@ swarm_codex_profile_args() {
       ;;
     swarm-worker)
       printf '%s\n' \
+        --enable \
+        multi_agent \
         --sandbox \
         workspace-write \
         -c \
@@ -473,6 +236,8 @@ swarm_codex_profile_args() {
       ;;
     swarm-review)
       printf '%s\n' \
+        --enable \
+        multi_agent \
         --sandbox \
         read-only \
         -c \
@@ -520,14 +285,13 @@ swarm_run_lane_bootstrap() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"
   local worktree_path
-  local bootstrap_preset
-  local -a bootstrap_args=()
+  local bootstrap_cmd
 
   swarm_require_lane "$lane" "$repo_root"
   worktree_path="$(swarm_lane_worktree_path "$lane" "$repo_root")"
-  bootstrap_preset="$(swarm_lane_bootstrap_cmd "$lane" "$repo_root")"
+  bootstrap_cmd="$(swarm_lane_bootstrap_cmd "$lane" "$repo_root")"
 
-  if [[ -z "$bootstrap_preset" || "$bootstrap_preset" == "none" ]]; then
+  if [[ -z "$bootstrap_cmd" ]]; then
     return 0
   fi
 
@@ -536,24 +300,10 @@ swarm_run_lane_bootstrap() {
     exit 1
   fi
 
-  case "$bootstrap_preset" in
-    cargo-fetch-locked)
-      bootstrap_args=(cargo fetch --locked)
-      ;;
-    cargo-fetch-agent-locked)
-      bootstrap_args=(cargo fetch --locked --manifest-path apps/agent/src-tauri/Cargo.toml)
-      ;;
-    *)
-      printf 'unsupported bootstrap preset for %s: %s\n' "$lane" "$bootstrap_preset" >&2
-      printf '%s\n' 'bootstrap presets must be reviewed fixed argv IDs, not shell source' >&2
-      exit 1
-      ;;
-  esac
-
-  printf 'bootstrap %s: %s\n' "$lane" "$bootstrap_preset"
+  printf 'bootstrap %s: %s\n' "$lane" "$bootstrap_cmd"
   (
     cd "$worktree_path"
-    "${bootstrap_args[@]}"
+    eval "$bootstrap_cmd"
   )
 }
 
@@ -608,17 +358,17 @@ swarm_write_lane_prompt() {
   local brief_id
   local description
   local docs_block
-  local role
   local profile
+  local role
 
   swarm_require_lane "$lane" "$repo_root"
   brief_id="$(swarm_lane_field "$lane" brief_id "$repo_root")"
   description="$(swarm_lane_field "$lane" description "$repo_root")"
   docs_block="$(swarm_prompt_docs_block "$lane" "$repo_root")"
-  role="$(swarm_lane_field "$lane" role "$repo_root")"
   profile="$(swarm_lane_field "$lane" profile "$repo_root")"
+  role="$(swarm_lane_field "$lane" role "$repo_root")"
 
-  if [[ "$role" == "workstream_orchestrator" || "$profile" == "swarm-orchestrator" ]]; then
+  if [[ "$profile" == "swarm-orchestrator" || "$role" == "workstream_orchestrator" ]]; then
     cat > "$prompt_file" <<EOF_PROMPT
 Use \$clawdstrike-swarm-supervisor.
 
@@ -638,30 +388,6 @@ Requirements:
 
 Operator note:
 ${note:-No extra operator note. Start by checking repo state and active orchestration artifacts.}
-EOF_PROMPT
-    return
-  fi
-
-  if [[ "$role" == "merge_reviewer" || "$profile" == "swarm-review" ]]; then
-    cat > "$prompt_file" <<EOF_PROMPT
-Use \$clawdstrike-merge-verifier.
-
-Current lane: ${brief_id}.
-Lane purpose: ${description}
-
-Read these docs first:
-${docs_block}
-
-Review requirements:
-- read the dependency graph and verification matrix before reviewing
-- inspect the reviewed lane diff, owned files, and handoff evidence first
-- run the lane verification commands or explain exactly why they could not run
-- prioritize findings: regressions, ownership violations, missing verification, and scope drift
-- if shared registration files are touched, hand them back to ORCH instead of silently accepting them
-- leave a merge recommendation with blocking and non-blocking findings
-
-Operator note:
-${note:-No extra operator note. Start from the lane handoff and produce a findings-first review.}
 EOF_PROMPT
     return
   fi

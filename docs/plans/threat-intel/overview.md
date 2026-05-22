@@ -85,7 +85,7 @@ The Threat Intelligence Subsystem transforms Clawdstrike from a rule-based polic
 
 ## 4. Integration with Existing System
 
-### 4.1 Guard Plugin Extension
+### 4.1 Guard System Extension
 
 The threat intelligence components integrate as new guards implementing the existing `Guard` trait:
 
