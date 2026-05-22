@@ -40,6 +40,17 @@ const ALLOW_DIRECT_STATUS_TOOL_OVERRIDES_ENV: &str =
     "CLAWDSTRIKE_ALLOW_DIRECT_STATUS_TOOL_OVERRIDES";
 const ENDPOINT_SECURITY_TOOL_NAME: &str = "endpoint-security-status-tool";
 const NETWORK_EXTENSION_TOOL_NAME: &str = "network-extension-status-tool";
+const STATUS_TOOL_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "DEVELOPER_DIR",
+    "SDKROOT",
+    "TOOLCHAINS",
+    "XCODE_DEVELOPER_DIR_PATH",
+];
 
 #[derive(Debug, Clone)]
 enum ToolInvocation {
@@ -494,9 +505,7 @@ async fn execute_tool_command(mut command: Command, display_name: String) -> Res
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     command.env_clear();
-    if let Some(path) = std::env::var_os("PATH") {
-        command.env("PATH", path);
-    }
+    propagate_status_tool_environment(&mut command);
     command.env(
         ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_ENV,
         default_endpoint_security_runtime_snapshot_path(),
@@ -529,6 +538,14 @@ async fn execute_tool_command(mut command: Command, display_name: String) -> Res
     }
 
     Ok(output.stdout)
+}
+
+fn propagate_status_tool_environment(command: &mut Command) {
+    for key in STATUS_TOOL_ENV_ALLOWLIST {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
 }
 
 fn merge_samples(
@@ -1250,6 +1267,47 @@ mod tests {
             remove_env_var("CLAWDSTRIKE_TEST_AMBIENT_SECRET");
         }
         let _ = fs::remove_file(script);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn status_tool_execution_preserves_swift_toolchain_environment() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let previous_home = std::env::var_os("HOME");
+        let previous_developer_dir = std::env::var_os("DEVELOPER_DIR");
+        let home = temp_script_path("swift-home");
+        fs::create_dir_all(&home).expect("create test HOME");
+        set_env_var("HOME", &home);
+        set_env_var(
+            "DEVELOPER_DIR",
+            "/Applications/Xcode.app/Contents/Developer",
+        );
+        let script = write_script(
+            "toolchain-env-helper",
+            "#!/bin/sh\nprintf '%s\\n%s' \"${HOME:-missing}\" \"${DEVELOPER_DIR:-missing}\"\n",
+        );
+
+        let output = execute_tool(&ToolInvocation::Direct {
+            program: script.clone(),
+            args: vec![OsString::from("live")],
+        })
+        .await
+        .expect("execute helper");
+        let rendered = String::from_utf8(output).expect("utf8 output");
+        assert!(rendered.contains(home.to_str().expect("home path should be utf8")));
+        assert!(rendered.contains("/Applications/Xcode.app/Contents/Developer"));
+
+        if let Some(value) = previous_home {
+            set_env_var("HOME", value);
+        } else {
+            remove_env_var("HOME");
+        }
+        if let Some(value) = previous_developer_dir {
+            set_env_var("DEVELOPER_DIR", value);
+        } else {
+            remove_env_var("DEVELOPER_DIR");
+        }
+        let _ = fs::remove_file(script);
+        let _ = fs::remove_dir_all(home);
     }
 
     #[test]
