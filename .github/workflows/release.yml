@@ -92,12 +92,24 @@ jobs:
           done
 
           placeholder_pattern='(__[A-Z0-9_]+__|_{5,})'
-          if find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0 | xargs -0 grep -nE "$placeholder_pattern"; then
+          placeholder_hits=0
+          while IFS= read -r -d '' path; do
+            if grep -I -nE "$placeholder_pattern" "$path"; then
+              placeholder_hits=1
+            fi
+          done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
+          if (( placeholder_hits != 0 )); then
             echo "macOS combined-system-extension packaging still contains placeholders; replace them before release." >&2
             exit 1
           fi
 
-          if find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0 | xargs -0 grep -n "scaffold_only"; then
+          scaffold_hits=0
+          while IFS= read -r -d '' path; do
+            if grep -I -n "scaffold_only" "$path"; then
+              scaffold_hits=1
+            fi
+          done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
+          if (( scaffold_hits != 0 )); then
             echo "macOS packaging sources still declare scaffold_only state; release requires concrete source metadata plus a real embedded system extension bundle." >&2
             exit 1
           fi
