@@ -18,7 +18,8 @@ use hush_core::sha256;
 use serde::{Deserialize, Serialize};
 
 use self::compaction::{
-    EndpointFlightRecorderCompactionRecord, EndpointFlightRecorderCompactionReport,
+    EndpointFlightRecorderCompactionManifest, EndpointFlightRecorderCompactionRecord,
+    EndpointFlightRecorderCompactionReport,
 };
 use self::index::{
     EndpointFlightRecorderGraphEdgeIndexEntry, EndpointFlightRecorderGraphNodeIndexEntry,
@@ -41,6 +42,7 @@ use super::{
 #[cfg(unix)]
 const ENDPOINT_PRIVATE_FILE_MODE: u32 = 0o600;
 const ENDPOINT_FLIGHT_RECORDER_LOG_RECORD_SCHEMA_VERSION: u32 = 1;
+const ENDPOINT_FLIGHT_RECORDER_COMPACTION_MANIFEST_SCHEMA_VERSION: u8 = 1;
 
 fn endpoint_private_open_options() -> OpenOptions {
     let mut options = OpenOptions::new();
@@ -369,7 +371,13 @@ impl EndpointFlightRecorder {
         dry_run: bool,
         now: DateTime<Utc>,
     ) -> Result<EndpointFlightRecorderCompactionReport> {
+        let Some(path) = self.path.clone() else {
+            return Err(anyhow!(
+                "endpoint flight recorder compaction requires a durable backing file"
+            ));
+        };
         let observations = self.read_observations_from_disk()?;
+        let pre_compaction_chain = read_endpoint_flight_recorder_log_chain_state(&path)?;
         let observation_count = observations.len();
         let mut retained = Vec::with_capacity(observations.len());
         let mut protected_count = 0usize;
@@ -415,14 +423,37 @@ impl EndpointFlightRecorder {
             }
         }
 
-        if !dry_run {
-            self.rewrite_observations(&retained)?;
-        }
+        let continuity_manifest = if !dry_run {
+            let post_compaction_chain = self.rewrite_observations(&retained)?;
+            let manifest = EndpointFlightRecorderCompactionManifest {
+                schema_version: ENDPOINT_FLIGHT_RECORDER_COMPACTION_MANIFEST_SCHEMA_VERSION,
+                compacted_at: now,
+                reason: format!(
+                    "flight recorder compaction retained {} of {} observations",
+                    retained.len(),
+                    observation_count
+                ),
+                pre_compaction_head: pre_compaction_chain.previous_record_hash.clone(),
+                pre_compaction_record_count: pre_compaction_chain.record_count(),
+                post_compaction_head: post_compaction_chain.previous_record_hash.clone(),
+                post_compaction_record_count: post_compaction_chain.record_count(),
+                retained_observation_ids: retained
+                    .iter()
+                    .map(|observation| observation.observation_id.clone())
+                    .collect(),
+                removed_records: records.clone(),
+            };
+            append_endpoint_flight_recorder_compaction_manifest(&path, &manifest)?;
+            Some(manifest)
+        } else {
+            None
+        };
 
         Ok(EndpointFlightRecorderCompactionReport {
             observation_count,
             retained_count: retained.len(),
             protected_count,
+            continuity_manifest,
             records,
         })
     }
@@ -453,7 +484,10 @@ impl EndpointFlightRecorder {
         read_endpoint_observations(path)
     }
 
-    fn rewrite_observations(&mut self, observations: &[EndpointObservation]) -> Result<()> {
+    fn rewrite_observations(
+        &mut self,
+        observations: &[EndpointObservation],
+    ) -> Result<EndpointFlightRecorderLogChainState> {
         let Some(path) = self.path.clone() else {
             return Err(anyhow!(
                 "endpoint flight recorder rewrite requires a durable backing file"
@@ -541,7 +575,7 @@ impl EndpointFlightRecorder {
         self.rebuild_from_observations(observations);
         replace_endpoint_graph_node_index(&path, self.recorder.graph())?;
         replace_endpoint_graph_edge_index(&path, self.recorder.graph())?;
-        Ok(())
+        Ok(chain_state)
     }
 
     fn rebuild_from_observations(&mut self, observations: &[EndpointObservation]) {
@@ -765,6 +799,10 @@ fn validate_endpoint_flight_recorder_log_record(
 }
 
 impl EndpointFlightRecorderLogChainState {
+    fn record_count(&self) -> u64 {
+        self.next_sequence.saturating_sub(1)
+    }
+
     fn advance_hashed_record(&mut self, record_hash: String) {
         self.previous_record_hash = Some(record_hash);
         self.next_sequence = self.next_sequence.saturating_add(1);
@@ -1443,6 +1481,102 @@ pub(crate) fn endpoint_flight_recorder_index_path(path: &Path) -> PathBuf {
     path.with_file_name(format!("{file_name}.index.jsonl"))
 }
 
+fn endpoint_flight_recorder_compaction_manifest_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "flight-recorder.jsonl".to_string());
+    path.with_file_name(format!("{file_name}.compaction.jsonl"))
+}
+
+fn append_endpoint_flight_recorder_compaction_manifest(
+    path: &Path,
+    manifest: &EndpointFlightRecorderCompactionManifest,
+) -> Result<()> {
+    let manifest_path = endpoint_flight_recorder_compaction_manifest_path(path);
+    if let Some(parent) = manifest_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "create endpoint flight recorder compaction manifest directory {}",
+                    parent.display()
+                )
+            })?;
+        }
+    }
+    {
+        let mut options = endpoint_private_open_options();
+        let mut file = options
+            .create(true)
+            .append(true)
+            .open(&manifest_path)
+            .with_context(|| {
+                format!(
+                    "open endpoint flight recorder compaction manifest {}",
+                    manifest_path.display()
+                )
+            })?;
+        enforce_endpoint_private_file_mode(
+            &manifest_path,
+            "endpoint flight recorder compaction manifest",
+        )?;
+        serde_json::to_writer(&mut file, manifest).with_context(|| {
+            format!(
+                "serialize endpoint flight recorder compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+        file.write_all(b"\n").with_context(|| {
+            format!(
+                "write endpoint flight recorder compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+        file.flush().with_context(|| {
+            format!(
+                "flush endpoint flight recorder compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn read_endpoint_flight_recorder_compaction_manifests(
+    path: &Path,
+) -> Result<Vec<EndpointFlightRecorderCompactionManifest>> {
+    let manifest_path = endpoint_flight_recorder_compaction_manifest_path(path);
+    let contents = match fs::read_to_string(&manifest_path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => {
+            return Err(err).with_context(|| {
+                format!(
+                    "read endpoint flight recorder compaction manifest {}",
+                    manifest_path.display()
+                )
+            })
+        }
+    };
+    let mut manifests = Vec::new();
+    for (idx, line) in contents.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let manifest: EndpointFlightRecorderCompactionManifest = serde_json::from_str(trimmed)
+            .with_context(|| {
+                format!(
+                    "invalid endpoint flight recorder compaction manifest JSONL at {}:{}",
+                    manifest_path.display(),
+                    idx + 1
+                )
+            })?;
+        manifests.push(manifest);
+    }
+    Ok(manifests)
+}
+
 fn read_or_rebuild_endpoint_graph_node_index(
     path: &Path,
     graph: &CausalGraph,
@@ -1871,20 +2005,38 @@ mod tests {
                 .with_timezone(&Utc),
         )?;
         assert_eq!(report.retained_count, 1);
+        let manifest = report
+            .continuity_manifest
+            .as_ref()
+            .expect("missing compaction continuity manifest");
+        assert_eq!(manifest.pre_compaction_record_count, 2);
+        assert_eq!(manifest.post_compaction_record_count, 1);
+        assert!(manifest.pre_compaction_head.is_some());
+        assert!(manifest.post_compaction_head.is_some());
+        assert_eq!(manifest.removed_records.len(), 1);
+        assert_eq!(
+            manifest.retained_observation_ids,
+            vec!["obs-private-mode-2".to_string()]
+        );
+        let persisted_manifests = read_endpoint_flight_recorder_compaction_manifests(&path)?;
+        assert_eq!(persisted_manifests, vec![manifest.clone()]);
 
         let (node_index_path, _) = recorder.read_graph_node_index()?;
         let (edge_index_path, _) = recorder.read_graph_edge_index()?;
         let history_index_path = endpoint_flight_recorder_index_path(&path);
+        let manifest_path = endpoint_flight_recorder_compaction_manifest_path(&path);
 
         assert_private_mode(&path)?;
         assert_private_mode(&history_index_path)?;
         assert_private_mode(&node_index_path)?;
         assert_private_mode(&edge_index_path)?;
+        assert_private_mode(&manifest_path)?;
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(history_index_path);
         let _ = fs::remove_file(node_index_path);
         let _ = fs::remove_file(edge_index_path);
+        let _ = fs::remove_file(manifest_path);
         Ok(())
     }
 
