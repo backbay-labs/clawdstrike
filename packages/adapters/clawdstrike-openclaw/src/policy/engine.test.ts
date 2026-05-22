@@ -951,6 +951,20 @@ tools:
     });
     expect(trustedDecision.status).toBe("allow");
 
+    const bareDecision = await engine.evaluate({
+      eventId: "mcp-server-qualified-allowed-bare",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "readFile",
+        parameters: {},
+      },
+    });
+    expect(bareDecision.status).toBe("deny");
+    expect(bareDecision.guard).toBe("mcp_tool");
+    expect(bareDecision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
+
     const untrustedDecision = await engine.evaluate({
       eventId: "mcp-server-qualified-allowed-untrusted",
       eventType: "tool_call",

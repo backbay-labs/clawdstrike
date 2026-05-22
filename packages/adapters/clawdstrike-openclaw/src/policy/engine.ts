@@ -294,14 +294,19 @@ function canonicalToolName(value: string): string {
 
 function allowedToolMatches(policyToolName: string, eventToolName: string): boolean {
   const eventMcp = parseMcpToolIdentity(eventToolName);
+  const policyMcp = parseMcpToolIdentity(policyToolName, true);
+
   if (eventMcp) {
-    const policyMcp = parseMcpToolIdentity(policyToolName, true);
     if (!policyMcp) {
       return false;
     }
     const serverMatches = policyMcp.server === "*" || policyMcp.server === eventMcp.server;
     const toolMatches = policyMcp.tool === "*" || policyMcp.tool === eventMcp.tool;
     return serverMatches && toolMatches;
+  }
+
+  if (policyMcp) {
+    return false;
   }
 
   return canonicalToolName(policyToolName) === canonicalToolName(eventToolName);
