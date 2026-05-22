@@ -1251,7 +1251,6 @@ jobs:
             and (
               .checks.assistantBlockSignal
               or .checks.assistantAuthMissing
-              or .checks.assistantAgentUnavailable
             )
             and .checks.policyCheckHttpOk
             and .checks.policyCheckDenied
