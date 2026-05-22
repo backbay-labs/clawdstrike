@@ -235,6 +235,39 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "missing_full_disk_access" }))
     }
 
+    func testFullDiskAccessEvidenceClearsWhenProbeRecovers() {
+        let monitor = EndpointSecurityMonitor(
+            installState: .installed,
+            approval: .approved,
+            providerActive: true
+        )
+        monitor.setFullDiskAccessGranted(
+            false,
+            evidencePath: "endpoint-security-full-disk-access-probe"
+        )
+        XCTAssertTrue(
+            monitor.snapshot().evidencePaths.contains { $0.kind == "missing_full_disk_access" }
+        )
+
+        monitor.setFullDiskAccessGranted(true)
+        monitor.recordAuthorization(
+            AuthorizationEvent(
+                path: "/tmp/clawdstrike-es-fda-recovered.txt",
+                decision: .allow,
+                latencyMs: 12,
+                deadlineMs: 200,
+                notifyObserved: true,
+                observedAt: Date(timeIntervalSince1970: 1_778_824_804)
+            )
+        )
+        let report = monitor.snapshot()
+
+        XCTAssertFalse(report.degradedReasons.contains("missing_full_disk_access"))
+        XCTAssertFalse(report.evidencePaths.contains { $0.kind == "missing_full_disk_access" })
+        XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .active)
+        XCTAssertEqual(report.providerState.availability, .active)
+    }
+
     func testAuthorizationPublisherRequestMatchesAgentEndpointContract() throws {
         let event = AuthorizationEvent(
             path: "/tmp/clawdstrike-es-dogfood-test.txt",

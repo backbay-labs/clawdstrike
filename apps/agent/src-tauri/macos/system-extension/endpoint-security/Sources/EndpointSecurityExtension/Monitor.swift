@@ -79,10 +79,11 @@ public final class EndpointSecurityMonitor {
     ) {
         withLockedState {
             fullDiskAccessGranted = granted
-            if !granted {
-                if let evidencePath {
-                    addEvidenceLocked(kind: "missing_full_disk_access", path: evidencePath, detail: detail)
-                }
+            if granted {
+                removeEvidenceLocked(kind: "missing_full_disk_access")
+            } else if let evidencePath {
+                removeEvidenceLocked(kind: "missing_full_disk_access")
+                addEvidenceLocked(kind: "missing_full_disk_access", path: evidencePath, detail: detail)
             }
         }
     }
@@ -402,6 +403,10 @@ public final class EndpointSecurityMonitor {
         if !evidencePaths.contains(artifact) {
             evidencePaths.append(artifact)
         }
+    }
+
+    private func removeEvidenceLocked(kind: String) {
+        evidencePaths.removeAll { $0.kind == kind }
     }
 }
 
