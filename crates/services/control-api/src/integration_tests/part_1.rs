@@ -1212,6 +1212,8 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             "policyHash": proposed_policy_hash.clone(),
             "policyEpoch": 2
         },
+        "proposedPolicyHash": proposed_policy_hash.clone(),
+        "proposedPolicyEpoch": 2,
         "eventCount": 2,
         "changedCount": 2,
         "allowToBlockCount": 1,
@@ -1237,6 +1239,8 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             "policyHash": proposed_policy_hash.clone(),
             "policyEpoch": 2
         },
+        "proposedPolicyHash": proposed_policy_hash.clone(),
+        "proposedPolicyEpoch": 2,
         "eventCount": 1,
         "changedCount": 0,
         "allowToBlockCount": 0,
@@ -1516,6 +1520,8 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         .expect("endpoint-policy-1 action id")
         .to_string();
     let endpoint_one_request = endpoint_one_envelope["fact"]["payload"]["request"].clone();
+    let endpoint_one_expected_receipt =
+        endpoint_one_envelope["fact"]["payload"]["expectedReceipt"].clone();
     let endpoint_one_ack_token = endpoint_one_envelope["fact"]["delivery"]["ackToken"]
         .as_str()
         .expect("endpoint-policy-1 ack token")
@@ -1537,17 +1543,20 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
         .expect("endpoint-policy-2 action id")
         .to_string();
     let endpoint_two_request = endpoint_two_envelope["fact"]["payload"]["request"].clone();
+    let endpoint_two_expected_receipt =
+        endpoint_two_envelope["fact"]["payload"]["expectedReceipt"].clone();
     let endpoint_two_ack_token = endpoint_two_envelope["fact"]["delivery"]["ackToken"]
         .as_str()
         .expect("endpoint-policy-2 ack token")
         .to_string();
 
-    for (action_id, endpoint_agent_id, ack_token, request, impact, receipt) in [
+    for (action_id, endpoint_agent_id, ack_token, request, expected_receipt, impact, receipt) in [
         (
             endpoint_one_action_id.clone(),
             "endpoint-policy-1",
             endpoint_one_ack_token,
             endpoint_one_request,
+            endpoint_one_expected_receipt,
             impact_report.clone(),
             signed_impact_receipt_value.clone(),
         ),
@@ -1556,6 +1565,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
             "endpoint-policy-2",
             endpoint_two_ack_token,
             endpoint_two_request,
+            endpoint_two_expected_receipt,
             impact_report_two.clone(),
             signed_impact_receipt_value_two.clone(),
         ),
@@ -1576,6 +1586,7 @@ async fn policies_proposal_requires_admin_approval_before_deploying() {
                         "validationPlanSha256": validation_plan_sha256,
                         "endpointAgentId": endpoint_agent_id,
                         "request": request,
+                        "expectedReceipt": expected_receipt,
                         "impact": impact,
                         "receipt": receipt
                     }
