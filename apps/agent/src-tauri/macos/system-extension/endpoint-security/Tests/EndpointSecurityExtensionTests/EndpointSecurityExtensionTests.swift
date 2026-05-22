@@ -1,4 +1,4 @@
-import EndpointSecurityExtension
+@testable import EndpointSecurityExtension
 import Foundation
 import XCTest
 
@@ -189,6 +189,20 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(report.providerState.active, false)
         XCTAssertEqual(report.providerState.healthy, false)
         XCTAssertEqual(report.providerState.availability, .unavailable)
+    }
+
+    func testLiveReportRecordsMissingFullDiskAccessEvidenceWhenProbeFails() {
+        let report = EndpointSecurityMonitor.liveReport(fullDiskAccessProbe: { false })
+
+        XCTAssertTrue(report.degradedReasons.contains("missing_full_disk_access"))
+        XCTAssertEqual(
+            report.hostStatus.endpointSecurity.runtime,
+            .degraded(reason: "missing_full_disk_access")
+        )
+        XCTAssertTrue(report.evidencePaths.contains { artifact in
+            artifact.kind == "missing_full_disk_access"
+                && artifact.path == "endpoint-security-full-disk-access-probe"
+        })
     }
 
     func testFullDiskAccessIsNotGrantedByDefaultForInstalledActiveProvider() {

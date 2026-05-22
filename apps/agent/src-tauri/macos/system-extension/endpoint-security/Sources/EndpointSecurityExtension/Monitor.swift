@@ -150,14 +150,21 @@ public final class EndpointSecurityMonitor {
     }
 
     public static func liveReport() -> EndpointSecurityStatusReport {
-        EndpointSecurityMonitor(fullDiskAccessGranted: probeFullDiskAccessGranted()).snapshot()
+        liveReport(fullDiskAccessProbe: probeFullDiskAccessGranted)
+    }
+
+    static func liveReport(fullDiskAccessProbe: () -> Bool?) -> EndpointSecurityStatusReport {
+        let monitor = EndpointSecurityMonitor()
+        monitor.refreshFullDiskAccessProbe(probe: fullDiskAccessProbe)
+        return monitor.snapshot()
     }
 
     public func refreshFullDiskAccessProbe(
         evidencePath: String = "endpoint-security-full-disk-access-probe",
-        detail: String = "Full Disk Access probe could not read the macOS TCC database."
+        detail: String = "Full Disk Access probe could not read the macOS TCC database.",
+        probe: () -> Bool? = EndpointSecurityMonitor.probeFullDiskAccessGranted
     ) {
-        guard let granted = Self.probeFullDiskAccessGranted() else {
+        guard let granted = probe() else {
             return
         }
         setFullDiskAccessGranted(granted, evidencePath: evidencePath, detail: detail)
