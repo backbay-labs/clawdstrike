@@ -276,10 +276,106 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Test EndpointSecurity extension package
-        run: swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/endpoint-security
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_path="apps/agent/src-tauri/macos/system-extension/endpoint-security"
+          swift test --enable-code-coverage --disable-sandbox --package-path "$package_path"
+
+          codecov_path="$(swift test --disable-sandbox --show-codecov-path --package-path "$package_path")"
+          codecov_dir="$(dirname "$codecov_path")"
+          debug_dir="$(dirname "$codecov_dir")"
+          test_binary="$debug_dir/EndpointSecurityExtensionPackageTests.xctest/Contents/MacOS/EndpointSecurityExtensionPackageTests"
+          status_tool="$debug_dir/endpoint-security-status-tool"
+
+          for scenario in healthy-allow deny-decision deadline-miss dropped-events missing-full-disk-access inactive-provider approval-blocked; do
+            LLVM_PROFILE_FILE="$codecov_dir/status-tool-%p.profraw" "$status_tool" fixture "$scenario" >/dev/null
+          done
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" live >/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture unsupported >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" observe-auth-open 0 >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" observe-auth-open 1 >/dev/null 2>/dev/null || true
+
+          xcrun llvm-profdata merge -sparse "$codecov_dir"/*.profraw -o "$codecov_dir/combined.profdata"
+          xcrun llvm-cov export \
+            -format=text \
+            -instr-profile="$codecov_dir/combined.profdata" \
+            "$test_binary" \
+            -object="$status_tool" \
+            > swift-coverage-endpoint-security.json
 
       - name: Test NetworkExtension package
-        run: swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/network-extension
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_path="apps/agent/src-tauri/macos/system-extension/network-extension"
+          swift test --enable-code-coverage --disable-sandbox --package-path "$package_path"
+
+          codecov_path="$(swift test --disable-sandbox --show-codecov-path --package-path "$package_path")"
+          codecov_dir="$(dirname "$codecov_path")"
+          debug_dir="$(dirname "$codecov_dir")"
+          test_binary="$debug_dir/ClawdStrikeNetworkExtensionPackageTests.xctest/Contents/MacOS/ClawdStrikeNetworkExtensionPackageTests"
+          status_tool="$debug_dir/network-extension-status-tool"
+
+          for scenario in selection inactive unavailable approval-blocked; do
+            LLVM_PROFILE_FILE="$codecov_dir/status-tool-%p.profraw" "$status_tool" fixture "$scenario" >/dev/null
+          done
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" live >/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture unsupported >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" request-reload >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" request-reload /tmp/policy.json abc >/dev/null 2>/dev/null || true
+
+          xcrun llvm-profdata merge -sparse "$codecov_dir"/*.profraw -o "$codecov_dir/combined.profdata"
+          xcrun llvm-cov export \
+            -format=text \
+            -instr-profile="$codecov_dir/combined.profdata" \
+            "$test_binary" \
+            -object="$status_tool" \
+            > swift-coverage-network-extension.json
+
+      - name: Enforce changed-line Swift coverage floor
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          CHANGED_SWIFT_COVERAGE_THRESHOLD: "60"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GITHUB_BASE_REF}" ]; then
+            echo "No base ref (non-PR run); skipping changed-file Swift coverage gate."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+
+          if ! git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.swift' > changed_swift_files.txt; then
+            echo "Shallow diff failed; fetching additional history for merge-base resolution"
+            git fetch --no-tags --prune --unshallow origin || git fetch --no-tags --prune origin
+            git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.swift' > changed_swift_files.txt
+          fi
+
+          grep '^apps/agent/src-tauri/macos/system-extension/' changed_swift_files.txt \
+            | grep '/Sources/' \
+            > changed_swift_files.coverage.txt || true
+
+          if [ ! -s changed_swift_files.coverage.txt ]; then
+            echo "No system-extension Swift source files changed; skipping changed-file Swift coverage gate."
+            exit 0
+          fi
+
+          tools/scripts/check-changed-swift-coverage.py \
+            --coverage-json swift-coverage-endpoint-security.json \
+            --coverage-json swift-coverage-network-extension.json \
+            --changed-files-file changed_swift_files.coverage.txt \
+            --git-diff-range "origin/${GITHUB_BASE_REF}...HEAD" \
+            --threshold "${CHANGED_SWIFT_COVERAGE_THRESHOLD}"
 
   desktop-frontend:
     name: Desktop Frontend
