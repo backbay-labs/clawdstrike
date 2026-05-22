@@ -929,7 +929,7 @@ async fn validate_endpoint_ack_signed_receipt(
             &context.action.payload,
             &ack.target_id,
         )?;
-        return Ok(());
+        return validate_response_ack_signed_receipt(tx, context, ack).await;
     }
 
     if !requires_endpoint_ack_signed_receipt(&context.action, ack) {
@@ -1641,12 +1641,6 @@ fn requires_endpoint_ack_signed_receipt(
     action: &ResponseActionRecord,
     ack: &AckSubmission,
 ) -> bool {
-    if action.action_type == ResponseActionType::PolicyRuleDiffValidation.as_str()
-        && ack.ack_status != "acknowledged"
-    {
-        return false;
-    }
-
     action.target.kind.as_str() == "endpoint"
         && matches!(
             ack.ack_status,
@@ -3060,7 +3054,7 @@ mod tests {
     }
 
     #[test]
-    fn policy_rule_diff_non_ack_statuses_use_error_payload_without_endpoint_receipts() {
+    fn policy_rule_diff_non_ack_terminal_statuses_require_signed_receipts() {
         let action = test_response_action(
             ResponseTargetKind::Endpoint,
             ResponseActionType::PolicyRuleDiffValidation.as_str(),
@@ -3069,8 +3063,8 @@ mod tests {
         for status in ["failed", "rejected", "expired"] {
             let ack = test_ack(status, "endpoint");
             assert!(
-                !requires_endpoint_ack_signed_receipt(&action, &ack),
-                "policy rule-diff {status} acknowledgements use the policyRuleDiffValidationError payload"
+                requires_endpoint_ack_signed_receipt(&action, &ack),
+                "policy rule-diff {status} terminal acknowledgements must include an endpoint signed receipt"
             );
         }
     }
@@ -3833,8 +3827,9 @@ mod tests {
             })),
         })
         .expect("ack payload parses");
-        validate_policy_rule_diff_ack_payload(&failed_without_receipt)
-            .expect("failed policy rule-diff acknowledgement may omit receipt");
+        validate_policy_rule_diff_ack_payload(&failed_without_receipt).expect(
+            "error payload shape validation is separate from terminal signed-receipt enforcement",
+        );
     }
 
     #[test]
