@@ -1164,13 +1164,22 @@ fn read_or_rebuild_endpoint_observation_index(
     if let Ok(entries) = read_endpoint_observation_index(&index_path) {
         if endpoint_observation_index_covers_log(path, &entries)? {
             let _ = read_endpoint_flight_recorder_log_chain_state(path)?;
-            return Ok((index_path, entries));
+            if validate_endpoint_observation_index_entries(path, &entries).is_ok() {
+                return Ok((index_path, entries));
+            }
         }
     }
 
     let entries = rebuild_endpoint_observation_index(path)?;
     replace_endpoint_observation_index(path, &entries)?;
     Ok((index_path, entries))
+}
+
+fn validate_endpoint_observation_index_entries(
+    path: &Path,
+    entries: &[EndpointFlightRecorderHistoryIndexEntry],
+) -> Result<()> {
+    read_endpoint_observations_at_index_entries(path, entries.to_vec()).map(|_| ())
 }
 
 fn rebuild_endpoint_observation_index(
@@ -1883,6 +1892,41 @@ mod tests {
         let _ = fs::remove_file(history_index_path);
         let _ = fs::remove_file(node_index_path);
         let _ = fs::remove_file(edge_index_path);
+        Ok(())
+    }
+
+    #[test]
+    fn indexed_window_rebuilds_sidecar_when_metadata_no_longer_matches_log() -> Result<()> {
+        let path = unique_test_path("stale-index")?;
+        let mut recorder = EndpointFlightRecorder::open(&path)?;
+        recorder.append_observations(&[test_observation_with_id(
+            "obs-stale-index",
+            "2026-05-20T12:00:00Z",
+        )?])?;
+
+        let mut entries =
+            read_endpoint_observation_index(&endpoint_flight_recorder_index_path(&path))?;
+        assert_eq!(entries.len(), 1);
+        entries[0].event_kind = "file_access".to_string();
+        replace_endpoint_observation_index(&path, &entries)?;
+
+        let window = recorder
+            .read_indexed_observation_window(10, |entry| entry.event_kind == "process_exec")?;
+        assert_eq!(window.matched_observation_count, 1);
+        assert_eq!(window.selected_observations.len(), 1);
+        assert_eq!(
+            window.selected_observations[0].observation_id,
+            "obs-stale-index"
+        );
+
+        let repaired_entries =
+            read_endpoint_observation_index(&endpoint_flight_recorder_index_path(&path))?;
+        assert_eq!(repaired_entries[0].event_kind, "process_exec");
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(endpoint_flight_recorder_index_path(&path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_index_path(&path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_edge_index_path(&path));
         Ok(())
     }
 }
