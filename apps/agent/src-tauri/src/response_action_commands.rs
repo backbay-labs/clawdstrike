@@ -13,10 +13,17 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 
 use crate::agent_auth;
-use crate::api_server::{ControlAckPostbackRetryRequest, ControlAckPostbackRetrySink};
+use crate::api_server::{
+    canonical_json_hash, ControlAckPostbackRetryRequest, ControlAckPostbackRetrySink,
+};
 use crate::nats_client::NatsClient;
 use crate::nats_subjects;
 use crate::settings::Settings;
+use clawdstrike_policy_event::edr::{
+    EndpointDecisionAction, EndpointResponseAcknowledgementReport,
+    EndpointResponseControlCorrelation, EndpointResponseExecutionEffect,
+    EndpointResponseExecutionStatus,
+};
 
 const POLICY_RULE_DIFF_VALIDATION_ACTION: &str = "policy_rule_diff_validation";
 const POLICY_RULE_DIFF_IMPACT_PATH: &str = "/api/v1/agent/edr/policy-events/impact/history";
@@ -309,7 +316,6 @@ impl ResponseActionCommandHandler {
             Err(err) => {
                 let message = truncate_message(&err.to_string(), 512);
                 let raw_payload = policy_rule_diff_failure_payload(&validation, &message);
-                let retry_raw_payload = raw_payload.clone();
                 let observed_at = chrono::Utc::now();
                 let ack_context = ControlAckContext {
                     status: "failed",
@@ -318,6 +324,31 @@ impl ResponseActionCommandHandler {
                     resulting_state: Some("policy_rule_diff_validation:failed"),
                     failure_message: "",
                 };
+                let raw_payload = match sign_policy_rule_diff_failure_payload(
+                    self.control_ack_retry_sink.as_ref(),
+                    &validation,
+                    &ack_context,
+                    raw_payload,
+                )
+                .await
+                {
+                    Ok(raw_payload) => raw_payload,
+                    Err(sign_err) => {
+                        tracing::error!(
+                            error = %sign_err,
+                            response_action_id = %response_action_id,
+                            "Policy rule-diff validation failed but acknowledgement receipt signing failed"
+                        );
+                        return ResponseCommandReply {
+                            status: "error".to_string(),
+                            response_action_id: Some(response_action_id),
+                            message: Some(format!(
+                                "policy rule-diff validation failed and signed acknowledgement could not be produced: {sign_err}"
+                            )),
+                        };
+                    }
+                };
+                let retry_raw_payload = raw_payload.clone();
                 let postback = post_control_acknowledgement(
                     &self.http_client,
                     self.settings.as_ref(),
@@ -708,6 +739,138 @@ fn policy_rule_diff_failure_payload(
             "message": message,
         }
     })
+}
+
+async fn sign_policy_rule_diff_failure_payload(
+    sink: Option<&ControlAckPostbackRetrySink>,
+    command: &PolicyRuleDiffValidationCommand,
+    context: &ControlAckContext<'_>,
+    mut raw_payload: Value,
+) -> Result<Value> {
+    let sink = sink.ok_or_else(|| {
+        anyhow::anyhow!(
+            "control acknowledgement signing state is unavailable; refusing unsigned failure ack"
+        )
+    })?;
+    let acknowledgement = policy_rule_diff_failure_acknowledgement(command, context, &raw_payload)?;
+    let receipt = sink
+        .sign_response_acknowledgement_receipt(&acknowledgement)
+        .await
+        .context("sign policy rule-diff failure acknowledgement receipt")?;
+    let local_receipt_hash = canonical_json_hash(
+        &receipt,
+        "policy rule-diff failure acknowledgement signed receipt",
+    )?;
+    let signed_receipt = serde_json::to_value(&receipt)
+        .context("serialize policy rule-diff failure acknowledgement signed receipt")?;
+    let payload = raw_payload.as_object_mut().ok_or_else(|| {
+        anyhow::anyhow!("policy rule-diff failure acknowledgement payload must be an object")
+    })?;
+    payload.insert(
+        "localAcknowledgementId".to_string(),
+        Value::String(acknowledgement.acknowledgement_id),
+    );
+    payload.insert(
+        "localExecutionId".to_string(),
+        Value::String(acknowledgement.execution_id),
+    );
+    payload.insert(
+        "localActionId".to_string(),
+        Value::String(acknowledgement.action_id),
+    );
+    payload.insert(
+        "localGraphSliceId".to_string(),
+        Value::String(acknowledgement.graph_slice_id),
+    );
+    payload.insert(
+        "localReceiptHash".to_string(),
+        Value::String(local_receipt_hash),
+    );
+    payload.insert("signedReceipt".to_string(), signed_receipt);
+    payload.insert(
+        "localEffectCount".to_string(),
+        json!(acknowledgement.effects.len()),
+    );
+    Ok(raw_payload)
+}
+
+fn policy_rule_diff_failure_acknowledgement(
+    command: &PolicyRuleDiffValidationCommand,
+    context: &ControlAckContext<'_>,
+    raw_payload: &Value,
+) -> Result<EndpointResponseAcknowledgementReport> {
+    let message = context
+        .message
+        .unwrap_or("policy rule-diff validation failed");
+    let request_hash = canonical_json_hash(
+        &json!({
+            "method": "POST",
+            "path": POLICY_RULE_DIFF_IMPACT_PATH,
+            "body": command.request_body.clone(),
+        }),
+        "policy rule-diff failure validation request",
+    )?;
+    let failure_payload_hash = canonical_json_hash(
+        raw_payload,
+        "policy rule-diff failure acknowledgement payload",
+    )?;
+    let failure_message_hash = hush_core::sha256(message.as_bytes()).to_hex_prefixed();
+    let control = EndpointResponseControlCorrelation {
+        response_action_id: command.response_action_id.clone(),
+        delivery_id: None,
+        target_kind: "endpoint".to_string(),
+        target_id: command.target_id.clone(),
+        ack_token_hash: hush_core::sha256(command.ack_token.as_bytes()).to_hex_prefixed(),
+        ack_status: context.status.to_string(),
+        resulting_state: context.resulting_state.map(ToString::to_string),
+    };
+    let effects = vec![
+        EndpointResponseExecutionEffect {
+            effect_id: "policy-rule-diff-validation-request".to_string(),
+            effect_type: "policy_rule_diff_validation_request".to_string(),
+            target: command.response_action_id.clone(),
+            artifact: Some(POLICY_RULE_DIFF_IMPACT_PATH.to_string()),
+            content_hash: Some(request_hash),
+            byte_count: None,
+        },
+        EndpointResponseExecutionEffect {
+            effect_id: "policy-rule-diff-validation-error".to_string(),
+            effect_type: "policy_rule_diff_validation_error".to_string(),
+            target: command.response_action_id.clone(),
+            artifact: Some("policyRuleDiffValidationError".to_string()),
+            content_hash: Some(failure_payload_hash),
+            byte_count: Some(raw_payload.to_string().len() as u64),
+        },
+        EndpointResponseExecutionEffect {
+            effect_id: "policy-rule-diff-validation-error-message".to_string(),
+            effect_type: "policy_rule_diff_validation_error_message".to_string(),
+            target: command.response_action_id.clone(),
+            artifact: Some("policyRuleDiffValidationError.message".to_string()),
+            content_hash: Some(failure_message_hash),
+            byte_count: Some(message.len() as u64),
+        },
+    ];
+    Ok(EndpointResponseAcknowledgementReport {
+        acknowledgement_id: String::new(),
+        execution_id: format!("policy-rule-diff-validation:{}", command.response_action_id),
+        action_id: command.response_action_id.clone(),
+        action: EndpointDecisionAction::Observe,
+        status: EndpointResponseExecutionStatus::Failed,
+        root_node_id: format!("response-action:{}", command.response_action_id),
+        graph_slice_id: format!("policy-rule-diff-validation:{}", command.proposal_id),
+        ttl_seconds: 0,
+        rollback_ref: "policy-rule-diff-validation".to_string(),
+        acknowledged_by: "response-action-command-handler".to_string(),
+        note: Some(message.to_string()),
+        acknowledged_at: context.observed_at,
+        control_correlation: None,
+        effects,
+        summary: format!(
+            "Policy rule-diff validation failed for response action {}.",
+            command.response_action_id
+        ),
+    }
+    .with_control_correlation(Some(control)))
 }
 
 fn validate_policy_rule_diff_expected_receipt(
@@ -1313,6 +1476,57 @@ mod tests {
             25
         );
         assert!(raw_payload.get("signedReceipt").is_none());
+
+        let observed_at = chrono::Utc::now();
+        let ack_context = ControlAckContext {
+            status: "failed",
+            observed_at,
+            message: Some("local validation failed"),
+            resulting_state: Some("policy_rule_diff_validation:failed"),
+            failure_message: "",
+        };
+        let acknowledgement =
+            policy_rule_diff_failure_acknowledgement(&command, &ack_context, &raw_payload).unwrap();
+        assert_eq!(acknowledgement.action_id, command.response_action_id);
+        assert_eq!(
+            acknowledgement.status,
+            EndpointResponseExecutionStatus::Failed
+        );
+        assert_eq!(acknowledgement.acknowledged_at, observed_at);
+        let control = acknowledgement.control_correlation.as_ref().unwrap();
+        assert_eq!(control.response_action_id, command.response_action_id);
+        assert_eq!(control.target_id, command.target_id);
+        assert_eq!(control.ack_status, "failed");
+        assert_eq!(
+            control.resulting_state.as_deref(),
+            Some("policy_rule_diff_validation:failed")
+        );
+        assert_eq!(
+            control.ack_token_hash,
+            sha256(command.ack_token.as_bytes()).to_hex_prefixed()
+        );
+        let request_hash = canonical_json_hash(
+            &json!({
+                "method": "POST",
+                "path": POLICY_RULE_DIFF_IMPACT_PATH,
+                "body": command.request_body.clone(),
+            }),
+            "test policy rule-diff failure request",
+        )
+        .unwrap();
+        assert!(acknowledgement.effects.iter().any(|effect| {
+            effect.effect_type == "policy_rule_diff_validation_request"
+                && effect.content_hash.as_deref() == Some(request_hash.as_str())
+        }));
+        assert!(acknowledgement.effects.iter().any(|effect| {
+            effect.effect_type == "policy_rule_diff_validation_error_message"
+                && effect.content_hash.as_deref()
+                    == Some(
+                        sha256(b"local validation failed")
+                            .to_hex_prefixed()
+                            .as_str(),
+                    )
+        }));
     }
 
     #[test]

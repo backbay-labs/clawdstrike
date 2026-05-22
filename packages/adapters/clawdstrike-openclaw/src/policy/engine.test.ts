@@ -874,6 +874,144 @@ tools:
     }
   });
 
+  it("does not allow namespaced MCP tools through generic leaf allowlist entries", async () => {
+    const policyPath = join(testDir, "mcp-strict-allowed-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: "clawdstrike-v1.0"
+tools:
+  allowed:
+    - read_file
+  default_action: block
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const directDecision = await engine.evaluate({
+      eventId: "mcp-strict-allowed-direct",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "readFile",
+        parameters: {},
+      },
+    });
+    expect(directDecision.status).toBe("allow");
+
+    const namespacedDecision = await engine.evaluate({
+      eventId: "mcp-strict-allowed-namespaced",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "mcp__untrusted_server__read_file",
+        parameters: {},
+      },
+    });
+    expect(namespacedDecision.status).toBe("deny");
+    expect(namespacedDecision.guard).toBe("mcp_tool");
+    expect(namespacedDecision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
+  });
+
+  it("requires explicit server-qualified allowlist entries for namespaced MCP tools", async () => {
+    const policyPath = join(testDir, "mcp-server-qualified-allowed-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: "clawdstrike-v1.0"
+tools:
+  allowed:
+    - mcp__trusted_server__read_file
+  default_action: block
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const trustedDecision = await engine.evaluate({
+      eventId: "mcp-server-qualified-allowed-trusted",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "mcp__trusted_server__read_file",
+        parameters: {},
+      },
+    });
+    expect(trustedDecision.status).toBe("allow");
+
+    const untrustedDecision = await engine.evaluate({
+      eventId: "mcp-server-qualified-allowed-untrusted",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "mcp__untrusted_server__read_file",
+        parameters: {},
+      },
+    });
+    expect(untrustedDecision.status).toBe("deny");
+    expect(untrustedDecision.guard).toBe("mcp_tool");
+    expect(untrustedDecision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
+  });
+
+  it("supports explicit MCP allowlist wildcards without weakening leaf allowlists", async () => {
+    const policyPath = join(testDir, "mcp-wildcard-allowed-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: "clawdstrike-v1.0"
+tools:
+  allowed:
+    - mcp__*__read_file
+  default_action: block
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const readDecision = await engine.evaluate({
+      eventId: "mcp-wildcard-allowed-read",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "mcp__any_server__read_file",
+        parameters: {},
+      },
+    });
+    expect(readDecision.status).toBe("allow");
+
+    const writeDecision = await engine.evaluate({
+      eventId: "mcp-wildcard-allowed-write",
+      eventType: "tool_call",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "tool",
+        toolName: "mcp__any_server__write_file",
+        parameters: {},
+      },
+    });
+    expect(writeDecision.status).toBe("deny");
+    expect(writeDecision.guard).toBe("mcp_tool");
+    expect(writeDecision.reason_code).toBe("OCLAW_TOOL_NOT_ALLOWLISTED");
+  });
+
   it("enforces allowed_write_roots for output-style command flags", async () => {
     const policyPath = join(testDir, "policy.yaml");
     writeFileSync(

@@ -254,18 +254,57 @@ function cleanNetworkToken(value: string): string {
     .replace(/[)"'`;,\}]+$/, "");
 }
 
-function canonicalToolName(value: string): string {
-  const raw = value.trim();
-  const mcpParts = raw.toLowerCase().split("__").filter(Boolean);
-  const candidate =
-    mcpParts.length >= 3 && mcpParts[0] === "mcp" ? mcpParts.slice(2).join("__") : raw;
-  return candidate
+function normalizeToolToken(value: string): string {
+  return value
     .trim()
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .replace(/_+/g, "_");
+}
+
+type McpToolIdentity = {
+  server: string;
+  tool: string;
+};
+
+function parseMcpToolIdentity(value: string, allowWildcard = false): McpToolIdentity | null {
+  const parts = value.trim().split("__").filter(Boolean);
+  if (parts.length < 3 || parts[0].toLowerCase() !== "mcp") {
+    return null;
+  }
+
+  const normalizePart = (part: string): string =>
+    allowWildcard && part.trim() === "*" ? "*" : normalizeToolToken(part);
+
+  const server = normalizePart(parts[1]);
+  const tool = normalizePart(parts.slice(2).join("__"));
+  if (!server || !tool) {
+    return null;
+  }
+
+  return { server, tool };
+}
+
+function canonicalToolName(value: string): string {
+  const mcp = parseMcpToolIdentity(value);
+  return mcp?.tool ?? normalizeToolToken(value);
+}
+
+function allowedToolMatches(policyToolName: string, eventToolName: string): boolean {
+  const eventMcp = parseMcpToolIdentity(eventToolName);
+  if (eventMcp) {
+    const policyMcp = parseMcpToolIdentity(policyToolName, true);
+    if (!policyMcp) {
+      return false;
+    }
+    const serverMatches = policyMcp.server === "*" || policyMcp.server === eventMcp.server;
+    const toolMatches = policyMcp.tool === "*" || policyMcp.tool === eventMcp.tool;
+    return serverMatches && toolMatches;
+  }
+
+  return canonicalToolName(policyToolName) === canonicalToolName(eventToolName);
 }
 
 function commandNameFromToken(value: string): string {
@@ -1157,7 +1196,8 @@ export class PolicyEngine {
     // Optional tool allow/deny list.
     if (this.config.guards.mcp_tool && event.data.type === "tool") {
       const tools = this.policy.tools;
-      const toolName = canonicalToolName(event.data.toolName);
+      const rawToolName = event.data.toolName;
+      const toolName = canonicalToolName(rawToolName);
 
       const deniedTools = tools?.denied?.map(canonicalToolName) ?? [];
       if (deniedTools.includes(toolName)) {
@@ -1184,8 +1224,11 @@ export class PolicyEngine {
         );
       }
 
-      const allowedTools = tools?.allowed?.map(canonicalToolName) ?? [];
-      if (allowedTools.length > 0 && !allowedTools.includes(toolName)) {
+      const allowedTools = tools?.allowed ?? [];
+      if (
+        allowedTools.length > 0 &&
+        !allowedTools.some((allowedTool) => allowedToolMatches(allowedTool, rawToolName))
+      ) {
         return this.applyOnViolation(
           denyDecision(
             POLICY_REASON_CODES.TOOL_NOT_ALLOWLISTED,

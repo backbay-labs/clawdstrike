@@ -15081,6 +15081,23 @@ async fn enqueue_control_ack_postback_retry(
 }
 
 impl ControlAckPostbackRetrySink {
+    pub async fn sign_response_acknowledgement_receipt(
+        &self,
+        acknowledgement: &EndpointResponseAcknowledgementReport,
+    ) -> Result<SignedReceipt> {
+        append_edr_response_acknowledgement(&self.state, acknowledgement)
+            .await
+            .map_err(|(status, message)| {
+                anyhow::anyhow!(
+                    "append response acknowledgement ledger entry failed with HTTP {}: {}",
+                    status.as_u16(),
+                    message
+                )
+            })?;
+        let graph = CausalGraph::default();
+        emit_edr_response_acknowledgement_receipt(&self.state, acknowledgement, &graph).await
+    }
+
     pub async fn enqueue(&self, input: ControlAckPostbackRetryRequest) -> Result<()> {
         let now = chrono::Utc::now();
         let attempt_count = 1;
@@ -15582,9 +15599,9 @@ pub(crate) async fn drain_control_ack_postback_retries(
 }
 
 pub(crate) use crate::edr::ledger::{
-    DeceptionCleanupReceiptSigningInput, DeceptionRotationReceiptSigningInput,
-    EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger, PolicyDecisionReceiptSigningInput,
-    ResponseExecutionReceiptSigningInput,
+    endpoint_receipt_compaction_manifest_path, DeceptionCleanupReceiptSigningInput,
+    DeceptionRotationReceiptSigningInput, EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger,
+    PolicyDecisionReceiptSigningInput, ResponseExecutionReceiptSigningInput,
 };
 
 pub(crate) async fn emit_edr_detection_receipts(
@@ -19082,6 +19099,18 @@ fn read_recent_indexed_endpoint_receipts_from_records(
     filter: EdrReceiptFilter<'_>,
     records: Vec<EndpointReceiptIndexRecord>,
 ) -> Result<Vec<SignedReceipt>> {
+    let records = match validate_endpoint_receipt_index_records(path, records) {
+        Ok(records) => records,
+        Err(index_error) => {
+            let index_error = index_error.to_string();
+            let rebuild_error_context =
+                format!("rebuild endpoint receipt index after validation failed: {index_error}");
+            rebuild_endpoint_receipt_index(path).with_context(|| rebuild_error_context)?;
+            read_endpoint_receipt_index(&endpoint_receipt_index_path(path)).with_context(|| {
+                format!("read endpoint receipt index after rebuilding stale index: {index_error}")
+            })?
+        }
+    };
     let selected = select_endpoint_receipt_index_records(records, limit, filter);
     match read_endpoint_receipts_by_index(path, &selected) {
         Ok(receipts) => Ok(receipts),
@@ -19098,6 +19127,14 @@ fn read_recent_indexed_endpoint_receipts_from_records(
             read_endpoint_receipts_by_index(path, &selected).with_context(|| read_error_context)
         }
     }
+}
+
+fn validate_endpoint_receipt_index_records(
+    path: &FsPath,
+    records: Vec<EndpointReceiptIndexRecord>,
+) -> Result<Vec<EndpointReceiptIndexRecord>> {
+    read_endpoint_receipts_by_index(path, &records)?;
+    Ok(records)
 }
 
 fn select_endpoint_receipt_index_records(
@@ -22802,6 +22839,80 @@ mod tests {
         .unwrap_or_else(|| panic!("missing indexed receipt lookup result"));
 
         assert!(receipts.is_empty());
+        let rebuilt_records = read_endpoint_receipt_index(&receipt_index_path)
+            .unwrap_or_else(|e| panic!("failed to read rebuilt receipt index: {e}"));
+        assert_eq!(rebuilt_records.len(), 1);
+        assert_eq!(rebuilt_records[0].family.as_deref(), Some("sensor_state"));
+
+        let _ = std::fs::remove_file(&receipt_path);
+        let _ = std::fs::remove_file(receipt_index_path);
+    }
+
+    #[test]
+    fn endpoint_receipt_index_rebuilds_before_filtering_stale_false_negative() {
+        let receipt_path = test_receipt_path();
+        let keypair = Keypair::from_seed(&[97u8; 32]);
+        let signer_public_key = keypair.public_key().to_hex();
+        let mut receipt =
+            EndpointDecisionReceipt::for_sensor_state(EndpointSensorStateReceiptInput {
+                local_sequence: 1,
+                endpoint_id: "endpoint-receipt-index-false-negative",
+                signer_identity: "test-edr-signer",
+                policy: EndpointPolicySnapshot {
+                    policy_version: "receipt-index-false-negative-test".to_string(),
+                    policy_hash: sha256(b"receipt-index-false-negative-policy").to_hex_prefixed(),
+                    policy_epoch: 1,
+                },
+                sensor_state: EndpointSensorState::single_active_agent("agent-api:test"),
+                reason: "receipt index false-negative validation",
+            });
+        receipt.signer.signer_public_key = Some(signer_public_key.clone());
+        let signed = receipt.sign_with(&keypair).unwrap_or_else(|e| {
+            panic!("failed to sign receipt index false-negative test receipt: {e}")
+        });
+        let ledger = EndpointReceiptLedger {
+            path: Some(receipt_path.clone()),
+            next_sequence: 1,
+            keypair,
+            signer_identity: "test-edr-signer".to_string(),
+            signer_public_key,
+        };
+        ledger
+            .append(std::slice::from_ref(&signed))
+            .unwrap_or_else(|e| {
+                panic!("failed to append receipt index false-negative test receipt: {e}")
+            });
+
+        let receipt_index_path = endpoint_receipt_index_path(&receipt_path);
+        let mut records = read_endpoint_receipt_index(&receipt_index_path)
+            .unwrap_or_else(|e| panic!("failed to read receipt index: {e}"));
+        assert_eq!(records[0].family.as_deref(), Some("sensor_state"));
+        records[0].family = Some("response_execution".to_string());
+        let tampered_index = records
+            .iter()
+            .map(|record| {
+                serde_json::to_string(record)
+                    .unwrap_or_else(|e| panic!("failed to encode tampered receipt index: {e}"))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        std::fs::write(&receipt_index_path, tampered_index)
+            .unwrap_or_else(|e| panic!("failed to write tampered receipt index: {e}"));
+
+        let receipts = read_recent_indexed_endpoint_receipts(
+            &receipt_path,
+            10,
+            EdrReceiptFilter {
+                family: Some("sensor_state"),
+                ..EdrReceiptFilter::default()
+            },
+        )
+        .unwrap_or_else(|e| panic!("failed to read indexed receipts: {e}"))
+        .unwrap_or_else(|| panic!("missing indexed receipt lookup result"));
+
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipt_family(&receipts[0]), Some("sensor_state"));
         let rebuilt_records = read_endpoint_receipt_index(&receipt_index_path)
             .unwrap_or_else(|e| panic!("failed to read rebuilt receipt index: {e}"));
         assert_eq!(rebuilt_records.len(), 1);
@@ -32021,6 +32132,34 @@ guards:
         assert_eq!(payload["retainedCount"], 2);
         assert_eq!(payload["records"][0]["removed"], true);
 
+        let manifest_path = endpoint_receipt_compaction_manifest_path(&receipt_path);
+        let manifest_jsonl = std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| panic!("failed to read receipt compaction manifest: {e}"));
+        let manifest_lines = manifest_jsonl.lines().collect::<Vec<_>>();
+        assert_eq!(manifest_lines.len(), 1);
+        let manifest: serde_json::Value = serde_json::from_str(manifest_lines[0])
+            .unwrap_or_else(|e| panic!("failed to decode receipt compaction manifest: {e}"));
+        assert_eq!(
+            manifest["schemaVersion"],
+            "clawdstrike.endpoint_receipt_compaction.v1"
+        );
+        assert_eq!(manifest["preReceiptCount"], 4);
+        assert_eq!(manifest["postReceiptCount"], 2);
+        assert_eq!(manifest["removed"].as_array().unwrap().len(), 2);
+        assert_eq!(manifest["retained"].as_array().unwrap().len(), 2);
+        assert!(manifest["preLedgerSha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("0x"));
+        assert!(manifest["postLedgerSha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("0x"));
+        assert!(manifest["removed"][0]["signedReceiptSha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("0x"));
+
         let req = axum::http::Request::builder()
             .method("GET")
             .uri("/api/v1/agent/edr/receipts?family=detection&limit=10")
@@ -32044,6 +32183,7 @@ guards:
         );
 
         let _ = std::fs::remove_file(receipt_path);
+        let _ = std::fs::remove_file(manifest_path);
     }
 
     #[tokio::test]

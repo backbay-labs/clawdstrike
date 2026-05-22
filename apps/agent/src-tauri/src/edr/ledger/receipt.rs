@@ -35,7 +35,8 @@ use clawdstrike_policy_event::edr::{
     EndpointSimulationReceiptInput, EndpointTelemetryPrivacyReceiptInput,
     EndpointTelemetryPrivacyReport,
 };
-use hush_core::{Keypair, SignedReceipt};
+use hush_core::{canonicalize_json, sha256, Keypair, SignedReceipt};
+use serde::Serialize;
 
 use crate::api_server::{
     detection_severity_from_policy_label, endpoint_id_for_observation, endpoint_id_for_settings,
@@ -43,7 +44,7 @@ use crate::api_server::{
     load_or_create_edr_receipt_signer_with_requirement, next_receipt_sequence,
     policy_delta_source_context_evidence_value, provider_policy_decision_provider_state,
     read_endpoint_receipt_ledger, read_recent_indexed_endpoint_receipts,
-    rebuild_endpoint_receipt_index, receipt_age_seconds, receipt_compaction_record,
+    rebuild_endpoint_receipt_index, receipt_age_seconds, receipt_compaction_record, receipt_family,
     receipt_local_sequence, receipt_matches_filter, EdrPolicyDeltaArtifact,
     EdrPolicyEventImpactReport, EdrPolicyEventReplayReport, EdrReceiptCompactionRecord,
     EdrReceiptFilter,
@@ -63,6 +64,31 @@ pub(crate) struct ReceiptCompactionReport {
     pub(crate) receipt_count: usize,
     pub(crate) retained_count: usize,
     pub(crate) records: Vec<EdrReceiptCompactionRecord>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceiptCompactionManifest {
+    schema_version: &'static str,
+    compacted_at: String,
+    ledger_path: String,
+    max_receipts: Option<usize>,
+    min_age_seconds: u64,
+    pre_ledger_sha256: String,
+    post_ledger_sha256: String,
+    pre_receipt_count: usize,
+    post_receipt_count: usize,
+    retained: Vec<ReceiptCompactionManifestEntry>,
+    removed: Vec<ReceiptCompactionManifestEntry>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceiptCompactionManifestEntry {
+    receipt_id: Option<String>,
+    family: Option<String>,
+    local_sequence: Option<u64>,
+    signed_receipt_sha256: String,
 }
 
 pub(crate) struct ResponseExecutionReceiptSigningInput<'a> {
@@ -801,6 +827,7 @@ impl EndpointReceiptLedger {
         let receipts = self.all()?;
         let receipt_count = receipts.len();
         let mut retained = Vec::with_capacity(receipts.len());
+        let mut removed_receipts = Vec::new();
         let mut records = Vec::new();
         for (index, receipt) in receipts.iter().enumerate() {
             let age_seconds = receipt_age_seconds(receipt, now);
@@ -827,11 +854,22 @@ impl EndpointReceiptLedger {
             ));
             if dry_run {
                 retained.push(receipt.clone());
+            } else {
+                removed_receipts.push(receipt.clone());
             }
         }
 
         if !dry_run {
+            let manifest = self.receipt_compaction_manifest(
+                &receipts,
+                &retained,
+                &removed_receipts,
+                max_receipts,
+                min_age_seconds,
+                now,
+            )?;
             self.rewrite(&retained)?;
+            self.append_compaction_manifest(&manifest)?;
         }
         self.next_sequence = receipts
             .iter()
@@ -846,6 +884,94 @@ impl EndpointReceiptLedger {
             retained_count: retained.len(),
             records,
         })
+    }
+
+    fn receipt_compaction_manifest(
+        &self,
+        pre_receipts: &[SignedReceipt],
+        post_receipts: &[SignedReceipt],
+        removed_receipts: &[SignedReceipt],
+        max_receipts: Option<usize>,
+        min_age_seconds: u64,
+        compacted_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<ReceiptCompactionManifest> {
+        let ledger_path = self
+            .path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "<transient>".to_string());
+        Ok(ReceiptCompactionManifest {
+            schema_version: "clawdstrike.endpoint_receipt_compaction.v1",
+            compacted_at: compacted_at.to_rfc3339(),
+            ledger_path,
+            max_receipts,
+            min_age_seconds,
+            pre_ledger_sha256: receipt_ledger_sha256(pre_receipts)?,
+            post_ledger_sha256: receipt_ledger_sha256(post_receipts)?,
+            pre_receipt_count: pre_receipts.len(),
+            post_receipt_count: post_receipts.len(),
+            retained: post_receipts
+                .iter()
+                .map(receipt_compaction_manifest_entry)
+                .collect::<Result<Vec<_>>>()?,
+            removed: removed_receipts
+                .iter()
+                .map(receipt_compaction_manifest_entry)
+                .collect::<Result<Vec<_>>>()?,
+        })
+    }
+
+    fn append_compaction_manifest(&self, manifest: &ReceiptCompactionManifest) -> Result<()> {
+        let Some(path) = &self.path else {
+            return Ok(());
+        };
+        let manifest_path = endpoint_receipt_compaction_manifest_path(path);
+        if let Some(parent) = manifest_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "create endpoint receipt compaction manifest directory {}",
+                    parent.display()
+                )
+            })?;
+        }
+        let mut options = OpenOptions::new();
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options
+            .create(true)
+            .append(true)
+            .open(&manifest_path)
+            .with_context(|| {
+                format!(
+                    "open endpoint receipt compaction manifest {}",
+                    manifest_path.display()
+                )
+            })?;
+        crate::settings::enforce_private_mode(
+            &manifest_path,
+            "endpoint receipt compaction manifest",
+        )?;
+        let line = serde_json::to_vec(manifest)
+            .context("serialize endpoint receipt compaction manifest")?;
+        file.write_all(&line).with_context(|| {
+            format!(
+                "write endpoint receipt compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+        file.write_all(b"\n").with_context(|| {
+            format!(
+                "write endpoint receipt compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+        file.flush().with_context(|| {
+            format!(
+                "flush endpoint receipt compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+        Ok(())
     }
 
     pub(crate) fn all(&self) -> Result<Vec<SignedReceipt>> {
@@ -961,6 +1087,51 @@ impl EndpointReceiptLedger {
         };
         rebuild_endpoint_receipt_index(path)
     }
+}
+
+pub(crate) fn endpoint_receipt_compaction_manifest_path(path: &FsPath) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(".compaction.jsonl");
+    PathBuf::from(value)
+}
+
+fn receipt_ledger_sha256(receipts: &[SignedReceipt]) -> Result<String> {
+    let bytes = receipt_ledger_bytes(receipts)?;
+    Ok(sha256(&bytes).to_hex_prefixed())
+}
+
+fn receipt_ledger_bytes(receipts: &[SignedReceipt]) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    for receipt in receipts {
+        let line = serde_json::to_vec(receipt).with_context(|| {
+            format!(
+                "serialize endpoint receipt {}",
+                receipt
+                    .receipt
+                    .receipt_id
+                    .as_deref()
+                    .unwrap_or("<missing-receipt-id>")
+            )
+        })?;
+        bytes.extend_from_slice(&line);
+        bytes.push(b'\n');
+    }
+    Ok(bytes)
+}
+
+fn receipt_compaction_manifest_entry(
+    receipt: &SignedReceipt,
+) -> Result<ReceiptCompactionManifestEntry> {
+    let receipt_value = serde_json::to_value(receipt)
+        .context("serialize endpoint receipt for compaction manifest")?;
+    let canonical = canonicalize_json(&receipt_value)
+        .context("canonicalize endpoint receipt for compaction manifest")?;
+    Ok(ReceiptCompactionManifestEntry {
+        receipt_id: receipt.receipt.receipt_id.clone(),
+        family: receipt_family(receipt).map(ToString::to_string),
+        local_sequence: receipt_local_sequence(receipt),
+        signed_receipt_sha256: sha256(canonical.as_bytes()).to_hex_prefixed(),
+    })
 }
 
 #[cfg(test)]

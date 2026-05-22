@@ -424,7 +424,8 @@ impl EndpointFlightRecorder {
         }
 
         let continuity_manifest = if !dry_run {
-            let post_compaction_chain = self.rewrite_observations(&retained)?;
+            let post_compaction_chain =
+                self.rewrite_observations(&retained, pre_compaction_chain.clone())?;
             let manifest = EndpointFlightRecorderCompactionManifest {
                 schema_version: ENDPOINT_FLIGHT_RECORDER_COMPACTION_MANIFEST_SCHEMA_VERSION,
                 compacted_at: now,
@@ -487,6 +488,7 @@ impl EndpointFlightRecorder {
     fn rewrite_observations(
         &mut self,
         observations: &[EndpointObservation],
+        initial_chain_state: EndpointFlightRecorderLogChainState,
     ) -> Result<EndpointFlightRecorderLogChainState> {
         let Some(path) = self.path.clone() else {
             return Err(anyhow!(
@@ -507,7 +509,7 @@ impl EndpointFlightRecorder {
         let tmp_path = path.with_extension("jsonl.tmp");
         let mut byte_offset = 0u64;
         let mut index_entries = Vec::with_capacity(observations.len());
-        let mut chain_state = EndpointFlightRecorderLogChainState::default();
+        let mut chain_state = initial_chain_state;
         {
             let mut options = endpoint_private_open_options();
             let mut file = options
@@ -599,7 +601,10 @@ fn read_endpoint_observations(path: &Path) -> Result<Vec<EndpointObservation>> {
     };
 
     let mut observations = Vec::new();
-    let mut chain_state = EndpointFlightRecorderLogChainState::default();
+    let (mut chain_state, compaction_manifest) =
+        endpoint_flight_recorder_compaction_initial_state(path)?;
+    let mut observed_compaction_tail =
+        observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state);
     for (idx, line) in contents.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -618,8 +623,16 @@ fn read_endpoint_observations(path: &Path) -> Result<Vec<EndpointObservation>> {
                 idx + 1
             )
         })?;
+        observed_compaction_tail = observed_compaction_tail
+            .or_else(|| observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state));
         observations.push(observation);
     }
+    validate_endpoint_flight_recorder_compaction_tail(
+        path,
+        compaction_manifest.as_ref(),
+        &chain_state,
+        observed_compaction_tail.as_ref(),
+    )?;
     Ok(observations)
 }
 
@@ -637,7 +650,10 @@ fn read_endpoint_flight_recorder_log_chain_state(
         }
     };
     let reader = BufReader::new(file);
-    let mut chain_state = EndpointFlightRecorderLogChainState::default();
+    let (mut chain_state, compaction_manifest) =
+        endpoint_flight_recorder_compaction_initial_state(path)?;
+    let mut observed_compaction_tail =
+        observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state);
     for (idx, line) in reader.lines().enumerate() {
         let line = line.with_context(|| {
             format!(
@@ -656,7 +672,15 @@ fn read_endpoint_flight_recorder_log_chain_state(
             trimmed,
             Some(&mut chain_state),
         )?;
+        observed_compaction_tail = observed_compaction_tail
+            .or_else(|| observed_compaction_tail_head(compaction_manifest.as_ref(), &chain_state));
     }
+    validate_endpoint_flight_recorder_compaction_tail(
+        path,
+        compaction_manifest.as_ref(),
+        &chain_state,
+        observed_compaction_tail.as_ref(),
+    )?;
     Ok(chain_state)
 }
 
@@ -1577,6 +1601,83 @@ fn read_endpoint_flight_recorder_compaction_manifests(
     Ok(manifests)
 }
 
+fn endpoint_flight_recorder_compaction_initial_state(
+    path: &Path,
+) -> Result<(
+    EndpointFlightRecorderLogChainState,
+    Option<EndpointFlightRecorderCompactionManifest>,
+)> {
+    let manifests = read_endpoint_flight_recorder_compaction_manifests(path)?;
+    let Some(manifest) = manifests.last().cloned() else {
+        return Ok((EndpointFlightRecorderLogChainState::default(), None));
+    };
+    if manifest.schema_version != ENDPOINT_FLIGHT_RECORDER_COMPACTION_MANIFEST_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "endpoint flight recorder compaction manifest schema mismatch for {}: expected {}, found {}",
+            path.display(),
+            ENDPOINT_FLIGHT_RECORDER_COMPACTION_MANIFEST_SCHEMA_VERSION,
+            manifest.schema_version
+        ));
+    }
+    let retained_count = manifest
+        .post_compaction_record_count
+        .checked_sub(manifest.pre_compaction_record_count)
+        .ok_or_else(|| {
+            anyhow!(
+                "endpoint flight recorder compaction manifest for {} has post-compaction count before pre-compaction count",
+                path.display()
+            )
+        })?;
+    if retained_count as usize != manifest.retained_observation_ids.len() {
+        return Err(anyhow!(
+            "endpoint flight recorder compaction manifest for {} retained observation count does not match post/pre count delta",
+            path.display()
+        ));
+    }
+    Ok((
+        EndpointFlightRecorderLogChainState {
+            next_sequence: manifest.pre_compaction_record_count.saturating_add(1),
+            previous_record_hash: manifest.pre_compaction_head.clone(),
+        },
+        Some(manifest),
+    ))
+}
+
+fn validate_endpoint_flight_recorder_compaction_tail(
+    path: &Path,
+    manifest: Option<&EndpointFlightRecorderCompactionManifest>,
+    chain_state: &EndpointFlightRecorderLogChainState,
+    observed_compaction_tail: Option<&Option<String>>,
+) -> Result<()> {
+    let Some(manifest) = manifest else {
+        return Ok(());
+    };
+    let Some(observed_compaction_tail) = observed_compaction_tail else {
+        return Err(anyhow!(
+            "endpoint flight recorder compaction manifest for {} post-compaction record count mismatch: expected at least {}, found {}",
+            path.display(),
+            manifest.post_compaction_record_count,
+            chain_state.record_count()
+        ));
+    };
+    if observed_compaction_tail != &manifest.post_compaction_head {
+        return Err(anyhow!(
+            "endpoint flight recorder compaction manifest for {} post-compaction head mismatch",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn observed_compaction_tail_head(
+    manifest: Option<&EndpointFlightRecorderCompactionManifest>,
+    chain_state: &EndpointFlightRecorderLogChainState,
+) -> Option<Option<String>> {
+    manifest
+        .filter(|manifest| chain_state.record_count() == manifest.post_compaction_record_count)
+        .map(|_| chain_state.previous_record_hash.clone())
+}
+
 fn read_or_rebuild_endpoint_graph_node_index(
     path: &Path,
     graph: &CausalGraph,
@@ -2010,7 +2111,7 @@ mod tests {
             .as_ref()
             .expect("missing compaction continuity manifest");
         assert_eq!(manifest.pre_compaction_record_count, 2);
-        assert_eq!(manifest.post_compaction_record_count, 1);
+        assert_eq!(manifest.post_compaction_record_count, 3);
         assert!(manifest.pre_compaction_head.is_some());
         assert!(manifest.post_compaction_head.is_some());
         assert_eq!(manifest.removed_records.len(), 1);
@@ -2032,10 +2133,99 @@ mod tests {
         assert_private_mode(&edge_index_path)?;
         assert_private_mode(&manifest_path)?;
 
+        recorder.append_observations(&[test_observation_with_id(
+            "obs-private-mode-3",
+            "2026-05-20T12:03:00Z",
+        )?])?;
+        let reopened = EndpointFlightRecorder::open(&path)?;
+        assert_eq!(reopened.observation_count(), 2);
+
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(history_index_path);
         let _ = fs::remove_file(node_index_path);
         let _ = fs::remove_file(edge_index_path);
+        let _ = fs::remove_file(manifest_path);
+        Ok(())
+    }
+
+    #[test]
+    fn compacted_log_requires_persisted_continuity_manifest() -> Result<()> {
+        let path = unique_test_path("compact-manifest-required")?;
+        let mut recorder = EndpointFlightRecorder::open(&path)?;
+        recorder.append_observations(&[
+            test_observation_with_id("obs-manifest-required-1", "2026-05-20T12:00:00Z")?,
+            test_observation_with_id("obs-manifest-required-2", "2026-05-20T12:01:00Z")?,
+        ])?;
+
+        let _ = recorder.compact(
+            Some(1),
+            0,
+            &BTreeSet::new(),
+            false,
+            DateTime::parse_from_rfc3339("2026-05-20T12:02:00Z")
+                .context("parse compaction time")?
+                .with_timezone(&Utc),
+        )?;
+        let manifest_path = endpoint_flight_recorder_compaction_manifest_path(&path);
+        fs::remove_file(&manifest_path).context("remove compaction manifest")?;
+
+        let err = EndpointFlightRecorder::open(&path).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("sequence mismatch") || message.contains("previous hash mismatch"),
+            "unexpected reopen error: {message}"
+        );
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(endpoint_flight_recorder_index_path(&path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_index_path(&path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_edge_index_path(&path));
+        Ok(())
+    }
+
+    #[test]
+    fn compacted_log_rejects_tampered_continuity_manifest() -> Result<()> {
+        let path = unique_test_path("compact-manifest-tamper")?;
+        let mut recorder = EndpointFlightRecorder::open(&path)?;
+        recorder.append_observations(&[
+            test_observation_with_id("obs-manifest-tamper-1", "2026-05-20T12:00:00Z")?,
+            test_observation_with_id("obs-manifest-tamper-2", "2026-05-20T12:01:00Z")?,
+        ])?;
+
+        let _ = recorder.compact(
+            Some(1),
+            0,
+            &BTreeSet::new(),
+            false,
+            DateTime::parse_from_rfc3339("2026-05-20T12:02:00Z")
+                .context("parse compaction time")?
+                .with_timezone(&Utc),
+        )?;
+        let manifest_path = endpoint_flight_recorder_compaction_manifest_path(&path);
+        let mut manifest: serde_json::Value = serde_json::from_str(
+            fs::read_to_string(&manifest_path)?
+                .lines()
+                .next()
+                .unwrap_or_default(),
+        )
+        .context("parse persisted compaction manifest")?;
+        manifest["preCompactionRecordCount"] = serde_json::json!(0);
+        fs::write(
+            &manifest_path,
+            format!("{}\n", serde_json::to_string(&manifest)?),
+        )
+        .context("write tampered compaction manifest")?;
+
+        let err = EndpointFlightRecorder::open(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("retained observation count"),
+            "unexpected reopen error: {err}"
+        );
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(endpoint_flight_recorder_index_path(&path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_index_path(&path));
+        let _ = fs::remove_file(endpoint_flight_recorder_graph_edge_index_path(&path));
         let _ = fs::remove_file(manifest_path);
         Ok(())
     }

@@ -607,7 +607,16 @@ jobs:
         run: cargo llvm-cov --all-features --lcov --output-path lcov.workspace.info
 
       - name: Generate agent Tauri coverage report
-        run: cargo llvm-cov --manifest-path apps/agent/src-tauri/Cargo.toml --lcov --output-path lcov.agent.info
+        run: |
+          # This job is the changed-line coverage gate, not the full agent test
+          # gate. Export LCOV from runnable agent tests so agent Rust changes
+          # participate in coverage while platform/local-listener test failures
+          # remain isolated to their dedicated validation jobs.
+          cargo llvm-cov \
+            --manifest-path apps/agent/src-tauri/Cargo.toml \
+            --ignore-run-fail \
+            --lcov \
+            --output-path lcov.agent.info
 
       - name: Generate desktop Tauri coverage report
         run: cargo llvm-cov --manifest-path apps/desktop/src-tauri/Cargo.toml --lcov --output-path lcov.desktop.info
