@@ -850,8 +850,7 @@ fn resolve_direct_built_tool(
     package_path: &Path,
     executable: &'static str,
 ) -> Option<ToolInvocation> {
-    for profile in ["release", "debug"] {
-        let candidate = package_path.join(".build").join(profile).join(executable);
+    for candidate in direct_built_tool_candidates(package_path, executable) {
         if candidate.is_file() {
             return Some(ToolInvocation::Direct {
                 program: candidate,
@@ -860,6 +859,28 @@ fn resolve_direct_built_tool(
         }
     }
     None
+}
+
+fn direct_built_tool_candidates(package_path: &Path, executable: &'static str) -> Vec<PathBuf> {
+    let mut candidates = vec![package_path.join("bin").join(executable)];
+    for profile in ["release", "debug"] {
+        candidates.push(package_path.join(".build").join(profile).join(executable));
+    }
+    let build_dir = package_path.join(".build");
+    if let Ok(entries) = std::fs::read_dir(&build_dir) {
+        let mut platform_dirs = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect::<Vec<_>>();
+        platform_dirs.sort();
+        for platform_dir in platform_dirs {
+            for profile in ["release", "debug"] {
+                candidates.push(platform_dir.join(profile).join(executable));
+            }
+        }
+    }
+    candidates
 }
 
 fn resolve_package_status_tool(
@@ -1090,6 +1111,59 @@ mod tests {
             resolved.is_none(),
             "production status collection must not execute Swift package sources via swift run"
         );
+    }
+
+    #[test]
+    fn status_tool_resolution_prefers_bundled_bin_helper() {
+        let package = temp_package_dir("status-tool-package-bin");
+        let bin_dir = package.join("bin");
+        fs::create_dir_all(&bin_dir).expect("create status tool bin dir");
+        let helper = bin_dir.join(ENDPOINT_SECURITY_TOOL_NAME);
+        fs::write(&helper, "#!/bin/sh\n").expect("write bundled helper");
+
+        let resolved = resolve_package_status_tool_with_swift_availability(
+            &package,
+            ENDPOINT_SECURITY_TOOL_NAME,
+            false,
+            false,
+        );
+        let _ = fs::remove_dir_all(&package);
+
+        match resolved {
+            Some(ToolInvocation::Direct { program, args }) => {
+                assert_eq!(program, helper);
+                assert_eq!(args, vec![OsString::from("live")]);
+            }
+            other => panic!("expected bundled direct status helper, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn status_tool_resolution_finds_platform_scoped_swift_build_output() {
+        let package = temp_package_dir("status-tool-package-platform-build");
+        let helper_dir = package
+            .join(".build")
+            .join("arm64-apple-macosx")
+            .join("release");
+        fs::create_dir_all(&helper_dir).expect("create platform build dir");
+        let helper = helper_dir.join(ENDPOINT_SECURITY_TOOL_NAME);
+        fs::write(&helper, "#!/bin/sh\n").expect("write built helper");
+
+        let resolved = resolve_package_status_tool_with_swift_availability(
+            &package,
+            ENDPOINT_SECURITY_TOOL_NAME,
+            false,
+            false,
+        );
+        let _ = fs::remove_dir_all(&package);
+
+        match resolved {
+            Some(ToolInvocation::Direct { program, args }) => {
+                assert_eq!(program, helper);
+                assert_eq!(args, vec![OsString::from("live")]);
+            }
+            other => panic!("expected platform-scoped direct status helper, got {other:?}"),
+        }
     }
 
     #[test]
