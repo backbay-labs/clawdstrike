@@ -289,7 +289,12 @@ jobs:
           codecov_path="$(swift test --disable-sandbox --show-codecov-path --package-path "$package_path")"
           codecov_dir="$(dirname "$codecov_path")"
           debug_dir="$(dirname "$codecov_dir")"
-          test_binary="$debug_dir/EndpointSecurityExtensionPackageTests.xctest/Contents/MacOS/EndpointSecurityExtensionPackageTests"
+          test_bundle="$(find "$debug_dir" -maxdepth 1 -type d -name '*Tests.xctest' -print -quit)"
+          test_binary="$(find "$test_bundle/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          [[ -x "$test_binary" ]] || {
+            echo "missing EndpointSecurity XCTest binary under $debug_dir" >&2
+            exit 1
+          }
           status_tool="$debug_dir/endpoint-security-status-tool"
 
           for scenario in healthy-allow deny-decision deadline-miss dropped-events missing-full-disk-access inactive-provider approval-blocked; do
@@ -321,7 +326,12 @@ jobs:
           codecov_path="$(swift test --disable-sandbox --show-codecov-path --package-path "$package_path")"
           codecov_dir="$(dirname "$codecov_path")"
           debug_dir="$(dirname "$codecov_dir")"
-          test_binary="$debug_dir/ClawdStrikeNetworkExtensionPackageTests.xctest/Contents/MacOS/ClawdStrikeNetworkExtensionPackageTests"
+          test_bundle="$(find "$debug_dir" -maxdepth 1 -type d -name '*Tests.xctest' -print -quit)"
+          test_binary="$(find "$test_bundle/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          [[ -x "$test_binary" ]] || {
+            echo "missing NetworkExtension XCTest binary under $debug_dir" >&2
+            exit 1
+          }
           status_tool="$debug_dir/network-extension-status-tool"
 
           for scenario in selection inactive unavailable approval-blocked; do
