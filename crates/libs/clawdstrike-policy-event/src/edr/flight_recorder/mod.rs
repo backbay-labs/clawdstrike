@@ -475,7 +475,8 @@ impl EndpointFlightRecorder {
         let mut index_entries = Vec::with_capacity(observations.len());
         let mut chain_state = EndpointFlightRecorderLogChainState::default();
         {
-            let mut file = OpenOptions::new()
+            let mut options = endpoint_private_open_options();
+            let mut file = options
                 .create(true)
                 .truncate(true)
                 .write(true)
@@ -486,6 +487,10 @@ impl EndpointFlightRecorder {
                         tmp_path.display()
                     )
                 })?;
+            enforce_endpoint_private_file_mode(
+                &tmp_path,
+                "temporary endpoint flight recorder log",
+            )?;
             for observation in observations {
                 let record = endpoint_flight_recorder_log_record(observation, &chain_state)
                     .with_context(|| {
@@ -531,6 +536,7 @@ impl EndpointFlightRecorder {
                 tmp_path.display()
             )
         })?;
+        enforce_endpoint_private_file_mode(&path, "endpoint flight recorder log")?;
         replace_endpoint_observation_index(&path, &index_entries)?;
         self.rebuild_from_observations(observations);
         replace_endpoint_graph_node_index(&path, self.recorder.graph())?;
@@ -1381,7 +1387,8 @@ pub(crate) fn replace_endpoint_observation_index(
     }
     let tmp_path = index_path.with_extension("jsonl.tmp");
     {
-        let mut file = OpenOptions::new()
+        let mut options = endpoint_private_open_options();
+        let mut file = options
             .create(true)
             .truncate(true)
             .write(true)
@@ -1392,6 +1399,7 @@ pub(crate) fn replace_endpoint_observation_index(
                     tmp_path.display()
                 )
             })?;
+        enforce_endpoint_private_file_mode(&tmp_path, "temporary endpoint flight recorder index")?;
         for entry in entries {
             serde_json::to_writer(&mut file, entry).with_context(|| {
                 format!(
@@ -1421,6 +1429,7 @@ pub(crate) fn replace_endpoint_observation_index(
             tmp_path.display()
         )
     })?;
+    enforce_endpoint_private_file_mode(&index_path, "endpoint flight recorder index")?;
     Ok(())
 }
 
@@ -1777,9 +1786,16 @@ mod tests {
     }
 
     fn test_observation() -> Result<EndpointObservation> {
+        test_observation_with_id("obs-private-mode", "2026-05-20T12:00:00Z")
+    }
+
+    fn test_observation_with_id(
+        observation_id: &str,
+        timestamp: &str,
+    ) -> Result<EndpointObservation> {
         Ok(EndpointObservation {
-            observation_id: "obs-private-mode".to_string(),
-            timestamp: DateTime::parse_from_rfc3339("2026-05-20T12:00:00Z")
+            observation_id: observation_id.to_string(),
+            timestamp: DateTime::parse_from_rfc3339(timestamp)
                 .context("parse test timestamp")?
                 .with_timezone(&Utc),
             host_id: Some("host-1".to_string()),
@@ -1817,6 +1833,43 @@ mod tests {
         let path = unique_test_path("append")?;
         let mut recorder = EndpointFlightRecorder::open(&path)?;
         recorder.append_observations(&[test_observation()?])?;
+        let (node_index_path, _) = recorder.read_graph_node_index()?;
+        let (edge_index_path, _) = recorder.read_graph_edge_index()?;
+        let history_index_path = endpoint_flight_recorder_index_path(&path);
+
+        assert_private_mode(&path)?;
+        assert_private_mode(&history_index_path)?;
+        assert_private_mode(&node_index_path)?;
+        assert_private_mode(&edge_index_path)?;
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(history_index_path);
+        let _ = fs::remove_file(node_index_path);
+        let _ = fs::remove_file(edge_index_path);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn compaction_rewrite_preserves_private_log_and_sidecar_modes() -> Result<()> {
+        let path = unique_test_path("compact")?;
+        let mut recorder = EndpointFlightRecorder::open(&path)?;
+        recorder.append_observations(&[
+            test_observation_with_id("obs-private-mode-1", "2026-05-20T12:00:00Z")?,
+            test_observation_with_id("obs-private-mode-2", "2026-05-20T12:01:00Z")?,
+        ])?;
+
+        let report = recorder.compact(
+            Some(1),
+            0,
+            &BTreeSet::new(),
+            false,
+            DateTime::parse_from_rfc3339("2026-05-20T12:02:00Z")
+                .context("parse compaction time")?
+                .with_timezone(&Utc),
+        )?;
+        assert_eq!(report.retained_count, 1);
+
         let (node_index_path, _) = recorder.read_graph_node_index()?;
         let (edge_index_path, _) = recorder.read_graph_edge_index()?;
         let history_index_path = endpoint_flight_recorder_index_path(&path);
