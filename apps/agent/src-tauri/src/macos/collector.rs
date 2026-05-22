@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
@@ -20,12 +20,13 @@ use super::host::{
 };
 use super::status::{
     CombinedSystemExtensionStatus, EvidenceArtifact, MdmProfileState, ProviderAttestationState,
-    ProviderReloadObservation, ProviderRuntimeState, ProviderStatus,
+    ProviderAvailability, ProviderReloadObservation, ProviderRuntimeState, ProviderStatus,
     SystemExtensionActivationState, SystemExtensionApproval, SystemExtensionInstallState,
 };
 
 const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(60);
 const STATUS_TOOL_TIMEOUT: Duration = Duration::from_secs(10);
+const RUNTIME_SNAPSHOT_MAX_AGE: Duration = Duration::from_secs(120);
 const ENDPOINT_SECURITY_TOOL_ENV: &str = "CLAWDSTRIKE_ENDPOINT_SECURITY_STATUS_TOOL";
 const ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_ENV: &str =
     "CLAWDSTRIKE_ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_PATH";
@@ -588,6 +589,11 @@ fn endpoint_provider_status(sample: EndpointSecurityStatusSample) -> ProviderSta
             last_reload_observation: None,
         },
     );
+    downgrade_stale_runtime_snapshot(
+        &mut status,
+        "endpoint-security",
+        &default_endpoint_security_runtime_snapshot_path(),
+    );
     status
 }
 
@@ -606,6 +612,11 @@ fn network_provider_status(sample: NetworkExtensionStatusSample) -> ProviderStat
             last_reload_observation: sample.last_reload_observation,
         },
     );
+    downgrade_stale_runtime_snapshot(
+        &mut status,
+        "network-extension",
+        &default_network_extension_runtime_snapshot_path(),
+    );
     status
 }
 
@@ -623,6 +634,52 @@ fn enrich_provider_status(status: &mut ProviderStatus, enrichment: ProviderStatu
     status.enforcement_ready = enrichment.enforcement_ready;
     status.last_error = enrichment.last_error;
     status.last_reload_observation = enrichment.last_reload_observation;
+}
+
+fn downgrade_stale_runtime_snapshot(status: &mut ProviderStatus, provider: &str, path: &Path) {
+    if !matches!(status.runtime, ProviderRuntimeState::Active) || !runtime_snapshot_is_stale(path) {
+        return;
+    }
+
+    mark_runtime_snapshot_stale(status, provider, path);
+}
+
+fn mark_runtime_snapshot_stale(status: &mut ProviderStatus, provider: &str, path: &Path) {
+    let reason = "provider_runtime_snapshot_stale";
+    status.runtime = ProviderRuntimeState::Degraded {
+        reason: reason.to_string(),
+    };
+    status.last_error = Some(reason.to_string());
+    status.evidence_paths.push(EvidenceArtifact {
+        kind: "stale_runtime_snapshot".to_string(),
+        path: path.display().to_string(),
+        detail: format!("{provider} runtime snapshot is older than the freshness window"),
+    });
+    if let Some(provider_state) = status.provider_state.as_mut() {
+        provider_state.active = false;
+        provider_state.healthy = false;
+        provider_state.availability = ProviderAvailability::Degraded;
+        if !provider_state
+            .degraded_reasons
+            .iter()
+            .any(|existing| existing == reason)
+        {
+            provider_state.degraded_reasons.push(reason.to_string());
+        }
+    }
+}
+
+fn runtime_snapshot_is_stale(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    let Ok(modified_at) = metadata.modified() else {
+        return true;
+    };
+    match SystemTime::now().duration_since(modified_at) {
+        Ok(age) => age > RUNTIME_SNAPSHOT_MAX_AGE,
+        Err(_) => true,
+    }
 }
 
 fn default_endpoint_security_runtime_snapshot_path() -> PathBuf {
@@ -1219,6 +1276,50 @@ printf '%s
             rendered.contains("network-extension-egress-policy.json.provider-runtime.json\n"),
             "network extension runtime snapshot env path should be passed to the helper: {rendered}"
         );
+    }
+
+    #[test]
+    fn stale_runtime_snapshot_marker_downgrades_active_provider() {
+        let path = Path::new("/tmp/clawdstrike-stale-runtime-snapshot.json");
+        let mut status = ProviderStatus {
+            runtime: ProviderRuntimeState::Active,
+            provider_state: Some(ProviderAttestationState {
+                provider: "endpoint_security".to_string(),
+                installed: true,
+                approval_status: ProviderApprovalStatus::Approved,
+                active: true,
+                healthy: true,
+                availability: ProviderAvailability::Active,
+                degraded_reasons: Vec::new(),
+                last_healthy_timestamp: Some("2026-05-22T14:00:00Z".to_string()),
+            }),
+            ..ProviderStatus::unknown()
+        };
+
+        mark_runtime_snapshot_stale(&mut status, "endpoint-security", path);
+
+        assert_eq!(
+            status.runtime,
+            ProviderRuntimeState::Degraded {
+                reason: "provider_runtime_snapshot_stale".to_string()
+            }
+        );
+        assert_eq!(
+            status.last_error.as_deref(),
+            Some("provider_runtime_snapshot_stale")
+        );
+        assert_eq!(status.evidence_paths.len(), 1);
+        assert_eq!(status.evidence_paths[0].kind, "stale_runtime_snapshot");
+        let provider_state = status
+            .provider_state
+            .as_ref()
+            .expect("provider state should remain attached");
+        assert!(!provider_state.active);
+        assert!(!provider_state.healthy);
+        assert_eq!(provider_state.availability, ProviderAvailability::Degraded);
+        assert!(provider_state
+            .degraded_reasons
+            .contains(&"provider_runtime_snapshot_stale".to_string()));
     }
 
     #[test]

@@ -323,6 +323,56 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertEqual(snapshot.lastReloadObservation?.generation, 88)
     }
 
+    func testLiveSnapshotRejectsStaleProviderAuthoredRuntimeSnapshot() throws {
+        let policyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-stale-policy-\(UUID().uuidString).json")
+        let runtimeURL = NetworkExtensionStatusTool.runtimeSnapshotURL(for: policyURL)
+        defer {
+            try? FileManager.default.removeItem(at: policyURL)
+            try? FileManager.default.removeItem(at: runtimeURL)
+        }
+        try writePolicySnapshot(
+            to: policyURL,
+            target: "egress.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
+        )
+        let providerSnapshot = NetworkExtensionStateProjector.snapshot(
+            from: NetworkExtensionProviderInputs(
+                installState: .installed,
+                approval: .approved,
+                providerKind: .contentFilter,
+                backendHint: nil,
+                filterRunning: true,
+                policySynced: true,
+                enforcementReady: true,
+                counters: NetworkExtensionCounters(flowsObserved: 9)
+            )
+        )
+        try FileNetworkExtensionProviderRuntimeSnapshotStore(snapshotURL: runtimeURL)
+            .saveSnapshot(providerSnapshot)
+        try FileManager.default.setAttributes(
+            [
+                .modificationDate: Date(
+                    timeIntervalSinceNow: -(NetworkExtensionStatusTool.runtimeSnapshotMaxAgeSeconds + 60)
+                )
+            ],
+            ofItemAtPath: runtimeURL.path
+        )
+
+        let snapshot = NetworkExtensionStatusTool.liveSnapshot(
+            runtimeSnapshotURL: runtimeURL,
+            fallbackPolicySnapshotURL: policyURL
+        )
+
+        XCTAssertEqual(snapshot.hostStatus.runtime, .unknown)
+        XCTAssertEqual(snapshot.attestationState.active, false)
+        XCTAssertEqual(snapshot.attestationState.healthy, false)
+        XCTAssertEqual(snapshot.attestationState.availability, .unavailable)
+        XCTAssertEqual(snapshot.lastError, "provider_runtime_snapshot_stale")
+        XCTAssertEqual(snapshot.attestationState.degradedReasons, ["provider_runtime_snapshot_stale"])
+    }
+
     func testContentFilterRuntimePersistsProviderRuntimeSnapshot() throws {
         let policyURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("clawdstrike-ne-provider-runtime-policy-\(UUID().uuidString).json")
