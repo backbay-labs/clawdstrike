@@ -88,6 +88,8 @@ def load_changed_files(path: str) -> list[str]:
                 continue
             if "/Tests/" in item:
                 continue
+            if not Path(item).exists():
+                continue
             changed.append(item)
     return changed
 

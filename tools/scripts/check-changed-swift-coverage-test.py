@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -38,5 +40,25 @@ def test_line_hits_expand_regions_between_segment_starts() -> None:
     assert subset.total == 1
 
 
+def test_load_changed_files_ignores_deleted_sources() -> None:
+    checker = load_checker()
+    original_cwd = Path.cwd()
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "Sources").mkdir()
+        (root / "Sources" / "Kept.swift").write_text("", encoding="utf-8")
+        changed_files = root / "changed.txt"
+        changed_files.write_text(
+            "Sources/Kept.swift\nSources/Deleted.swift\nSources/Package.swift\n",
+            encoding="utf-8",
+        )
+        os.chdir(root)
+        try:
+            assert checker.load_changed_files(str(changed_files)) == ["Sources/Kept.swift"]
+        finally:
+            os.chdir(original_cwd)
+
+
 if __name__ == "__main__":
     test_line_hits_expand_regions_between_segment_starts()
+    test_load_changed_files_ignores_deleted_sources()
