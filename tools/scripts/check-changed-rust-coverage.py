@@ -243,6 +243,7 @@ MISSING_LCOV_ALLOWLIST = {
     normalize("crates/libs/hush-core/src/lib.rs"),
     normalize("crates/services/hush-cli/src/tests.rs"),
     # macOS-only collectors are cfg-gated and do not emit LCOV on Linux CI runners
+    normalize("apps/agent/src-tauri/src/macos/collector.rs"),
     normalize("apps/agent/src-tauri/src/macos/mod.rs"),
     normalize("crates/bridges/darwin-telemetry-bridge/src/fsevents.rs"),
     normalize("crates/bridges/darwin-telemetry-bridge/src/process.rs"),
