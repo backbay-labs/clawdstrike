@@ -432,6 +432,25 @@ fn validate_tauri_config(contents: &str) -> Result<(), String> {
 }
 
 fn contains_release_placeholder(contents: &str) -> bool {
+    contains_five_underscore_run(contents) || contains_wrapped_release_placeholder(contents)
+}
+
+fn contains_five_underscore_run(contents: &str) -> bool {
+    let mut underscore_run = 0usize;
+    for byte in contents.bytes() {
+        if byte == b'_' {
+            underscore_run += 1;
+            if underscore_run >= 5 {
+                return true;
+            }
+        } else {
+            underscore_run = 0;
+        }
+    }
+    false
+}
+
+fn contains_wrapped_release_placeholder(contents: &str) -> bool {
     let bytes = contents.as_bytes();
     let mut start = 0usize;
 
@@ -530,6 +549,8 @@ mod tests {
         assert!(contains_release_placeholder("__PROFILE_123__"));
         assert!(contains_release_placeholder("___FOO__"));
         assert!(contains_release_placeholder("_____"));
+        assert!(contains_release_placeholder("_____x"));
+        assert!(contains_release_placeholder("prefix_____suffix"));
     }
 
     #[test]
