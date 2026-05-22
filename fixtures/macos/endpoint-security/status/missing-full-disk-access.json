@@ -31,7 +31,7 @@
     "install_state" : "installed"
   },
   "provider_state" : {
-    "active" : true,
+    "active" : false,
     "approval_status" : "approved",
     "availability" : "degraded",
     "degraded_reasons" : [

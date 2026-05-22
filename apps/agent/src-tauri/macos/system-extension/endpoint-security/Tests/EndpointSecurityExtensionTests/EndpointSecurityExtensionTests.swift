@@ -177,11 +177,62 @@ final class EndpointSecurityExtensionTests: XCTestCase {
     func testLiveReportStartsUnknownUntilAHealthyObservationIsRecorded() {
         let report = EndpointSecurityMonitor.liveReport()
 
-        XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .unknown)
+        if report.degradedReasons.contains("missing_full_disk_access") {
+            XCTAssertEqual(
+                report.hostStatus.endpointSecurity.runtime,
+                .degraded(reason: "missing_full_disk_access")
+            )
+        } else {
+            XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .unknown)
+            XCTAssertTrue(report.degradedReasons.contains("provider_state_unknown"))
+        }
         XCTAssertEqual(report.providerState.active, false)
         XCTAssertEqual(report.providerState.healthy, false)
         XCTAssertEqual(report.providerState.availability, .unavailable)
-        XCTAssertTrue(report.degradedReasons.contains("provider_state_unknown"))
+    }
+
+    func testFullDiskAccessIsNotGrantedByDefaultForInstalledActiveProvider() {
+        let monitor = EndpointSecurityMonitor(
+            installState: .installed,
+            approval: .approved,
+            providerActive: true
+        )
+        monitor.recordAuthorization(
+            AuthorizationEvent(
+                path: "/tmp/clawdstrike-es-fda-unknown.txt",
+                decision: .allow,
+                latencyMs: 12,
+                deadlineMs: 200,
+                notifyObserved: true,
+                observedAt: Date(timeIntervalSince1970: 1_778_824_803)
+            )
+        )
+
+        let report = monitor.snapshot()
+
+        XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .unknown)
+        XCTAssertEqual(report.providerState.active, false)
+        XCTAssertEqual(report.providerState.healthy, false)
+        XCTAssertEqual(report.providerState.availability, .inactive)
+    }
+
+    func testMissingFullDiskAccessDegradesEvenWhenInstallStateIsUnknown() {
+        let monitor = EndpointSecurityMonitor()
+        monitor.setFullDiskAccessGranted(
+            false,
+            evidencePath: "endpoint-security-full-disk-access-probe"
+        )
+
+        let report = monitor.snapshot()
+
+        XCTAssertEqual(
+            report.hostStatus.endpointSecurity.runtime,
+            .degraded(reason: "missing_full_disk_access")
+        )
+        XCTAssertTrue(report.degradedReasons.contains("missing_full_disk_access"))
+        XCTAssertEqual(report.providerState.active, false)
+        XCTAssertEqual(report.providerState.healthy, false)
+        XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "missing_full_disk_access" }))
     }
 
     func testAuthorizationPublisherRequestMatchesAgentEndpointContract() throws {

@@ -17,7 +17,7 @@ public final class EndpointSecurityMonitor {
     private var installState: SystemExtensionInstallState
     private var approval: SystemExtensionApproval
     private var providerActive: Bool
-    private var fullDiskAccessGranted: Bool
+    private var fullDiskAccessGranted: Bool?
     private var counters: EndpointSecurityCounters
     private var evidencePaths: [EvidenceArtifact]
     private var lastHealthyTimestamp: String?
@@ -27,7 +27,7 @@ public final class EndpointSecurityMonitor {
         installState: SystemExtensionInstallState = .unknown,
         approval: SystemExtensionApproval = .unknown,
         providerActive: Bool = false,
-        fullDiskAccessGranted: Bool = true
+        fullDiskAccessGranted: Bool? = nil
     ) {
         self.installState = installState
         self.approval = approval
@@ -149,7 +149,29 @@ public final class EndpointSecurityMonitor {
     }
 
     public static func liveReport() -> EndpointSecurityStatusReport {
-        EndpointSecurityMonitor().snapshot()
+        EndpointSecurityMonitor(fullDiskAccessGranted: probeFullDiskAccessGranted()).snapshot()
+    }
+
+    public func refreshFullDiskAccessProbe(
+        evidencePath: String = "endpoint-security-full-disk-access-probe",
+        detail: String = "Full Disk Access probe could not read the macOS TCC database."
+    ) {
+        guard let granted = Self.probeFullDiskAccessGranted() else {
+            return
+        }
+        setFullDiskAccessGranted(granted, evidencePath: evidencePath, detail: detail)
+    }
+
+    public static func probeFullDiskAccessGranted() -> Bool? {
+        #if os(macOS)
+        let tccDatabasePath = "/Library/Application Support/com.apple.TCC/TCC.db"
+        guard FileManager.default.fileExists(atPath: tccDatabasePath) else {
+            return nil
+        }
+        return FileManager.default.isReadableFile(atPath: tccDatabasePath)
+        #else
+        return nil
+        #endif
     }
 
     public static func fixtureScenario(_ scenario: EndpointSecurityFixtureScenario) -> EndpointSecurityStatusReport {
@@ -246,7 +268,13 @@ public final class EndpointSecurityMonitor {
                 return .blocked
             }
         }()
-        let active = installState == .installed && approval == .approved && providerActive
+        let healthy = {
+            if case .active = hostRuntime {
+                return true
+            }
+            return false
+        }()
+        let active = installState == .installed && approval == .approved && providerActive && healthy
 
         let availability: ProviderAvailability = {
             switch hostRuntime {
@@ -265,13 +293,6 @@ public final class EndpointSecurityMonitor {
                 }
                 return .degraded
             }
-        }()
-
-        let healthy = {
-            if case .active = hostRuntime {
-                return true
-            }
-            return false
         }()
 
         return AttestationProviderState(
@@ -296,6 +317,9 @@ public final class EndpointSecurityMonitor {
     }
 
     private func currentHostRuntimeState() -> HostProviderRuntimeState {
+        if fullDiskAccessGranted == false {
+            return .degraded(reason: "missing_full_disk_access")
+        }
         if installState == .unknown {
             return .unknown
         }
@@ -311,8 +335,8 @@ public final class EndpointSecurityMonitor {
         if !providerActive {
             return .inactive
         }
-        if !fullDiskAccessGranted {
-            return .degraded(reason: "missing_full_disk_access")
+        if fullDiskAccessGranted == nil {
+            return .unknown
         }
         if counters.deadlineMissCount > 0 {
             return .degraded(reason: "authorization_deadline_missed")
@@ -340,7 +364,7 @@ public final class EndpointSecurityMonitor {
         if installState == .installed && approval == .approved && !providerActive {
             reasons.append("provider_inactive")
         }
-        if installState == .installed && approval == .approved && !fullDiskAccessGranted {
+        if fullDiskAccessGranted == false {
             reasons.append("missing_full_disk_access")
         }
         if counters.deadlineMissCount > 0 {
@@ -349,7 +373,12 @@ public final class EndpointSecurityMonitor {
         if counters.droppedEventCount > 0 {
             reasons.append("dropped_enforcement_events")
         }
-        if installState == .installed && approval == .approved && providerActive && fullDiskAccessGranted && !healthyObservationSeen {
+        if installState == .installed
+            && approval == .approved
+            && providerActive
+            && fullDiskAccessGranted == true
+            && !healthyObservationSeen
+        {
             reasons.append("live_authorization_signal_missing")
         }
         return reasons
@@ -1037,6 +1066,8 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
             return
         }
 
+        monitor.refreshFullDiskAccessProbe()
+
         var createdClient: OpaquePointer?
         let monitor = monitor
         let createResult = es_new_client(&createdClient) { [weak self, monitor] client, message in
@@ -1078,8 +1109,6 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         }
 
         client = createdClient
-        monitor.setInstallState(.installed)
-        monitor.setApproval(.approved)
         monitor.setProviderActive(true)
     }
 
@@ -1242,15 +1271,12 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         )
         switch result {
         case ES_NEW_CLIENT_RESULT_ERR_NOT_PERMITTED:
-            monitor.setInstallState(.installed)
-            monitor.setApproval(.approved)
             monitor.setFullDiskAccessGranted(
                 false,
                 evidencePath: "endpoint-security-runtime",
                 detail: "EndpointSecurity client creation failed because Full Disk Access is missing."
             )
         case ES_NEW_CLIENT_RESULT_ERR_NOT_ENTITLED, ES_NEW_CLIENT_RESULT_ERR_NOT_PRIVILEGED:
-            monitor.setInstallState(.installed)
             monitor.setApproval(
                 .approvalBlocked,
                 evidencePath: "endpoint-security-runtime",
