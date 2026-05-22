@@ -32,6 +32,8 @@ pub struct EndpointFlightRecorderCompactionManifest {
     pub reason: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manifest_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_boundary_hash: Option<String>,
     pub pre_compaction_head: Option<String>,
     pub pre_compaction_record_count: u64,
     pub post_compaction_head: Option<String>,

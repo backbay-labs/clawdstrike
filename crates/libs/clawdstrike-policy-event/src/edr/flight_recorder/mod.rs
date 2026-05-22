@@ -42,7 +42,7 @@ use super::{
 #[cfg(unix)]
 const ENDPOINT_PRIVATE_FILE_MODE: u32 = 0o600;
 const ENDPOINT_FLIGHT_RECORDER_LOG_RECORD_SCHEMA_VERSION: u32 = 1;
-const ENDPOINT_FLIGHT_RECORDER_COMPACTION_MANIFEST_SCHEMA_VERSION: u8 = 1;
+const ENDPOINT_FLIGHT_RECORDER_COMPACTION_MANIFEST_SCHEMA_VERSION: u8 = 2;
 
 fn endpoint_private_open_options() -> OpenOptions {
     let mut options = OpenOptions::new();
@@ -424,9 +424,7 @@ impl EndpointFlightRecorder {
         }
 
         let continuity_manifest = if !dry_run {
-            let post_compaction_chain =
-                self.rewrite_observations(&retained, pre_compaction_chain.clone())?;
-            let manifest = EndpointFlightRecorderCompactionManifest {
+            let mut manifest = EndpointFlightRecorderCompactionManifest {
                 schema_version: ENDPOINT_FLIGHT_RECORDER_COMPACTION_MANIFEST_SCHEMA_VERSION,
                 compacted_at: now,
                 reason: format!(
@@ -435,16 +433,29 @@ impl EndpointFlightRecorder {
                     observation_count
                 ),
                 manifest_hash: None,
+                compaction_boundary_hash: None,
                 pre_compaction_head: pre_compaction_chain.previous_record_hash.clone(),
                 pre_compaction_record_count: pre_compaction_chain.record_count(),
-                post_compaction_head: post_compaction_chain.previous_record_hash.clone(),
-                post_compaction_record_count: post_compaction_chain.record_count(),
+                post_compaction_head: None,
+                post_compaction_record_count: pre_compaction_chain.record_count(),
                 retained_observation_ids: retained
                     .iter()
                     .map(|observation| observation.observation_id.clone())
                     .collect(),
                 removed_records: records.clone(),
             };
+            let compaction_boundary_hash =
+                endpoint_flight_recorder_compaction_boundary_hash(&manifest)?;
+            manifest.compaction_boundary_hash = Some(compaction_boundary_hash.clone());
+            let post_compaction_chain = self.rewrite_observations(
+                &retained,
+                EndpointFlightRecorderLogChainState {
+                    next_sequence: pre_compaction_chain.next_sequence,
+                    previous_record_hash: Some(compaction_boundary_hash),
+                },
+            )?;
+            manifest.post_compaction_head = post_compaction_chain.previous_record_hash.clone();
+            manifest.post_compaction_record_count = post_compaction_chain.record_count();
             let manifest = seal_endpoint_flight_recorder_compaction_manifest(manifest)?;
             append_endpoint_flight_recorder_compaction_manifest(&path, &manifest)?;
             Some(manifest)
@@ -1615,6 +1626,35 @@ fn append_endpoint_flight_recorder_compaction_manifest(
     Ok(())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EndpointFlightRecorderCompactionBoundaryHashBody<'a> {
+    schema_version: u8,
+    compacted_at: &'a DateTime<Utc>,
+    reason: &'a str,
+    pre_compaction_head: &'a Option<String>,
+    pre_compaction_record_count: u64,
+    retained_observation_ids: &'a [String],
+    removed_records: &'a [EndpointFlightRecorderCompactionRecord],
+}
+
+fn endpoint_flight_recorder_compaction_boundary_hash(
+    manifest: &EndpointFlightRecorderCompactionManifest,
+) -> Result<String> {
+    let body = EndpointFlightRecorderCompactionBoundaryHashBody {
+        schema_version: manifest.schema_version,
+        compacted_at: &manifest.compacted_at,
+        reason: manifest.reason.as_str(),
+        pre_compaction_head: &manifest.pre_compaction_head,
+        pre_compaction_record_count: manifest.pre_compaction_record_count,
+        retained_observation_ids: manifest.retained_observation_ids.as_slice(),
+        removed_records: manifest.removed_records.as_slice(),
+    };
+    let bytes = serde_json::to_vec(&body)
+        .context("serialize endpoint flight recorder compaction boundary hash payload")?;
+    Ok(sha256(&bytes).to_hex_prefixed())
+}
+
 fn seal_endpoint_flight_recorder_compaction_manifest(
     mut manifest: EndpointFlightRecorderCompactionManifest,
 ) -> Result<EndpointFlightRecorderCompactionManifest> {
@@ -1653,6 +1693,29 @@ fn validate_endpoint_flight_recorder_compaction_manifest_hash(
         ));
     }
     Ok(())
+}
+
+fn validate_endpoint_flight_recorder_compaction_boundary_hash(
+    path: &Path,
+    manifest: &EndpointFlightRecorderCompactionManifest,
+) -> Result<String> {
+    let expected = manifest
+        .compaction_boundary_hash
+        .as_deref()
+        .ok_or_else(|| {
+            anyhow!(
+                "endpoint flight recorder compaction manifest for {} is missing compaction boundary hash",
+                path.display()
+            )
+        })?;
+    let actual = endpoint_flight_recorder_compaction_boundary_hash(manifest)?;
+    if expected != actual {
+        return Err(anyhow!(
+            "endpoint flight recorder compaction manifest for {} compaction boundary hash mismatch",
+            path.display()
+        ));
+    }
+    Ok(expected.to_string())
 }
 
 fn read_endpoint_flight_recorder_compaction_manifests(
@@ -1709,6 +1772,8 @@ fn endpoint_flight_recorder_compaction_initial_state(
         ));
     }
     validate_endpoint_flight_recorder_compaction_manifest_hash(path, &manifest)?;
+    let compaction_boundary_hash =
+        validate_endpoint_flight_recorder_compaction_boundary_hash(path, &manifest)?;
     let retained_count = manifest
         .post_compaction_record_count
         .checked_sub(manifest.pre_compaction_record_count)
@@ -1727,7 +1792,7 @@ fn endpoint_flight_recorder_compaction_initial_state(
     Ok((
         EndpointFlightRecorderLogChainState {
             next_sequence: manifest.pre_compaction_record_count.saturating_add(1),
-            previous_record_hash: manifest.pre_compaction_head.clone(),
+            previous_record_hash: Some(compaction_boundary_hash),
         },
         Some(manifest),
     ))
@@ -2313,6 +2378,9 @@ mod tests {
         )
         .context("parse persisted compaction manifest")?;
         manifest.pre_compaction_record_count = 0;
+        manifest.compaction_boundary_hash = Some(
+            endpoint_flight_recorder_compaction_boundary_hash(&manifest)?,
+        );
         manifest.manifest_hash = Some(endpoint_flight_recorder_compaction_manifest_hash(
             &manifest,
         )?);
@@ -2396,15 +2464,17 @@ mod tests {
         )?;
         let removed_manifest_path =
             endpoint_flight_recorder_compaction_manifest_path(&removed_tamper_path);
-        let mut removed_manifest: serde_json::Value = serde_json::from_str(
+        let mut removed_manifest: EndpointFlightRecorderCompactionManifest = serde_json::from_str(
             fs::read_to_string(&removed_manifest_path)?
                 .lines()
                 .next()
                 .unwrap_or_default(),
         )
         .context("parse removed tamper manifest")?;
-        removed_manifest["removedRecords"][0]["observationId"] =
-            serde_json::json!("obs-forged-removed-id");
+        removed_manifest.removed_records[0].observation_id = "obs-forged-removed-id".to_string();
+        removed_manifest.manifest_hash = Some(endpoint_flight_recorder_compaction_manifest_hash(
+            &removed_manifest,
+        )?);
         fs::write(
             &removed_manifest_path,
             format!("{}\n", serde_json::to_string(&removed_manifest)?),
@@ -2413,8 +2483,28 @@ mod tests {
 
         let removed_err = EndpointFlightRecorder::open(&removed_tamper_path).unwrap_err();
         assert!(
-            removed_err.to_string().contains("manifest hash mismatch"),
+            removed_err
+                .to_string()
+                .contains("compaction boundary hash mismatch"),
             "unexpected removed identity tamper error: {removed_err}"
+        );
+        removed_manifest.compaction_boundary_hash = Some(
+            endpoint_flight_recorder_compaction_boundary_hash(&removed_manifest)?,
+        );
+        removed_manifest.manifest_hash = Some(endpoint_flight_recorder_compaction_manifest_hash(
+            &removed_manifest,
+        )?);
+        fs::write(
+            &removed_manifest_path,
+            format!("{}\n", serde_json::to_string(&removed_manifest)?),
+        )
+        .context("write re-sealed removed identity tamper manifest")?;
+        let resealed_removed_err = EndpointFlightRecorder::open(&removed_tamper_path).unwrap_err();
+        assert!(
+            resealed_removed_err
+                .to_string()
+                .contains("previous hash mismatch"),
+            "unexpected re-sealed removed identity tamper error: {resealed_removed_err}"
         );
 
         let retained_tamper_path = unique_test_path("compact-manifest-retained-id-tamper")?;
@@ -2455,7 +2545,7 @@ mod tests {
         assert!(
             retained_err
                 .to_string()
-                .contains("retained observation identity mismatch"),
+                .contains("compaction boundary hash mismatch"),
             "unexpected retained identity tamper error: {retained_err}"
         );
 
