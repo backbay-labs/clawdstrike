@@ -832,7 +832,14 @@ export async function publishPackageManagerLifecycleEventToLocalEdr(
     ...input,
     env,
   });
-  if (!event) return;
+  if (!event) {
+    if (enforcementMode === "block") {
+      throw new Error(
+        "Clawdstrike package-manager lifecycle enforcement is enabled, but the hook could not infer a package-manager lifecycle event from the environment",
+      );
+    }
+    return;
+  }
 
   const endpoint = resolveLocalEdrEndpoint(config, "package_manager_events");
   if (!endpoint) {

@@ -181,6 +181,260 @@ function extractCommandPathCandidates(
   return { reads: uniq(reads), writes: uniq(writes) };
 }
 
+type CommandNetworkTarget = {
+  host: string;
+  port: number;
+  protocol?: string;
+  url?: string;
+};
+
+const URL_FETCH_COMMANDS = new Set(["curl", "wget", "fetch", "aria2c"]);
+const SSH_LIKE_COMMANDS = new Set(["ssh", "sftp", "scp", "rsync"]);
+const SOCKET_COMMANDS = new Set(["nc", "ncat", "netcat", "telnet"]);
+
+function splitCommandLikeTokens(value: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | "`" | null = null;
+  let escaped = false;
+
+  for (const ch of value) {
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (escaped) current += "\\";
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+function commandNetworkTokens(command: string, args: string[]): string[] {
+  return [command, ...args]
+    .map((value) => splitCommandLikeTokens(String(value ?? "")))
+    .flat()
+    .filter(Boolean);
+}
+
+function cleanNetworkToken(value: string): string {
+  return value
+    .trim()
+    .replace(/^[("'`]+/, "")
+    .replace(/[)"'`;,\}]+$/, "");
+}
+
+function commandNameFromToken(value: string): string {
+  const cleaned = cleanNetworkToken(value).toLowerCase();
+  const slash = Math.max(cleaned.lastIndexOf("/"), cleaned.lastIndexOf("\\"));
+  return slash === -1 ? cleaned : cleaned.slice(slash + 1);
+}
+
+function protocolFromTarget(value: string): string | null {
+  const match = value.match(/^([a-z][a-z0-9+.-]*):\/\//i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function parseExplicitPort(value: string): number | null {
+  if (!/^[0-9]+$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 65535 ? parsed : null;
+}
+
+function parsedCommandNetworkTarget(
+  input: string,
+  overridePort?: number,
+): CommandNetworkTarget | null {
+  const cleaned = cleanNetworkToken(input);
+  if (!cleaned || cleaned.startsWith("-")) return null;
+
+  const parsed = parseNetworkTarget(cleaned, { emptyPort: "default" });
+  const host = parsed.host.trim().toLowerCase();
+  if (!host) return null;
+
+  const protocol = protocolFromTarget(cleaned) ?? undefined;
+  const port = overridePort ?? parsed.port;
+  return {
+    host,
+    port,
+    ...(protocol ? { protocol } : {}),
+    ...(cleaned.includes("://") ? { url: cleaned } : {}),
+  };
+}
+
+function looksLikeUrlToken(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(cleanNetworkToken(value));
+}
+
+function looksLikeHostPortToken(value: string): boolean {
+  const cleaned = cleanNetworkToken(value);
+  return (
+    /^\[[^\]]+\]:[0-9]{1,5}(?:[/?#].*)?$/.test(cleaned) ||
+    /^[a-z0-9.-]+:[0-9]{1,5}(?:[/?#].*)?$/i.test(cleaned)
+  );
+}
+
+function looksLikeCommandHost(value: string): boolean {
+  const cleaned = cleanNetworkToken(value);
+  if (!cleaned || cleaned.startsWith("-")) return false;
+  if (looksLikePathToken(cleaned)) return false;
+  if (cleaned.includes("=")) return false;
+  if (cleaned.includes("://")) return false;
+  if (/^[0-9]+$/.test(cleaned)) return false;
+  if (cleaned.toLowerCase() === "localhost") return true;
+  if (/^[0-9]{1,3}(?:\.[0-9]{1,3}){3}$/.test(cleaned)) return true;
+  return /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(cleaned);
+}
+
+function addCommandNetworkTarget(
+  targets: CommandNetworkTarget[],
+  seen: Set<string>,
+  target: CommandNetworkTarget | null,
+): void {
+  if (!target) return;
+  const key = `${target.host}:${target.port}:${target.protocol ?? ""}:${target.url ?? ""}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  targets.push(target);
+}
+
+function tokenValueAfterEquals(value: string): string | null {
+  const eq = value.indexOf("=");
+  if (eq <= 0 || eq === value.length - 1) return null;
+  return value.slice(eq + 1);
+}
+
+function sshPortFromTokens(tokens: string[]): number | null {
+  for (let i = 1; i < tokens.length; i++) {
+    const token = cleanNetworkToken(tokens[i]);
+    if (token === "-p" || token === "-P") {
+      const next = tokens[i + 1];
+      if (next) {
+        const parsed = parseExplicitPort(cleanNetworkToken(next));
+        if (parsed) return parsed;
+      }
+      continue;
+    }
+    const compact = token.match(/^-p([0-9]+)$/i) ?? token.match(/^-P([0-9]+)$/);
+    if (compact?.[1]) {
+      const parsed = parseExplicitPort(compact[1]);
+      if (parsed) return parsed;
+    }
+  }
+  return null;
+}
+
+function hostFromSshLikeToken(value: string): string | null {
+  let cleaned = cleanNetworkToken(value);
+  if (!cleaned || cleaned.startsWith("-") || looksLikePathToken(cleaned)) return null;
+  if (cleaned.includes("://")) {
+    const parsed = parsedCommandNetworkTarget(cleaned);
+    return parsed?.host ?? null;
+  }
+
+  const at = cleaned.lastIndexOf("@");
+  if (at !== -1) cleaned = cleaned.slice(at + 1);
+
+  if (cleaned.startsWith("[") && cleaned.includes("]")) {
+    return cleaned.slice(1, cleaned.indexOf("]")).toLowerCase();
+  }
+
+  const colon = cleaned.indexOf(":");
+  if (colon !== -1) cleaned = cleaned.slice(0, colon);
+
+  return looksLikeCommandHost(cleaned) ? cleaned.toLowerCase() : null;
+}
+
+function extractCommandNetworkTargets(command: string, args: string[]): CommandNetworkTarget[] {
+  const tokens = commandNetworkTokens(command, args);
+  const targets: CommandNetworkTarget[] = [];
+  const seen = new Set<string>();
+
+  for (const token of tokens) {
+    const cleaned = cleanNetworkToken(token);
+    const equalValue = tokenValueAfterEquals(cleaned);
+    for (const candidate of [cleaned, equalValue].filter((v): v is string => Boolean(v))) {
+      if (looksLikeUrlToken(candidate) || looksLikeHostPortToken(candidate)) {
+        addCommandNetworkTarget(targets, seen, parsedCommandNetworkTarget(candidate));
+      }
+    }
+  }
+
+  const commandName = tokens.length > 0 ? commandNameFromToken(tokens[0]) : "";
+
+  if (URL_FETCH_COMMANDS.has(commandName)) {
+    for (const token of tokens.slice(1)) {
+      const cleaned = cleanNetworkToken(token);
+      if (!looksLikeCommandHost(cleaned)) continue;
+      addCommandNetworkTarget(targets, seen, parsedCommandNetworkTarget(cleaned));
+    }
+  }
+
+  if (SSH_LIKE_COMMANDS.has(commandName)) {
+    const port = sshPortFromTokens(tokens) ?? 22;
+    for (const token of tokens.slice(1)) {
+      const host = hostFromSshLikeToken(token);
+      if (!host) continue;
+      addCommandNetworkTarget(targets, seen, {
+        host,
+        port,
+        protocol: commandName === "rsync" ? "rsync" : "ssh",
+      });
+    }
+  }
+
+  if (SOCKET_COMMANDS.has(commandName)) {
+    const positional = tokens.slice(1).filter((token) => {
+      const cleaned = cleanNetworkToken(token);
+      return cleaned && !cleaned.startsWith("-");
+    });
+
+    for (let i = 0; i < positional.length; i++) {
+      const host = cleanNetworkToken(positional[i]);
+      if (!looksLikeCommandHost(host)) continue;
+      const port = positional[i + 1] ? parseExplicitPort(cleanNetworkToken(positional[i + 1])) : null;
+      addCommandNetworkTarget(targets, seen, {
+        host: host.toLowerCase(),
+        port: port ?? (commandName === "telnet" ? 23 : 443),
+        protocol: commandName === "telnet" ? "telnet" : "tcp",
+      });
+      if (port) i += 1;
+    }
+  }
+
+  return targets;
+}
+
 const POLICY_REASON_CODES = {
   POLICY_DENY: "ADC_POLICY_DENY",
   POLICY_WARN: "ADC_POLICY_WARN",
@@ -841,6 +1095,32 @@ export class PolicyEngine {
           metadata: { ...event.metadata, derivedFrom: "command_exec" },
         };
         const d = this.checkFilesystem(synthetic);
+        if (d.status === "deny" || d.status === "warn") return d;
+      }
+    }
+
+    if (this.config.guards.egress && event.data.type === "command") {
+      const targets = extractCommandNetworkTargets(event.data.command, event.data.args);
+      const maxChecks = 32;
+      let checks = 0;
+
+      for (const target of targets) {
+        if (checks++ >= maxChecks) break;
+        const synthetic: PolicyEvent = {
+          eventId: `${event.eventId}:cmdegress:${checks}`,
+          eventType: "network_egress",
+          timestamp: event.timestamp,
+          sessionId: event.sessionId,
+          data: {
+            type: "network",
+            host: target.host,
+            port: target.port,
+            ...(target.protocol ? { protocol: target.protocol } : {}),
+            ...(target.url ? { url: target.url } : {}),
+          },
+          metadata: { ...event.metadata, derivedFrom: "command_exec" },
+        };
+        const d = this.checkEgress(synthetic);
         if (d.status === "deny" || d.status === "warn") return d;
       }
     }

@@ -332,6 +332,18 @@ describe("package-manager lifecycle local EDR publishing", () => {
     ).rejects.toThrow(/local EDR is unavailable/i);
   });
 
+  it("fails closed in package lifecycle enforcement mode when hook environment cannot be classified", async () => {
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr({
+        now: new Date("2026-05-17T16:00:30.000Z"),
+        env: {
+          CLAWDSTRIKE_PACKAGE_LIFECYCLE_ENFORCEMENT: "block",
+          PATH: "/usr/bin",
+        },
+      }),
+    ).rejects.toThrow(/could not infer a package-manager lifecycle event/i);
+  });
+
   it("detects Bun lifecycle scripts from package-manager environment", async () => {
     const event = buildPackageManagerLifecycleEventFromEnvironmentForLocalEdr({
       now: new Date("2026-05-17T16:01:00.000Z"),
