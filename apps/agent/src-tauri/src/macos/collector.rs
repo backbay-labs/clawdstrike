@@ -933,7 +933,7 @@ fn resolve_package_status_tool_with_swift_availability(
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used, clippy::unwrap_used)]
+    #![allow(clippy::await_holding_lock, clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
     use crate::macos::status::{

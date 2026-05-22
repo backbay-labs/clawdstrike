@@ -316,6 +316,8 @@ pub(crate) fn merge_json_values(target: &mut Value, source: Value) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
     use crate::edr::dto::{EdrDetectionCandidate, EdrPolicyDeltaTargetPolicy};
 

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::bool_assert_comparison,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::useless_vec
+)]
+
 include!("core/part_1.rs");
 include!("core/part_2.rs");
 include!("core/part_3.rs");

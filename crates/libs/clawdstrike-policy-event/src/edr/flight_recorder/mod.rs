@@ -2221,6 +2221,16 @@ mod tests {
         })
     }
 
+    fn open_recorder_error(path: &Path) -> Result<anyhow::Error> {
+        match EndpointFlightRecorder::open(path) {
+            Ok(_) => Err(anyhow!(
+                "expected opening endpoint flight recorder {} to fail",
+                path.display()
+            )),
+            Err(err) => Ok(err),
+        }
+    }
+
     #[cfg(unix)]
     fn assert_private_mode(path: &Path) -> Result<()> {
         let mode = fs::metadata(path)
@@ -2274,10 +2284,9 @@ mod tests {
                 .with_timezone(&Utc),
         )?;
         assert_eq!(report.retained_count, 1);
-        let manifest = report
-            .continuity_manifest
-            .as_ref()
-            .expect("missing compaction continuity manifest");
+        let Some(manifest) = report.continuity_manifest.as_ref() else {
+            return Err(anyhow!("missing compaction continuity manifest"));
+        };
         assert_eq!(manifest.pre_compaction_record_count, 2);
         assert_eq!(manifest.post_compaction_record_count, 3);
         assert!(manifest.pre_compaction_head.is_some());
@@ -2337,7 +2346,7 @@ mod tests {
         let manifest_path = endpoint_flight_recorder_compaction_manifest_path(&path);
         fs::remove_file(&manifest_path).context("remove compaction manifest")?;
 
-        let err = EndpointFlightRecorder::open(&path).unwrap_err();
+        let err = open_recorder_error(&path)?;
         let message = err.to_string();
         assert!(
             message.contains("sequence mismatch") || message.contains("previous hash mismatch"),
@@ -2390,7 +2399,7 @@ mod tests {
         )
         .context("write tampered compaction manifest")?;
 
-        let err = EndpointFlightRecorder::open(&path).unwrap_err();
+        let err = open_recorder_error(&path)?;
         assert!(
             err.to_string().contains("retained observation count"),
             "unexpected reopen error: {err}"
@@ -2481,7 +2490,7 @@ mod tests {
         )
         .context("write removed identity tamper manifest")?;
 
-        let removed_err = EndpointFlightRecorder::open(&removed_tamper_path).unwrap_err();
+        let removed_err = open_recorder_error(&removed_tamper_path)?;
         assert!(
             removed_err
                 .to_string()
@@ -2499,7 +2508,7 @@ mod tests {
             format!("{}\n", serde_json::to_string(&removed_manifest)?),
         )
         .context("write re-sealed removed identity tamper manifest")?;
-        let resealed_removed_err = EndpointFlightRecorder::open(&removed_tamper_path).unwrap_err();
+        let resealed_removed_err = open_recorder_error(&removed_tamper_path)?;
         assert!(
             resealed_removed_err
                 .to_string()
@@ -2541,7 +2550,7 @@ mod tests {
         )
         .context("write retained identity tamper manifest")?;
 
-        let retained_err = EndpointFlightRecorder::open(&retained_tamper_path).unwrap_err();
+        let retained_err = open_recorder_error(&retained_tamper_path)?;
         assert!(
             retained_err
                 .to_string()
@@ -2613,7 +2622,7 @@ mod tests {
         fs::write(&path, format!("{raw_observation}\n"))
             .with_context(|| format!("write raw legacy log {}", path.display()))?;
 
-        let err = EndpointFlightRecorder::open(&path).unwrap_err();
+        let err = open_recorder_error(&path)?;
         assert!(
             err.to_string()
                 .contains("legacy endpoint observation JSONL")

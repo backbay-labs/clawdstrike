@@ -317,6 +317,11 @@ impl EndpointResponseExecutionLedger {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::items_after_test_module,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
     use chrono::Utc;

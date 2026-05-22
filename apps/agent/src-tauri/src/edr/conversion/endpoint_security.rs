@@ -539,6 +539,8 @@ pub(crate) fn bad_endpoint_security_event_request(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
 
     fn process_exec_event(observed_at: &str) -> EdrEndpointSecurityEvent {

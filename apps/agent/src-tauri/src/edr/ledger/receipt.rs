@@ -1136,6 +1136,8 @@ fn receipt_compaction_manifest_entry(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
     use clawdstrike_policy_event::edr::{
         EndpointEvent, EndpointProcess, EndpointTelemetryPrivacyMode,

@@ -213,6 +213,8 @@ pub(crate) fn safe_filename_fragment(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
     use chrono::Utc;
     use clawdstrike_policy_event::edr::{CausalEdge, CausalNode};
