@@ -108,10 +108,14 @@ def line_hits_from_segments(segments: list[list[Any]]) -> dict[int, int]:
 
     normalized_segments.sort(key=lambda item: (item[0], item[1]))
 
-    for line, _column, count, has_count, is_gap_region in normalized_segments:
+    for index, (line, _column, count, has_count, is_gap_region) in enumerate(normalized_segments):
         if not has_count or is_gap_region:
             continue
-        line_hits[line] = max(line_hits.get(line, 0), count)
+        next_line = line
+        if index + 1 < len(normalized_segments):
+            next_line = max(line, normalized_segments[index + 1][0] - 1)
+        for covered_line in range(line, next_line + 1):
+            line_hits[covered_line] = max(line_hits.get(covered_line, 0), count)
 
     return line_hits
 
@@ -229,6 +233,7 @@ def main() -> int:
 
     aggregate = FileCoverage()
     missing: list[str] = []
+    missing_changed_lines: list[str] = []
     per_file_lines: list[str] = []
 
     for relpath in changed_files:
@@ -244,6 +249,7 @@ def main() -> int:
                 continue
             effective = record.subset_for_lines(changed_lines)
             if effective.total == 0:
+                missing_changed_lines.append(relpath)
                 continue
 
         aggregate.covered += effective.covered
@@ -260,6 +266,12 @@ def main() -> int:
     if missing:
         print("Missing llvm-cov records for changed files:")
         for relpath in missing:
+            print(f"  - {relpath}")
+        return 1
+
+    if missing_changed_lines:
+        print("Changed Swift lines had no llvm-cov line records:")
+        for relpath in missing_changed_lines:
             print(f"  - {relpath}")
         return 1
 

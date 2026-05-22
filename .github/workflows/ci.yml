@@ -275,6 +275,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Test Swift coverage checker
+        run: python3 tools/scripts/check-changed-swift-coverage-test.py
+
       - name: Test EndpointSecurity extension package
         shell: bash
         run: |
