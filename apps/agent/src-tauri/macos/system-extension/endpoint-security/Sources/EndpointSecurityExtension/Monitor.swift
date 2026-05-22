@@ -924,6 +924,16 @@ public enum EndpointSecurityRuntimeClientError: Error, LocalizedError, Equatable
 }
 
 #if canImport(EndpointSecurity)
+private func endpointSecurityMachDeltaMilliseconds(from start: UInt64, to end: UInt64) -> UInt64 {
+    guard end > start else {
+        return 0
+    }
+    var info = mach_timebase_info_data_t()
+    mach_timebase_info(&info)
+    let nanos = Double(end - start) * Double(info.numer) / Double(info.denom)
+    return UInt64(nanos / 1_000_000)
+}
+
 public struct EndpointSecurityAuthOpenMessageAdapter {
     private let hostId: String?
     private let userId: String?
@@ -958,8 +968,14 @@ public struct EndpointSecurityAuthOpenMessageAdapter {
         let pidVersion = audit_token_to_pidversion(process.audit_token)
         let processGuid = pid > 0 && pidVersion >= 0 ? "macos:\(pid):\(pidVersion)" : nil
         let parentGuid = parentProcessGuid(for: process, messageVersion: message.pointee.version)
-        let latencyMs = Self.machDeltaMilliseconds(from: message.pointee.mach_time, to: mach_absolute_time())
-        let deadlineMs = Self.machDeltaMilliseconds(from: message.pointee.mach_time, to: message.pointee.deadline)
+        let latencyMs = endpointSecurityMachDeltaMilliseconds(
+            from: message.pointee.mach_time,
+            to: mach_absolute_time()
+        )
+        let deadlineMs = endpointSecurityMachDeltaMilliseconds(
+            from: message.pointee.mach_time,
+            to: message.pointee.deadline
+        )
         let observedAt = Date(
             timeIntervalSince1970: TimeInterval(message.pointee.time.tv_sec)
                 + TimeInterval(message.pointee.time.tv_nsec) / 1_000_000_000
@@ -1016,15 +1032,6 @@ public struct EndpointSecurityAuthOpenMessageAdapter {
         }
     }
 
-    private static func machDeltaMilliseconds(from start: UInt64, to end: UInt64) -> UInt64 {
-        guard end > start else {
-            return 0
-        }
-        var info = mach_timebase_info_data_t()
-        mach_timebase_info(&info)
-        let nanos = Double(end - start) * Double(info.numer) / Double(info.denom)
-        return UInt64(nanos / 1_000_000)
-    }
 }
 
 @available(macOS 10.15, *)
@@ -1200,7 +1207,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         let decisionLock = NSLock()
         var handlerDecision: EndpointSecurityAuthorizationDecision?
         let requestSnapshot = request
-        let started = DispatchTime.now().uptimeNanoseconds
+        let started = mach_absolute_time()
         decisionQueue.async { [decisionHandler] in
             let decision = decisionHandler(requestSnapshot)
             decisionLock.lock()
@@ -1228,11 +1235,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
     }
 
     private static func elapsedMilliseconds(since started: UInt64) -> UInt64 {
-        let now = DispatchTime.now().uptimeNanoseconds
-        guard now > started else {
-            return 0
-        }
-        return (now - started) / 1_000_000
+        endpointSecurityMachDeltaMilliseconds(from: started, to: mach_absolute_time())
     }
 
     private static func issueFailClosedAuthOpenResponse(
