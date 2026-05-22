@@ -681,6 +681,13 @@ fn parse_endpoint_flight_recorder_log_line(
             Ok(Some(record.observation))
         }
         Err(record_err) => {
+            if chain_state.is_some() {
+                return Err(anyhow!(
+                    "legacy endpoint observation JSONL at {}:{} is not accepted by the production hash-chain reader; run an explicit migration before using this log as durable evidence; hash-chain record parse error: {record_err}",
+                    path.display(),
+                    line_number
+                ));
+            }
             let observation: EndpointObservation =
                 serde_json::from_str(trimmed).with_context(|| {
                     format!(
@@ -689,16 +696,6 @@ fn parse_endpoint_flight_recorder_log_line(
                         line_number
                     )
                 })?;
-            if let Some(chain_state) = chain_state {
-                if chain_state.previous_record_hash.is_some() {
-                    return Err(anyhow!(
-                        "legacy endpoint observation JSONL at {}:{} cannot appear after hash-chained records",
-                        path.display(),
-                        line_number
-                    ));
-                }
-                chain_state.advance_legacy_record();
-            }
             Ok(Some(observation))
         }
     }
@@ -768,10 +765,6 @@ fn validate_endpoint_flight_recorder_log_record(
 }
 
 impl EndpointFlightRecorderLogChainState {
-    fn advance_legacy_record(&mut self) {
-        self.next_sequence = self.next_sequence.saturating_add(1);
-    }
-
     fn advance_hashed_record(&mut self, record_hash: String) {
         self.previous_record_hash = Some(record_hash);
         self.next_sequence = self.next_sequence.saturating_add(1);
@@ -1927,6 +1920,26 @@ mod tests {
         let _ = fs::remove_file(endpoint_flight_recorder_index_path(&path));
         let _ = fs::remove_file(endpoint_flight_recorder_graph_index_path(&path));
         let _ = fs::remove_file(endpoint_flight_recorder_graph_edge_index_path(&path));
+        Ok(())
+    }
+
+    #[test]
+    fn production_open_rejects_legacy_raw_observation_logs() -> Result<()> {
+        let path = unique_test_path("legacy-raw")?;
+        let raw_observation = serde_json::to_string(&test_observation()?)
+            .context("serialize raw legacy observation")?;
+        fs::write(&path, format!("{raw_observation}\n"))
+            .with_context(|| format!("write raw legacy log {}", path.display()))?;
+
+        let err = EndpointFlightRecorder::open(&path).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("legacy endpoint observation JSONL")
+                && err.to_string().contains("not accepted"),
+            "expected legacy raw rejection, got {err}"
+        );
+
+        let _ = fs::remove_file(&path);
         Ok(())
     }
 }
