@@ -286,6 +286,7 @@ impl EndpointResponseExecutionLedger {
                 candidate.status,
                 EndpointResponseExecutionStatus::Expired
                     | EndpointResponseExecutionStatus::Cancelled
+                    | EndpointResponseExecutionStatus::RollbackFailed
                     | EndpointResponseExecutionStatus::RolledBack
             ) && candidate.action_id == execution.action_id
                 && candidate.rollback_ref == execution.rollback_ref

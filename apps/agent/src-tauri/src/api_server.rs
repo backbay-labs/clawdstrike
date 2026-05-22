@@ -16749,6 +16749,7 @@ fn verify_response_execution_receipt_contract(
             }
             if !receipt_evidence_hash_matches(receipt, "executionStatus", "expired")
                 && !receipt_evidence_hash_matches(receipt, "executionStatus", "cancelled")
+                && !receipt_evidence_hash_matches(receipt, "executionStatus", "rollback_failed")
                 && !receipt_evidence_hash_matches(receipt, "executionStatus", "rolled_back")
             {
                 return Err((
@@ -17214,6 +17215,7 @@ fn response_lifecycle_receipt_matches_execution(
 fn response_execution_receipt_is_terminal_transition(receipt: &SignedReceipt) -> bool {
     receipt_evidence_hash_matches(receipt, "executionStatus", "expired")
         || receipt_evidence_hash_matches(receipt, "executionStatus", "cancelled")
+        || receipt_evidence_hash_matches(receipt, "executionStatus", "rollback_failed")
         || receipt_evidence_hash_matches(receipt, "executionStatus", "rolled_back")
 }
 
@@ -30798,6 +30800,43 @@ guards:
         );
         assert_eq!(recent[2].status, EndpointResponseExecutionStatus::Succeeded);
         assert_eq!(recent[3].status, EndpointResponseExecutionStatus::Cancelled);
+
+        let _ = std::fs::remove_file(ledger_path);
+    }
+
+    #[test]
+    fn agent_edr_response_execution_ledger_marks_rollback_failed_terminal() {
+        let (execution, _subgraph) = test_collect_evidence_execution(
+            "proc-execution-rollback-failed-1",
+            "execution-rollback-failed.example.invalid",
+            600,
+            "collect evidence bundle for rollback failure ledger test",
+        );
+        let ledger_path = test_response_execution_path();
+        let mut ledger = EndpointResponseExecutionLedger::open(&ledger_path)
+            .unwrap_or_else(|err| panic!("failed to open response execution ledger: {err}"));
+        ledger
+            .append(&execution)
+            .unwrap_or_else(|err| panic!("failed to append response execution: {err}"));
+        let failed = EndpointResponseExecutionReport::rollback_failed_from(
+            &execution,
+            "ttl expired",
+            "network extension rollback helper failed",
+            execution.completed_at + chrono::Duration::seconds(10),
+        );
+        ledger
+            .append(&failed)
+            .unwrap_or_else(|err| panic!("failed to append rollback-failed transition: {err}"));
+
+        assert!(ledger
+            .has_terminal_transition_for(&execution)
+            .unwrap_or_else(|err| panic!("failed to check terminal transition: {err}")));
+        let expired = ledger
+            .expire_due(execution.expires_at() + chrono::Duration::seconds(1))
+            .unwrap_or_else(|err| {
+                panic!("failed to expire rollback-failed response execution: {err}")
+            });
+        assert!(expired.is_empty());
 
         let _ = std::fs::remove_file(ledger_path);
     }
