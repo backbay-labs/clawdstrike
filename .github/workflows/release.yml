@@ -988,6 +988,7 @@ jobs:
       APPLE_SIGNING_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_SIGNING_KEYCHAIN_PASSWORD }}
       CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING: "1"
       CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH: ${{ vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH }}
+      CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256: ${{ vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 || secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 }}
       NOTARIZE_OUT_DIR: ${{ github.workspace }}/.github-artifacts/clawdstrike-notarization
     steps:
       - uses: actions/checkout@v6
@@ -1001,6 +1002,13 @@ jobs:
 
       - name: Install tauri-cli
         run: cargo install tauri-cli --locked --version '2.10.2'
+
+      - name: Test macOS system extension Swift packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/endpoint-security
+          swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/network-extension
 
       - name: Import Apple signing certificate
         if: ${{ env.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}

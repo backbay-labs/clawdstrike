@@ -127,17 +127,18 @@ public final class EndpointSecurityMonitor {
         withLockedState {
             let degradedReasons = currentDegradedReasons()
             let providerState = currentProviderState()
+            let hostRuntime = currentHostRuntimeState()
             let hostStatus = HostEndpointSecurityStatusPatch(
                 installState: installState,
                 approval: approval,
-                endpointSecurity: HostProviderStatus(runtime: currentHostRuntimeState())
+                endpointSecurity: HostProviderStatus(runtime: hostRuntime)
             )
 
             return EndpointSecurityStatusReport(
                 contract: Self.authorizationContract,
                 authorizationModel: Self.authorizationModel,
                 fdInjectionEquivalent: false,
-                failOpenPossible: false,
+                failOpenPossible: Self.failOpenPossible(hostRuntime: hostRuntime),
                 hostStatus: hostStatus,
                 providerState: providerState,
                 counters: counters,
@@ -283,6 +284,15 @@ public final class EndpointSecurityMonitor {
             degradedReasons: degradedReasons,
             lastHealthyTimestamp: lastHealthyTimestamp
         )
+    }
+
+    private static func failOpenPossible(hostRuntime: HostProviderRuntimeState) -> Bool {
+        switch hostRuntime {
+        case .active:
+            return false
+        case .unknown, .inactive, .degraded:
+            return true
+        }
     }
 
     private func currentHostRuntimeState() -> HostProviderRuntimeState {

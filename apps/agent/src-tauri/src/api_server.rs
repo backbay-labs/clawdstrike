@@ -4873,6 +4873,7 @@ pub(crate) async fn recent_cross_window_promotion_validation(
 pub(crate) struct PolicyDeltaApplyEnforcementProofInput<'a> {
     pub(crate) settings: &'a Settings,
     pub(crate) local_policy: EndpointPolicySnapshot,
+    pub(crate) policy_delta_artifact: Option<&'a EdrPolicyDeltaArtifact>,
     pub(crate) cross_window_impact_hash: Option<&'a str>,
     pub(crate) cross_window_recommendation_hash: Option<&'a str>,
     pub(crate) daemon_policy_reload_requested: bool,
@@ -4887,6 +4888,7 @@ pub(crate) async fn build_policy_delta_apply_enforcement_proof(
     let PolicyDeltaApplyEnforcementProofInput {
         settings,
         local_policy,
+        policy_delta_artifact,
         cross_window_impact_hash,
         cross_window_recommendation_hash,
         daemon_policy_reload_requested,
@@ -4910,9 +4912,14 @@ pub(crate) async fn build_policy_delta_apply_enforcement_proof(
     let daemon_policy_reload =
         request_daemon_policy_reload(state.as_ref(), settings, daemon_policy_reload_requested)
             .await;
-    let network_extension_policy_reload =
-        request_policy_delta_network_extension_reload(state.as_ref(), provider_ack_timeout_ms)
-            .await;
+    let network_extension_policy_reload = request_policy_delta_network_extension_reload(
+        state.as_ref(),
+        settings,
+        &local_policy,
+        policy_delta_artifact,
+        provider_ack_timeout_ms,
+    )
+    .await?;
     let daemon = state.daemon_manager.status().await;
     let daemon_policy_version = tokio::time::timeout(
         POLICY_VERSION_FETCH_TIMEOUT,
@@ -4980,6 +4987,65 @@ pub(crate) async fn build_policy_delta_apply_enforcement_proof(
         receipt,
         degraded_provider_receipts,
     })
+}
+
+pub(crate) fn validate_policy_delta_apply_enforcement_for_live_apply(
+    proof: &EdrPolicyDeltaApplyEnforcementProof,
+) -> Result<(), String> {
+    let mut reasons = Vec::new();
+    if proof.daemon_policy_reload.requested && !proof.daemon_policy_reload.reloaded {
+        let detail = proof
+            .daemon_policy_reload
+            .error
+            .as_deref()
+            .or(proof.daemon_policy_reload.message.as_deref())
+            .unwrap_or("daemon did not report policy reload success");
+        reasons.push(format!("daemon_policy_reload_failed:{detail}"));
+    }
+    if proof.daemon_restart_requested && !proof.daemon_restarted {
+        let detail = proof
+            .daemon_restart_error
+            .as_deref()
+            .unwrap_or("daemon restart did not complete");
+        reasons.push(format!("daemon_restart_failed:{detail}"));
+    }
+    if macos_provider_enforcement_applicable() {
+        if !proof.network_extension_policy_reload.requested {
+            reasons.push("network_extension_reload_not_requested".to_string());
+        }
+        if !proof.network_extension_policy_reload.saved {
+            reasons.push("network_extension_reload_not_saved".to_string());
+        }
+        if !proof
+            .network_extension_policy_reload
+            .provider_reload_matched
+        {
+            reasons.push("network_extension_reload_not_observed_by_provider".to_string());
+        }
+        if !proof.provider_acknowledgement_poll.satisfied {
+            reasons.push("provider_policy_acknowledgement_timeout".to_string());
+        }
+        for acknowledgement in &proof.provider_policy_acknowledgements {
+            if !acknowledgement.acknowledged {
+                let detail = if acknowledgement.reasons.is_empty() {
+                    "unacknowledged".to_string()
+                } else {
+                    acknowledgement.reasons.join("|")
+                };
+                reasons.push(format!(
+                    "provider_policy_not_acknowledged:{}:{detail}",
+                    acknowledgement.provider_id
+                ));
+            }
+        }
+    }
+    reasons.sort();
+    reasons.dedup();
+    if reasons.is_empty() {
+        Ok(())
+    } else {
+        Err(reasons.join(", "))
+    }
 }
 
 fn macos_provider_enforcement_applicable() -> bool {
@@ -7380,10 +7446,7 @@ async fn sync_edr_network_extension_egress_policy(
     state: &AgentApiState,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<NetworkExtensionReloadRequestProof, (StatusCode, String)> {
-    let restrictions = {
-        let ledger = state.edr_egress_restriction_ledger.lock().await;
-        ledger.active_entries(now)
-    };
+    let restrictions = active_network_extension_egress_restrictions(state, now, Vec::new()).await;
     write_network_extension_egress_policy_snapshot(
         state.edr_network_extension_egress_policy_path.as_ref(),
         &restrictions,
@@ -7413,30 +7476,222 @@ async fn request_network_extension_egress_policy_reload(
 
 async fn request_policy_delta_network_extension_reload(
     state: &AgentApiState,
-    _timeout_ms: u64,
-) -> NetworkExtensionReloadRequestProof {
-    let generation = network_extension_reload_generation(chrono::Utc::now());
-    NetworkExtensionReloadRequestProof {
-        requested: false,
-        saved: false,
-        request_id: None,
-        policy_snapshot_path: state
+    settings: &Settings,
+    local_policy: &EndpointPolicySnapshot,
+    policy_delta_artifact: Option<&EdrPolicyDeltaArtifact>,
+    timeout_ms: u64,
+) -> Result<NetworkExtensionReloadRequestProof> {
+    let now = chrono::Utc::now();
+    let policy_restrictions =
+        policy_egress_block_restrictions_from_settings(settings, local_policy, now)?;
+    ensure_policy_delta_network_extension_target_represented(
+        policy_delta_artifact,
+        &policy_restrictions,
+    )?;
+    let restrictions =
+        active_network_extension_egress_restrictions(state, now, policy_restrictions).await;
+    write_network_extension_egress_policy_snapshot(
+        state.edr_network_extension_egress_policy_path.as_ref(),
+        &restrictions,
+        now,
+    )?;
+    let generation = network_extension_reload_generation(now);
+    Ok(request_network_extension_reload_for_path(
+        state,
+        state
             .edr_network_extension_egress_policy_path
-            .display()
-            .to_string(),
+            .as_ref()
+            .clone(),
         generation,
-        provider_reload_observed: false,
-        provider_reload_matched: false,
-        provider_reload_request_id_matches: false,
-        provider_reload_generation_matches: false,
-        provider_reload_policy_snapshot_path_matches: false,
-        provider_reloaded: None,
-        provider_policy_synced: None,
-        provider_enforcement_ready: None,
-        provider_reload_elapsed_ms: 0,
-        provider_reload_attempts: 0,
-        error: None,
+        Duration::from_millis(timeout_ms),
+        "policy delta apply",
+    )
+    .await)
+}
+
+async fn active_network_extension_egress_restrictions(
+    state: &AgentApiState,
+    now: chrono::DateTime<chrono::Utc>,
+    policy_restrictions: Vec<EndpointEgressRestriction>,
+) -> Vec<EndpointEgressRestriction> {
+    let mut restrictions = {
+        let ledger = state.edr_egress_restriction_ledger.lock().await;
+        ledger.active_entries(now)
+    };
+    let mut targets = restrictions
+        .iter()
+        .map(|restriction| restriction.target.clone())
+        .collect::<BTreeSet<_>>();
+    for restriction in policy_restrictions {
+        if targets.insert(restriction.target.clone()) {
+            restrictions.push(restriction);
+        }
     }
+    restrictions
+}
+
+fn policy_egress_block_restrictions_from_settings(
+    settings: &Settings,
+    local_policy: &EndpointPolicySnapshot,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<Vec<EndpointEgressRestriction>> {
+    let policy_bytes = fs::read(&settings.policy_path).with_context(|| {
+        format!(
+            "read local policy for NetworkExtension egress snapshot {}",
+            settings.policy_path.display()
+        )
+    })?;
+    let targets = policy_egress_block_targets_from_policy_bytes(&policy_bytes)?;
+    let epoch = local_policy.policy_epoch.to_string();
+    let policy_id = local_stable_id(
+        "policy_egress",
+        [
+            local_policy.policy_hash.as_str(),
+            epoch.as_str(),
+            local_policy.policy_version.as_str(),
+        ],
+    );
+    let expires_at = now + chrono::Duration::days(3650);
+    Ok(targets
+        .into_iter()
+        .map(|target| {
+            let restriction_id = local_stable_id(
+                "policy_egress_restriction",
+                [
+                    local_policy.policy_hash.as_str(),
+                    epoch.as_str(),
+                    target.as_str(),
+                ],
+            );
+            EndpointEgressRestriction {
+                restriction_id,
+                execution_id: policy_id.clone(),
+                action_id: policy_id.clone(),
+                graph_slice_id: "local-policy-egress-allowlist".to_string(),
+                rollback_ref: format!(
+                    "policy:{}@{}",
+                    local_policy.policy_version, local_policy.policy_epoch
+                ),
+                target_hash: sha256(target.as_bytes()).to_hex_prefixed(),
+                target,
+                active: true,
+                created_at: now,
+                expires_at,
+                updated_at: now,
+            }
+        })
+        .collect())
+}
+
+fn policy_egress_block_targets_from_policy_bytes(policy_bytes: &[u8]) -> Result<Vec<String>> {
+    let policy: serde_yaml::Value = serde_yaml::from_slice(policy_bytes)
+        .context("parse local policy yaml for NetworkExtension egress snapshot")?;
+    let Some(egress_allowlist) = policy
+        .get("guards")
+        .and_then(|guards| guards.get("egress_allowlist"))
+    else {
+        return Ok(Vec::new());
+    };
+
+    let mut targets = Vec::new();
+    collect_policy_egress_targets(
+        egress_allowlist.get("block"),
+        "guards.egress_allowlist.block",
+        &mut targets,
+    )?;
+    collect_policy_egress_targets(
+        egress_allowlist.get("additional_block"),
+        "guards.egress_allowlist.additional_block",
+        &mut targets,
+    )?;
+    targets.sort();
+    targets.dedup();
+    Ok(targets)
+}
+
+fn collect_policy_egress_targets(
+    value: Option<&serde_yaml::Value>,
+    path: &str,
+    targets: &mut Vec<String>,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    match value {
+        serde_yaml::Value::Sequence(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_policy_egress_target(item, format!("{path}[{index}]").as_str(), targets)?;
+            }
+            Ok(())
+        }
+        serde_yaml::Value::Null => Ok(()),
+        _ => collect_policy_egress_target(value, path, targets),
+    }
+}
+
+fn collect_policy_egress_target(
+    value: &serde_yaml::Value,
+    path: &str,
+    targets: &mut Vec<String>,
+) -> Result<()> {
+    let Some(raw_target) = value
+        .as_str()
+        .map(str::trim)
+        .filter(|target| !target.is_empty())
+    else {
+        return Err(anyhow::anyhow!(
+            "{path} must contain string egress targets for NetworkExtension policy sync"
+        ));
+    };
+    match normalize_egress_target(raw_target) {
+        Ok(target) => {
+            targets.push(target);
+        }
+        Err(err) => {
+            tracing::debug!(
+                path,
+                target = raw_target,
+                error = %err,
+                "skipping policy egress target that cannot be represented as a literal NetworkExtension restriction"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn ensure_policy_delta_network_extension_target_represented(
+    artifact: Option<&EdrPolicyDeltaArtifact>,
+    restrictions: &[EndpointEgressRestriction],
+) -> Result<()> {
+    let Some(artifact) = artifact else {
+        return Ok(());
+    };
+    if !matches!(
+        (&artifact.candidate.root_kind, &artifact.rollout.action),
+        (
+            CausalNodeKind::Network,
+            EndpointDecisionAction::RestrictEgress | EndpointDecisionAction::Block
+        )
+    ) {
+        return Ok(());
+    }
+
+    let target =
+        normalize_egress_target(artifact.candidate.root_label.as_str()).with_context(|| {
+            format!(
+                "normalize policy delta NetworkExtension egress target {}",
+                artifact.candidate.root_label
+            )
+        })?;
+    if restrictions
+        .iter()
+        .any(|restriction| restriction.active && restriction.target == target)
+    {
+        return Ok(());
+    }
+    Err(anyhow::anyhow!(
+        "policy delta NetworkExtension snapshot does not contain enforced egress target {target}"
+    ))
 }
 
 async fn request_network_extension_reload_for_path(
@@ -22144,6 +22399,7 @@ mod tests {
                     policy_hash: sha256(b"test-policy-non-macos").to_hex_prefixed(),
                     policy_epoch: 7,
                 },
+                policy_delta_artifact: None,
                 cross_window_impact_hash: None,
                 cross_window_recommendation_hash: None,
                 daemon_policy_reload_requested: false,
@@ -22331,6 +22587,31 @@ mod tests {
             "clawdstrike-agent-api-test-policy-{}-{counter}.yaml",
             std::process::id()
         ))
+    }
+
+    async fn mock_daemon_policy_reload() -> impl IntoResponse {
+        Json(serde_json::json!({
+            "success": true,
+            "policy_hash": sha256(b"mock-daemon-policy").to_hex_prefixed(),
+            "message": "mock daemon policy reloaded"
+        }))
+    }
+
+    async fn spawn_mock_daemon_policy_reload() -> (u16, tokio::task::JoinHandle<()>) {
+        let app = Router::new().route("/api/v1/policy/reload", post(mock_daemon_policy_reload));
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap_or_else(|e| panic!("failed to bind mock daemon policy reload endpoint: {e}"));
+        let port = listener
+            .local_addr()
+            .unwrap_or_else(|e| panic!("failed to read mock daemon policy reload port: {e}"))
+            .port();
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .unwrap_or_else(|e| panic!("mock daemon policy reload endpoint failed: {e}"));
+        });
+        (port, handle)
     }
 
     async fn resolve_test_raw_artifact_approval(
@@ -39681,13 +39962,35 @@ guards:
             "unexpected unauthored live policy delta apply response: {}",
             String::from_utf8_lossy(&bytes)
         );
+        let (mock_daemon_policy_reload_port, _mock_daemon_policy_reload_handle) =
+            spawn_mock_daemon_policy_reload().await;
+        {
+            let mut settings = state.settings.write().await;
+            settings.daemon_port = mock_daemon_policy_reload_port;
+        }
         let policy_delta_reload_path = state
             .edr_network_extension_egress_policy_path
             .display()
             .to_string();
+        let (reload_tx, mut reload_rx) =
+            tokio::sync::mpsc::channel::<crate::macos::host::MacosNetworkExtensionReloadRequest>(1);
+        state
+            .macos_host
+            .install_network_extension_reload_channel(reload_tx)
+            .await;
         let macos_host_for_ack = state.macos_host.clone();
+        let policy_delta_reload_path_for_ack = policy_delta_reload_path.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            let request = reload_rx
+                .recv()
+                .await
+                .unwrap_or_else(|| panic!("missing policy-delta NetworkExtension reload request"));
+            assert_eq!(
+                request.policy_snapshot_path,
+                PathBuf::from(policy_delta_reload_path_for_ack.as_str())
+            );
+            assert_eq!(request.timeout_duration, Duration::from_millis(1000));
+            let request_id = "policy-delta-reload-1".to_string();
             macos_host_for_ack
                 .replace_status(CombinedSystemExtensionStatus {
                     install_state: SystemExtensionInstallState::Installed,
@@ -39702,11 +40005,34 @@ guards:
                         policy_epoch: Some(expected_new_epoch),
                         policy_synced: Some(true),
                         enforcement_ready: Some(true),
+                        last_reload_observation: Some(
+                            crate::macos::status::ProviderReloadObservation {
+                                request_id: Some(request_id.clone()),
+                                command: Some("reload_policy".to_string()),
+                                policy_snapshot_path: Some(
+                                    policy_delta_reload_path_for_ack.clone(),
+                                ),
+                                generation: Some(request.generation),
+                                accepted: Some(true),
+                                reloaded: Some(true),
+                                error: None,
+                            },
+                        ),
                         ..ProviderStatus::unknown()
                     },
                     ..CombinedSystemExtensionStatus::default()
                 })
                 .await;
+            request
+                .reply_tx
+                .send(Ok(crate::macos::host::MacosNetworkExtensionReloadResult {
+                    requested: true,
+                    saved: true,
+                    request_id,
+                    policy_snapshot_path: policy_delta_reload_path_for_ack,
+                    generation: request.generation,
+                }))
+                .unwrap_or_else(|_| panic!("failed to send policy-delta reload response"));
         });
 
         let body = serde_json::json!({
@@ -39847,26 +40173,51 @@ guards:
             apply_payload["postApplyEnforcement"]["daemonPolicyReload"]["requested"],
             true
         );
-        assert!(
-            apply_payload["postApplyEnforcement"]["daemonPolicyReload"]["reloaded"].is_boolean()
+        assert_eq!(
+            apply_payload["postApplyEnforcement"]["daemonPolicyReload"]["reloaded"],
+            true
         );
         assert_eq!(
             apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]["requested"],
-            false
+            true
         );
         assert_eq!(
             apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]["saved"],
-            false
+            true
         );
-        assert!(
-            apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]["requestId"]
-                .is_null()
+        assert_eq!(
+            apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]["requestId"],
+            "policy-delta-reload-1"
         );
         assert_eq!(
             apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]
                 ["policySnapshotPath"],
             policy_delta_reload_path
         );
+        assert_eq!(
+            apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]
+                ["providerReloadObserved"],
+            true
+        );
+        assert_eq!(
+            apply_payload["postApplyEnforcement"]["networkExtensionPolicyReload"]
+                ["providerReloadMatched"],
+            true
+        );
+        let network_extension_policy =
+            read_json_file(state.edr_network_extension_egress_policy_path.as_ref());
+        assert!(network_extension_policy["restrictions"]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing policy-delta NetworkExtension restrictions"))
+            .iter()
+            .any(
+                |restriction| restriction["target"] == "delta.example.invalid:443"
+                    && restriction["active"] == true
+                    && restriction["executionId"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .starts_with("policy_egress-")
+            ));
         assert_eq!(
             apply_payload["postApplyEnforcement"]["providerStatusRefresh"]["requested"],
             true
@@ -39952,11 +40303,11 @@ guards:
         }));
         assert!(enforcement_receipt_evidence.iter().any(|item| {
             item["key"] == "policyDeltaApplyNetworkExtensionReloadRequested"
-                && item["valueHash"].as_str() == Some(false_hash.as_str())
+                && item["valueHash"].as_str() == Some(true_hash.as_str())
         }));
         assert!(enforcement_receipt_evidence.iter().any(|item| {
             item["key"] == "policyDeltaApplyNetworkExtensionReloadSaved"
-                && item["valueHash"].as_str() == Some(false_hash.as_str())
+                && item["valueHash"].as_str() == Some(true_hash.as_str())
         }));
         assert!(enforcement_receipt_evidence.iter().any(|item| {
             item["key"] == "policyDeltaApplyNetworkExtensionReloadPolicySnapshotPath"

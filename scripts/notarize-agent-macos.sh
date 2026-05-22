@@ -20,6 +20,25 @@ plist_value_optional() {
   plutil -extract "$key" raw -o - "$plist_path" 2>/dev/null || true
 }
 
+system_extension_bundle_content_sha256() {
+  local sysext_path="$1"
+  python3 - "$sysext_path" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+digest = hashlib.sha256()
+for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file()):
+    relative = path.relative_to(root).as_posix().encode("utf-8")
+    digest.update(relative)
+    digest.update(b"\0")
+    digest.update(hashlib.sha256(path.read_bytes()).hexdigest().encode("ascii"))
+    digest.update(b"\0")
+print(digest.hexdigest())
+PY
+}
+
 validate_source_packaging_assets() {
   if grep -R -nE "__[A-Z0-9_]+__" apps/agent/src-tauri/macos/system-extension >/dev/null; then
     echo "[notarize] packaging assets still contain placeholders; concrete source metadata is required before notarization" >&2
@@ -40,6 +59,8 @@ validate_prebuilt_system_extension_bundle() {
   local expected_system_extension_version
   local actual_system_extension_bundle_id
   local actual_system_extension_version
+  local expected_system_extension_digest
+  local actual_system_extension_digest
   local usage_description
   local executable
   local executable_path
@@ -74,6 +95,24 @@ validate_prebuilt_system_extension_bundle() {
   usage_description="$(plist_value_optional "$sysext_info" NSSystemExtensionUsageDescription)"
   if [[ -z "$usage_description" ]]; then
     echo "[notarize] prebuilt system extension is missing NSSystemExtensionUsageDescription" >&2
+    exit 1
+  fi
+
+  expected_system_extension_digest="${CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256:-}"
+  expected_system_extension_digest="${expected_system_extension_digest#sha256:}"
+  expected_system_extension_digest="$(printf '%s' "$expected_system_extension_digest" | tr '[:upper:]' '[:lower:]')"
+  if ! [[ "$expected_system_extension_digest" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "[notarize] CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 must be set to the expected content digest for the prebuilt .systemextension bundle" >&2
+    exit 1
+  fi
+  actual_system_extension_digest="$(system_extension_bundle_content_sha256 "$sysext_path")"
+  printf '%s\n' "$actual_system_extension_digest" > "$out_dir/prebuilt-system-extension-content-sha256.txt"
+  if [[ "$actual_system_extension_digest" != "$expected_system_extension_digest" ]]; then
+    {
+      echo "[notarize] prebuilt system extension content digest mismatch"
+      echo "[notarize] expected: $expected_system_extension_digest"
+      echo "[notarize] actual:   $actual_system_extension_digest"
+    } >&2
     exit 1
   fi
 

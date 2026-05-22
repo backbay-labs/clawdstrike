@@ -70,7 +70,7 @@ struct PolicyRuleDiffActionPayload {
     endpoint_agent_id: String,
     request: PolicyRuleDiffLocalRequest,
     #[serde(default)]
-    expected_receipt: Option<PolicyRuleDiffExpectedReceipt>,
+    expected_receipt: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -82,15 +82,6 @@ struct PolicyRuleDiffLocalRequest {
     body: Value,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PolicyRuleDiffExpectedReceipt {
-    #[serde(default)]
-    proposed_policy_hash: Option<String>,
-    #[serde(default)]
-    proposed_policy_epoch: Option<u64>,
-}
-
 #[derive(Clone, Debug)]
 struct PolicyRuleDiffValidationCommand {
     response_action_id: String,
@@ -99,6 +90,7 @@ struct PolicyRuleDiffValidationCommand {
     proposal_id: String,
     validation_plan_sha256: String,
     endpoint_agent_id: String,
+    expected_receipt: Value,
     expected_proposed_policy_hash: String,
     expected_proposed_policy_epoch: u64,
     request_body: Value,
@@ -476,13 +468,16 @@ fn policy_rule_diff_validation_command(
     })?;
     let expected_proposed_policy_hash = required_string(
         "payload.expectedReceipt.proposedPolicyHash",
-        expected_receipt.proposed_policy_hash.as_deref(),
+        expected_receipt
+            .get("proposedPolicyHash")
+            .and_then(Value::as_str),
     )
     .and_then(|value| {
         normalize_policy_rule_diff_sha256("payload.expectedReceipt.proposedPolicyHash", &value)
     })?;
     let expected_proposed_policy_epoch = expected_receipt
-        .proposed_policy_epoch
+        .get("proposedPolicyEpoch")
+        .and_then(Value::as_u64)
         .filter(|epoch| *epoch > 0)
         .ok_or_else(|| {
             anyhow::anyhow!("payload.expectedReceipt.proposedPolicyEpoch must be positive")
@@ -498,6 +493,7 @@ fn policy_rule_diff_validation_command(
             Some(&payload.validation_plan_sha256),
         )?,
         endpoint_agent_id: payload.endpoint_agent_id.trim().to_string(),
+        expected_receipt,
         expected_proposed_policy_hash,
         expected_proposed_policy_epoch,
         request_body: payload.request.body,
@@ -679,10 +675,7 @@ fn policy_rule_diff_success_payload(
             "proposalId": command.proposal_id,
             "validationPlanSha256": command.validation_plan_sha256,
             "endpointAgentId": command.endpoint_agent_id,
-            "expectedReceipt": {
-                "proposedPolicyHash": command.expected_proposed_policy_hash.as_str(),
-                "proposedPolicyEpoch": command.expected_proposed_policy_epoch,
-            },
+            "expectedReceipt": command.expected_receipt.clone(),
             "request": {
                 "method": "POST",
                 "path": POLICY_RULE_DIFF_IMPACT_PATH,

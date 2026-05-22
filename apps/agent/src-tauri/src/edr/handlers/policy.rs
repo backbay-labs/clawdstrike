@@ -907,45 +907,65 @@ pub(crate) async fn agent_edr_policy_delta_apply(
             }
         }
     };
-    let post_apply_enforcement =
-        if !dry_run && (verify_protection_state || reload_daemon_policy || restart_daemon) {
-            match build_policy_delta_apply_enforcement_proof(
-                &state,
-                PolicyDeltaApplyEnforcementProofInput {
-                    settings: &settings,
-                    local_policy: new_snapshot.clone(),
-                    cross_window_impact_hash: policy_delta
-                        .artifact
-                        .rollout
-                        .cross_window_impact_hash
-                        .as_deref(),
-                    cross_window_recommendation_hash: policy_delta
-                        .artifact
-                        .rollout
-                        .cross_window_recommendation_hash
-                        .as_deref(),
-                    daemon_policy_reload_requested: reload_daemon_policy,
-                    daemon_restart_requested: restart_daemon,
-                    provider_ack_timeout_ms,
-                },
-            )
-            .await
-            {
-                Ok(proof) => Some(proof),
-                Err(err) => {
+    let post_apply_enforcement = if !dry_run
+        && (verify_protection_state || reload_daemon_policy || restart_daemon)
+    {
+        match build_policy_delta_apply_enforcement_proof(
+            &state,
+            PolicyDeltaApplyEnforcementProofInput {
+                settings: &settings,
+                local_policy: new_snapshot.clone(),
+                policy_delta_artifact: Some(&policy_delta.artifact),
+                cross_window_impact_hash: policy_delta
+                    .artifact
+                    .rollout
+                    .cross_window_impact_hash
+                    .as_deref(),
+                cross_window_recommendation_hash: policy_delta
+                    .artifact
+                    .rollout
+                    .cross_window_recommendation_hash
+                    .as_deref(),
+                daemon_policy_reload_requested: reload_daemon_policy,
+                daemon_restart_requested: restart_daemon,
+                provider_ack_timeout_ms,
+            },
+        )
+        .await
+        {
+            Ok(proof) => {
+                if let Err(message) = validate_policy_delta_apply_enforcement_for_live_apply(&proof)
+                {
                     rollback_policy_delta_apply_after_failure(
                         state.as_ref(),
                         &mut record,
                         &policy_path,
-                        "post-apply enforcement proof failed",
+                        "post-apply enforcement verification failed",
                     )
                     .await?;
-                    return Err(internal_error(err));
+                    return Err((
+                            StatusCode::CONFLICT,
+                            format!(
+                                "post-apply enforcement verification failed: {message}; policy rollback completed"
+                            ),
+                        ));
                 }
+                Some(proof)
             }
-        } else {
-            None
-        };
+            Err(err) => {
+                rollback_policy_delta_apply_after_failure(
+                    state.as_ref(),
+                    &mut record,
+                    &policy_path,
+                    "post-apply enforcement proof failed",
+                )
+                .await?;
+                return Err(internal_error(err));
+            }
+        }
+    } else {
+        None
+    };
 
     if !dry_run {
         record.apply_status = Some("complete".to_string());

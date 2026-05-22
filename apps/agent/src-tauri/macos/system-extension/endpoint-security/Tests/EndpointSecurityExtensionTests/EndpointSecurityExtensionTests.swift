@@ -36,6 +36,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertTrue(report.degradedReasons.contains("authorization_deadline_missed"))
         XCTAssertEqual(report.providerState.healthy, false)
         XCTAssertEqual(report.providerState.availability, .degraded)
+        XCTAssertEqual(report.failOpenPossible, true)
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "deadline_miss" }))
         XCTAssertEqual(
             report.hostStatus.endpointSecurity.runtime,
@@ -68,6 +69,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(report.counters.deadlineMissCount, 1)
         XCTAssertTrue(report.degradedReasons.contains("authorization_deadline_missed"))
         XCTAssertEqual(report.providerState.availability, .degraded)
+        XCTAssertEqual(report.failOpenPossible, true)
     }
 
     func testZeroDeadlineDoesNotCountAsMiss() {
@@ -103,6 +105,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertTrue(report.degradedReasons.contains("dropped_enforcement_events"))
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.path.hasSuffix("dropped-events.json") }))
         XCTAssertEqual(report.providerState.availability, .degraded)
+        XCTAssertEqual(report.failOpenPossible, true)
         try assertFixture(report, named: "dropped-events")
     }
 
@@ -111,6 +114,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
 
         XCTAssertTrue(report.degradedReasons.contains("missing_full_disk_access"))
         XCTAssertEqual(report.providerState.availability, .degraded)
+        XCTAssertEqual(report.failOpenPossible, true)
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "missing_full_disk_access" }))
         XCTAssertEqual(
             report.hostStatus.endpointSecurity.runtime,
@@ -125,6 +129,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(report.providerState.active, false)
         XCTAssertEqual(report.providerState.availability, .inactive)
         XCTAssertEqual(report.providerState.healthy, false)
+        XCTAssertEqual(report.failOpenPossible, true)
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "inactive_provider" }))
         XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .inactive)
         try assertFixture(report, named: "inactive-provider")
@@ -138,6 +143,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(report.providerState.healthy, false)
         XCTAssertEqual(report.providerState.availability, .unavailable)
         XCTAssertEqual(report.providerState.approvalStatus, .blocked)
+        XCTAssertEqual(report.failOpenPossible, true)
         XCTAssertTrue(report.degradedReasons.contains("system_extension_approval_blocked"))
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "approval_blocked" }))
         try assertFixture(report, named: "approval-blocked")

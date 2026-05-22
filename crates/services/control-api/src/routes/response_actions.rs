@@ -1260,6 +1260,127 @@ fn validate_policy_rule_diff_ack_matches_action_payload(
         }
     }
 
+    if let Some(expected_receipt) = action_payload.get("expectedReceipt") {
+        let actual_expected_receipt = payload.get("expectedReceipt").ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation acknowledgement must include expectedReceipt".to_string(),
+            )
+        })?;
+        let expected_canonical = canonicalize_json(expected_receipt).map_err(|err| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation dispatched expectedReceipt is not canonicalizable JSON: {err}"
+            ))
+        })?;
+        let actual_canonical = canonicalize_json(actual_expected_receipt).map_err(|err| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation acknowledgement expectedReceipt is not canonicalizable JSON: {err}"
+            ))
+        })?;
+        if actual_canonical != expected_canonical {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidation expectedReceipt does not match the dispatched response action"
+                    .to_string(),
+            ));
+        }
+        validate_policy_rule_diff_ack_expected_policy_identity(payload, expected_receipt)?;
+    }
+
+    Ok(())
+}
+
+fn validate_policy_rule_diff_ack_expected_policy_identity(
+    payload: &Value,
+    expected_receipt: &Value,
+) -> Result<(), ApiError> {
+    let Some(expected_policy_hash) = expected_receipt
+        .get("proposedPolicyHash")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+    let Some(expected_policy_epoch) = expected_receipt
+        .get("proposedPolicyEpoch")
+        .and_then(Value::as_u64)
+    else {
+        return Ok(());
+    };
+
+    let actual_expected_receipt = payload.get("expectedReceipt").ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include expectedReceipt".to_string(),
+        )
+    })?;
+    let actual_expected_policy_hash = actual_expected_receipt
+        .get("proposedPolicyHash")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation expectedReceipt must include proposedPolicyHash"
+                    .to_string(),
+            )
+        })?;
+    if actual_expected_policy_hash != expected_policy_hash {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation expectedReceipt proposedPolicyHash does not match the dispatched response action"
+                .to_string(),
+        ));
+    }
+    let actual_expected_policy_epoch = actual_expected_receipt
+        .get("proposedPolicyEpoch")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation expectedReceipt must include proposedPolicyEpoch"
+                    .to_string(),
+            )
+        })?;
+    if actual_expected_policy_epoch != expected_policy_epoch {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation expectedReceipt proposedPolicyEpoch does not match the dispatched response action"
+                .to_string(),
+        ));
+    }
+
+    let impact = payload.get("impact").ok_or_else(|| {
+        ApiError::BadRequest(
+            "policyRuleDiffValidation acknowledgement must include impact".to_string(),
+        )
+    })?;
+    let impact_policy_hash = impact
+        .get("proposedPolicyHash")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include proposedPolicyHash".to_string(),
+            )
+        })?;
+    if impact_policy_hash != expected_policy_hash {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation impact proposedPolicyHash does not match expectedReceipt"
+                .to_string(),
+        ));
+    }
+    let impact_policy_epoch = impact
+        .get("proposedPolicyEpoch")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include proposedPolicyEpoch".to_string(),
+            )
+        })?;
+    if impact_policy_epoch != expected_policy_epoch {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation impact proposedPolicyEpoch does not match expectedReceipt"
+                .to_string(),
+        ));
+    }
+
     Ok(())
 }
 
@@ -3714,6 +3835,67 @@ mod tests {
         .expect("ack payload parses");
         validate_policy_rule_diff_ack_payload(&failed_without_receipt)
             .expect("failed policy rule-diff acknowledgement may omit receipt");
+    }
+
+    #[test]
+    fn policy_rule_diff_ack_binds_dispatched_expected_receipt() {
+        fn bad_request_message(err: ApiError) -> String {
+            match err {
+                ApiError::BadRequest(message) => message,
+                other => panic!("expected BadRequest, got {other:?}"),
+            }
+        }
+
+        let expected_receipt = json!({
+            "receiptFamily": "policy_event_impact",
+            "ruleId": "endpoint.policy_event.impact",
+            "graphProcessNodeId": "fleet-rule-diff",
+            "proposedPolicyHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "proposedPolicyEpoch": 42,
+            "requiredEvidenceKeys": [
+                "impactId",
+                "proposedPolicyHash",
+                "proposedPolicyEpoch"
+            ]
+        });
+        let action_payload = json!({
+            "expectedReceipt": expected_receipt.clone()
+        });
+        let payload = json!({
+            "endpointAgentId": "agent-1",
+            "expectedReceipt": expected_receipt,
+            "impact": {
+                "proposedPolicyHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "proposedPolicyEpoch": 42
+            }
+        });
+        validate_policy_rule_diff_ack_matches_action_payload(&payload, &action_payload, "agent-1")
+            .expect("expected receipt identity should match");
+
+        let mut mutated_expected = payload.clone();
+        mutated_expected["expectedReceipt"]["proposedPolicyHash"] =
+            json!("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        let message = bad_request_message(
+            validate_policy_rule_diff_ack_matches_action_payload(
+                &mutated_expected,
+                &action_payload,
+                "agent-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("expectedReceipt does not match"));
+
+        let mut mutated_impact = payload.clone();
+        mutated_impact["impact"]["proposedPolicyEpoch"] = json!(43);
+        let message = bad_request_message(
+            validate_policy_rule_diff_ack_matches_action_payload(
+                &mutated_impact,
+                &action_payload,
+                "agent-1",
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("impact proposedPolicyEpoch"));
     }
 
     #[test]

@@ -18,7 +18,7 @@
       "path" : "fixtures/macos/endpoint-security/evidence/approval-blocked.json"
     }
   ],
-  "fail_open_possible" : false,
+  "fail_open_possible" : true,
   "fd_injection_equivalent" : false,
   "host_status" : {
     "approval" : "approval_blocked",

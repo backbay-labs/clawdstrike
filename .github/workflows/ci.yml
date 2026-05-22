@@ -269,6 +269,18 @@ jobs:
 
           CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING=1 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 
+  macos-system-extension-swift:
+    name: macOS System Extension Swift Packages
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Test EndpointSecurity extension package
+        run: swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/endpoint-security
+
+      - name: Test NetworkExtension package
+        run: swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/network-extension
+
   desktop-frontend:
     name: Desktop Frontend
     runs-on: ubuntu-latest
