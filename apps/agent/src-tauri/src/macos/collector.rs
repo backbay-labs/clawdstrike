@@ -671,7 +671,7 @@ fn mark_runtime_snapshot_stale(status: &mut ProviderStatus, provider: &str, path
 
 fn runtime_snapshot_is_stale(path: &Path) -> bool {
     let Ok(metadata) = std::fs::metadata(path) else {
-        return false;
+        return true;
     };
     let Ok(modified_at) = metadata.modified() else {
         return true;
@@ -1320,6 +1320,39 @@ printf '%s
         assert!(provider_state
             .degraded_reasons
             .contains(&"provider_runtime_snapshot_stale".to_string()));
+    }
+
+    #[test]
+    fn missing_runtime_snapshot_downgrades_active_provider() {
+        let path = temp_script_path("missing-runtime-snapshot");
+        let _ = fs::remove_file(&path);
+        let mut status = ProviderStatus {
+            runtime: ProviderRuntimeState::Active,
+            provider_state: Some(ProviderAttestationState {
+                provider: "network_extension".to_string(),
+                installed: true,
+                approval_status: ProviderApprovalStatus::Approved,
+                active: true,
+                healthy: true,
+                availability: ProviderAvailability::Active,
+                degraded_reasons: Vec::new(),
+                last_healthy_timestamp: Some("2026-05-22T14:00:00Z".to_string()),
+            }),
+            ..ProviderStatus::unknown()
+        };
+
+        downgrade_stale_runtime_snapshot(&mut status, "network-extension", &path);
+
+        assert_eq!(
+            status.runtime,
+            ProviderRuntimeState::Degraded {
+                reason: "provider_runtime_snapshot_stale".to_string()
+            }
+        );
+        assert_eq!(
+            status.last_error.as_deref(),
+            Some("provider_runtime_snapshot_stale")
+        );
     }
 
     #[test]
