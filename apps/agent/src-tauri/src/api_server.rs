@@ -5084,10 +5084,12 @@ pub(crate) fn query_value(value: &Option<String>) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
+#[cfg(test)]
+pub(crate) use crate::edr::ledger::receipt::endpoint_receipt_compaction_manifest_path;
 pub(crate) use crate::edr::ledger::{
-    endpoint_receipt_compaction_manifest_path, DeceptionCleanupReceiptSigningInput,
-    DeceptionRotationReceiptSigningInput, EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger,
-    PolicyDecisionReceiptSigningInput, ResponseExecutionReceiptSigningInput,
+    DeceptionCleanupReceiptSigningInput, DeceptionRotationReceiptSigningInput,
+    EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger, PolicyDecisionReceiptSigningInput,
+    ResponseExecutionReceiptSigningInput,
 };
 
 fn default_edr_flight_recorder_path() -> PathBuf {

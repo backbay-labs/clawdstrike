@@ -91,12 +91,13 @@ jobs:
             }
           done
 
-          if grep -R -nE "__[A-Z0-9_]+__" apps/agent/src-tauri/macos/system-extension; then
+          placeholder_pattern='(__[A-Z0-9_]+__|_{5,})'
+          if find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0 | xargs -0 grep -nE "$placeholder_pattern"; then
             echo "macOS combined-system-extension packaging still contains placeholders; replace them before release." >&2
             exit 1
           fi
 
-          if grep -R -n "scaffold_only" apps/agent/src-tauri/macos/system-extension; then
+          if find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0 | xargs -0 grep -n "scaffold_only"; then
             echo "macOS packaging sources still declare scaffold_only state; release requires concrete source metadata plus a real embedded system extension bundle." >&2
             exit 1
           fi

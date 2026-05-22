@@ -15,6 +15,7 @@ const REQUIRED_MACOS_PACKAGING_FILES: &[&str] = &[
     "macos/system-extension/profiles/developer-id-profile-template.plist",
 ];
 
+const MACOS_SYSTEM_EXTENSION_DIR: &str = "macos/system-extension";
 const TAURI_CONFIG_PATH: &str = "tauri.conf.json";
 const SCAFFOLD_ONLY_MARKER: &str = "scaffold_only";
 const REQUIRED_MACOS_MINIMUM_SYSTEM_VERSION: &str = "13.0";
@@ -30,6 +31,7 @@ const APPLE_TEAM_ID_ENV: &str = "APPLE_TEAM_ID";
 #[cfg(not(test))]
 fn main() {
     println!("cargo:rerun-if-changed={TAURI_CONFIG_PATH}");
+    println!("cargo:rerun-if-changed={MACOS_SYSTEM_EXTENSION_DIR}");
     println!("cargo:rerun-if-env-changed={VALIDATE_MACOS_PACKAGING_ENV}");
     println!("cargo:rerun-if-env-changed={REQUIRE_CONCRETE_MACOS_PACKAGING_ENV}");
     println!("cargo:rerun-if-env-changed={SYSTEM_EXTENSION_BUNDLE_PATH_ENV}");
@@ -79,16 +81,16 @@ fn validate_macos_packaging() -> Result<(), String> {
         let mut files_with_placeholders = Vec::new();
         let mut files_with_scaffold_marker = Vec::new();
 
-        for relative_path in REQUIRED_MACOS_PACKAGING_FILES {
-            let contents =
-                fs::read_to_string(manifest_dir.join(relative_path)).map_err(|error| {
-                    format!("failed to read required packaging asset {relative_path}: {error}")
-                })?;
+        for path in macos_packaging_source_files(&manifest_dir)? {
+            let relative_path = relative_path(&manifest_dir, &path);
+            let contents = fs::read_to_string(&path).map_err(|error| {
+                format!("failed to read macOS packaging source {relative_path}: {error}")
+            })?;
             if contains_release_placeholder(&contents) {
-                files_with_placeholders.push((*relative_path).to_string());
+                files_with_placeholders.push(relative_path.clone());
             }
             if contents.contains(SCAFFOLD_ONLY_MARKER) {
-                files_with_scaffold_marker.push((*relative_path).to_string());
+                files_with_scaffold_marker.push(relative_path);
             }
         }
 
@@ -110,6 +112,53 @@ fn validate_macos_packaging() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn macos_packaging_source_files(manifest_dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let root = manifest_dir.join(MACOS_SYSTEM_EXTENSION_DIR);
+    let mut files = Vec::new();
+    collect_regular_files(&root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_regular_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|error| {
+        format!(
+            "failed to read macOS packaging source directory {}: {error}",
+            dir.display()
+        )
+    })? {
+        let entry = entry.map_err(|error| {
+            format!(
+                "failed to inspect macOS packaging source directory {}: {error}",
+                dir.display()
+            )
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|error| {
+            format!(
+                "failed to inspect macOS packaging source {}: {error}",
+                path.display()
+            )
+        })?;
+        if file_type.is_dir() {
+            if entry.file_name() == std::ffi::OsStr::new(".build") {
+                continue;
+            }
+            collect_regular_files(&path, files)?;
+        } else if file_type.is_file() {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn relative_path(manifest_dir: &Path, path: &Path) -> String {
+    path.strip_prefix(manifest_dir)
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
 fn validate_concrete_system_extension_bundle(manifest_dir: &Path) -> Result<(), String> {

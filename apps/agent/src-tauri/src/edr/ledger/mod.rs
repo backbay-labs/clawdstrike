@@ -43,9 +43,9 @@ pub(crate) use fleet_hunt_event_outbox::{
 pub(crate) use honey_registry::EndpointHoneyRegistry;
 pub(crate) use policy_delta::EndpointPolicyDeltaStore;
 pub(crate) use receipt::{
-    endpoint_receipt_compaction_manifest_path, DeceptionCleanupReceiptSigningInput,
-    DeceptionRotationReceiptSigningInput, EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger,
-    PolicyDecisionReceiptSigningInput, ResponseExecutionReceiptSigningInput,
+    DeceptionCleanupReceiptSigningInput, DeceptionRotationReceiptSigningInput,
+    EdrPolicyDeltaReceiptSigningInput, EndpointReceiptLedger, PolicyDecisionReceiptSigningInput,
+    ResponseExecutionReceiptSigningInput,
 };
 pub(crate) use response_acknowledgement::EndpointResponseAcknowledgementLedger;
 pub(crate) use response_execution::EndpointResponseExecutionLedger;
