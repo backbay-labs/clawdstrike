@@ -870,7 +870,19 @@ export async function publishPackageManagerLifecycleEventToLocalEdr(
       return;
     }
     if (enforcementMode === "block") {
-      const payload = await response.json().catch(() => null);
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(
+          "Clawdstrike package-manager lifecycle enforcement rejected malformed local EDR response",
+        );
+      }
+      if (!packageLifecycleResponseHasRecognizedVerdict(payload)) {
+        throw new Error(
+          "Clawdstrike package-manager lifecycle enforcement rejected unrecognized local EDR response",
+        );
+      }
       if (packageLifecycleResponseHasFindings(payload)) {
         throw new Error(
           "Clawdstrike package-manager lifecycle enforcement blocked package script findings",
@@ -896,6 +908,16 @@ function packageLifecycleEnforcementMode(
   return value === "block" || value === "enforce" || value === "fail_closed"
     ? "block"
     : "observe";
+}
+
+function packageLifecycleResponseHasRecognizedVerdict(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  return (
+    typeof numericRecordValue(record, "findingCount") === "number" ||
+    typeof numericRecordValue(record, "finding_count") === "number" ||
+    Array.isArray(record.findings)
+  );
 }
 
 function packageLifecycleResponseHasFindings(payload: unknown): boolean {

@@ -317,6 +317,62 @@ describe("package-manager lifecycle local EDR publishing", () => {
     ).rejects.toThrow(/blocked package script findings/i);
   });
 
+  it("fails closed in package lifecycle enforcement mode on malformed local EDR responses", async () => {
+    const lifecycleInput = {
+      now: new Date("2026-05-17T16:00:10.000Z"),
+      env: {
+        npm_lifecycle_event: "postinstall",
+        npm_lifecycle_script: "node postinstall.js",
+        npm_package_name: "@acme/install-hook",
+        npm_config_user_agent: "npm/10.2.0 node/v24.0.0 darwin arm64",
+        npm_execpath: "/usr/local/lib/node_modules/npm/bin/npm-cli.js",
+        INIT_CWD: "/repo",
+      },
+    };
+    const config = {
+      enabled: true,
+      token: "local-token",
+      agentUrl: "http://agent.test",
+      timeoutMs: 500,
+      packageLifecycleEnforcement: "block" as const,
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("invalid json");
+        },
+      })),
+    );
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr(lifecycleInput, config),
+    ).rejects.toThrow(/malformed local EDR response/i);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({}),
+      })),
+    );
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr(lifecycleInput, config),
+    ).rejects.toThrow(/unrecognized local EDR response/i);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ findingCount: 0 }),
+      })),
+    );
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr(lifecycleInput, config),
+    ).resolves.toBeUndefined();
+  });
+
   it("fails closed in package lifecycle enforcement mode when local EDR is unavailable", async () => {
     await expect(
       publishPackageManagerLifecycleEventToLocalEdr({

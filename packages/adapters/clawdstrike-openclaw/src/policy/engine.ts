@@ -254,6 +254,20 @@ function cleanNetworkToken(value: string): string {
     .replace(/[)"'`;,\}]+$/, "");
 }
 
+function canonicalToolName(value: string): string {
+  const raw = value.trim();
+  const mcpParts = raw.toLowerCase().split("__").filter(Boolean);
+  const candidate =
+    mcpParts.length >= 3 && mcpParts[0] === "mcp" ? mcpParts.slice(2).join("__") : raw;
+  return candidate
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
 function commandNameFromToken(value: string): string {
   const cleaned = cleanNetworkToken(value).toLowerCase();
   const slash = Math.max(cleaned.lastIndexOf("/"), cleaned.lastIndexOf("\\"));
@@ -379,6 +393,11 @@ function extractCommandNetworkTargets(command: string, args: string[]): CommandN
   const tokens = commandNetworkTokens(command, args);
   const targets: CommandNetworkTarget[] = [];
   const seen = new Set<string>();
+  const rawCommandText = [command, ...args].map((value) => String(value ?? "")).join(" ");
+
+  for (const match of rawCommandText.matchAll(/[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>\])}]+/gi)) {
+    addCommandNetworkTarget(targets, seen, parsedCommandNetworkTarget(match[0]));
+  }
 
   for (const token of tokens) {
     const cleaned = cleanNetworkToken(token);
@@ -1138,9 +1157,9 @@ export class PolicyEngine {
     // Optional tool allow/deny list.
     if (this.config.guards.mcp_tool && event.data.type === "tool") {
       const tools = this.policy.tools;
-      const toolName = event.data.toolName.toLowerCase();
+      const toolName = canonicalToolName(event.data.toolName);
 
-      const deniedTools = tools?.denied?.map((x) => x.toLowerCase()) ?? [];
+      const deniedTools = tools?.denied?.map(canonicalToolName) ?? [];
       if (deniedTools.includes(toolName)) {
         return this.applyOnViolation(
           denyDecision(
@@ -1153,7 +1172,7 @@ export class PolicyEngine {
       }
 
       const approvalTools =
-        tools?.require_confirmation?.map((x) => x.toLowerCase()) ?? [];
+        tools?.require_confirmation?.map(canonicalToolName) ?? [];
       if (approvalTools.includes(toolName)) {
         return this.applyOnViolation(
           denyDecision(
@@ -1165,7 +1184,7 @@ export class PolicyEngine {
         );
       }
 
-      const allowedTools = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
+      const allowedTools = tools?.allowed?.map(canonicalToolName) ?? [];
       if (allowedTools.length > 0 && !allowedTools.includes(toolName)) {
         return this.applyOnViolation(
           denyDecision(
