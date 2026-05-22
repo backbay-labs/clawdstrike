@@ -35,6 +35,8 @@ const NETWORK_EXTENSION_EGRESS_POLICY_ENV: &str =
 const NETWORK_EXTENSION_RUNTIME_SNAPSHOT_ENV: &str =
     "CLAWDSTRIKE_NETWORK_EXTENSION_RUNTIME_SNAPSHOT_PATH";
 const ALLOW_SWIFT_RUN_STATUS_TOOLS_ENV: &str = "CLAWDSTRIKE_ALLOW_SWIFT_RUN_STATUS_TOOLS";
+const ALLOW_DIRECT_STATUS_TOOL_OVERRIDES_ENV: &str =
+    "CLAWDSTRIKE_ALLOW_DIRECT_STATUS_TOOL_OVERRIDES";
 const ENDPOINT_SECURITY_TOOL_NAME: &str = "endpoint-security-status-tool";
 const NETWORK_EXTENSION_TOOL_NAME: &str = "network-extension-status-tool";
 
@@ -490,6 +492,10 @@ async fn execute_tool_command(mut command: Command, display_name: String) -> Res
     command.kill_on_drop(true);
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
+    command.env_clear();
+    if let Some(path) = std::env::var_os("PATH") {
+        command.env("PATH", path);
+    }
     command.env(
         ENDPOINT_SECURITY_RUNTIME_SNAPSHOT_ENV,
         default_endpoint_security_runtime_snapshot_path(),
@@ -735,9 +741,30 @@ fn swift_run_status_tools_enabled() -> bool {
         .unwrap_or(false)
 }
 
+fn direct_status_tool_overrides_enabled() -> bool {
+    std::env::var(ALLOW_DIRECT_STATUS_TOOL_OVERRIDES_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
 fn resolve_direct_tool_from_env(env_var: &str) -> Option<ToolInvocation> {
     let path = std::env::var_os(env_var)?;
+    if !direct_status_tool_overrides_enabled() {
+        tracing::warn!(
+            env = env_var,
+            "ignoring macOS status helper override because direct helper overrides are disabled"
+        );
+        return None;
+    }
     let program = PathBuf::from(path);
+    if !program.is_absolute() {
+        tracing::warn!(
+            path = %program.display(),
+            env = env_var,
+            "ignoring macOS status helper override because the path is not absolute"
+        );
+        return None;
+    }
     if !program.is_file() {
         tracing::warn!(
             path = %program.display(),
@@ -820,7 +847,10 @@ mod tests {
     };
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+    use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn temp_script_path(name: &str) -> PathBuf {
         let millis = SystemTime::now()
@@ -840,6 +870,18 @@ mod tests {
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions).expect("chmod temp script");
         path
+    }
+
+    fn set_env_var(key: &str, value: impl AsRef<std::ffi::OsStr>) {
+        unsafe {
+            std::env::set_var(key, value);
+        }
+    }
+
+    fn remove_env_var(key: &str) {
+        unsafe {
+            std::env::remove_var(key);
+        }
     }
 
     fn temp_package_dir(name: &str) -> PathBuf {
@@ -1015,6 +1057,68 @@ mod tests {
             }
             other => panic!("expected dev-only SwiftRun helper, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn direct_status_tool_override_requires_dev_flag_and_absolute_path() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let script = write_script("direct-helper", "#!/bin/sh\nprintf '{}'\n");
+        let previous_tool = std::env::var_os(ENDPOINT_SECURITY_TOOL_ENV);
+        let previous_allow = std::env::var_os(ALLOW_DIRECT_STATUS_TOOL_OVERRIDES_ENV);
+
+        set_env_var(ENDPOINT_SECURITY_TOOL_ENV, &script);
+        remove_env_var(ALLOW_DIRECT_STATUS_TOOL_OVERRIDES_ENV);
+        assert!(resolve_direct_tool_from_env(ENDPOINT_SECURITY_TOOL_ENV).is_none());
+
+        set_env_var(ALLOW_DIRECT_STATUS_TOOL_OVERRIDES_ENV, "1");
+        match resolve_direct_tool_from_env(ENDPOINT_SECURITY_TOOL_ENV) {
+            Some(ToolInvocation::Direct { program, args }) => {
+                assert_eq!(program, script);
+                assert_eq!(args, vec![OsString::from("live")]);
+            }
+            other => panic!("expected direct helper override with dev flag, got {other:?}"),
+        }
+
+        set_env_var(ENDPOINT_SECURITY_TOOL_ENV, "relative-helper");
+        assert!(resolve_direct_tool_from_env(ENDPOINT_SECURITY_TOOL_ENV).is_none());
+
+        if let Some(value) = previous_tool {
+            set_env_var(ENDPOINT_SECURITY_TOOL_ENV, value);
+        } else {
+            remove_env_var(ENDPOINT_SECURITY_TOOL_ENV);
+        }
+        if let Some(value) = previous_allow {
+            set_env_var(ALLOW_DIRECT_STATUS_TOOL_OVERRIDES_ENV, value);
+        } else {
+            remove_env_var(ALLOW_DIRECT_STATUS_TOOL_OVERRIDES_ENV);
+        }
+        let _ = fs::remove_file(script);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn status_tool_execution_does_not_inherit_ambient_secret_environment() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let previous_secret = std::env::var_os("CLAWDSTRIKE_TEST_AMBIENT_SECRET");
+        set_env_var("CLAWDSTRIKE_TEST_AMBIENT_SECRET", "do-not-leak");
+        let script = write_script(
+            "env-helper",
+            "#!/bin/sh\nprintf '%s' \"${CLAWDSTRIKE_TEST_AMBIENT_SECRET:-cleared}\"\n",
+        );
+
+        let output = execute_tool(&ToolInvocation::Direct {
+            program: script.clone(),
+            args: vec![OsString::from("live")],
+        })
+        .await
+        .expect("execute helper");
+        assert_eq!(String::from_utf8(output).expect("utf8 output"), "cleared");
+
+        if let Some(value) = previous_secret {
+            set_env_var("CLAWDSTRIKE_TEST_AMBIENT_SECRET", value);
+        } else {
+            remove_env_var("CLAWDSTRIKE_TEST_AMBIENT_SECRET");
+        }
+        let _ = fs::remove_file(script);
     }
 
     #[test]
