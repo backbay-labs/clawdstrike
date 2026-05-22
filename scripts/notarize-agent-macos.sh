@@ -86,9 +86,10 @@ validate_codesign_team_identifier() {
 }
 
 validate_source_packaging_assets() {
+  local placeholder_pattern='(__[A-Z0-9_]+__|_{5,})'
   local placeholder_hits=0
   while IFS= read -r -d '' path; do
-    if grep -I -nE "__[A-Z0-9_]+__" "$path"; then
+    if grep -I -nE "$placeholder_pattern" "$path"; then
       placeholder_hits=1
     fi
   done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
