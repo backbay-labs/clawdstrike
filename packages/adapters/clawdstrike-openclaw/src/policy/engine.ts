@@ -131,6 +131,7 @@ function extractCommandPathCandidates(
   const writes: string[] = [];
   let writeOperandMode: "all" | "destination" | null = null;
   let operandPaths: string[] = [];
+  let expectsCommandToken = true;
 
   const flushCommandOperands = () => {
     if (!writeOperandMode || operandPaths.length === 0) {
@@ -160,19 +161,26 @@ function extractCommandPathCandidates(
     if (isShellControlToken(cleanedToken)) {
       flushCommandOperands();
       writeOperandMode = null;
+      expectsCommandToken = true;
       continue;
     }
 
-    if (COMMANDS_WITH_DESTINATION_WRITE_OPERAND.has(commandToken)) {
-      flushCommandOperands();
-      writeOperandMode = "destination";
-      continue;
-    }
+    if (expectsCommandToken) {
+      if (COMMANDS_WITH_DESTINATION_WRITE_OPERAND.has(commandToken)) {
+        flushCommandOperands();
+        writeOperandMode = "destination";
+        expectsCommandToken = false;
+        continue;
+      }
 
-    if (COMMANDS_WITH_WRITE_PATH_OPERANDS.has(commandToken)) {
-      flushCommandOperands();
-      writeOperandMode = "all";
-      continue;
+      if (COMMANDS_WITH_WRITE_PATH_OPERANDS.has(commandToken)) {
+        flushCommandOperands();
+        writeOperandMode = "all";
+        expectsCommandToken = false;
+        continue;
+      }
+
+      expectsCommandToken = false;
     }
 
     // Redirection operators: treat as write/read targets.

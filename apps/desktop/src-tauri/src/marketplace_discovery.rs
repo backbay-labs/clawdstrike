@@ -3,7 +3,7 @@
 //! This is deliberately low-trust: discovery only gossips potential feed URIs (e.g. `ipfs://...`).
 //! The desktop marketplace still verifies feed and bundle signatures before showing/installing.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket as StdUdpSocket};
 use std::time::Duration;
 
@@ -268,6 +268,7 @@ impl DiscoveryInner {
     to_swarm = "DiscoveryBehaviourEvent"
 )]
 struct DiscoveryBehaviour {
+    // LAN peer discovery runs below as a small UDP beacon so we do not pull in libp2p-mdns.
     gossipsub: gossipsub::Behaviour,
 }
 
@@ -384,7 +385,7 @@ async fn run_discovery<R: Runtime>(
     let mut connected: HashSet<PeerId> = HashSet::new();
     let (local_peer_tx, mut local_peer_rx) = mpsc::channel::<Multiaddr>(32);
     let mut local_peer_rx_closed = false;
-    let mut local_discovery_dialed = HashSet::<Multiaddr>::new();
+    let mut local_discovery_dialed = HashMap::<Multiaddr, PeerId>::new();
     let local_peer_discovery =
         start_local_peer_discovery(local_peer_id, local_peer_tx, status.clone()).await;
 
@@ -420,6 +421,7 @@ async fn run_discovery<R: Runtime>(
                 }
                 SwarmEvent::ConnectionClosed { peer_id, .. } => {
                     connected.remove(&peer_id);
+                    local_discovery_dialed.retain(|_, dialed_peer_id| *dialed_peer_id != peer_id);
                     status.write().await.connected_peers = connected.len();
                 }
                 SwarmEvent::Behaviour(DiscoveryBehaviourEvent::Gossipsub(event)) => {
@@ -428,6 +430,9 @@ async fn run_discovery<R: Runtime>(
                     }
                 }
                 SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                    if let Some(peer_id) = peer_id {
+                        local_discovery_dialed.retain(|_, dialed_peer_id| *dialed_peer_id != peer_id);
+                    }
                     set_error(&status, format!("Outgoing connection error ({peer_id:?}): {error}")).await;
                 }
                 SwarmEvent::IncomingConnectionError { error, .. } => {
@@ -454,8 +459,12 @@ async fn run_discovery<R: Runtime>(
             },
             discovered_addr = local_peer_rx.recv(), if !local_peer_rx_closed => match discovered_addr {
                 Some(addr) => {
-                    if local_discovery_dialed.insert(addr.clone()) {
+                    if !local_discovery_dialed.contains_key(&addr) {
+                        if let Some(peer_id) = peer_id_from_multiaddr(&addr) {
+                            local_discovery_dialed.insert(addr.clone(), peer_id);
+                        }
                         if let Err(e) = swarm.dial(addr.clone()) {
+                            local_discovery_dialed.remove(&addr);
                             set_error(&status, format!("Failed to dial local discovery peer {addr}: {e}")).await;
                         }
                     }
@@ -475,6 +484,13 @@ async fn run_discovery<R: Runtime>(
     // If we exit without an explicit Stop command (e.g. task dropped or init failed in a later
     // stage), ensure status reflects the stopped state.
     status.write().await.running = false;
+}
+
+fn peer_id_from_multiaddr(addr: &Multiaddr) -> Option<PeerId> {
+    addr.iter().find_map(|protocol| match protocol {
+        Protocol::P2p(peer_id) => Some(peer_id),
+        _ => None,
+    })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

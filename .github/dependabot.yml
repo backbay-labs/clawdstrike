@@ -252,6 +252,18 @@ updates:
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-origin-core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
     directory: "/packages/adapters/clawdstrike-opencode"
     schedule:
       interval: "weekly"

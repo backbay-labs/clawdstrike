@@ -1204,6 +1204,41 @@ filesystem:
     expect(decision.reason).toContain("Write path not in allowed roots");
   });
 
+  it("does not treat write-command names in arguments as shell write modes", async () => {
+    const allowedDir = join(testDir, "argument-command-token-allowed");
+    mkdirSync(allowedDir, { recursive: true });
+    const policyPath = join(testDir, "argument-command-token-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { patch_integrity: false },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: "command-argument-cp-token",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "grep",
+        args: ["cp", join(testDir, "input.txt"), join(testDir, "output.txt")],
+      },
+    });
+
+    expect(decision.status).toBe("allow");
+  });
+
   it("enforces egress allowlists for network targets inside shell commands", async () => {
     const policyPath = join(testDir, "command-egress-policy.yaml");
     writeFileSync(
