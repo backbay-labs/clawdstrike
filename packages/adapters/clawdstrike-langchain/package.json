@@ -23,7 +23,7 @@
     "@clawdstrike/adapter-core": "^0.2.7"
   },
   "peerDependencies": {
-    "@langchain/core": ">=0.1.0"
+    "@langchain/core": ">=0.3 <2"
   },
   "peerDependenciesMeta": {
     "@langchain/core": {
