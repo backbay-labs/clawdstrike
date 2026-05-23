@@ -18,7 +18,7 @@ thiserror.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
-proptest = "1.10"
+proptest = "1.11"
 
 [lints]
 workspace = true

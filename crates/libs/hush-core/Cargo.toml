@@ -24,13 +24,13 @@ thiserror.workspace = true
 chrono.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tempfile = "3.25"
+tempfile = "3.27"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
-proptest = "1.10"
+proptest = "1.11"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
