@@ -176,6 +176,13 @@ mod tests {
     // environment variables must be serialised.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Acquire `ENV_LOCK`, recovering from poisoning caused by a previous test
+    /// panic.  We never read the guarded `()`, we only need mutual exclusion,
+    /// so a poisoned lock is safe to take over.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Clear all CLAWDSTRIKE_BROKERD_* vars so each test starts from a clean slate.
     fn clear_env() {
         for (key, _) in std::env::vars() {
@@ -202,7 +209,7 @@ mod tests {
 
     #[test]
     fn from_env_defaults_with_file_backend() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
 
@@ -226,7 +233,7 @@ mod tests {
 
     #[test]
     fn from_env_custom_listen_and_hushd_url() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_LISTEN", "0.0.0.0:7777");
@@ -239,7 +246,7 @@ mod tests {
 
     #[test]
     fn from_env_hushd_token_set() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_HUSHD_TOKEN", "my-secret-token");
@@ -250,7 +257,7 @@ mod tests {
 
     #[test]
     fn from_env_hushd_token_empty_becomes_none() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_HUSHD_TOKEN", "   ");
@@ -261,7 +268,7 @@ mod tests {
 
     #[test]
     fn from_env_env_backend() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -282,7 +289,7 @@ mod tests {
 
     #[test]
     fn from_env_env_backend_custom_prefix() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -304,7 +311,7 @@ mod tests {
 
     #[test]
     fn from_env_http_backend() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -335,7 +342,7 @@ mod tests {
 
     #[test]
     fn from_env_http_backend_with_token_and_prefix() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -368,7 +375,7 @@ mod tests {
 
     #[test]
     fn from_env_http_backend_empty_token_becomes_none() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -394,7 +401,7 @@ mod tests {
 
     #[test]
     fn from_env_http_backend_missing_url_errors() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -411,7 +418,7 @@ mod tests {
 
     #[test]
     fn from_env_unsupported_backend_errors() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -426,7 +433,7 @@ mod tests {
 
     #[test]
     fn from_env_file_backend_missing_path_errors() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -441,7 +448,7 @@ mod tests {
 
     #[test]
     fn from_env_missing_pubkeys_errors() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_FILE", "/tmp/test-secrets.json");
 
@@ -453,7 +460,7 @@ mod tests {
 
     #[test]
     fn from_env_empty_pubkeys_errors() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS", "  ,  , ");
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_FILE", "/tmp/test-secrets.json");
@@ -464,7 +471,7 @@ mod tests {
 
     #[test]
     fn from_env_invalid_pubkey_errors() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS", "not-a-hex-key");
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_FILE", "/tmp/test-secrets.json");
@@ -475,7 +482,7 @@ mod tests {
 
     #[test]
     fn from_env_multiple_pubkeys() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let k1 = Keypair::generate();
         let k2 = Keypair::generate();
@@ -484,6 +491,7 @@ mod tests {
             format!("{},{}", k1.public_key().to_hex(), k2.public_key().to_hex()),
         );
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_FILE", "/tmp/test-secrets.json");
+        std::env::set_var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN", "test-admin-token");
 
         let config = Config::from_env().expect("should parse");
         assert_eq!(config.trusted_hushd_public_keys.len(), 2);
@@ -491,7 +499,7 @@ mod tests {
 
     #[test]
     fn from_env_custom_timeout() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_REQUEST_TIMEOUT_SECS", "120");
@@ -502,7 +510,7 @@ mod tests {
 
     #[test]
     fn from_env_invalid_timeout_errors() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_REQUEST_TIMEOUT_SECS", "nope");
@@ -513,7 +521,7 @@ mod tests {
 
     #[test]
     fn from_env_custom_binding_proof_ttl() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_BINDING_PROOF_TTL_SECS", "300");
@@ -524,7 +532,7 @@ mod tests {
 
     #[test]
     fn from_env_zero_binding_proof_ttl_errors() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_BINDING_PROOF_TTL_SECS", "0");
@@ -535,7 +543,7 @@ mod tests {
 
     #[test]
     fn from_env_boolean_flags_truthy_values() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
 
@@ -562,7 +570,7 @@ mod tests {
 
     #[test]
     fn from_env_boolean_flags_falsy_values() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
 
@@ -589,7 +597,7 @@ mod tests {
 
     #[test]
     fn from_env_refuses_to_start_without_admin_token() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -610,7 +618,7 @@ mod tests {
 
     #[test]
     fn from_env_default_is_secure() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         set_minimum_env();
         let config = Config::from_env().expect("should parse");
@@ -626,7 +634,7 @@ mod tests {
 
     #[test]
     fn from_env_allows_missing_admin_token_with_explicit_insecure_opt_in() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = env_lock();
         clear_env();
         let keypair = Keypair::generate();
         std::env::set_var(
