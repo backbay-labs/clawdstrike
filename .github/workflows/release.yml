@@ -1272,7 +1272,7 @@ jobs:
           rm -f release-files/hushd-ota-manifest-beta.unsigned.json
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.resolve-version.outputs.tag }}
           generate_release_notes: true
