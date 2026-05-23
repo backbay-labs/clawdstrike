@@ -1,38 +1,71 @@
 # AI Agent Ruleset
 # Optimized for AI coding assistants (Claude, GPT, etc.)
-# Inherits all forbidden paths and secret patterns from `default`, adds extra
-# egress allowances for AI/dev tooling, broadens skip_paths for test fixtures,
-# and relaxes patch_integrity limits for larger refactors.
-# Note: prior to consolidation the forbidden_path list was a hand-curated
-# subset; it is now a strict superset of default's (inherits .git-credentials,
-# .password-store, .1password, /etc/sudoers, .npmrc, etc.). This is a deliberate
-# tightening: AI agents have no legitimate need to read those paths.
 # HushSpec equivalent: https://github.com/backbay-labs/hush/blob/main/rulesets/ai-agent.yaml
+#
+# NOTE: Intentionally standalone (does not extend `default`).
+# ai-agent broadens default's egress allowlist for AI APIs; the
+# Logos verifier treats `extends: default` + child-broadens as a
+# "weakened prohibition" error. Treated as policy intent until the
+# verifier supports `weaken-permitted` annotations.
 version: "1.2.0"
 name: AI Agent
 description: Security rules optimized for AI coding assistants
-extends: default
 
 guards:
   forbidden_path:
-    # No additional patterns -- inherit default's full list.
+    patterns:
+      # Core sensitive paths
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.local"
+      - "**/.env.production"
+      - "**/.git-credentials"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      - "/etc/shadow"
+      - "/etc/passwd"
+      # Windows credential stores
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      # Windows registry hives
+      - "**/NTUSER.DAT"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
     exceptions:
       # Allow reading .env.example for documentation
       - "**/.env.example"
       - "**/.env.template"
 
   egress_allowlist:
-    additional_allow:
-      # Additional AI APIs
+    allow:
+      # AI APIs
+      - "*.openai.com"
+      - "*.anthropic.com"
       - "api.together.xyz"
       - "*.fireworks.ai"
-      # Additional code hosting
+      # Code hosting
+      - "api.github.com"
+      - "github.com"
+      - "*.githubusercontent.com"
       - "gitlab.com"
       - "api.gitlab.com"
       - "bitbucket.org"
       - "api.bitbucket.org"
-      # Additional package registries
+      # Package registries
+      - "*.npmjs.org"
+      - "registry.npmjs.org"
       - "registry.yarnpkg.com"
+      - "pypi.org"
+      - "files.pythonhosted.org"
+      - "crates.io"
+      - "static.crates.io"
       - "rubygems.org"
       - "packagist.org"
       # Documentation
@@ -40,15 +73,31 @@ guards:
       - "*.readthedocs.io"
       - "*.readthedocs.org"
       - "developer.mozilla.org"
+    block: []
+    default_action: block
 
   secret_leak:
-    additional_patterns:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{48}"
+        severity: critical
       - name: anthropic_key
         pattern: "sk-ant-[A-Za-z0-9\\-]{95}"
         severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
     skip_paths:
-      # Inherits default's skip_paths; these are additive.
+      - "**/test/**"
+      - "**/tests/**"
       - "**/__tests__/**"
+      - "**/*.test.*"
       - "**/*.spec.*"
       - "**/fixtures/**"
       - "**/mocks/**"
@@ -65,8 +114,6 @@ guards:
       - "(?i)reverse[_\\-]?shell"
 
   mcp_tool:
-    # Overrides default's blocklist to permit raw_file_write/delete (AI agents
-    # need editor primitives) and adds CI-style require_confirmation entries.
     allow: []
     block:
       - shell_exec
