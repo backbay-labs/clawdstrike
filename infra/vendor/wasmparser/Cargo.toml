@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.82.0"
 name = "wasmparser"
-version = "0.245.1"
+version = "0.246.2"
 authors = ["Yury Delendik <ydelendik@mozilla.com>"]
 build = false
 exclude = ["benches/*.wasm"]

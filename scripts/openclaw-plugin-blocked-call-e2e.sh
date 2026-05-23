@@ -227,6 +227,28 @@ ASSISTANT_TEXT="$(jq -r '
 ' "$ARTIFACT_DIR/chat-history.json" 2>/dev/null || true)"
 printf '%s\n' "$ASSISTANT_TEXT" >"$ARTIFACT_DIR/assistant-text.txt"
 
+TOOL_RESULT_TEXT="$(jq -r '
+  [
+    .messages[]?
+    | select(((.role // .authorRole // .author // .senderRole // "") | ascii_downcase) == "toolresult")
+    | (
+        if (.content | type) == "array" then
+          .content[]?
+          | if (.text | type) == "string" then
+              .text
+            else
+              empty
+            end
+        elif (.text | type) == "string" then
+          .text
+        else
+          empty
+        end
+      )
+  ] | join("\n")
+' "$ARTIFACT_DIR/chat-history.json" 2>/dev/null || true)"
+printf '%s\n' "$TOOL_RESULT_TEXT" >"$ARTIFACT_DIR/tool-result-text.txt"
+
 ASSISTANT_AUTH_MISSING=false
 if printf '%s\n' "$ASSISTANT_TEXT" | grep -Eq 'No API key found for provider'; then
   ASSISTANT_AUTH_MISSING=true
@@ -305,7 +327,7 @@ if [ "$HISTORY_READY" -eq 1 ] && jq -e 'any((.messages // [])[]?; ((.role // .au
 fi
 
 ASSISTANT_BLOCK_SIGNAL=false
-if printf '%s\n' "$ASSISTANT_TEXT" | grep -Eq 'Approval required|Exec denied|Blocked'; then
+if printf '%s\n%s\n' "$ASSISTANT_TEXT" "$TOOL_RESULT_TEXT" | grep -Eq 'Approval required|Exec denied|Blocked'; then
   ASSISTANT_BLOCK_SIGNAL=true
 fi
 

@@ -2,6 +2,84 @@
 
 ## [Unreleased]
 
+## [v0.10.80] - 2026-05-16
+
+### Fixed
+
+* Fixed a buffer overflow in `CipherCtxRef::cipher_update_inplace` when used with AES key-wrap-with-padding ciphers.
+
+## [v0.10.79] - 2026-05-03
+
+### Changed
+
+* Bumped MSRV to 1.80.
+* Removed the `once_cell` dependency in favor of `std::sync::{LazyLock, OnceLock}`.
+* Deprecated `EcPointRef::mul`, `EcPointRef::mul_generator`, and `EcPointRef::invert` in favor of `mul2`, `mul_generator2`, and `invert2`, which take `&mut BigNumContextRef`. The deprecated methods accepted a shared reference despite mutating the `BN_CTX`, which was unsound under `Send + Sync`.
+
+### Added
+
+* Added `EcGroupRef::generator_opt`, which returns `Option<&EcPointRef>`.
+* Added `PKeyRef::seed_into`, which writes the algorithm-defined seed of an ML-DSA or ML-KEM private key into a caller-supplied buffer. The inverse of `PKey::private_key_from_seed`.
+* Added `PKey::private_key_from_seed`, which constructs ML-DSA and ML-KEM private keypairs from a `seed` `OSSL_PARAM` via `EVP_PKEY_fromdata`. Requires OpenSSL 3.5 or newer at runtime.
+* Added `PKeyRef::is_a` and the `KeyType` algorithm-name newtype, for identifying provider-supplied keys (such as ML-DSA) where `EVP_PKEY_id` returns `-1`.
+* Added `PKey::public_key_from_raw_bytes_ex` and `PKey::private_key_from_raw_bytes_ex`, which take a `KeyType` and accept an optional library context and property query string. Required for provider-supplied algorithms with no associated `Id`, such as ML-DSA.
+* Added `PkeyCtxRef::set_context_string`, which binds a context string to an ML-DSA signing or verification operation. Requires OpenSSL 3.5 or newer.
+* Added `EcPointRef::mul2`, `EcPointRef::mul_generator2`, and `EcPointRef::invert2`, which take `&mut BigNumContextRef`.
+
+### Fixed
+
+* `EcGroupRef::generator` no longer constructs a reference from a NULL pointer when the group has no generator set (e.g. a group built with `EcGroup::from_components` before `set_generator` is called), which was immediate undefined behavior. It now panics in that case and has been deprecated in favor of `EcGroupRef::generator_opt`.
+* `X509Ref::ocsp_responders` now validates each accessLocation as UTF-8 and returns an `ErrorStack` if any entry is not, rather than constructing a `&str` containing invalid UTF-8 (language-level UB triggerable by a malicious certificate).
+* Fixed a process abort that could occur when the SSL verify, PSK client, or PSK server callback fired after the underlying `SSL_CTX` had been swapped.
+* Fixed an output-buffer overflow in `CipherCtxRef::cipher_update` and `cipher_update_vec` when used with AES key-wrap-with-padding ciphers, which emit up to `input.len() + 15` bytes during the update call rather than the previously assumed `input.len() + block_size`.
+
+## [v0.10.78] - 2026-04-19
+
+### Added
+
+* Added support for OpenSSL 4.x.
+* Added support for LibreSSL 4.3.x.
+
+### Fixed
+
+* Fixed several soundness issues where safe Rust callers could trigger out-of-bounds reads or writes:
+    * `MdCtxRef::digest_final` now returns an error when the output buffer is shorter than the digest size.
+    * `PkeyCtxRef::derive` now checks the output buffer length on OpenSSL 1.1.x and LibreSSL, where some key types (X25519, X448, HKDF-extract) ignore the caller-supplied length.
+    * Callbacks for key-loading passwords and SSL PSK and cookie generation now reject values longer than the length of the slice.
+    * Fixed a dangling stack pointer in the SSL custom extension callback when using a fixed-length array.
+    * Fixed an inverted bounds assertion in AES key unwrap.
+* `Crypter::new` now panics, as documented, when an IV is required by the cipher but not provided (previously it silently used an all-zero IV).
+* Avoided a panic when formatting overlong OIDs; the value is now truncated with trailing dots.
+* Fixed Suite B flag assignments in `X509VerifyParam`.
+* Handle errors on `OPENSSL_malloc` in `PkeyCtxRef::set_rsa_oaep_label`.
+
+## [v0.10.77] - 2026-04-12
+
+### Added
+
+* Enabled `MdCtxRef::digest_sign`, `MdCtxRef::digest_sign_to_vec`, `MdCtxRef::digest_verify`, and `MdCtxRef::reset` on BoringSSL, LibreSSL, and AWS-LC.
+
+## [v0.10.76] - 2026-03-11
+
+### Added
+
+* Added brainpool curve NID constants.
+* Added `SubjectAlternativeName::dir_name2` for constructing directoryName SAN entries.
+* Added HKDF and generic KDF support.
+* Added `UpperHex` implementation for `BigNum` and `BigNumRef`.
+* Added `add_utf8_string` and `add_int` to `OsslParamBuilder`.
+* Added `Debug` implementation for `EcGroup`, `EcGroupRef`, `EcdsaSig` and `EcdsaSigRef`.
+* Enhanced `Debug` implementation for `Nid`.
+* Constified `PKey::from_raw`.
+* Exposed `from_str_x509()` for LibreSSL >= 3.6.0.
+
+### Fixed
+
+* Fixed use-after-free of error strings on BoringSSL/aws-lc.
+* Fixed cipher comparison (`is_ccm`, `is_ocb`) to use NID instead of unreliable pointer comparison. Added NID constants for `AES_*_OCB`.
+* Fixed invalid value parsing of OCSP revocation reason.
+* Fixed `BIO_METHOD` path for AWS-LC to use BoringSSL codepath.
+
 ## [v0.10.75] - 2025-11-07
 
 ### Added
@@ -1022,7 +1100,12 @@
 
 Look at the [release tags] for information about older releases.
 
-[Unreleased]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.75...master
+[Unreleased]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.80...master
+[v0.10.80]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.79...openssl-v0.10.80
+[v0.10.79]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.78...openssl-v0.10.79
+[v0.10.78]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.77...openssl-v0.10.78
+[v0.10.77]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.76...openssl-v0.10.77
+[v0.10.76]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.75...openssl-v0.10.76
 [v0.10.75]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.74...openssl-v0.10.75
 [v0.10.74]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.73...openssl-v0.10.74
 [v0.10.73]: https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.72...openssl-v0.10.73

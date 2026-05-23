@@ -786,6 +786,8 @@ jobs:
             | grep -v '^apps/workbench/src-tauri/' \
             | grep -v '^crates/bridges/hush-go-native/' \
             | grep -v '^crates/libs/logos-z3/' \
+            | grep -v '^examples/autonomous-sandbox/' \
+            | grep -v '^fuzz/' \
             | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -v '^vendor/hushspec/' \
             | grep -Ev '(^|/)build\.rs$' \

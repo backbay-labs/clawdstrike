@@ -343,7 +343,6 @@ const handler: HookHandler = async (
   const isModernBeforeToolCallEvent = (
     value: HookEvent | BeforeToolCallHookEvent,
   ): value is BeforeToolCallHookEvent => {
-    if (value && typeof value === "object" && "type" in value) return false;
     return Boolean(
       value &&
         typeof value === "object" &&

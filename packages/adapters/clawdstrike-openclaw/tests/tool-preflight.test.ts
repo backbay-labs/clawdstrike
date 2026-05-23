@@ -131,6 +131,31 @@ describe('Tool Pre-flight Hook', () => {
       rmSync(dir, { recursive: true, force: true });
     });
 
+    it('should block shell write commands when no allowed_write_roots are configured', async () => {
+      const target = join(tmpdir(), 'clawdstrike-openclaw-touch-denied.txt');
+      const event = makeToolCallEvent('exec', { command: `touch ${target}` });
+
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(true);
+      expect(event.messages.some(m => m.includes('Shell write path not in allowed roots'))).toBe(true);
+    });
+
+    it('returns a modern block result for shell write commands with top-level tool payloads', async () => {
+      const target = join(tmpdir(), 'clawdstrike-openclaw-modern-touch-denied.txt');
+      const result = await toolPreflightHandler(
+        {
+          type: 'before_tool_call',
+          toolName: 'exec',
+          params: { command: `touch ${target}` },
+        } as any,
+        { sessionKey: 'modern-session' } as any,
+      );
+
+      expect(result).toMatchObject({ block: true });
+      expect((result as { blockReason?: string }).blockReason).toContain('Shell write path not in allowed roots');
+    });
+
     it('should still block shell forbidden-path access even when patch_integrity is disabled', async () => {
       initPreflight({ ...config, guards: { patch_integrity: false } });
 

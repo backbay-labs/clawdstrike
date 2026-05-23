@@ -34,6 +34,11 @@ interface RegisterHookOptions {
   };
 }
 
+interface RegisterTypedHookOptions {
+  priority?: number;
+  timeoutMs?: number;
+}
+
 interface OpenClawPluginAPI {
   logger?: {
     info?(...args: unknown[]): void;
@@ -52,7 +57,7 @@ interface OpenClawPluginAPI {
     opts?: { commands?: string[] },
   ): void;
   registerHook?(event: string, handler: HookHandler, opts?: RegisterHookOptions): void;
-  on?(event: string, handler: HookHandler): void;
+  on?(event: string, handler: HookHandler, opts?: RegisterTypedHookOptions): void;
 }
 
 type PluginRuntimeConfig = ClawdstrikeConfig & { inbound?: InboundConfig };
@@ -296,9 +301,34 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     refreshInboundRuntimeConfig,
   );
 
+  const registerModernTypedHooks = (): void => {
+    if (typeof api.on !== "function") return;
+
+    const registerTypedHookCompat = (
+      event: string,
+      handler: HookHandler,
+      options?: RegisterTypedHookOptions,
+    ): void => {
+      try {
+        api.on?.(event, handler, options);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        logger.warn?.(
+          `[clawdstrike] Typed hook "${event}" could not be registered; legacy hook registration remains active (${detail})`,
+        );
+      }
+    };
+
+    registerTypedHookCompat("before_tool_call", wrappedCuaBridgeHandler, { priority: 20 });
+    registerTypedHookCompat("before_tool_call", wrappedToolPreflightHandler, { priority: 10 });
+    registerTypedHookCompat("tool_result_persist", wrappedToolGuardHandler);
+  };
+
   // Register hooks — prefer named hook registration for modern runtimes,
   // but fall back to legacy registration shapes for compatibility.
   if (typeof api.registerHook === "function") {
+    registerModernTypedHooks();
+
     const registerHook = api.registerHook.bind(api);
     const registerHookCompat = (
       event: string,

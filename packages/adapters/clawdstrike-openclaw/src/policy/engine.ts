@@ -95,11 +95,33 @@ const WRITE_PATH_FLAG_NAMES = new Set([
   "logpath",
 ]);
 
+const COMMANDS_WITH_WRITE_PATH_OPERANDS = new Set([
+  "cp",
+  "install",
+  "ln",
+  "mkdir",
+  "mv",
+  "rm",
+  "rmdir",
+  "tee",
+  "touch",
+  "unlink",
+]);
+
 function isWritePathFlagToken(t: string): boolean {
   if (!t) return false;
   if (!t.startsWith("-")) return false;
   const normalized = t.replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
   return WRITE_PATH_FLAG_NAMES.has(normalized);
+}
+
+function commandNameToken(t: string): string {
+  const cleaned = cleanPathToken(t).toLowerCase();
+  return path.basename(cleaned);
+}
+
+function isShellControlToken(t: string): boolean {
+  return t === "&&" || t === "||" || t === "|" || t === ";" || t === "&";
 }
 
 function extractCommandPathCandidates(
@@ -109,9 +131,22 @@ function extractCommandPathCandidates(
   const tokens = [command, ...args].map((t) => String(t ?? "")).filter(Boolean);
   const reads: string[] = [];
   const writes: string[] = [];
+  let writeOperandMode = false;
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
+    const cleanedToken = cleanPathToken(t);
+    const commandToken = commandNameToken(t);
+
+    if (isShellControlToken(cleanedToken)) {
+      writeOperandMode = false;
+      continue;
+    }
+
+    if (COMMANDS_WITH_WRITE_PATH_OPERANDS.has(commandToken)) {
+      writeOperandMode = true;
+      continue;
+    }
 
     // Redirection operators: treat as write/read targets.
     if (isRedirectionOp(t)) {
@@ -147,6 +182,14 @@ function extractCommandPathCandidates(
       continue;
     }
 
+    if (
+      writeOperandMode &&
+      !cleanedToken.startsWith("-") &&
+      looksLikePathToken(cleanedToken)
+    ) {
+      writes.push(cleanedToken);
+    }
+
     // Flags like --output /path or -o /path (write targets)
     if (isWritePathFlagToken(t)) {
       const next = tokens[i + 1];
@@ -171,7 +214,6 @@ function extractCommandPathCandidates(
       }
     }
 
-    const cleanedToken = cleanPathToken(t);
     if (looksLikePathToken(cleanedToken)) {
       reads.push(cleanedToken);
     }
@@ -1159,6 +1201,17 @@ export class PolicyEngine {
         };
         const d = this.checkFilesystem(synthetic);
         if (d.status === "deny" || d.status === "warn") return d;
+      }
+
+      if (writes.length > 0 && !this.policy.filesystem?.allowed_write_roots?.length) {
+        return this.applyOnViolation(
+          denyDecision(
+            POLICY_REASON_CODES.FILESYSTEM_WRITE_ROOT_DENY,
+            "Shell write path not in allowed roots",
+            "forbidden_path",
+            "high",
+          ),
+        );
       }
     }
 

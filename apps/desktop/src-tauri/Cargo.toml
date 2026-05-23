@@ -45,7 +45,13 @@ async-nats = "0.40"
 futures = "0.3"
 
 # P2P discovery (optional)
-libp2p = { version = "0.56", features = ["tokio", "tcp", "dns", "noise", "yamux", "gossipsub", "mdns", "macros"] }
+libp2p-core = "0.43"
+libp2p-gossipsub = "0.49.4"
+libp2p-identity = { version = "0.2", features = ["ed25519", "peerid", "rand"] }
+libp2p-noise = "0.46"
+libp2p-swarm = { version = "0.47", features = ["macros", "tokio"] }
+libp2p-tcp = { version = "0.44", features = ["tokio"] }
+libp2p-yamux = "0.47"
 
 # Local crates
 hush-core = { path = "../../../crates/libs/hush-core" }

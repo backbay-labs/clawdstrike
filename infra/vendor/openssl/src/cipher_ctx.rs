@@ -55,7 +55,7 @@ use crate::error::ErrorStack;
 #[cfg(not(any(boringssl, awslc)))]
 use crate::pkey::{HasPrivate, HasPublic, PKey, PKeyRef};
 use crate::{cvt, cvt_p};
-#[cfg(ossl102)]
+#[cfg(ossl110)]
 use bitflags::bitflags;
 use cfg_if::cfg_if;
 use foreign_types::{ForeignType, ForeignTypeRef};
@@ -82,7 +82,7 @@ foreign_type_and_impl_send_sync! {
     pub struct CipherCtxRef;
 }
 
-#[cfg(ossl102)]
+#[cfg(ossl110)]
 bitflags! {
     /// Flags for `EVP_CIPHER_CTX`.
     pub struct CipherCtxFlags : c_int {
@@ -294,6 +294,38 @@ impl CipherCtxRef {
         unsafe {
             assert!(!EVP_CIPHER_CTX_get0_cipher(self.as_ptr()).is_null());
         }
+    }
+
+    #[cfg(not(any(boringssl, awslc)))]
+    fn is_wrap_mode(&self) -> bool {
+        unsafe {
+            let cipher = EVP_CIPHER_CTX_get0_cipher(self.as_ptr());
+            if cipher.is_null() {
+                return false;
+            }
+            ffi::EVP_CIPHER_flags(cipher) & ffi::EVP_CIPH_MODE == ffi::EVP_CIPH_WRAP_MODE
+        }
+    }
+
+    #[cfg(any(boringssl, awslc))]
+    fn is_wrap_mode(&self) -> bool {
+        false
+    }
+
+    fn cipher_update_output_size(&self, input_len: usize) -> usize {
+        // Wrap-mode ciphers have EVP_CIPH_FLAG_CUSTOM_CIPHER set and emit their
+        // entire output (plaintext rounded up to 8 bytes + 8-byte IV) in a
+        // single update call, so the usual `inlen + block_size` bound is too
+        // small for key-wrap-with-padding inputs that aren't already a
+        // multiple of 8.
+        if self.is_wrap_mode() {
+            return input_len.saturating_add(7) / 8 * 8 + 8;
+        }
+        let mut block_size = self.block_size();
+        if block_size == 1 {
+            block_size = 0;
+        }
+        input_len + block_size
     }
 
     /// Returns the block size of the context's cipher.
@@ -526,9 +558,9 @@ impl CipherCtxRef {
 
     /// Set ctx flags.
     ///
-    /// This function is currently used to enable AES key wrap feature supported by OpenSSL 1.0.2 or newer.
+    /// This function is currently used to enable AES key wrap feature supported by OpenSSL 1.1.0 or newer.
     #[corresponds(EVP_CIPHER_CTX_set_flags)]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn set_flags(&mut self, flags: CipherCtxFlags) {
         unsafe {
             ffi::EVP_CIPHER_CTX_set_flags(self.as_ptr(), flags.bits());
@@ -552,11 +584,7 @@ impl CipherCtxRef {
         output: Option<&mut [u8]>,
     ) -> Result<usize, ErrorStack> {
         if let Some(output) = &output {
-            let mut block_size = self.block_size();
-            if block_size == 1 {
-                block_size = 0;
-            }
-            let min_output_size = input.len() + block_size;
+            let min_output_size = self.cipher_update_output_size(input.len());
             assert!(
                 output.len() >= min_output_size,
                 "Output buffer size should be at least {} bytes.",
@@ -612,7 +640,7 @@ impl CipherCtxRef {
         output: &mut Vec<u8>,
     ) -> Result<usize, ErrorStack> {
         let base = output.len();
-        output.resize(base + input.len() + self.block_size(), 0);
+        output.resize(base + self.cipher_update_output_size(input.len()), 0);
         let len = self.cipher_update(input, Some(&mut output[base..]))?;
         output.truncate(base + len);
 
@@ -639,14 +667,12 @@ impl CipherCtxRef {
         inlen: usize,
     ) -> Result<usize, ErrorStack> {
         assert!(inlen <= data.len(), "Input size may not exceed buffer size");
-        let block_size = self.block_size();
-        if block_size != 1 {
-            assert!(
-                data.len() >= inlen + block_size,
-                "Output buffer size must be at least {} bytes.",
-                inlen + block_size
-            );
-        }
+        let min_output_size = self.cipher_update_output_size(inlen);
+        assert!(
+            data.len() >= min_output_size,
+            "Output buffer size must be at least {} bytes.",
+            min_output_size
+        );
 
         let inlen = c_int::try_from(inlen).unwrap();
         let mut outlen = 0;
@@ -1111,7 +1137,7 @@ mod test {
             .unwrap();
     }
 
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn cipher_wrap_test(cipher: &CipherRef, pt: &str, ct: &str, key: &str, iv: Option<&str>) {
         let pt = hex::decode(pt).unwrap();
         let key = hex::decode(key).unwrap();
@@ -1144,7 +1170,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes128_wrap() {
         let pt = "00112233445566778899aabbccddeeff";
         let ct = "7940ff694448b5bb5139c959a4896832e55d69aa04daa27e";
@@ -1155,7 +1181,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes128_wrap_default_iv() {
         let pt = "00112233445566778899aabbccddeeff";
         let ct = "38f1215f0212526f8a70b51955b9fbdc9fe3041d9832306e";
@@ -1186,7 +1212,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes192_wrap() {
         let pt = "9f6dee187d35302116aecbfd059657efd9f7589c4b5e7f5b";
         let ct = "83b89142dfeeb4871e078bfb81134d33e23fedc19b03a1cf689973d3831b6813";
@@ -1197,7 +1223,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes192_wrap_default_iv() {
         let pt = "9f6dee187d35302116aecbfd059657efd9f7589c4b5e7f5b";
         let ct = "c02c2cf11505d3e4851030d5534cbf5a1d7eca7ba8839adbf239756daf1b43e6";
@@ -1228,7 +1254,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes256_wrap() {
         let pt = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51";
         let ct = "cc05da2a7f56f7dd0c144231f90bce58648fa20a8278f5a6b7d13bba6aa57a33229d4333866b7fd6";
@@ -1239,7 +1265,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     fn test_aes256_wrap_default_iv() {
         let pt = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51";
         let ct = "0b24f068b50e52bc6987868411c36e1b03900866ed12af81eb87cef70a8d1911731c1d7abf789d88";
@@ -1267,5 +1293,45 @@ mod test {
         let key = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
 
         cipher_wrap_test(Cipher::aes_256_wrap_pad(), pt, ct, key, None);
+    }
+
+    #[test]
+    #[cfg(ossl110)]
+    fn test_aes_wrap_pad_cipher_update_vec_buffer_size() {
+        let cipher = Cipher::aes_256_wrap_pad();
+        let key = [0u8; 32];
+        let iv = [0u8; 4];
+        let pt = [0u8; 9];
+
+        let mut ctx = CipherCtx::new().unwrap();
+        ctx.set_flags(CipherCtxFlags::FLAG_WRAP_ALLOW);
+        ctx.encrypt_init(Some(cipher), Some(&key), Some(&iv))
+            .unwrap();
+
+        let mut out = vec![];
+        let len = ctx.cipher_update_vec(&pt, &mut out).unwrap();
+        // The vec must be large enough to fit the amount of data we wrote.
+        assert!(out.capacity() >= len);
+        assert_eq!(len, 24);
+    }
+
+    #[test]
+    #[cfg(ossl110)]
+    #[should_panic(expected = "Output buffer size must be at least 24 bytes.")]
+    fn test_aes_wrap_pad_cipher_update_inplace_buffer_size() {
+        let cipher = Cipher::aes_256_wrap_pad();
+        let key = [0u8; 32];
+        let iv = [0u8; 4];
+
+        let mut ctx = CipherCtx::new().unwrap();
+        ctx.set_flags(CipherCtxFlags::FLAG_WRAP_ALLOW);
+        ctx.encrypt_init(Some(cipher), Some(&key), Some(&iv))
+            .unwrap();
+
+        // 9 bytes of input would produce 24 bytes of wrap-pad output, but the
+        // previous bound (inlen + block_size = 17) would have let this through
+        // and let OpenSSL write past the end of the slice.
+        let mut buf = [0u8; 17];
+        let _ = ctx.cipher_update_inplace(&mut buf, 9);
     }
 }

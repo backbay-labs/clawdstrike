@@ -60,8 +60,6 @@
 #[cfg(ossl300)]
 use crate::cvt_long;
 use crate::dh::{Dh, DhRef};
-#[cfg(all(ossl102, not(ossl110)))]
-use crate::ec::EcKey;
 use crate::ec::EcKeyRef;
 use crate::error::ErrorStack;
 use crate::ex_data::Index;
@@ -88,7 +86,6 @@ use bitflags::bitflags;
 use cfg_if::cfg_if;
 use foreign_types::{ForeignType, ForeignTypeRef, Opaque};
 use libc::{c_char, c_int, c_long, c_uchar, c_uint, c_void};
-use once_cell::sync::{Lazy, OnceCell};
 use openssl_macros::corresponds;
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -103,7 +100,7 @@ use std::panic::resume_unwind;
 use std::path::Path;
 use std::ptr;
 use std::str;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 pub use crate::ssl::connector::{
     ConnectConfiguration, SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder,
@@ -151,6 +148,11 @@ bitflags! {
     pub struct SslOptions: SslOptionsRepr {
         /// Disables a countermeasure against an SSLv3/TLSv1.0 vulnerability affecting CBC ciphers.
         const DONT_INSERT_EMPTY_FRAGMENTS = ffi::SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS as SslOptionsRepr;
+
+        /// If set, a peer closing the connection without sending a close_notify alert is
+        /// treated as a normal EOF rather than an error.
+        #[cfg(ossl300)]
+        const IGNORE_UNEXPECTED_EOF = ffi::SSL_OP_IGNORE_UNEXPECTED_EOF as SslOptionsRepr;
 
         /// A "reasonable default" set of options which enables compatibility flags.
         #[cfg(not(any(boringssl, awslc)))]
@@ -222,7 +224,7 @@ bitflags! {
         /// Disables the use of TLSv1.3.
         ///
         /// Requires AWS-LC or BoringSSL or OpenSSL 1.1.1 or newer or LibreSSL.
-        #[cfg(any(boringssl, ossl111, libressl, awslc))]
+        #[cfg(any(ossl111, boringssl, libressl, awslc))]
         const NO_TLSV1_3 = ffi::SSL_OP_NO_TLSv1_3 as SslOptionsRepr;
 
         /// Disables the use of DTLSv1.0
@@ -246,7 +248,7 @@ bitflags! {
         ///
         /// let options = SslOptions::NO_SSL_MASK & !SslOptions::NO_TLSV1_2;
         /// ```
-        #[cfg(ossl102)]
+        #[cfg(ossl110)]
         const NO_SSL_MASK = ffi::SSL_OP_NO_SSL_MASK as SslOptionsRepr;
 
         /// Disallow all renegotiation in TLSv1.2 and earlier.
@@ -360,14 +362,12 @@ impl SslMethod {
 
     /// Support all versions of the DTLS protocol, explicitly as a client.
     #[corresponds(DTLS_client_method)]
-    #[cfg(any(boringssl, ossl110, libressl, awslc))]
     pub fn dtls_client() -> SslMethod {
         unsafe { SslMethod(DTLS_client_method()) }
     }
 
     /// Support all versions of the DTLS protocol, explicitly as a server.
     #[corresponds(DTLS_server_method)]
-    #[cfg(any(boringssl, ossl110, libressl, awslc))]
     pub fn dtls_server() -> SslMethod {
         unsafe { SslMethod(DTLS_server_method()) }
     }
@@ -562,12 +562,20 @@ impl NameType {
     }
 }
 
-static INDEXES: Lazy<Mutex<HashMap<TypeId, c_int>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static SSL_INDEXES: Lazy<Mutex<HashMap<TypeId, c_int>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static SESSION_CTX_INDEX: OnceCell<Index<Ssl, SslContext>> = OnceCell::new();
+static INDEXES: LazyLock<Mutex<HashMap<TypeId, c_int>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SSL_INDEXES: LazyLock<Mutex<HashMap<TypeId, c_int>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SESSION_CTX_INDEX: OnceLock<Index<Ssl, SslContext>> = OnceLock::new();
 
 fn try_get_session_ctx_index() -> Result<&'static Index<Ssl, SslContext>, ErrorStack> {
-    SESSION_CTX_INDEX.get_or_try_init(Ssl::new_ex_index)
+    // Once `OnceLock::get_or_try_init` (rust-lang/rust#109737) is stable, this
+    // can collapse to `SESSION_CTX_INDEX.get_or_try_init(Ssl::new_ex_index)`.
+    if let Some(idx) = SESSION_CTX_INDEX.get() {
+        return Ok(idx);
+    }
+    let new = Ssl::new_ex_index::<SslContext>()?;
+    Ok(SESSION_CTX_INDEX.get_or_init(|| new))
 }
 
 unsafe extern "C" fn free_data_box<T>(
@@ -616,9 +624,6 @@ pub struct AlpnError(c_int);
 
 impl AlpnError {
     /// Terminate the handshake with a fatal alert.
-    ///
-    /// Requires AWS-LC or BoringSSL or OpenSSL 1.1.0 or newer.
-    #[cfg(any(ossl110, libressl, boringssl, awslc))]
     pub const ALERT_FATAL: AlpnError = AlpnError(ffi::SSL_TLSEXT_ERR_ALERT_FATAL);
 
     /// Do not select a protocol, but continue the handshake.
@@ -817,9 +822,9 @@ impl SslContextBuilder {
 
     /// Sets a custom certificate store for verifying peer certificates.
     ///
-    /// Requires OpenSSL 1.0.2 or newer.
+    /// Requires OpenSSL 1.1.0 or newer.
     #[corresponds(SSL_CTX_set0_verify_cert_store)]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn set_verify_cert_store(&mut self, cert_store: X509Store) -> Result<(), ErrorStack> {
         unsafe {
             let ptr = cert_store.as_ptr();
@@ -892,27 +897,6 @@ impl SslContextBuilder {
     #[corresponds(SSL_CTX_set_tmp_ecdh)]
     pub fn set_tmp_ecdh(&mut self, key: &EcKeyRef<Params>) -> Result<(), ErrorStack> {
         unsafe { cvt(ffi::SSL_CTX_set_tmp_ecdh(self.as_ptr(), key.as_ptr()) as c_int).map(|_| ()) }
-    }
-
-    /// Sets the callback which will generate parameters to be used during ephemeral elliptic curve
-    /// Diffie-Hellman key exchange.
-    ///
-    /// The callback is provided with a reference to the `Ssl` for the session, as well as a boolean
-    /// indicating if the selected cipher is export-grade, and the key length. The export and key
-    /// length options are archaic and should be ignored in almost all cases.
-    ///
-    /// Requires OpenSSL 1.0.2.
-    #[corresponds(SSL_CTX_set_tmp_ecdh_callback)]
-    #[cfg(all(ossl102, not(ossl110)))]
-    #[deprecated(note = "this function leaks memory and does not exist on newer OpenSSL versions")]
-    pub fn set_tmp_ecdh_callback<F>(&mut self, callback: F)
-    where
-        F: Fn(&mut SslRef, bool, u32) -> Result<EcKey<Params>, ErrorStack> + 'static + Sync + Send,
-    {
-        unsafe {
-            self.set_ex_data(SslContext::cached_ex_index::<F>(), callback);
-            ffi::SSL_CTX_set_tmp_ecdh_callback__fixed_rust(self.as_ptr(), Some(raw_tmp_ecdh::<F>));
-        }
     }
 
     /// Use the default locations of trusted certificates for verification.
@@ -1123,9 +1107,9 @@ impl SslContextBuilder {
 
     /// Enables ECDHE key exchange with an automatically chosen curve list.
     ///
-    /// Requires OpenSSL 1.0.2.
+    /// Requires LibreSSL.
     #[corresponds(SSL_CTX_set_ecdh_auto)]
-    #[cfg(any(libressl, all(ossl102, not(ossl110))))]
+    #[cfg(libressl)]
     pub fn set_ecdh_auto(&mut self, onoff: bool) -> Result<(), ErrorStack> {
         unsafe { cvt(ffi::SSL_CTX_set_ecdh_auto(self.as_ptr(), onoff as c_int)).map(|_| ()) }
     }
@@ -1162,10 +1146,7 @@ impl SslContextBuilder {
     ///
     /// A value of `None` will enable protocol versions down to the lowest version supported by
     /// OpenSSL.
-    ///
-    /// Requires AWS-LC or BoringSSL or LibreSSL or OpenSSL 1.1.0 or newer.
     #[corresponds(SSL_CTX_set_min_proto_version)]
-    #[cfg(any(ossl110, libressl, boringssl, awslc))]
     pub fn set_min_proto_version(&mut self, version: Option<SslVersion>) -> Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::SSL_CTX_set_min_proto_version(
@@ -1180,10 +1161,7 @@ impl SslContextBuilder {
     ///
     /// A value of `None` will enable protocol versions up to the highest version supported by
     /// OpenSSL.
-    ///
-    /// Requires AWS-LC or BoringSSL or LibreSSL or OpenSSL 1.1.0 or newer.
     #[corresponds(SSL_CTX_set_max_proto_version)]
-    #[cfg(any(ossl110, libressl, boringssl, awslc))]
     pub fn set_max_proto_version(&mut self, version: Option<SslVersion>) -> Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::SSL_CTX_set_max_proto_version(
@@ -1726,9 +1704,9 @@ impl SslContextBuilder {
 
     /// Sets the context's supported signature algorithms.
     ///
-    /// Requires OpenSSL 1.0.2 or newer.
+    /// Requires OpenSSL 1.1.0 or newer.
     #[corresponds(SSL_CTX_set1_sigalgs_list)]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn set_sigalgs_list(&mut self, sigalgs: &str) -> Result<(), ErrorStack> {
         let sigalgs = CString::new(sigalgs).unwrap();
         unsafe {
@@ -1859,9 +1837,9 @@ impl SslContext {
 impl SslContextRef {
     /// Returns the certificate associated with this `SslContext`, if present.
     ///
-    /// Requires LibreSSL or OpenSSL 1.0.2 or newer.
+    /// Requires LibreSSL or OpenSSL 1.1.0 or newer.
     #[corresponds(SSL_CTX_get0_certificate)]
-    #[cfg(any(ossl102, libressl))]
+    #[cfg(any(ossl110, libressl))]
     pub fn certificate(&self) -> Option<&X509Ref> {
         unsafe {
             let ptr = ffi::SSL_CTX_get0_certificate(self.as_ptr());
@@ -1871,9 +1849,9 @@ impl SslContextRef {
 
     /// Returns the private key associated with this `SslContext`, if present.
     ///
-    /// Requires OpenSSL 1.0.2 or newer or LibreSSL.
+    /// Requires OpenSSL 1.1.0 or newer or LibreSSL.
     #[corresponds(SSL_CTX_get0_privatekey)]
-    #[cfg(any(ossl102, libressl))]
+    #[cfg(any(ossl110, libressl))]
     pub fn private_key(&self) -> Option<&PKeyRef<Private>> {
         unsafe {
             let ptr = ffi::SSL_CTX_get0_privatekey(self.as_ptr());
@@ -2469,30 +2447,13 @@ impl SslRef {
         unsafe { cvt(ffi::SSL_set_tmp_ecdh(self.as_ptr(), key.as_ptr()) as c_int).map(|_| ()) }
     }
 
-    /// Like [`SslContextBuilder::set_tmp_ecdh_callback`].
-    ///
-    /// Requires OpenSSL 1.0.2.
-    #[corresponds(SSL_set_tmp_ecdh_callback)]
-    #[cfg(all(ossl102, not(ossl110)))]
-    #[deprecated(note = "this function leaks memory and does not exist on newer OpenSSL versions")]
-    pub fn set_tmp_ecdh_callback<F>(&mut self, callback: F)
-    where
-        F: Fn(&mut SslRef, bool, u32) -> Result<EcKey<Params>, ErrorStack> + 'static + Sync + Send,
-    {
-        unsafe {
-            // this needs to be in an Arc since the callback can register a new callback!
-            self.set_ex_data(Ssl::cached_ex_index(), Arc::new(callback));
-            ffi::SSL_set_tmp_ecdh_callback__fixed_rust(self.as_ptr(), Some(raw_tmp_ecdh_ssl::<F>));
-        }
-    }
-
     /// Like [`SslContextBuilder::set_ecdh_auto`].
     ///
-    /// Requires OpenSSL 1.0.2 or LibreSSL.
+    /// Requires LibreSSL.
     ///
     /// [`SslContextBuilder::set_tmp_ecdh`]: struct.SslContextBuilder.html#method.set_tmp_ecdh
     #[corresponds(SSL_set_ecdh_auto)]
-    #[cfg(any(all(ossl102, not(ossl110)), libressl))]
+    #[cfg(libressl)]
     pub fn set_ecdh_auto(&mut self, onoff: bool) -> Result<(), ErrorStack> {
         unsafe { cvt(ffi::SSL_set_ecdh_auto(self.as_ptr(), onoff as c_int)).map(|_| ()) }
     }
@@ -2958,9 +2919,8 @@ impl SslRef {
                 response.len() as c_long,
             ) as c_int)
             .map(|_| ())
-            .map_err(|e| {
+            .inspect_err(|_| {
                 ffi::OPENSSL_free(p);
-                e
             })
         }
     }
@@ -3244,7 +3204,7 @@ impl SslRef {
     }
 
     #[corresponds(SSL_add0_chain_cert)]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn add_chain_cert(&mut self, chain: X509) -> Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::SSL_add0_chain_cert(self.as_ptr(), chain.as_ptr()) as c_int).map(|_| ())?;
@@ -3341,10 +3301,7 @@ impl SslRef {
     ///
     /// A value of `None` will enable protocol versions down to the lowest version supported by
     /// OpenSSL.
-    ///
-    /// Requires AWS-LC or BoringSSL or LibreSSL or OpenSSL 1.1.0 or newer.
     #[corresponds(SSL_set_min_proto_version)]
-    #[cfg(any(ossl110, libressl, boringssl, awslc))]
     pub fn set_min_proto_version(&mut self, version: Option<SslVersion>) -> Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::SSL_set_min_proto_version(
@@ -3359,10 +3316,7 @@ impl SslRef {
     ///
     /// A value of `None` will enable protocol versions up to the highest version supported by
     /// OpenSSL.
-    ///
-    /// Requires AWS-LC or BoringSSL or LibreSSL or OpenSSL 1.1.0 or newer.
     #[corresponds(SSL_set_max_proto_version)]
-    #[cfg(any(ossl110, libressl, boringssl, awslc))]
     pub fn set_max_proto_version(&mut self, version: Option<SslVersion>) -> Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::SSL_set_max_proto_version(
@@ -3415,7 +3369,7 @@ impl SslRef {
 
     /// Set the certificate store used for certificate verification
     #[corresponds(SSL_set_cert_store)]
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn set_verify_cert_store(&mut self, cert_store: X509Store) -> Result<(), ErrorStack> {
         unsafe {
             cvt(ffi::SSL_set0_verify_cert_store(self.as_ptr(), cert_store.as_ptr()) as c_int)?;
@@ -3757,9 +3711,7 @@ impl<S: Read + Write> SslStream<S> {
                 }
                 Err(ref e) if e.code() == ErrorCode::WANT_READ && e.io_error().is_none() => {}
                 Err(e) => {
-                    return Err(e
-                        .into_io_error()
-                        .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e)));
+                    return Err(e.into_io_error().unwrap_or_else(io::Error::other));
                 }
             }
         }
@@ -3788,6 +3740,10 @@ impl<S: Read + Write> SslStream<S> {
     /// then the first `n` bytes of `buf` are guaranteed to be initialized.
     #[corresponds(SSL_read_ex)]
     pub fn ssl_read_uninit(&mut self, buf: &mut [MaybeUninit<u8>]) -> Result<usize, Error> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
         cfg_if! {
             if #[cfg(any(ossl111, libressl))] {
                 let mut readbytes = 0;
@@ -3806,10 +3762,6 @@ impl<S: Read + Write> SslStream<S> {
                     Err(self.make_error(ret))
                 }
             } else {
-                if buf.is_empty() {
-                    return Ok(0);
-                }
-
                 let len = usize::min(c_int::MAX as usize, buf.len()) as c_int;
                 let ret = unsafe {
                     ffi::SSL_read(self.ssl().as_ptr(), buf.as_mut_ptr().cast(), len)
@@ -3829,6 +3781,10 @@ impl<S: Read + Write> SslStream<S> {
     /// OpenSSL is waiting on read or write readiness.
     #[corresponds(SSL_write_ex)]
     pub fn ssl_write(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
         cfg_if! {
             if #[cfg(any(ossl111, libressl))] {
                 let mut written = 0;
@@ -3847,10 +3803,6 @@ impl<S: Read + Write> SslStream<S> {
                     Err(self.make_error(ret))
                 }
             } else {
-                if buf.is_empty() {
-                    return Ok(0);
-                }
-
                 let len = usize::min(c_int::MAX as usize, buf.len()) as c_int;
                 let ret = unsafe {
                     ffi::SSL_write(self.ssl().as_ptr(), buf.as_ptr().cast(), len)
@@ -4021,9 +3973,7 @@ impl<S: Read + Write> Write for SslStream<S> {
                 Ok(n) => return Ok(n),
                 Err(ref e) if e.code() == ErrorCode::WANT_READ && e.io_error().is_none() => {}
                 Err(e) => {
-                    return Err(e
-                        .into_io_error()
-                        .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e)));
+                    return Err(e.into_io_error().unwrap_or_else(io::Error::other));
                 }
             }
         }
@@ -4242,57 +4192,7 @@ bitflags! {
     }
 }
 
-cfg_if! {
-    if #[cfg(any(boringssl, ossl110, libressl, awslc))] {
-        use ffi::{SSL_CTX_up_ref, SSL_SESSION_get_master_key, SSL_SESSION_up_ref, SSL_is_server};
-    } else {
-        #[allow(bad_style)]
-        pub unsafe fn SSL_CTX_up_ref(ssl: *mut ffi::SSL_CTX) -> c_int {
-            ffi::CRYPTO_add_lock(
-                &mut (*ssl).references,
-                1,
-                ffi::CRYPTO_LOCK_SSL_CTX,
-                "mod.rs\0".as_ptr() as *const _,
-                line!() as c_int,
-            );
-            0
-        }
-
-        #[allow(bad_style)]
-        pub unsafe fn SSL_SESSION_get_master_key(
-            session: *const ffi::SSL_SESSION,
-            out: *mut c_uchar,
-            mut outlen: usize,
-        ) -> usize {
-            if outlen == 0 {
-                return (*session).master_key_length as usize;
-            }
-            if outlen > (*session).master_key_length as usize {
-                outlen = (*session).master_key_length as usize;
-            }
-            ptr::copy_nonoverlapping((*session).master_key.as_ptr(), out, outlen);
-            outlen
-        }
-
-        #[allow(bad_style)]
-        pub unsafe fn SSL_is_server(s: *mut ffi::SSL) -> c_int {
-            (*s).server
-        }
-
-        #[allow(bad_style)]
-        pub unsafe fn SSL_SESSION_up_ref(ses: *mut ffi::SSL_SESSION) -> c_int {
-            ffi::CRYPTO_add_lock(
-                &mut (*ses).references,
-                1,
-                ffi::CRYPTO_LOCK_SSL_CTX,
-                "mod.rs\0".as_ptr() as *const _,
-                line!() as c_int,
-            );
-            0
-        }
-    }
-}
-
+use ffi::{SSL_CTX_up_ref, SSL_SESSION_get_master_key, SSL_SESSION_up_ref, SSL_is_server};
 cfg_if! {
     if #[cfg(ossl300)] {
         use ffi::SSL_get1_peer_certificate;
@@ -4300,16 +4200,10 @@ cfg_if! {
         use ffi::SSL_get_peer_certificate as SSL_get1_peer_certificate;
     }
 }
-cfg_if! {
-    if #[cfg(any(boringssl, ossl110, libressl, awslc))] {
-        use ffi::{TLS_method, DTLS_method, TLS_client_method, TLS_server_method, DTLS_server_method, DTLS_client_method};
-    } else {
-        use ffi::{
-            SSLv23_method as TLS_method, DTLSv1_method as DTLS_method, SSLv23_client_method as TLS_client_method,
-            SSLv23_server_method as TLS_server_method,
-        };
-    }
-}
+use ffi::{
+    DTLS_client_method, DTLS_method, DTLS_server_method, TLS_client_method, TLS_method,
+    TLS_server_method,
+};
 cfg_if! {
     if #[cfg(ossl110)] {
         unsafe fn get_new_idx(f: ffi::CRYPTO_EX_free) -> c_int {

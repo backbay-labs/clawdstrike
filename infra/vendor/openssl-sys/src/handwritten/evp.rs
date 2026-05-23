@@ -1,5 +1,6 @@
 use super::super::*;
-use libc::*;
+use libc::size_t;
+use std::ffi::{c_char, c_int, c_long, c_uchar, c_ulong, c_void};
 
 cfg_if! {
     if #[cfg(ossl300)] {
@@ -14,6 +15,7 @@ cfg_if! {
             pub fn EVP_CIPHER_get_block_size(cipher: *const EVP_CIPHER) -> c_int;
             pub fn EVP_CIPHER_get_iv_length(cipher: *const EVP_CIPHER) -> c_int;
             pub fn EVP_CIPHER_get_nid(cipher: *const EVP_CIPHER) -> c_int;
+            pub fn EVP_CIPHER_get_flags(cipher: *const EVP_CIPHER) -> c_ulong;
             pub fn EVP_CIPHER_fetch(
                 ctx: *mut OSSL_LIB_CTX,
                 algorithm: *const c_char,
@@ -40,6 +42,7 @@ cfg_if! {
             pub fn EVP_CIPHER_block_size(cipher: *const EVP_CIPHER) -> c_int;
             pub fn EVP_CIPHER_iv_length(cipher: *const EVP_CIPHER) -> c_int;
             pub fn EVP_CIPHER_nid(cipher: *const EVP_CIPHER) -> c_int;
+            pub fn EVP_CIPHER_flags(cipher: *const EVP_CIPHER) -> c_ulong;
 
             pub fn EVP_CIPHER_CTX_cipher(ctx: *const EVP_CIPHER_CTX) -> *const EVP_CIPHER;
             pub fn EVP_CIPHER_CTX_block_size(ctx: *const EVP_CIPHER_CTX) -> c_int;
@@ -246,7 +249,7 @@ cfg_if! {
     }
 }
 cfg_if! {
-    if #[cfg(any(ossl111, libressl370))] {
+    if #[cfg(any(ossl111, libressl))] {
         extern "C" {
             pub fn EVP_DigestSign(
                 ctx: *mut EVP_MD_CTX,
@@ -273,7 +276,7 @@ extern "C" {
     pub fn EVP_CIPHER_CTX_copy(dst: *mut EVP_CIPHER_CTX, src: *const EVP_CIPHER_CTX) -> c_int;
 
     pub fn EVP_MD_CTX_copy_ex(dst: *mut EVP_MD_CTX, src: *const EVP_MD_CTX) -> c_int;
-    #[cfg(ossl111)]
+    #[cfg(any(ossl111, libressl))]
     pub fn EVP_MD_CTX_reset(ctx: *mut EVP_MD_CTX) -> c_int;
     pub fn EVP_CIPHER_CTX_set_key_length(ctx: *mut EVP_CIPHER_CTX, keylen: c_int) -> c_int;
     pub fn EVP_CIPHER_CTX_set_padding(ctx: *mut EVP_CIPHER_CTX, padding: c_int) -> c_int;
@@ -334,7 +337,7 @@ extern "C" {
     pub fn EVP_aes_128_ofb() -> *const EVP_CIPHER;
     #[cfg(ossl110)]
     pub fn EVP_aes_128_ocb() -> *const EVP_CIPHER;
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn EVP_aes_128_wrap() -> *const EVP_CIPHER;
     #[cfg(ossl110)]
     pub fn EVP_aes_128_wrap_pad() -> *const EVP_CIPHER;
@@ -349,7 +352,7 @@ extern "C" {
     pub fn EVP_aes_192_ofb() -> *const EVP_CIPHER;
     #[cfg(ossl110)]
     pub fn EVP_aes_192_ocb() -> *const EVP_CIPHER;
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn EVP_aes_192_wrap() -> *const EVP_CIPHER;
     #[cfg(ossl110)]
     pub fn EVP_aes_192_wrap_pad() -> *const EVP_CIPHER;
@@ -365,11 +368,11 @@ extern "C" {
     pub fn EVP_aes_256_ofb() -> *const EVP_CIPHER;
     #[cfg(ossl110)]
     pub fn EVP_aes_256_ocb() -> *const EVP_CIPHER;
-    #[cfg(ossl102)]
+    #[cfg(ossl110)]
     pub fn EVP_aes_256_wrap() -> *const EVP_CIPHER;
     #[cfg(ossl110)]
     pub fn EVP_aes_256_wrap_pad() -> *const EVP_CIPHER;
-    #[cfg(all(any(ossl110, libressl), not(osslconf = "OPENSSL_NO_CHACHA")))]
+    #[cfg(not(osslconf = "OPENSSL_NO_CHACHA"))]
     pub fn EVP_chacha20() -> *const EVP_CIPHER;
     #[cfg(all(any(ossl110, libressl360), not(osslconf = "OPENSSL_NO_CHACHA")))]
     pub fn EVP_chacha20_poly1305() -> *const EVP_CIPHER;
@@ -458,13 +461,9 @@ cfg_if! {
     } else {
         extern "C" {
             pub fn EVP_PKEY_id(pkey: *const EVP_PKEY) -> c_int;
-        }
-        const_ptr_api! {
-            extern "C" {
-                pub fn EVP_PKEY_bits(key: #[const_ptr_if(any(ossl110, libressl))] EVP_PKEY) -> c_int;
-                #[cfg(any(ossl110, libressl360))]
-                pub fn EVP_PKEY_security_bits(pkey: #[const_ptr_if(any(ossl110, libressl))] EVP_PKEY) -> c_int;
-            }
+            pub fn EVP_PKEY_bits(key: *const EVP_PKEY) -> c_int;
+            #[cfg(any(ossl110, libressl360))]
+            pub fn EVP_PKEY_security_bits(pkey: *const EVP_PKEY) -> c_int;
         }
     }
 }
@@ -492,7 +491,6 @@ extern "C" {
 extern "C" {
     pub fn EVP_PKEY_new() -> *mut EVP_PKEY;
     pub fn EVP_PKEY_free(k: *mut EVP_PKEY);
-    #[cfg(any(ossl110, libressl))]
     pub fn EVP_PKEY_up_ref(pkey: *mut EVP_PKEY) -> c_int;
 
     #[cfg(ossl300)]
@@ -709,7 +707,7 @@ extern "C" {
 
 const_ptr_api! {
     extern "C" {
-        pub fn EVP_PKCS82PKEY(p8: #[const_ptr_if(any(ossl110, libressl))] PKCS8_PRIV_KEY_INFO) -> *mut EVP_PKEY;
+        pub fn EVP_PKCS82PKEY(p8: *const PKCS8_PRIV_KEY_INFO) -> *mut EVP_PKEY;
         pub fn EVP_PKEY2PKCS8(pkey: #[const_ptr_if(any(ossl300))] EVP_PKEY) -> *mut PKCS8_PRIV_KEY_INFO;
     }
 }
@@ -739,6 +737,31 @@ cfg_if! {
                 key: *const c_uchar,
                 keylen: size_t,
             ) -> *mut EVP_PKEY;
+        }
+    }
+}
+
+cfg_if! {
+    if #[cfg(ossl300)] {
+        extern "C" {
+            pub fn EVP_PKEY_new_raw_private_key_ex(
+                ctx: *mut OSSL_LIB_CTX,
+                keytype: *const c_char,
+                propq: *const c_char,
+                key: *const c_uchar,
+                keylen: size_t
+            ) -> *mut EVP_PKEY;
+            pub fn EVP_PKEY_new_raw_public_key_ex(
+                ctx: *mut OSSL_LIB_CTX,
+                keytype: *const c_char,
+                propq: *const c_char,
+                key: *const c_uchar,
+                keylen: size_t
+            ) -> *mut EVP_PKEY;
+            pub fn EVP_PKEY_is_a(
+                pkey: *const EVP_PKEY,
+                name: *const c_char
+            ) -> c_int;
         }
     }
 }

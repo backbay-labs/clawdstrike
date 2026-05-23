@@ -1,5 +1,6 @@
 use super::super::*;
-use libc::*;
+use libc::size_t;
+use std::ffi::{c_char, c_int, c_uint, c_void};
 
 extern "C" {
     pub fn OSSL_PARAM_free(p: *mut OSSL_PARAM);
@@ -15,6 +16,8 @@ extern "C" {
         buf: *mut c_void,
         bsize: size_t,
     ) -> OSSL_PARAM;
+
+    pub fn OSSL_PARAM_modified(p: *const OSSL_PARAM) -> c_int;
 
     pub fn OSSL_PARAM_locate(p: *mut OSSL_PARAM, key: *const c_char) -> *mut OSSL_PARAM;
     pub fn OSSL_PARAM_locate_const(
@@ -43,6 +46,11 @@ extern "C" {
     pub fn OSSL_PARAM_BLD_new() -> *mut OSSL_PARAM_BLD;
     pub fn OSSL_PARAM_BLD_free(bld: *mut OSSL_PARAM_BLD);
     pub fn OSSL_PARAM_BLD_to_param(bld: *mut OSSL_PARAM_BLD) -> *mut OSSL_PARAM;
+    pub fn OSSL_PARAM_BLD_push_int(
+        bld: *mut OSSL_PARAM_BLD,
+        key: *const c_char,
+        val: c_int,
+    ) -> c_int;
     pub fn OSSL_PARAM_BLD_push_uint(
         bld: *mut OSSL_PARAM_BLD,
         key: *const c_char,

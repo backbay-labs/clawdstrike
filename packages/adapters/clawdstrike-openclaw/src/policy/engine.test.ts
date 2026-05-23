@@ -1070,6 +1070,65 @@ filesystem:
     expect(decisionSpace.reason).toContain("Write path not in allowed roots");
   });
 
+  it("denies explicit shell write operands unless write roots are configured", async () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { patch_integrity: false },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: "command-touch-no-roots",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "touch",
+        args: [join(testDir, "created-by-shell.txt")],
+      },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+    expect(decision.reason).toContain("Shell write path not in allowed roots");
+  });
+
+  it("allows explicit shell write operands inside configured write roots", async () => {
+    const allowedDir = join(testDir, "allowed");
+    mkdirSync(allowedDir, { recursive: true });
+    const policyPath = join(testDir, "shell-write-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { patch_integrity: false },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: "command-touch-inside-roots",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "touch",
+        args: [join(allowedDir, "ok.txt")],
+      },
+    });
+
+    expect(decision.status).toBe("allow");
+  });
+
   it("enforces egress allowlists for network targets inside shell commands", async () => {
     const policyPath = join(testDir, "command-egress-policy.yaml");
     writeFileSync(

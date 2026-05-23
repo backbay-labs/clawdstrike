@@ -6,16 +6,14 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use libp2p::core::upgrade;
-use libp2p::futures::StreamExt;
-use libp2p::gossipsub::{self, IdentTopic, MessageAuthenticity, ValidationMode};
-use libp2p::identity;
-use libp2p::mdns;
-use libp2p::noise;
-use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
-use libp2p::tcp;
-use libp2p::yamux;
-use libp2p::{Multiaddr, PeerId, Transport};
+use futures::StreamExt;
+use libp2p_core::{upgrade, Multiaddr, Transport};
+use libp2p_gossipsub::{self as gossipsub, IdentTopic, MessageAuthenticity, ValidationMode};
+use libp2p_identity::{Keypair, PeerId};
+use libp2p_noise as noise;
+use libp2p_swarm::{NetworkBehaviour, Swarm, SwarmEvent};
+use libp2p_tcp as tcp;
+use libp2p_yamux as yamux;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -253,27 +251,22 @@ impl DiscoveryInner {
 }
 
 #[derive(NetworkBehaviour)]
-#[behaviour(to_swarm = "DiscoveryBehaviourEvent")]
+#[behaviour(
+    prelude = "libp2p_swarm::derive_prelude",
+    to_swarm = "DiscoveryBehaviourEvent"
+)]
 struct DiscoveryBehaviour {
     gossipsub: gossipsub::Behaviour,
-    mdns: mdns::tokio::Behaviour,
 }
 
 #[derive(Debug)]
 enum DiscoveryBehaviourEvent {
     Gossipsub(Box<gossipsub::Event>),
-    Mdns(mdns::Event),
 }
 
 impl From<gossipsub::Event> for DiscoveryBehaviourEvent {
     fn from(value: gossipsub::Event) -> Self {
         Self::Gossipsub(Box::new(value))
-    }
-}
-
-impl From<mdns::Event> for DiscoveryBehaviourEvent {
-    fn from(value: mdns::Event) -> Self {
-        Self::Mdns(value)
     }
 }
 
@@ -289,7 +282,7 @@ async fn run_discovery<R: Runtime>(
         .unwrap_or_else(|| DEFAULT_MARKETPLACE_DISCOVERY_TOPIC.to_string());
     let topic = IdentTopic::new(topic_name.clone());
 
-    let local_key = identity::Keypair::generate_ed25519();
+    let local_key = Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
 
     {
@@ -341,21 +334,13 @@ async fn run_discovery<R: Runtime>(
         return;
     }
 
-    let mdns = match mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id) {
-        Ok(v) => v,
-        Err(e) => {
-            set_fatal_error(&status, format!("Failed to start mDNS: {e}")).await;
-            return;
-        }
-    };
-
-    let behaviour = DiscoveryBehaviour { gossipsub, mdns };
+    let behaviour = DiscoveryBehaviour { gossipsub };
 
     let mut swarm = Swarm::new(
         transport,
         behaviour,
         local_peer_id,
-        libp2p::swarm::Config::with_tokio_executor(),
+        libp2p_swarm::Config::with_tokio_executor(),
     );
 
     let port = config.listen_port.unwrap_or(0);
@@ -414,18 +399,6 @@ async fn run_discovery<R: Runtime>(
                     connected.remove(&peer_id);
                     status.write().await.connected_peers = connected.len();
                 }
-                SwarmEvent::Behaviour(DiscoveryBehaviourEvent::Mdns(event)) => match event {
-                    mdns::Event::Discovered(list) => {
-                        for (peer_id, _addr) in list {
-                            swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
-                        }
-                    }
-                    mdns::Event::Expired(list) => {
-                        for (peer_id, _addr) in list {
-                            swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
-                        }
-                    }
-                },
                 SwarmEvent::Behaviour(DiscoveryBehaviourEvent::Gossipsub(event)) => {
                     if let gossipsub::Event::Message { propagation_source, message, .. } = *event {
                         handle_gossipsub_message(&app, &status, propagation_source, &message.data).await;
