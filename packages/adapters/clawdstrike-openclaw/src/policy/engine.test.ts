@@ -1409,6 +1409,25 @@ filesystem:
       args: ["-u", "FOO", "cp", join(testDir, "env-unset-source.txt")],
       path: "env-unset-destination.txt",
     },
+    {
+      // bash builtin `time -p` is a boolean — must NOT consume the next token.
+      label: "time -p boolean wrapper option",
+      command: "time",
+      args: ["-p", "touch"],
+      path: "time-p-destination.txt",
+    },
+    {
+      label: "nohup wrapper without options",
+      command: "nohup",
+      args: ["touch"],
+      path: "nohup-destination.txt",
+    },
+    {
+      label: "exec -a wrapper option with value",
+      command: "exec",
+      args: ["-a", "argv0", "touch"],
+      path: "exec-a-destination.txt",
+    },
   ])("keeps scanning for write commands after $label prefixes", async ({ command, args, path }) => {
     const allowedDir = join(testDir, "prefix-command-allowed");
     mkdirSync(allowedDir, { recursive: true });

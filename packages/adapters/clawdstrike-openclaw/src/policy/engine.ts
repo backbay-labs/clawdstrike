@@ -135,7 +135,13 @@ const SHELL_COMMAND_PREFIXES = new Set([
   "time",
 ]);
 
-const SHELL_PREFIX_FLAGS_WITH_VALUE = new Set([
+// Per-wrapper tables of long-form / short-form option NAMES that take a value
+// argument. Scoped per prefix because the same letter means different things
+// across wrappers — e.g. `sudo -p prompt` consumes a value, but bash builtin
+// `time -p` is a boolean (POSIX timing output), so a shared table would let
+// `time -p touch /tmp/x` swallow `touch` as the value for `-p` and bypass
+// write-root enforcement.
+const SUDO_FLAGS_WITH_VALUE = new Set([
   "argv0",
   "block-signal",
   "C",
@@ -150,10 +156,45 @@ const SHELL_PREFIX_FLAGS_WITH_VALUE = new Set([
   "ignore-signal",
   "p",
   "prompt",
+  "r",
+  "role",
+  "t",
+  "type",
   "u",
-  "unset",
   "user",
 ]);
+
+const DOAS_FLAGS_WITH_VALUE = new Set(["a", "C", "u"]);
+
+const ENV_FLAGS_WITH_VALUE = new Set([
+  "C",
+  "chdir",
+  "S",
+  "split-string",
+  "u",
+  "unset",
+]);
+
+// GNU /usr/bin/time accepts -f FORMAT and -o FILE; bash builtin `time` only
+// understands `-p` (no value). Combining them is fine because the union still
+// excludes `-p`, which is the case Codex flagged.
+const TIME_FLAGS_WITH_VALUE = new Set(["f", "format", "o", "output"]);
+
+const EXEC_FLAGS_WITH_VALUE = new Set(["a"]);
+
+const SHELL_PREFIX_FLAGS_WITH_VALUE_BY_PREFIX: Record<string, Set<string>> = {
+  sudo: SUDO_FLAGS_WITH_VALUE,
+  doas: DOAS_FLAGS_WITH_VALUE,
+  env: ENV_FLAGS_WITH_VALUE,
+  time: TIME_FLAGS_WITH_VALUE,
+  exec: EXEC_FLAGS_WITH_VALUE,
+  // nohup, builtin, command: no flag-with-value options worth modeling.
+};
+
+function shellPrefixFlagsWithValue(prefix: string | null): Set<string> | null {
+  if (!prefix) return null;
+  return SHELL_PREFIX_FLAGS_WITH_VALUE_BY_PREFIX[prefix] ?? null;
+}
 
 function isWritePathFlagToken(t: string): boolean {
   if (!t) return false;
@@ -204,7 +245,7 @@ function isShellPrefixOptionToken(t: string): boolean {
   return t === "--" || (t.startsWith("-") && t.length > 1);
 }
 
-function shellPrefixOptionValueArity(t: string): number {
+function shellPrefixOptionValueArity(t: string, prefix: string | null): number {
   if (!isShellPrefixOptionToken(t) || t === "--" || t.includes("=")) {
     return 0;
   }
@@ -214,20 +255,25 @@ function shellPrefixOptionValueArity(t: string): number {
     return 0;
   }
 
+  const table = shellPrefixFlagsWithValue(prefix);
+  if (!table) {
+    return 0;
+  }
+
   if (t.startsWith("--")) {
-    return SHELL_PREFIX_FLAGS_WITH_VALUE.has(optionName) ? 1 : 0;
+    return table.has(optionName) ? 1 : 0;
   }
 
   if (optionName.length > 1) {
     for (let i = 0; i < optionName.length; i++) {
-      if (SHELL_PREFIX_FLAGS_WITH_VALUE.has(optionName[i])) {
+      if (table.has(optionName[i])) {
         return i === optionName.length - 1 ? 1 : 0;
       }
     }
     return 0;
   }
 
-  return SHELL_PREFIX_FLAGS_WITH_VALUE.has(optionName) ? 1 : 0;
+  return table.has(optionName) ? 1 : 0;
 }
 
 function commandNameToken(t: string): string {
@@ -250,7 +296,12 @@ function extractCommandPathCandidates(
   let operandPaths: string[] = [];
   let explicitDestinationOperandPaths: string[] = [];
   let expectsCommandToken = true;
-  let scanningShellPrefix = false;
+  // Name of the shell wrapper currently being scanned for option arguments
+  // (e.g. "sudo", "env", "time"). `null` means we are not currently inside a
+  // wrapper's option list. Used to look up the correct flag-with-value table
+  // so that e.g. `time -p touch /tmp/x` does not consume `touch` as the value
+  // of bash builtin `time -p`.
+  let activeShellPrefix: string | null = null;
   let shellPrefixOptionValuesRemaining = 0;
 
   const flushCommandOperands = () => {
@@ -290,7 +341,7 @@ function extractCommandPathCandidates(
       flushCommandOperands();
       writeOperandMode = null;
       expectsCommandToken = true;
-      scanningShellPrefix = false;
+      activeShellPrefix = null;
       shellPrefixOptionValuesRemaining = 0;
       continue;
     }
@@ -305,7 +356,7 @@ function extractCommandPathCandidates(
         flushCommandOperands();
         writeOperandMode = "destination";
         expectsCommandToken = false;
-        scanningShellPrefix = false;
+        activeShellPrefix = null;
         continue;
       }
 
@@ -313,25 +364,32 @@ function extractCommandPathCandidates(
         flushCommandOperands();
         writeOperandMode = "all";
         expectsCommandToken = false;
-        scanningShellPrefix = false;
+        activeShellPrefix = null;
         continue;
       }
 
-      if (
-        isShellCommandPrefixToken(commandToken) ||
-        isShellEnvironmentAssignmentToken(cleanedToken)
-      ) {
-        scanningShellPrefix = true;
+      if (isShellCommandPrefixToken(commandToken)) {
+        activeShellPrefix = commandToken;
         continue;
       }
 
-      if (scanningShellPrefix && isShellPrefixOptionToken(cleanedToken)) {
-        shellPrefixOptionValuesRemaining = shellPrefixOptionValueArity(cleanedToken);
+      if (isShellEnvironmentAssignmentToken(cleanedToken)) {
+        // Env assignments precede a command; no wrapper-specific option arity
+        // applies to subsequent flags until a real wrapper is seen.
+        activeShellPrefix = null;
+        continue;
+      }
+
+      if (activeShellPrefix && isShellPrefixOptionToken(cleanedToken)) {
+        shellPrefixOptionValuesRemaining = shellPrefixOptionValueArity(
+          cleanedToken,
+          activeShellPrefix,
+        );
         continue;
       }
 
       expectsCommandToken = false;
-      scanningShellPrefix = false;
+      activeShellPrefix = null;
     }
 
     if (writeOperandMode === "destination") {
