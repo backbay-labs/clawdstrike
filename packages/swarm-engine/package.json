@@ -21,7 +21,7 @@
   "dependencies": {},
   "devDependencies": {
     "typescript": "^5.7",
-    "vitest": "^4.0"
+    "vitest": "^4.1"
   },
   "peerDependencies": {},
   "scripts": {
