@@ -1,4 +1,4 @@
-use libc::*;
+use std::ffi::c_int;
 
 pub const NID_undef: c_int = 0;
 pub const NID_itu_t: c_int = 645;
@@ -114,6 +114,26 @@ pub const NID_brainpoolP384r1: c_int = 932;
 pub const NID_brainpoolP512r1: c_int = 933;
 #[cfg(libressl)]
 pub const NID_brainpoolP512r1: c_int = 934;
+
+#[cfg(ossl110)]
+pub const NID_brainpoolP256t1: c_int = 928;
+#[cfg(libressl)]
+pub const NID_brainpoolP256t1: c_int = 929;
+
+#[cfg(ossl110)]
+pub const NID_brainpoolP320t1: c_int = 930;
+#[cfg(libressl)]
+pub const NID_brainpoolP320t1: c_int = 931;
+
+#[cfg(ossl110)]
+pub const NID_brainpoolP384t1: c_int = 932;
+#[cfg(libressl)]
+pub const NID_brainpoolP384t1: c_int = 933;
+
+#[cfg(ossl110)]
+pub const NID_brainpoolP512t1: c_int = 934;
+#[cfg(libressl)]
+pub const NID_brainpoolP512t1: c_int = 935;
 
 pub const NID_wap_wsg_idm_ecid_wtls1: c_int = 735;
 pub const NID_wap_wsg_idm_ecid_wtls3: c_int = 736;
@@ -631,6 +651,12 @@ pub const NID_aes_192_ctr: c_int = 905;
 pub const NID_aes_256_ctr: c_int = 906;
 pub const NID_aes_128_xts: c_int = 913;
 pub const NID_aes_256_xts: c_int = 914;
+#[cfg(ossl110)]
+pub const NID_aes_128_ocb: c_int = 958;
+#[cfg(ossl110)]
+pub const NID_aes_192_ocb: c_int = 959;
+#[cfg(ossl110)]
+pub const NID_aes_256_ocb: c_int = 960;
 pub const NID_des_cfb1: c_int = 656;
 pub const NID_des_cfb8: c_int = 657;
 pub const NID_des_ede3_cfb1: c_int = 658;

@@ -77,6 +77,41 @@ describe('plugin runtime hook compatibility', () => {
     }
   });
 
+  it('also registers modern typed hooks when both hook APIs are available', async () => {
+    const registerHook = vi.fn();
+    const on = vi.fn();
+    const api = {
+      ...makeBaseApi(),
+      registerHook,
+      on,
+    };
+
+    clawdstrikePlugin(api);
+
+    expect(on.mock.calls.map(([event]) => event)).toEqual([
+      'before_tool_call',
+      'before_tool_call',
+      'tool_result_persist',
+    ]);
+    expect(on.mock.calls[0]?.[2]).toEqual({ priority: 20 });
+    expect(on.mock.calls[1]?.[2]).toEqual({ priority: 10 });
+
+    const preflight = on.mock.calls[1]?.[1] as
+      | ((event: unknown, ctx?: { sessionKey?: string }) => Promise<unknown>)
+      | undefined;
+    const result = await preflight?.(
+      {
+        toolName: 'exec',
+        params: { command: 'touch /tmp/clawdstrike-openclaw-plugin-typed-denied.txt' },
+      },
+      { sessionKey: 'typed-session' },
+    );
+
+    expect(result).toMatchObject({ block: true });
+    expect(String((result as { blockReason?: string }).blockReason ?? ''))
+      .toContain('blocked exec');
+  });
+
   it('falls back to legacy registerHook(event, handler) when options are rejected', () => {
     const registerHook = vi.fn((_: string, __: unknown, options?: unknown) => {
       if (options !== undefined) {

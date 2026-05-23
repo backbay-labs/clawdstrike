@@ -10,7 +10,7 @@
 #![recursion_limit = "128"] // configure fixed limit across all rust versions
 
 extern crate libc;
-pub use libc::c_int;
+pub use std::ffi::c_int;
 
 #[cfg(feature = "unstable_boringssl")]
 extern crate bssl_sys;
@@ -34,6 +34,7 @@ extern crate aws_lc_sys;
 
 #[cfg(awslc)]
 #[path = "."]
+#[allow(unpredictable_function_pointer_comparisons)]
 mod aws_lc {
     #[cfg(all(feature = "aws-lc", not(feature = "aws-lc-fips")))]
     pub use aws_lc_sys::*;
@@ -44,16 +45,41 @@ mod aws_lc {
     #[cfg(not(any(feature = "aws-lc", feature = "aws-lc-fips")))]
     include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
 
-    use libc::{c_char, c_long, c_void};
+    use std::ffi::{c_char, c_int, c_long, c_uint, c_void};
 
     pub fn init() {
         unsafe { CRYPTO_library_init() }
     }
 
     // BIO_get_mem_data is a C preprocessor macro by definition
-    #[allow(non_snake_case, clippy::not_unsafe_ptr_arg_deref)]
-    pub fn BIO_get_mem_data(b: *mut BIO, pp: *mut *mut c_char) -> c_long {
+    #[allow(non_snake_case)]
+    pub unsafe fn BIO_get_mem_data(b: *mut BIO, pp: *mut *mut c_char) -> c_long {
         unsafe { BIO_ctrl(b, BIO_CTRL_INFO, 0, pp.cast::<c_void>()) }
+    }
+
+    // ERR_GET_{LIB,REASON,FUNC} are macros/static inlines in AWS-LC and
+    // therefore not emitted by pregenerated bindings. We provide pure-Rust
+    // implementations matching the logic in aws-lc-sys.
+    //
+    // When aws-lc-sys is used (feature = "aws-lc" or "aws-lc-fips"), these
+    // come from the glob import instead. When normal bindgen runs
+    // (wrap_static_fns), they're in the generated output.
+    #[cfg(awslc_pregenerated)]
+    #[allow(non_snake_case, clippy::cast_possible_wrap)]
+    pub fn ERR_GET_LIB(packed_error: c_uint) -> c_int {
+        ((packed_error >> 24) & 0xFF) as c_int
+    }
+
+    #[cfg(awslc_pregenerated)]
+    #[allow(non_snake_case, clippy::cast_possible_wrap)]
+    pub fn ERR_GET_REASON(packed_error: c_uint) -> c_int {
+        (packed_error & 0xFFF) as c_int
+    }
+
+    #[cfg(awslc_pregenerated)]
+    #[allow(non_snake_case)]
+    pub fn ERR_GET_FUNC(_packed_error: c_uint) -> c_int {
+        0
     }
 }
 #[cfg(awslc)]
@@ -62,7 +88,7 @@ pub use aws_lc::*;
 #[cfg(openssl)]
 #[path = "."]
 mod openssl {
-    use libc::*;
+    use std::ffi::{c_char, c_int, c_void};
 
     #[cfg(feature = "bindgen")]
     include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
@@ -160,75 +186,6 @@ mod openssl {
 
     #[cfg(libressl)]
     pub fn init() {}
-
-    #[cfg(not(any(ossl110, libressl)))]
-    pub fn init() {
-        use std::io::{self, Write};
-        use std::mem;
-        use std::process;
-        use std::sync::{Mutex, MutexGuard};
-
-        static mut MUTEXES: *mut Vec<Mutex<()>> = 0 as *mut Vec<Mutex<()>>;
-        static mut GUARDS: *mut Vec<Option<MutexGuard<'static, ()>>> =
-            0 as *mut Vec<Option<MutexGuard<'static, ()>>>;
-
-        unsafe extern "C" fn locking_function(
-            mode: c_int,
-            n: c_int,
-            _file: *const c_char,
-            _line: c_int,
-        ) {
-            let mutex = &(&(*MUTEXES))[n as usize];
-
-            if mode & CRYPTO_LOCK != 0 {
-                (&mut (*GUARDS))[n as usize] = Some(mutex.lock().unwrap());
-            } else {
-                if let None = (&mut (*GUARDS))[n as usize].take() {
-                    let _ = writeln!(
-                        io::stderr(),
-                        "BUG: rust-openssl lock {} already unlocked, aborting",
-                        n
-                    );
-                    process::abort();
-                }
-            }
-        }
-
-        cfg_if! {
-            if #[cfg(unix)] {
-                fn set_id_callback() {
-                    unsafe extern "C" fn thread_id() -> c_ulong {
-                        ::libc::pthread_self() as c_ulong
-                    }
-
-                    unsafe {
-                        CRYPTO_set_id_callback__fixed_rust(Some(thread_id));
-                    }
-                }
-            } else {
-                fn set_id_callback() {}
-            }
-        }
-
-        INIT.call_once(|| unsafe {
-            SSL_library_init();
-            SSL_load_error_strings();
-            OPENSSL_add_all_algorithms_noconf();
-
-            let num_locks = CRYPTO_num_locks();
-            let mut mutexes = Box::new(Vec::new());
-            for _ in 0..num_locks {
-                mutexes.push(Mutex::new(()));
-            }
-            MUTEXES = mem::transmute(mutexes);
-            let guards: Box<Vec<Option<MutexGuard<()>>>> =
-                Box::new((0..num_locks).map(|_| None).collect());
-            GUARDS = mem::transmute(guards);
-
-            CRYPTO_set_locking_callback__fixed_rust(Some(locking_function));
-            set_id_callback();
-        })
-    }
 
     /// Disable explicit initialization of the openssl libs.
     ///

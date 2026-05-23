@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.80.0"
 name = "openssl"
-version = "0.10.75"
+version = "0.10.80"
 authors = ["Steven Fackler <sfackler@gmail.com>"]
 build = "build.rs"
 autolib = false
@@ -63,7 +63,7 @@ version = "2.2.1"
 version = "1.0"
 
 [dependencies.ffi]
-version = "0.9.111"
+version = "0.9.116"
 package = "openssl-sys"
 
 [dependencies.foreign-types]
@@ -71,9 +71,6 @@ version = "0.3.1"
 
 [dependencies.libc]
 version = "0.2"
-
-[dependencies.once_cell]
-version = "1.5.2"
 
 [dependencies.openssl-macros]
 version = "0.1.1"

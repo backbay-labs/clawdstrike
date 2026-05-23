@@ -17,7 +17,7 @@ use crate::x509::extension::{
 use crate::x509::store::X509Lookup;
 use crate::x509::store::X509StoreBuilder;
 use crate::x509::verify::{X509VerifyFlags, X509VerifyParam};
-#[cfg(any(ossl102, boringssl, awslc))]
+#[cfg(any(ossl110, boringssl, awslc))]
 use crate::x509::X509PurposeId;
 use crate::x509::X509PurposeRef;
 #[cfg(ossl110)]
@@ -25,7 +25,6 @@ use crate::x509::{CrlReason, X509Builder};
 use crate::x509::{
     CrlStatus, X509Crl, X509Extension, X509Name, X509Req, X509StoreContext, X509VerifyResult, X509,
 };
-
 #[cfg(ossl110)]
 use foreign_types::ForeignType;
 use hex::{self, FromHex};
@@ -830,7 +829,6 @@ fn test_name_cmp() {
 }
 
 #[test]
-#[cfg(any(boringssl, ossl110, libressl, awslc))]
 fn test_name_to_owned() {
     let cert = include_bytes!("../../test/cert.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -997,7 +995,7 @@ fn test_verify_param_auth_level() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, awslc))]
+#[cfg(any(ossl110, boringssl, awslc))]
 fn test_set_purpose() {
     let cert = include_bytes!("../../test/leaf.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -1022,7 +1020,7 @@ fn test_set_purpose() {
 }
 
 #[test]
-#[cfg(any(ossl102, boringssl, awslc))]
+#[cfg(any(ossl110, boringssl, awslc))]
 fn test_set_purpose_fails_verification() {
     let cert = include_bytes!("../../test/leaf.pem");
     let cert = X509::from_pem(cert).unwrap();
@@ -1144,6 +1142,74 @@ fn other_name_as_subject_alternative_name() {
     }
 }
 
+#[cfg(ossl110)]
+#[test]
+fn dir_name_as_subject_alternative_name() {
+    // Build original name
+    let mut b = X509Name::builder().unwrap();
+    b.append_entry_by_nid(Nid::COMMONNAME, "dir.example")
+        .unwrap();
+    b.append_entry_by_nid(Nid::COUNTRYNAME, "US").unwrap();
+    let name = b.build();
+
+    // Build a separate literal copy for the SAN
+    let mut b2 = X509Name::builder().unwrap();
+    b2.append_entry_by_nid(Nid::COMMONNAME, "dir.example")
+        .unwrap();
+    b2.append_entry_by_nid(Nid::COUNTRYNAME, "US").unwrap();
+    let name_copy = b2.build();
+
+    // Build certificate with the SAN entry
+    let mut builder = X509Builder::new().unwrap();
+    let san = SubjectAlternativeName::new()
+        .dir_name2(name_copy)
+        .build(&builder.x509v3_context(None, None))
+        .unwrap();
+    builder.append_extension(san).unwrap();
+    let cert = builder.build();
+
+    // Original X509Name still intact
+    assert_eq!(
+        name.entries_by_nid(Nid::COMMONNAME)
+            .next()
+            .unwrap()
+            .data()
+            .as_slice(),
+        b"dir.example"
+    );
+    assert_eq!(
+        name.entries_by_nid(Nid::COUNTRYNAME)
+            .next()
+            .unwrap()
+            .data()
+            .as_slice(),
+        b"US"
+    );
+
+    // Extract SAN directoryName
+    let alt_names = cert.subject_alt_names().unwrap();
+    let dirname = alt_names.iter().find_map(|n| n.directory_name()).unwrap();
+
+    assert_eq!(
+        dirname
+            .entries_by_nid(Nid::COMMONNAME)
+            .next()
+            .unwrap()
+            .data()
+            .as_slice(),
+        b"dir.example"
+    );
+    assert_eq!(
+        dirname
+            .entries_by_nid(Nid::COUNTRYNAME)
+            .next()
+            .unwrap()
+            .data()
+            .as_slice(),
+        b"US"
+    );
+}
+
 #[test]
 fn test_dist_point() {
     let cert = include_bytes!("../../test/certv3.pem");
@@ -1184,4 +1250,11 @@ fn test_store_all_certificates() {
     };
 
     assert_eq!(store.all_certificates().len(), 1);
+}
+
+#[test]
+fn test_ocsp_responders_invalid_utf8() {
+    let cert = include_bytes!("../../test/aia_bad_utf8_cert.pem");
+    let cert = X509::from_pem(cert).unwrap();
+    assert!(cert.ocsp_responders().is_err());
 }

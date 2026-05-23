@@ -1,6 +1,5 @@
-use crate::raw::{
-    Allocator, Bucket, Global, RawDrain, RawExtractIf, RawIntoIter, RawIter, RawTable,
-};
+use crate::alloc::{Allocator, Global};
+use crate::raw::{Bucket, RawDrain, RawExtractIf, RawIntoIter, RawIter, RawTable};
 use crate::{DefaultHashBuilder, Equivalent, TryReserveError};
 use core::borrow::Borrow;
 use core::fmt::{self, Debug};
@@ -9,6 +8,7 @@ use core::iter::FusedIterator;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::Index;
+use stdalloc::borrow::ToOwned;
 
 #[cfg(feature = "raw-entry")]
 pub use crate::raw_entry::*;
@@ -133,14 +133,11 @@ pub use crate::raw_entry::*;
 /// The easiest way to use `HashMap` with a custom key type is to derive [`Eq`] and [`Hash`].
 /// We must also derive [`PartialEq`].
 ///
-/// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-/// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
-/// [`PartialEq`]: https://doc.rust-lang.org/std/cmp/trait.PartialEq.html
-/// [`RefCell`]: https://doc.rust-lang.org/std/cell/struct.RefCell.html
-/// [`Cell`]: https://doc.rust-lang.org/std/cell/struct.Cell.html
-/// [`default`]: #method.default
-/// [`with_hasher`]: #method.with_hasher
-/// [`with_capacity_and_hasher`]: #method.with_capacity_and_hasher
+/// [`RefCell`]: std::cell::RefCell
+/// [`Cell`]: std::cell::Cell
+/// [`default`]: Default::default
+/// [`with_hasher`]: HashMap::with_hasher
+/// [`with_capacity_and_hasher`]: HashMap::with_capacity_and_hasher
 /// [`fnv`]: https://crates.io/crates/fnv
 /// [`foldhash`]: https://crates.io/crates/foldhash
 ///
@@ -227,7 +224,7 @@ where
 /// Ensures that a single closure type across uses of this which, in turn prevents multiple
 /// instances of any functions like `RawTable::reserve` from being generated
 #[cfg_attr(feature = "inline-more", inline)]
-#[allow(dead_code)]
+#[cfg(feature = "raw-entry")]
 pub(crate) fn equivalent<Q, K>(k: &Q) -> impl Fn(&K) -> bool + '_
 where
     Q: Equivalent<K> + ?Sized,
@@ -235,20 +232,6 @@ where
     move |x| k.equivalent(x)
 }
 
-#[cfg(not(feature = "nightly"))]
-#[cfg_attr(feature = "inline-more", inline)]
-pub(crate) fn make_hash<Q, S>(hash_builder: &S, val: &Q) -> u64
-where
-    Q: Hash + ?Sized,
-    S: BuildHasher,
-{
-    use core::hash::Hasher;
-    let mut state = hash_builder.build_hasher();
-    val.hash(&mut state);
-    state.finish()
-}
-
-#[cfg(feature = "nightly")]
 #[cfg_attr(feature = "inline-more", inline)]
 pub(crate) fn make_hash<Q, S>(hash_builder: &S, val: &Q) -> u64
 where
@@ -270,12 +253,11 @@ impl<K, V> HashMap<K, V, DefaultHashBuilder> {
     /// The `hash_builder` normally use a fixed key by default and that does
     /// not allow the `HashMap` to be protected against attacks such as [`HashDoS`].
     /// Users who require HashDoS resistance should explicitly use
-    /// [`std::collections::hash_map::RandomState`]
+    /// [`std::hash::RandomState`]
     /// as the hasher when creating a [`HashMap`], for example with
     /// [`with_hasher`](HashMap::with_hasher) method.
     ///
     /// [`HashDoS`]: https://en.wikipedia.org/wiki/Collision_attack
-    /// [`std::collections::hash_map::RandomState`]: https://doc.rust-lang.org/std/collections/hash_map/struct.RandomState.html
     ///
     /// # Examples
     ///
@@ -285,6 +267,7 @@ impl<K, V> HashMap<K, V, DefaultHashBuilder> {
     /// assert_eq!(map.len(), 0);
     /// assert_eq!(map.capacity(), 0);
     /// ```
+    #[must_use]
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn new() -> Self {
         Self::default()
@@ -300,12 +283,11 @@ impl<K, V> HashMap<K, V, DefaultHashBuilder> {
     /// The `hash_builder` normally use a fixed key by default and that does
     /// not allow the `HashMap` to be protected against attacks such as [`HashDoS`].
     /// Users who require HashDoS resistance should explicitly use
-    /// [`std::collections::hash_map::RandomState`]
+    /// [`std::hash::RandomState`]
     /// as the hasher when creating a [`HashMap`], for example with
     /// [`with_capacity_and_hasher`](HashMap::with_capacity_and_hasher) method.
     ///
     /// [`HashDoS`]: https://en.wikipedia.org/wiki/Collision_attack
-    /// [`std::collections::hash_map::RandomState`]: https://doc.rust-lang.org/std/collections/hash_map/struct.RandomState.html
     ///
     /// # Examples
     ///
@@ -315,6 +297,7 @@ impl<K, V> HashMap<K, V, DefaultHashBuilder> {
     /// assert_eq!(map.len(), 0);
     /// assert!(map.capacity() >= 10);
     /// ```
+    #[must_use]
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity_and_hasher(capacity, DefaultHashBuilder::default())
@@ -333,12 +316,11 @@ impl<K, V, A: Allocator> HashMap<K, V, DefaultHashBuilder, A> {
     /// The `hash_builder` normally use a fixed key by default and that does
     /// not allow the `HashMap` to be protected against attacks such as [`HashDoS`].
     /// Users who require HashDoS resistance should explicitly use
-    /// [`std::collections::hash_map::RandomState`]
+    /// [`std::hash::RandomState`]
     /// as the hasher when creating a [`HashMap`], for example with
     /// [`with_hasher_in`](HashMap::with_hasher_in) method.
     ///
     /// [`HashDoS`]: https://en.wikipedia.org/wiki/Collision_attack
-    /// [`std::collections::hash_map::RandomState`]: https://doc.rust-lang.org/std/collections/hash_map/struct.RandomState.html
     ///
     /// # Examples
     ///
@@ -362,6 +344,7 @@ impl<K, V, A: Allocator> HashMap<K, V, DefaultHashBuilder, A> {
     /// // And it also allocates some capacity
     /// assert!(map.capacity() > 1);
     /// ```
+    #[must_use]
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn new_in(alloc: A) -> Self {
         Self::with_hasher_in(DefaultHashBuilder::default(), alloc)
@@ -377,12 +360,11 @@ impl<K, V, A: Allocator> HashMap<K, V, DefaultHashBuilder, A> {
     /// The `hash_builder` normally use a fixed key by default and that does
     /// not allow the `HashMap` to be protected against attacks such as [`HashDoS`].
     /// Users who require HashDoS resistance should explicitly use
-    /// [`std::collections::hash_map::RandomState`]
+    /// [`std::hash::RandomState`]
     /// as the hasher when creating a [`HashMap`], for example with
     /// [`with_capacity_and_hasher_in`](HashMap::with_capacity_and_hasher_in) method.
     ///
     /// [`HashDoS`]: https://en.wikipedia.org/wiki/Collision_attack
-    /// [`std::collections::hash_map::RandomState`]: https://doc.rust-lang.org/std/collections/hash_map/struct.RandomState.html
     ///
     /// # Examples
     ///
@@ -411,6 +393,7 @@ impl<K, V, A: Allocator> HashMap<K, V, DefaultHashBuilder, A> {
     /// // But its capacity isn't changed
     /// assert_eq!(map.capacity(), empty_map_capacity)
     /// ```
+    #[must_use]
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn with_capacity_in(capacity: usize, alloc: A) -> Self {
         Self::with_capacity_and_hasher_in(capacity, DefaultHashBuilder::default(), alloc)
@@ -429,15 +412,13 @@ impl<K, V, S> HashMap<K, V, S> {
     /// The `hash_builder` normally use a fixed key by default and that does
     /// not allow the `HashMap` to be protected against attacks such as [`HashDoS`].
     /// Users who require HashDoS resistance should explicitly use
-    /// [`std::collections::hash_map::RandomState`]
+    /// [`std::hash::RandomState`]
     /// as the hasher when creating a [`HashMap`].
     ///
     /// The `hash_builder` passed should implement the [`BuildHasher`] trait for
     /// the `HashMap` to be useful, see its documentation for details.
     ///
     /// [`HashDoS`]: https://en.wikipedia.org/wiki/Collision_attack
-    /// [`std::collections::hash_map::RandomState`]: https://doc.rust-lang.org/std/collections/hash_map/struct.RandomState.html
-    /// [`BuildHasher`]: https://doc.rust-lang.org/std/hash/trait.BuildHasher.html
     ///
     /// # Examples
     ///
@@ -452,6 +433,7 @@ impl<K, V, S> HashMap<K, V, S> {
     ///
     /// map.insert(1, 2);
     /// ```
+    #[must_use]
     #[cfg_attr(feature = "inline-more", inline)]
     #[cfg_attr(feature = "rustc-dep-of-std", rustc_const_stable_indirect)]
     pub const fn with_hasher(hash_builder: S) -> Self {
@@ -472,15 +454,13 @@ impl<K, V, S> HashMap<K, V, S> {
     /// The `hash_builder` normally use a fixed key by default and that does
     /// not allow the `HashMap` to be protected against attacks such as [`HashDoS`].
     /// Users who require HashDoS resistance should explicitly use
-    /// [`std::collections::hash_map::RandomState`]
+    /// [`std::hash::RandomState`]
     /// as the hasher when creating a [`HashMap`].
     ///
     /// The `hash_builder` passed should implement the [`BuildHasher`] trait for
     /// the `HashMap` to be useful, see its documentation for details.
     ///
     /// [`HashDoS`]: https://en.wikipedia.org/wiki/Collision_attack
-    /// [`std::collections::hash_map::RandomState`]: https://doc.rust-lang.org/std/collections/hash_map/struct.RandomState.html
-    /// [`BuildHasher`]: https://doc.rust-lang.org/std/hash/trait.BuildHasher.html
     ///
     /// # Examples
     ///
@@ -495,6 +475,7 @@ impl<K, V, S> HashMap<K, V, S> {
     ///
     /// map.insert(1, 2);
     /// ```
+    #[must_use]
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> Self {
         Self {
@@ -522,11 +503,10 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// The `hash_builder` normally use a fixed key by default and that does
     /// not allow the `HashMap` to be protected against attacks such as [`HashDoS`].
     /// Users who require HashDoS resistance should explicitly use
-    /// [`std::collections::hash_map::RandomState`]
+    /// [`std::hash::RandomState`]
     /// as the hasher when creating a [`HashMap`].
     ///
     /// [`HashDoS`]: https://en.wikipedia.org/wiki/Collision_attack
-    /// [`std::collections::hash_map::RandomState`]: https://doc.rust-lang.org/std/collections/hash_map/struct.RandomState.html
     ///
     /// # Examples
     ///
@@ -538,6 +518,7 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// let mut map = HashMap::with_hasher(s);
     /// map.insert(1, 2);
     /// ```
+    #[must_use]
     #[cfg_attr(feature = "inline-more", inline)]
     #[cfg_attr(feature = "rustc-dep-of-std", rustc_const_stable_indirect)]
     pub const fn with_hasher_in(hash_builder: S, alloc: A) -> Self {
@@ -558,11 +539,10 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// The `hash_builder` normally use a fixed key by default and that does
     /// not allow the `HashMap` to be protected against attacks such as [`HashDoS`].
     /// Users who require HashDoS resistance should explicitly use
-    /// [`std::collections::hash_map::RandomState`]
+    /// [`std::hash::RandomState`]
     /// as the hasher when creating a [`HashMap`].
     ///
     /// [`HashDoS`]: https://en.wikipedia.org/wiki/Collision_attack
-    /// [`std::collections::hash_map::RandomState`]: https://doc.rust-lang.org/std/collections/hash_map/struct.RandomState.html
     ///
     /// # Examples
     ///
@@ -574,6 +554,7 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     /// let mut map = HashMap::with_capacity_and_hasher(10, s);
     /// map.insert(1, 2);
     /// ```
+    #[must_use]
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn with_capacity_and_hasher_in(capacity: usize, hash_builder: S, alloc: A) -> Self {
         Self {
@@ -583,8 +564,6 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     }
 
     /// Returns a reference to the map's [`BuildHasher`].
-    ///
-    /// [`BuildHasher`]: https://doc.rust-lang.org/std/hash/trait.BuildHasher.html
     ///
     /// # Examples
     ///
@@ -809,7 +788,7 @@ impl<K, V, S, A: Allocator> HashMap<K, V, S, A> {
     #[cfg(test)]
     #[cfg_attr(feature = "inline-more", inline)]
     fn raw_capacity(&self) -> usize {
-        self.table.buckets()
+        self.table.num_buckets()
     }
 
     /// Returns the number of elements in the map.
@@ -1083,8 +1062,7 @@ where
     /// in case of allocation error. Use [`try_reserve`](HashMap::try_reserve) instead
     /// if you want to handle memory allocation failure.
     ///
-    /// [`isize::MAX`]: https://doc.rust-lang.org/std/primitive.isize.html
-    /// [`abort`]: https://doc.rust-lang.org/alloc/alloc/fn.handle_alloc_error.html
+    /// [`abort`]: stdalloc::alloc::handle_alloc_error
     ///
     /// # Examples
     ///
@@ -1287,9 +1265,6 @@ where
     /// [`Hash`] and [`Eq`] on the borrowed form *must* match those for
     /// the key type.
     ///
-    /// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-    /// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
-    ///
     /// # Examples
     ///
     /// ```
@@ -1306,14 +1281,14 @@ where
         Q: Hash + Equivalent<K> + ?Sized,
     {
         // Avoid `Option::map` because it bloats LLVM IR.
-        if !self.table.is_empty() {
+        if self.table.is_empty() {
+            None
+        } else {
             let hash = make_hash::<Q, S>(&self.hash_builder, k);
             match self.table.get(hash, equivalent_key(k)) {
                 Some((_, v)) => Some(v),
                 None => None,
             }
-        } else {
-            None
         }
     }
 
@@ -1322,9 +1297,6 @@ where
     /// The supplied key may be any borrowed form of the map's key type, but
     /// [`Hash`] and [`Eq`] on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-    /// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
     ///
     /// # Examples
     ///
@@ -1342,14 +1314,14 @@ where
         Q: Hash + Equivalent<K> + ?Sized,
     {
         // Avoid `Option::map` because it bloats LLVM IR.
-        if !self.table.is_empty() {
+        if self.table.is_empty() {
+            None
+        } else {
             let hash = make_hash::<Q, S>(&self.hash_builder, k);
             match self.table.get(hash, equivalent_key(k)) {
                 Some((key, value)) => Some((key, value)),
                 None => None,
             }
-        } else {
-            None
         }
     }
 
@@ -1358,9 +1330,6 @@ where
     /// The supplied key may be any borrowed form of the map's key type, but
     /// [`Hash`] and [`Eq`] on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-    /// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
     ///
     /// # Examples
     ///
@@ -1382,14 +1351,14 @@ where
         Q: Hash + Equivalent<K> + ?Sized,
     {
         // Avoid `Option::map` because it bloats LLVM IR.
-        if !self.table.is_empty() {
+        if self.table.is_empty() {
+            None
+        } else {
             let hash = make_hash::<Q, S>(&self.hash_builder, k);
             match self.table.get_mut(hash, equivalent_key(k)) {
                 Some(&mut (ref key, ref mut value)) => Some((key, value)),
                 None => None,
             }
-        } else {
-            None
         }
     }
 
@@ -1398,9 +1367,6 @@ where
     /// The key may be any borrowed form of the map's key type, but
     /// [`Hash`] and [`Eq`] on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-    /// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
     ///
     /// # Examples
     ///
@@ -1417,11 +1383,11 @@ where
     where
         Q: Hash + Equivalent<K> + ?Sized,
     {
-        if !self.table.is_empty() {
+        if self.table.is_empty() {
+            false
+        } else {
             let hash = make_hash::<Q, S>(&self.hash_builder, k);
             self.table.get(hash, equivalent_key(k)).is_some()
-        } else {
-            false
         }
     }
 
@@ -1430,9 +1396,6 @@ where
     /// The key may be any borrowed form of the map's key type, but
     /// [`Hash`] and [`Eq`] on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-    /// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
     ///
     /// # Examples
     ///
@@ -1454,14 +1417,14 @@ where
         Q: Hash + Equivalent<K> + ?Sized,
     {
         // Avoid `Option::map` because it bloats LLVM IR.
-        if !self.table.is_empty() {
+        if self.table.is_empty() {
+            None
+        } else {
             let hash = make_hash::<Q, S>(&self.hash_builder, k);
             match self.table.get_mut(hash, equivalent_key(k)) {
                 Some(&mut (_, ref mut v)) => Some(v),
                 None => None,
             }
-        } else {
-            None
         }
     }
 
@@ -1607,8 +1570,10 @@ where
     where
         Q: Hash + Equivalent<K> + ?Sized,
     {
-        self.get_disjoint_unchecked_mut_inner(ks)
-            .map(|res| res.map(|(_, v)| v))
+        unsafe {
+            self.get_disjoint_unchecked_mut_inner(ks)
+                .map(|res| res.map(|(_, v)| v))
+        }
     }
 
     /// Attempts to get mutable references to `N` values in the map at once, without validating that
@@ -1621,7 +1586,7 @@ where
     where
         Q: Hash + Equivalent<K> + ?Sized,
     {
-        self.get_disjoint_unchecked_mut(ks)
+        unsafe { self.get_disjoint_unchecked_mut(ks) }
     }
 
     /// Attempts to get mutable references to `N` values in the map at once, with immutable
@@ -1759,8 +1724,10 @@ where
     where
         Q: Hash + Equivalent<K> + ?Sized,
     {
-        self.get_disjoint_unchecked_mut_inner(ks)
-            .map(|res| res.map(|(k, v)| (&*k, v)))
+        unsafe {
+            self.get_disjoint_unchecked_mut_inner(ks)
+                .map(|res| res.map(|(k, v)| (&*k, v)))
+        }
     }
 
     /// Attempts to get mutable references to `N` values in the map at once, with immutable
@@ -1773,7 +1740,7 @@ where
     where
         Q: Hash + Equivalent<K> + ?Sized,
     {
-        self.get_disjoint_key_value_unchecked_mut(ks)
+        unsafe { self.get_disjoint_key_value_unchecked_mut(ks) }
     }
 
     fn get_disjoint_mut_inner<Q, const N: usize>(
@@ -1795,9 +1762,11 @@ where
     where
         Q: Hash + Equivalent<K> + ?Sized,
     {
-        let hashes = self.build_hashes_inner(ks);
-        self.table
-            .get_disjoint_unchecked_mut(hashes, |i, (k, _)| ks[i].equivalent(k))
+        unsafe {
+            let hashes = self.build_hashes_inner(ks);
+            self.table
+                .get_disjoint_unchecked_mut(hashes, |i, (k, _)| ks[i].equivalent(k))
+        }
     }
 
     fn build_hashes_inner<Q, const N: usize>(&self, ks: [&Q; N]) -> [u64; N]
@@ -1818,11 +1787,7 @@ where
     /// If the map did have this key present, the value is updated, and the old
     /// value is returned. The key is not updated, though; this matters for
     /// types that can be `==` without being identical. See the [`std::collections`]
-    /// [module-level documentation] for more.
-    ///
-    /// [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
-    /// [`std::collections`]: https://doc.rust-lang.org/std/collections/index.html
-    /// [module-level documentation]: https://doc.rust-lang.org/std/collections/index.html#insert-and-complex-keys
+    /// module-level documentation for more.
     ///
     /// # Examples
     ///
@@ -1839,8 +1804,13 @@ where
     /// ```
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn insert(&mut self, k: K, v: V) -> Option<V> {
-        let hash = make_hash::<K, S>(&self.hash_builder, &k);
-        match self.find_or_find_insert_index(hash, &k) {
+        let hash = make_hash(&self.hash_builder, &k);
+        let equivalent = equivalent_key(&k);
+        let hasher = make_hasher(&self.hash_builder);
+        match self
+            .table
+            .find_or_find_insert_index(hash, equivalent, hasher)
+        {
             Ok(bucket) => Some(mem::replace(unsafe { &mut bucket.as_mut().1 }, v)),
             Err(index) => {
                 unsafe {
@@ -1849,22 +1819,6 @@ where
                 None
             }
         }
-    }
-
-    #[cfg_attr(feature = "inline-more", inline)]
-    pub(crate) fn find_or_find_insert_index<Q>(
-        &mut self,
-        hash: u64,
-        key: &Q,
-    ) -> Result<Bucket<(K, V)>, usize>
-    where
-        Q: Equivalent<K> + ?Sized,
-    {
-        self.table.find_or_find_insert_index(
-            hash,
-            equivalent_key(key),
-            make_hasher(&self.hash_builder),
-        )
     }
 
     /// Insert a key-value pair into the map without checking
@@ -1981,9 +1935,6 @@ where
     /// [`Hash`] and [`Eq`] on the borrowed form *must* match those for
     /// the key type.
     ///
-    /// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-    /// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
-    ///
     /// # Examples
     ///
     /// ```
@@ -2019,9 +1970,6 @@ where
     /// The key may be any borrowed form of the map's key type, but
     /// [`Hash`] and [`Eq`] on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-    /// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
     ///
     /// # Examples
     ///
@@ -2073,7 +2021,7 @@ where
         }
 
         self.iter()
-            .all(|(key, value)| other.get(key).map_or(false, |v| *value == *v))
+            .all(|(key, value)| other.get(key).is_some_and(|v| *value == *v))
     }
 }
 
@@ -2108,7 +2056,7 @@ where
     ///
     /// ```
     /// use hashbrown::HashMap;
-    /// use std::collections::hash_map::RandomState;
+    /// use std::hash::RandomState;
     ///
     /// // You can specify all types of HashMap, including hasher and allocator.
     /// // Created map is empty and don't allocate memory
@@ -2181,8 +2129,7 @@ where
 /// This `struct` is created by the [`iter`] method on [`HashMap`]. See its
 /// documentation for more.
 ///
-/// [`iter`]: struct.HashMap.html#method.iter
-/// [`HashMap`]: struct.HashMap.html
+/// [`iter`]: HashMap::iter
 ///
 /// # Examples
 ///
@@ -2231,8 +2178,7 @@ impl<K: Debug, V: Debug> fmt::Debug for Iter<'_, K, V> {
 /// This `struct` is created by the [`iter_mut`] method on [`HashMap`]. See its
 /// documentation for more.
 ///
-/// [`iter_mut`]: struct.HashMap.html#method.iter_mut
-/// [`HashMap`]: struct.HashMap.html
+/// [`iter_mut`]: HashMap::iter_mut
 ///
 /// # Examples
 ///
@@ -2281,9 +2227,7 @@ impl<K, V> IterMut<'_, K, V> {
 /// (provided by the [`IntoIterator`] trait). See its documentation for more.
 /// The map cannot be used after calling that method.
 ///
-/// [`into_iter`]: struct.HashMap.html#method.into_iter
-/// [`HashMap`]: struct.HashMap.html
-/// [`IntoIterator`]: https://doc.rust-lang.org/core/iter/trait.IntoIterator.html
+/// [`into_iter`]: HashMap::into_iter
 ///
 /// # Examples
 ///
@@ -2326,8 +2270,7 @@ impl<K, V, A: Allocator> IntoIter<K, V, A> {
 /// See its documentation for more.
 /// The map cannot be used after calling that method.
 ///
-/// [`into_keys`]: struct.HashMap.html#method.into_keys
-/// [`HashMap`]: struct.HashMap.html
+/// [`into_keys`]: HashMap::into_keys
 ///
 /// # Examples
 ///
@@ -2404,8 +2347,7 @@ impl<K: Debug, V: Debug, A: Allocator> fmt::Debug for IntoKeys<K, V, A> {
 /// This `struct` is created by the [`into_values`] method on [`HashMap`].
 /// See its documentation for more. The map cannot be used after calling that method.
 ///
-/// [`into_values`]: struct.HashMap.html#method.into_values
-/// [`HashMap`]: struct.HashMap.html
+/// [`into_values`]: HashMap::into_values
 ///
 /// # Examples
 ///
@@ -2482,8 +2424,7 @@ impl<K, V: Debug, A: Allocator> fmt::Debug for IntoValues<K, V, A> {
 /// This `struct` is created by the [`keys`] method on [`HashMap`]. See its
 /// documentation for more.
 ///
-/// [`keys`]: struct.HashMap.html#method.keys
-/// [`HashMap`]: struct.HashMap.html
+/// [`keys`]: HashMap::keys
 ///
 /// # Examples
 ///
@@ -2530,8 +2471,7 @@ impl<K: Debug, V> fmt::Debug for Keys<'_, K, V> {
 /// This `struct` is created by the [`values`] method on [`HashMap`]. See its
 /// documentation for more.
 ///
-/// [`values`]: struct.HashMap.html#method.values
-/// [`HashMap`]: struct.HashMap.html
+/// [`values`]: HashMap::values
 ///
 /// # Examples
 ///
@@ -2578,8 +2518,7 @@ impl<K, V: Debug> fmt::Debug for Values<'_, K, V> {
 /// This `struct` is created by the [`drain`] method on [`HashMap`]. See its
 /// documentation for more.
 ///
-/// [`drain`]: struct.HashMap.html#method.drain
-/// [`HashMap`]: struct.HashMap.html
+/// [`drain`]: HashMap::drain
 ///
 /// # Examples
 ///
@@ -2621,8 +2560,7 @@ impl<K, V, A: Allocator> Drain<'_, K, V, A> {
 /// This `struct` is created by the [`extract_if`] method on [`HashMap`]. See its
 /// documentation for more.
 ///
-/// [`extract_if`]: struct.HashMap.html#method.extract_if
-/// [`HashMap`]: struct.HashMap.html
+/// [`extract_if`]: HashMap::extract_if
 ///
 /// # Examples
 ///
@@ -2678,8 +2616,7 @@ impl<K, V, F> FusedIterator for ExtractIf<'_, K, V, F> where F: FnMut(&K, &mut V
 /// This `struct` is created by the [`values_mut`] method on [`HashMap`]. See its
 /// documentation for more.
 ///
-/// [`values_mut`]: struct.HashMap.html#method.values_mut
-/// [`HashMap`]: struct.HashMap.html
+/// [`values_mut`]: HashMap::values_mut
 ///
 /// # Examples
 ///
@@ -2707,8 +2644,7 @@ pub struct ValuesMut<'a, K, V> {
 ///
 /// This `enum` is constructed from the [`entry`] method on [`HashMap`].
 ///
-/// [`HashMap`]: struct.HashMap.html
-/// [`entry`]: struct.HashMap.html#method.entry
+/// [`entry`]: HashMap::entry
 ///
 /// # Examples
 ///
@@ -2863,8 +2799,6 @@ impl<K: Debug, V: Debug, S, A: Allocator> Debug for OccupiedEntry<'_, K, V, S, A
 /// A view into a vacant entry in a `HashMap`.
 /// It is part of the [`Entry`] enum.
 ///
-/// [`Entry`]: enum.Entry.html
-///
 /// # Examples
 ///
 /// ```
@@ -2910,13 +2844,9 @@ impl<K: Debug, V, S, A: Allocator> Debug for VacantEntry<'_, K, V, S, A> {
 ///
 /// [`Hash`] and [`Eq`] on the borrowed form of the map's key type *must* match those
 /// for the key type. It also require that key may be constructed from the borrowed
-/// form through the [`From`] trait.
+/// form through the [`ToOwned`] trait.
 ///
-/// [`HashMap`]: struct.HashMap.html
-/// [`entry_ref`]: struct.HashMap.html#method.entry_ref
-/// [`Eq`]: https://doc.rust-lang.org/std/cmp/trait.Eq.html
-/// [`Hash`]: https://doc.rust-lang.org/std/hash/trait.Hash.html
-/// [`From`]: https://doc.rust-lang.org/std/convert/trait.From.html
+/// [`entry_ref`]: HashMap::entry_ref
 ///
 /// # Examples
 ///
@@ -3006,8 +2936,6 @@ where
 
 /// A view into a vacant entry in a `HashMap`.
 /// It is part of the [`EntryRef`] enum.
-///
-/// [`EntryRef`]: enum.EntryRef.html
 ///
 /// # Examples
 ///
@@ -3113,8 +3041,7 @@ impl<'a, K, V, S, A: Allocator> IntoIterator for &'a HashMap<K, V, S, A> {
     ///
     /// Return the same `Iter` struct as by the [`iter`] method on [`HashMap`].
     ///
-    /// [`iter`]: struct.HashMap.html#method.iter
-    /// [`HashMap`]: struct.HashMap.html
+    /// [`iter`]: HashMap::iter
     ///
     /// # Examples
     ///
@@ -3147,8 +3074,7 @@ impl<'a, K, V, S, A: Allocator> IntoIterator for &'a mut HashMap<K, V, S, A> {
     /// Return the same `IterMut` struct as by the [`iter_mut`] method on
     /// [`HashMap`].
     ///
-    /// [`iter_mut`]: struct.HashMap.html#method.iter_mut
-    /// [`HashMap`]: struct.HashMap.html
+    /// [`iter_mut`]: HashMap::iter_mut
     ///
     /// # Examples
     ///
@@ -3794,6 +3720,14 @@ impl<'a, K, V, S, A: Allocator> Entry<'a, K, V, S, A> {
             Entry::Vacant(_) => self,
         }
     }
+
+    /// Converts the `Entry` into a mutable reference to the underlying map.
+    pub fn into_map(self) -> &'a mut HashMap<K, V, S, A> {
+        match self {
+            Entry::Occupied(entry) => entry.table,
+            Entry::Vacant(entry) => entry.table,
+        }
+    }
 }
 
 impl<'a, K, V: Default, S, A: Allocator> Entry<'a, K, V, S, A> {
@@ -3848,6 +3782,97 @@ impl<'a, K, V, S, A: Allocator> OccupiedEntry<'a, K, V, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn key(&self) -> &K {
         unsafe { &self.elem.as_ref().0 }
+    }
+
+    /// Replaces the key in the entry with a new one.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if `key` is not equivalent to the key in the entry.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hashbrown::hash_map::{Entry, HashMap};
+    ///
+    /// let mut map: HashMap<&str, u32> = HashMap::new();
+    ///
+    /// let old_key = "poneyland";
+    /// let new_key = Box::leak(old_key.to_owned().into_boxed_str());
+    /// map.entry(old_key).or_insert(12);
+    ///  match map.entry("poneyland") {
+    ///     Entry::Vacant(_) => panic!(),
+    ///     Entry::Occupied(mut entry) => {
+    ///         let replaced = entry.replace_key(new_key);
+    ///         assert!(std::ptr::eq(replaced, old_key));
+    ///         assert!(std::ptr::eq(*entry.key(), new_key));
+    ///     },
+    /// }
+    ///
+    /// # // appease miri; no memory leaks here!
+    /// # drop(map);
+    /// # unsafe {
+    /// #     Box::from_raw(new_key);
+    /// # }
+    /// ```
+    #[cfg_attr(feature = "inline-more", inline)]
+    pub fn replace_key(&mut self, key: K) -> K
+    where
+        K: Equivalent<K>,
+    {
+        assert!(
+            self.key().equivalent(&key),
+            "replaced key is not equivalent to the one in the entry"
+        );
+
+        // SAFETY: We verified that the keys were equivalent.
+        unsafe { self.replace_key_unchecked(key) }
+    }
+
+    /// Replaces the key in the entry with a new one, without checking the
+    /// equivalence of the key.
+    ///
+    /// # Safety
+    ///
+    /// This operation is safe if you replace the key with an equivalent one.
+    ///
+    /// Additionally, this operation (and following operations) are guaranteed
+    /// to not violate memory safety.
+    ///
+    /// However this operation is still unsafe because the resulting `HashMap`
+    /// may be passed to unsafe code which does expect the map to behave
+    /// correctly. If the map has keys at unexpected positions inside it,
+    /// future operations may panic, loop forever, or return unexpected results,
+    /// potentially violating memory safety.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hashbrown::hash_map::{Entry, HashMap};
+    ///
+    /// let mut map: HashMap<&str, u32> = HashMap::new();
+    ///
+    /// let old_key = "poneyland";
+    /// let new_key = Box::leak(old_key.to_owned().into_boxed_str());
+    /// map.entry(old_key).or_insert(12);
+    ///  match map.entry("poneyland") {
+    ///     Entry::Vacant(_) => panic!(),
+    ///     Entry::Occupied(mut entry) => {
+    ///         let replaced = unsafe { entry.replace_key_unchecked(new_key) };
+    ///         assert!(std::ptr::eq(replaced, old_key));
+    ///         assert!(std::ptr::eq(*entry.key(), new_key));
+    ///     },
+    /// }
+    ///
+    /// # // appease miri; no memory leaks here!
+    /// # drop(map);
+    /// # unsafe {
+    /// #     Box::from_raw(new_key);
+    /// # }
+    /// ```
+    #[cfg_attr(feature = "inline-more", inline)]
+    pub unsafe fn replace_key_unchecked(&mut self, key: K) -> K {
+        mem::replace(unsafe { &mut self.elem.as_mut().0 }, key)
     }
 
     /// Take the ownership of the key and value from the map.
@@ -3961,6 +3986,42 @@ impl<'a, K, V, S, A: Allocator> OccupiedEntry<'a, K, V, S, A> {
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn into_mut(self) -> &'a mut V {
         unsafe { &mut self.elem.as_mut().1 }
+    }
+
+    /// Converts the `OccupiedEntry` into a reference to the key and a
+    /// mutable reference to the value in the entry with a lifetime bound to the
+    /// map itself.
+    ///
+    /// If you need multiple references to the `OccupiedEntry`, see [`key`] and
+    /// [`get_mut`].
+    ///
+    /// [`key`]: Self::key
+    /// [`get_mut`]: Self::get_mut
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hashbrown::hash_map::{Entry, HashMap};
+    ///
+    /// let mut map: HashMap<&str, u32> = HashMap::new();
+    /// map.entry("poneyland").or_insert(12);
+    ///
+    /// assert_eq!(map["poneyland"], 12);
+    ///
+    /// let key_val: (&&str, &mut u32);
+    /// match map.entry("poneyland") {
+    ///     Entry::Occupied(entry) => key_val = entry.into_entry(),
+    ///     Entry::Vacant(_) => panic!(),
+    /// }
+    /// *key_val.1 += 10;
+    ///
+    /// assert_eq!(key_val, (&"poneyland", &mut 22));
+    /// assert_eq!(map["poneyland"], 22);
+    /// ```
+    #[cfg_attr(feature = "inline-more", inline)]
+    pub fn into_entry(self) -> (&'a K, &'a mut V) {
+        let (key, val) = unsafe { self.elem.as_mut() };
+        (key, val)
     }
 
     /// Sets the value of the entry, and returns the entry's old value.
@@ -4091,6 +4152,11 @@ impl<'a, K, V, S, A: Allocator> OccupiedEntry<'a, K, V, S, A> {
             }
         }
     }
+
+    /// Converts the `OccupiedEntry` into a mutable reference to the underlying map.
+    pub fn into_map(self) -> &'a mut HashMap<K, V, S, A> {
+        self.table
+    }
 }
 
 impl<'a, K, V, S, A: Allocator> VacantEntry<'a, K, V, S, A> {
@@ -4193,6 +4259,11 @@ impl<'a, K, V, S, A: Allocator> VacantEntry<'a, K, V, S, A> {
             table: self.table,
         }
     }
+
+    /// Converts the `VacantEntry` into a mutable reference to the underlying map.
+    pub fn into_map(self) -> &'a mut HashMap<K, V, S, A> {
+        self.table
+    }
 }
 
 impl<'a, 'b, K, Q: ?Sized, V, S, A: Allocator> EntryRef<'a, 'b, K, Q, V, S, A> {
@@ -4212,7 +4283,7 @@ impl<'a, 'b, K, Q: ?Sized, V, S, A: Allocator> EntryRef<'a, 'b, K, Q, V, S, A> {
     pub fn insert(self, value: V) -> OccupiedEntry<'a, K, V, S, A>
     where
         K: Hash,
-        &'b Q: Into<K>,
+        Q: ToOwned<Owned = K>,
         S: BuildHasher,
     {
         match self {
@@ -4246,7 +4317,7 @@ impl<'a, 'b, K, Q: ?Sized, V, S, A: Allocator> EntryRef<'a, 'b, K, Q, V, S, A> {
     pub fn or_insert(self, default: V) -> &'a mut V
     where
         K: Hash,
-        &'b Q: Into<K>,
+        Q: ToOwned<Owned = K>,
         S: BuildHasher,
     {
         match self {
@@ -4277,7 +4348,7 @@ impl<'a, 'b, K, Q: ?Sized, V, S, A: Allocator> EntryRef<'a, 'b, K, Q, V, S, A> {
     pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V
     where
         K: Hash,
-        &'b Q: Into<K>,
+        Q: ToOwned<Owned = K>,
         S: BuildHasher,
     {
         match self {
@@ -4309,7 +4380,7 @@ impl<'a, 'b, K, Q: ?Sized, V, S, A: Allocator> EntryRef<'a, 'b, K, Q, V, S, A> {
     pub fn or_insert_with_key<F: FnOnce(&Q) -> V>(self, default: F) -> &'a mut V
     where
         K: Hash + Borrow<Q>,
-        &'b Q: Into<K>,
+        Q: ToOwned<Owned = K>,
         S: BuildHasher,
     {
         match self {
@@ -4379,6 +4450,14 @@ impl<'a, 'b, K, Q: ?Sized, V, S, A: Allocator> EntryRef<'a, 'b, K, Q, V, S, A> {
             EntryRef::Vacant(entry) => EntryRef::Vacant(entry),
         }
     }
+
+    /// Converts the `EntryRef` into a mutable reference to the underlying map.
+    pub fn into_map(self) -> &'a mut HashMap<K, V, S, A> {
+        match self {
+            EntryRef::Occupied(entry) => entry.table,
+            EntryRef::Vacant(entry) => entry.table,
+        }
+    }
 }
 
 impl<'a, 'b, K, Q: ?Sized, V: Default, S, A: Allocator> EntryRef<'a, 'b, K, Q, V, S, A> {
@@ -4405,7 +4484,7 @@ impl<'a, 'b, K, Q: ?Sized, V: Default, S, A: Allocator> EntryRef<'a, 'b, K, Q, V
     pub fn or_default(self) -> &'a mut V
     where
         K: Hash,
-        &'b Q: Into<K>,
+        Q: ToOwned<Owned = K>,
         S: BuildHasher,
     {
         match self {
@@ -4438,7 +4517,8 @@ impl<'a, 'b, K, Q: ?Sized, V: Default, S, A: Allocator> EntryRef<'a, 'b, K, Q, V
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn or_default_entry(self) -> OccupiedEntry<'a, K, V, S, A>
     where
-        K: Hash + From<&'b Q>,
+        K: Hash,
+        Q: ToOwned<Owned = K>,
         S: BuildHasher,
     {
         match self {
@@ -4487,13 +4567,13 @@ impl<'map, 'key, K, Q: ?Sized, V, S, A: Allocator> VacantEntryRef<'map, 'key, K,
     pub fn insert(self, value: V) -> &'map mut V
     where
         K: Hash,
-        &'key Q: Into<K>,
+        Q: ToOwned<Owned = K>,
         S: BuildHasher,
     {
         let table = &mut self.table.table;
         let entry = table.insert_entry(
             self.hash,
-            (self.key.into(), value),
+            (self.key.to_owned(), value),
             make_hasher::<_, V, S>(&self.table.hash_builder),
         );
         &mut entry.1
@@ -4504,7 +4584,7 @@ impl<'map, 'key, K, Q: ?Sized, V, S, A: Allocator> VacantEntryRef<'map, 'key, K,
     ///
     /// Unlike [`VacantEntryRef::insert`], this method allows the key to be
     /// explicitly specified, which is useful for key types that don't implement
-    /// `K: From<&Q>`.
+    /// `ToOwned`.
     ///
     /// # Panics
     ///
@@ -4520,7 +4600,7 @@ impl<'map, 'key, K, Q: ?Sized, V, S, A: Allocator> VacantEntryRef<'map, 'key, K,
     /// let mut map = HashMap::<(String, String), char>::new();
     /// let k = ("c".to_string(), "C".to_string());
     /// let v =  match map.entry_ref(&k) {
-    ///   // Insert cannot be used here because tuples do not implement From.
+    ///   // Insert cannot be used here because tuples do not implement ToOwned.
     ///   // However this works because we can manually clone instead.
     ///   EntryRef::Vacant(r) => r.insert_with_key(k.clone(), 'c'),
     ///   // In this branch we avoid the clone.
@@ -4535,17 +4615,51 @@ impl<'map, 'key, K, Q: ?Sized, V, S, A: Allocator> VacantEntryRef<'map, 'key, K,
         Q: Equivalent<K>,
         S: BuildHasher,
     {
-        let table = &mut self.table.table;
-        assert!(
-            (self.key).equivalent(&key),
-            "key used for Entry creation is not equivalent to the one used for insertion"
-        );
-        let entry = table.insert_entry(
-            self.hash,
-            (key, value),
-            make_hasher::<_, V, S>(&self.table.hash_builder),
-        );
-        &mut entry.1
+        self.insert_entry_with_key(key, value).into_mut()
+    }
+
+    /// Sets the key and value of the entry and returns a mutable reference to
+    /// the inserted value, without checking the equivalence of the key.
+    ///
+    /// See [`insert_with_key`](Self::insert_with_key) for more information.
+    ///
+    /// # Safety
+    ///
+    /// This operation is safe if the keys are equivalent.
+    ///
+    /// Additionally, this operation (and following operations) are guaranteed
+    /// to not violate memory safety.
+    ///
+    /// However this operation is still unsafe because the resulting `HashMap`
+    /// may be passed to unsafe code which does expect the map to behave
+    /// correctly. If the map has keys at unexpected positions inside it,
+    /// future operations may panic, loop forever, or return unexpected results,
+    /// potentially violating memory safety.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hashbrown::hash_map::EntryRef;
+    /// use hashbrown::HashMap;
+    ///
+    /// let mut map = HashMap::<(String, String), char>::new();
+    /// let k = ("c".to_string(), "C".to_string());
+    /// let v =  match map.entry_ref(&k) {
+    ///   // SAFETY: We trust the `Clone` implementation to return an equivalent value
+    ///   EntryRef::Vacant(r) => unsafe { r.insert_with_key_unchecked(k.clone(), 'c') },
+    ///   // In this branch we avoid the clone.
+    ///   EntryRef::Occupied(r) => r.into_mut(),
+    /// };
+    /// assert_eq!(*v, 'c');
+    /// ```
+    #[cfg_attr(feature = "inline-more", inline)]
+    pub unsafe fn insert_with_key_unchecked(self, key: K, value: V) -> &'map mut V
+    where
+        K: Hash,
+        S: BuildHasher,
+    {
+        // SAFETY: Guaranteed by caller.
+        unsafe { self.insert_entry_with_key_unchecked(key, value) }.into_mut()
     }
 
     /// Sets the value of the entry with the [`VacantEntryRef`]'s key,
@@ -4559,7 +4673,7 @@ impl<'map, 'key, K, Q: ?Sized, V, S, A: Allocator> VacantEntryRef<'map, 'key, K,
     ///
     /// let mut map: HashMap<&str, u32> = HashMap::new();
     ///
-    /// if let EntryRef::Vacant(v) = map.entry_ref("poneyland") {
+    /// if let EntryRef::Vacant(v) = map.entry_ref(&"poneyland") {
     ///     let o = v.insert_entry(37);
     ///     assert_eq!(o.get(), &37);
     /// }
@@ -4568,12 +4682,12 @@ impl<'map, 'key, K, Q: ?Sized, V, S, A: Allocator> VacantEntryRef<'map, 'key, K,
     pub fn insert_entry(self, value: V) -> OccupiedEntry<'map, K, V, S, A>
     where
         K: Hash,
-        &'key Q: Into<K>,
+        Q: ToOwned<Owned = K>,
         S: BuildHasher,
     {
         let elem = self.table.table.insert(
             self.hash,
-            (self.key.into(), value),
+            (self.key.to_owned(), value),
             make_hasher::<_, V, S>(&self.table.hash_builder),
         );
         OccupiedEntry {
@@ -4581,6 +4695,110 @@ impl<'map, 'key, K, Q: ?Sized, V, S, A: Allocator> VacantEntryRef<'map, 'key, K,
             elem,
             table: self.table,
         }
+    }
+
+    /// Sets the key and value of the entry and returns an [`OccupiedEntry`].
+    ///
+    /// Unlike [`VacantEntryRef::insert_entry`], this method allows the key to
+    /// be explicitly specified, which is useful for key types that don't
+    /// implement `ToOwned`.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if `key` is not equivalent to the key used to create
+    /// the `VacantEntryRef`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hashbrown::hash_map::EntryRef;
+    /// use hashbrown::HashMap;
+    ///
+    /// let mut map = HashMap::<(String, String), char>::new();
+    /// let k = ("c".to_string(), "C".to_string());
+    /// let r = match map.entry_ref(&k) {
+    ///   // Insert cannot be used here because tuples do not implement ToOwned.
+    ///   // However this works because we can manually clone instead.
+    ///   EntryRef::Vacant(r) => r.insert_entry_with_key(k.clone(), 'c'),
+    ///   // In this branch we avoid the clone.
+    ///   EntryRef::Occupied(r) => r,
+    /// };
+    /// assert_eq!(r.get(), &'c');
+    /// ```
+    #[cfg_attr(feature = "inline-more", inline)]
+    pub fn insert_entry_with_key(self, key: K, value: V) -> OccupiedEntry<'map, K, V, S, A>
+    where
+        K: Hash,
+        Q: Equivalent<K>,
+        S: BuildHasher,
+    {
+        assert!(
+            (self.key).equivalent(&key),
+            "key used for Entry creation is not equivalent to the one used for insertion"
+        );
+        // SAFETY: We checked equivalence first.
+        unsafe { self.insert_entry_with_key_unchecked(key, value) }
+    }
+
+    /// Sets the key and value of the entry and returns an [`OccupiedEntry`],
+    /// without checking the equivalence of the key.
+    ///
+    /// See [`insert_entry_with_key`](Self::insert_entry_with_key) for more information.
+    ///
+    /// # Safety
+    ///
+    /// This operation is safe if the keys are equivalent.
+    ///
+    /// Additionally, this operation (and following operations) are guaranteed
+    /// to not violate memory safety.
+    ///
+    /// However this operation is still unsafe because the resulting `HashMap`
+    /// may be passed to unsafe code which does expect the map to behave
+    /// correctly. If the map has keys at unexpected positions inside it,
+    /// future operations may panic, loop forever, or return unexpected results,
+    /// potentially violating memory safety.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hashbrown::hash_map::EntryRef;
+    /// use hashbrown::HashMap;
+    ///
+    /// let mut map = HashMap::<(String, String), char>::new();
+    /// let k = ("c".to_string(), "C".to_string());
+    /// let r = match map.entry_ref(&k) {
+    ///   // SAFETY: We trust the `Clone` implementation to return an equivalent key
+    ///   EntryRef::Vacant(r) => unsafe { r.insert_entry_with_key_unchecked(k.clone(), 'c') },
+    ///   // In this branch we avoid the clone.
+    ///   EntryRef::Occupied(r) => r,
+    /// };
+    /// assert_eq!(r.get(), &'c');
+    /// ```
+    #[cfg_attr(feature = "inline-more", inline)]
+    pub unsafe fn insert_entry_with_key_unchecked(
+        self,
+        key: K,
+        value: V,
+    ) -> OccupiedEntry<'map, K, V, S, A>
+    where
+        K: Hash,
+        S: BuildHasher,
+    {
+        let elem = self.table.table.insert(
+            self.hash,
+            (key, value),
+            make_hasher::<_, V, S>(&self.table.hash_builder),
+        );
+        OccupiedEntry {
+            hash: self.hash,
+            elem,
+            table: self.table,
+        }
+    }
+
+    /// Converts the `VacantEntryRef` into a mutable reference to the underlying map.
+    pub fn into_map(self) -> &'map mut HashMap<K, V, S, A> {
+        self.table
     }
 }
 
@@ -4655,7 +4873,7 @@ where
         let reserve = if self.is_empty() {
             iter.size_hint().0
         } else {
-            (iter.size_hint().0 + 1) / 2
+            iter.size_hint().0.div_ceil(2)
         };
         self.reserve(reserve);
         iter.for_each(move |(k, v)| {
@@ -4679,7 +4897,7 @@ where
         let reserve = if self.is_empty() {
             additional
         } else {
-            (additional + 1) / 2
+            additional.div_ceil(2)
         };
         self.reserve(reserve);
     }
@@ -4697,8 +4915,6 @@ where
     /// Inserts all new key-values from the iterator to existing `HashMap<K, V, S, A>`.
     /// Replace values with existing keys with new values returned from the iterator.
     /// The keys and values must implement [`Copy`] trait.
-    ///
-    /// [`Copy`]: https://doc.rust-lang.org/core/marker/trait.Copy.html
     ///
     /// # Examples
     ///
@@ -4763,8 +4979,6 @@ where
     /// Replace values with existing keys with new values returned from the iterator.
     /// The keys and values must implement [`Copy`] trait.
     ///
-    /// [`Copy`]: https://doc.rust-lang.org/core/marker/trait.Copy.html
-    ///
     /// # Examples
     ///
     /// ```
@@ -4810,7 +5024,7 @@ where
     }
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn assert_covariance() {
     fn map_key<'new>(v: HashMap<&'static str, u8>) -> HashMap<&'new str, u8> {
         v
@@ -4859,16 +5073,16 @@ mod test_map {
     use super::Entry::{Occupied, Vacant};
     use super::EntryRef;
     use super::HashMap;
-    use crate::raw::{AllocError, Allocator, Global};
-    use alloc::string::{String, ToString};
-    use alloc::sync::Arc;
+    use crate::alloc::{AllocError, Allocator, Global};
     use core::alloc::Layout;
     use core::ptr::NonNull;
     use core::sync::atomic::{AtomicI8, Ordering};
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::SmallRng};
     use std::borrow::ToOwned;
     use std::cell::RefCell;
     use std::vec::Vec;
+    use stdalloc::string::String;
+    use stdalloc::sync::Arc;
 
     #[test]
     fn test_zero_capacities() {
@@ -4932,7 +5146,6 @@ mod test_map {
         assert_eq!(m.len(), 1);
         assert!(m.insert(2, 4).is_none());
         assert_eq!(m.len(), 2);
-        #[allow(clippy::redundant_clone)]
         let m2 = m.clone();
         assert_eq!(*m2.get(&1).unwrap(), 2);
         assert_eq!(*m2.get(&2).unwrap(), 4);
@@ -5731,8 +5944,8 @@ mod test_map {
 
     #[test]
     fn test_entry_take_doesnt_corrupt() {
-        #![allow(deprecated)] //rand
-                              // Test for #19292
+        #![expect(deprecated)] //rand
+        // Test for #19292
         fn check(m: &HashMap<i32, ()>) {
             for k in m.keys() {
                 assert!(m.contains_key(k), "{k} is in keys() but not in the map?");
@@ -5767,8 +5980,8 @@ mod test_map {
 
     #[test]
     fn test_entry_ref_take_doesnt_corrupt() {
-        #![allow(deprecated)] //rand
-                              // Test for #19292
+        #![expect(deprecated)] //rand
+        // Test for #19292
         fn check(m: &HashMap<std::string::String, ()>) {
             for k in m.keys() {
                 assert!(m.contains_key(k), "{k} is in keys() but not in the map?");
@@ -5820,7 +6033,6 @@ mod test_map {
     }
 
     #[test]
-    #[allow(clippy::needless_borrow)]
     fn test_extend_ref_kv_tuple() {
         use std::ops::AddAssign;
         let mut a = HashMap::new();
@@ -6042,8 +6254,8 @@ mod test_map {
 
     #[test]
     fn test_replace_entry_with_doesnt_corrupt() {
-        #![allow(deprecated)] //rand
-                              // Test for #19292
+        #![expect(deprecated)] //rand
+        // Test for #19292
         fn check(m: &HashMap<i32, ()>) {
             for k in m.keys() {
                 assert!(m.contains_key(k), "{k} is in keys() but not in the map?");
@@ -6180,7 +6392,7 @@ mod test_map {
         );
 
         let ys = map.get_disjoint_key_value_mut(["bar", "dip"]);
-        assert_eq!(ys, [Some((&"bar".to_string(), &mut 10)), None]);
+        assert_eq!(ys, [Some((&"bar".to_owned(), &mut 10)), None]);
     }
 
     #[test]
@@ -6239,7 +6451,7 @@ mod test_map {
     #[test]
     #[should_panic = "panic in clone"]
     fn test_clone_from_memory_leaks() {
-        use alloc::vec::Vec;
+        use stdalloc::vec::Vec;
 
         struct CheckedClone {
             panic_in_clone: bool,
@@ -6312,8 +6524,10 @@ mod test_map {
         }
 
         unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            let g = Global;
-            g.deallocate(ptr, layout)
+            unsafe {
+                let g = Global;
+                g.deallocate(ptr, layout);
+            }
         }
     }
 
@@ -6324,7 +6538,7 @@ mod test_map {
         {
             let mut map = HashMap::with_capacity_in(10, MyAlloc::new(dropped.clone()));
             for i in 0..10 {
-                map.entry(i).or_insert_with(|| "i".to_string());
+                map.entry(i).or_insert_with(|| "i".to_owned());
             }
 
             for (k, v) in map {
@@ -6405,7 +6619,7 @@ mod test_map {
         {
             let mut guard = guard(&mut map, |map| {
                 for (_, value) in map.iter_mut() {
-                    value.panic_in_drop = false
+                    value.panic_in_drop = false;
                 }
             });
 
@@ -6444,7 +6658,11 @@ mod test_map {
                     return Err(format!(
                         "Value is not equal to expected,\nvalue: `{:?}`,\nexpected: \
                         `CheckedCloneDrop {{ panic_in_clone: {}, panic_in_drop: {}, dropped: {}, data: {:?} }}`",
-                        value, panic_in_clone, panic_in_drop, false, fun(check_count)
+                        value,
+                        panic_in_clone,
+                        panic_in_drop,
+                        false,
+                        fun(check_count)
                     ));
                 }
                 check_count += 1;
@@ -6541,6 +6759,7 @@ mod test_map {
     /// We check that we have a working table if the clone operation from another
     /// thread ended in a panic (when buckets of maps are equal to each other).
     #[test]
+    #[cfg(panic = "unwind")]
     fn test_catch_panic_clone_from_when_len_is_equal() {
         use std::thread;
 
@@ -6565,10 +6784,10 @@ mod test_map {
                             Ok(map) => map,
                             Err(msg) => return msg,
                         };
-                    if map.table.buckets() != scope_map.table.buckets() {
+                    if map.table.num_buckets() != scope_map.table.num_buckets() {
                         return format!(
-                            "map.table.buckets() != scope_map.table.buckets(),\nleft: `{}`,\nright: `{}`",
-                            map.table.buckets(), scope_map.table.buckets()
+                            "map.table.num_buckets() != scope_map.table.num_buckets(),\nleft: `{}`,\nright: `{}`",
+                            map.table.num_buckets(), scope_map.table.num_buckets()
                         );
                     }
                     map.clone_from(&scope_map);
@@ -6590,7 +6809,7 @@ mod test_map {
             assert_eq!(unsafe { map.table.iter().count() }, 0);
             assert_eq!(unsafe { map.table.iter().iter.count() }, 0);
 
-            for idx in 0..map.table.buckets() {
+            for idx in 0..map.table.num_buckets() {
                 let idx = idx as u64;
                 assert!(
                     map.table.find(idx, |(k, _)| *k == idx).is_none(),
@@ -6606,6 +6825,7 @@ mod test_map {
     /// We check that we have a working table if the clone operation from another
     /// thread ended in a panic (when buckets of maps are not equal to each other).
     #[test]
+    #[cfg(panic = "unwind")]
     fn test_catch_panic_clone_from_when_len_is_not_equal() {
         use std::thread;
 
@@ -6633,10 +6853,10 @@ mod test_map {
                         Ok(map) => map,
                         Err(msg) => return msg,
                     };
-                    if map.table.buckets() == scope_map.table.buckets() {
+                    if map.table.num_buckets() == scope_map.table.num_buckets() {
                         return format!(
-                            "map.table.buckets() == scope_map.table.buckets(): `{}`",
-                            map.table.buckets()
+                            "map.table.num_buckets() == scope_map.table.num_buckets(): `{}`",
+                            map.table.num_buckets()
                         );
                     }
                     map.clone_from(&scope_map);
@@ -6658,7 +6878,7 @@ mod test_map {
             assert_eq!(unsafe { map.table.iter().count() }, 0);
             assert_eq!(unsafe { map.table.iter().iter.count() }, 0);
 
-            for idx in 0..map.table.buckets() {
+            for idx in 0..map.table.num_buckets() {
                 let idx = idx as u64;
                 assert!(
                     map.table.find(idx, |(k, _)| *k == idx).is_none(),
@@ -6686,7 +6906,7 @@ mod test_map_with_mmap_allocations {
     use super::HashMap;
     use crate::raw::prev_pow2;
     use core::alloc::Layout;
-    use core::ptr::{null_mut, NonNull};
+    use core::ptr::{NonNull, null_mut};
 
     #[cfg(feature = "nightly")]
     use core::alloc::{AllocError, Allocator};
@@ -6710,10 +6930,10 @@ mod test_map_with_mmap_allocations {
             }
 
             let page_size = result as usize;
-            if !page_size.is_power_of_two() {
-                Err(AllocError)
-            } else {
+            if page_size.is_power_of_two() {
                 Ok(Self { page_size })
+            } else {
+                Err(AllocError)
             }
         }
 
@@ -6745,32 +6965,27 @@ mod test_map_with_mmap_allocations {
                 return Err(AllocError);
             }
 
-            match NonNull::new(addr.cast()) {
-                Some(data) => {
-                    // SAFETY: this is NonNull::slice_from_raw_parts.
-                    Ok(unsafe {
-                        NonNull::new_unchecked(core::ptr::slice_from_raw_parts_mut(
-                            data.as_ptr(),
-                            len,
-                        ))
-                    })
-                }
-
+            if let Some(data) = NonNull::new(addr.cast()) {
+                // SAFETY: this is NonNull::slice_from_raw_parts.
+                Ok(unsafe {
+                    NonNull::new_unchecked(core::ptr::slice_from_raw_parts_mut(data.as_ptr(), len))
+                })
+            } else {
                 // This branch shouldn't be taken in practice, but since we
                 // cannot return null as a valid pointer in our type system,
                 // we attempt to handle it.
-                None => {
-                    _ = unsafe { libc::munmap(addr, len) };
-                    Err(AllocError)
-                }
+                _ = unsafe { libc::munmap(addr, len) };
+                Err(AllocError)
             }
         }
 
         unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            // If they allocated it with this layout, it must round correctly.
-            let size = self.fit_to_page_size(layout.size()).unwrap();
-            let _result = libc::munmap(ptr.as_ptr().cast(), size);
-            debug_assert_eq!(0, _result)
+            unsafe {
+                // If they allocated it with this layout, it must round correctly.
+                let size = self.fit_to_page_size(layout.size()).unwrap();
+                let _result = libc::munmap(ptr.as_ptr().cast(), size);
+                debug_assert_eq!(0, _result);
+            }
         }
     }
 

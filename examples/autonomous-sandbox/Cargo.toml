@@ -8,3 +8,6 @@ description = "Example: clawdstrike IRM sandbox wrapper"
 clawdstrike = { path = "../../crates/libs/clawdstrike" }
 tokio = { version = "1.49", features = ["full"] }
 anyhow = "1.0"
+
+[patch.crates-io]
+async-nats = { path = "../../infra/vendor/async-nats" }

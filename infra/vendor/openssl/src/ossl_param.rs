@@ -17,7 +17,7 @@ use crate::error::ErrorStack;
 use crate::util;
 use crate::{cvt, cvt_p};
 use foreign_types::ForeignType;
-use libc::{c_uint, c_void};
+use libc::{c_char, c_int, c_uint, c_void};
 use openssl_macros::corresponds;
 use std::ffi::CStr;
 use std::marker::PhantomData;
@@ -106,6 +106,24 @@ impl<'a> OsslParamBuilder<'a> {
         }
     }
 
+    /// Adds an utf8 string to `OsslParamBuilder`.
+    #[corresponds(OSSL_PARAM_BLD_push_utf8_string)]
+    pub(crate) fn add_utf8_string(
+        &mut self,
+        key: &'a CStr,
+        buf: &'a [u8],
+    ) -> Result<(), ErrorStack> {
+        unsafe {
+            cvt(ffi::OSSL_PARAM_BLD_push_utf8_string(
+                self.as_ptr(),
+                key.as_ptr(),
+                buf.as_ptr() as *const c_char,
+                buf.len(),
+            ))
+            .map(|_| ())
+        }
+    }
+
     /// Adds a octet string to `OsslParamBuilder`.
     #[corresponds(OSSL_PARAM_BLD_push_octet_string)]
     #[cfg_attr(any(not(ossl320), osslconf = "OPENSSL_NO_ARGON2"), allow(dead_code))]
@@ -120,6 +138,19 @@ impl<'a> OsslParamBuilder<'a> {
                 key.as_ptr(),
                 buf.as_ptr() as *const c_void,
                 buf.len(),
+            ))
+            .map(|_| ())
+        }
+    }
+
+    /// Adds a int to `OsslParamBuilder`.
+    #[corresponds(OSSL_PARAM_BLD_push_int)]
+    pub(crate) fn add_int(&mut self, key: &'a CStr, val: i32) -> Result<(), ErrorStack> {
+        unsafe {
+            cvt(ffi::OSSL_PARAM_BLD_push_int(
+                self.as_ptr(),
+                key.as_ptr(),
+                val as c_int,
             ))
             .map(|_| ())
         }
@@ -151,19 +182,10 @@ mod tests {
     #[test]
     fn test_builder_locate_octet_string() {
         let mut builder = OsslParamBuilder::new().unwrap();
-        builder
-            .add_octet_string(CStr::from_bytes_with_nul(b"key1\0").unwrap(), b"value1")
-            .unwrap();
+        builder.add_octet_string(c"key1", b"value1").unwrap();
         let params = builder.to_param().unwrap();
 
-        assert!(params
-            .locate_octet_string(CStr::from_bytes_with_nul(b"invalid\0").unwrap())
-            .is_err());
-        assert_eq!(
-            params
-                .locate_octet_string(CStr::from_bytes_with_nul(b"key1\0").unwrap())
-                .unwrap(),
-            b"value1"
-        );
+        assert!(params.locate_octet_string(c"invalid").is_err());
+        assert_eq!(params.locate_octet_string(c"key1").unwrap(), b"value1");
     }
 }

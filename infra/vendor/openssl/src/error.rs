@@ -54,6 +54,10 @@ impl ErrorStack {
             error.put();
         }
     }
+
+    pub(crate) fn internal_error(message: &'static str) -> ErrorStack {
+        ErrorStack(vec![Error::new_internal(message)])
+    }
 }
 
 impl ErrorStack {
@@ -85,7 +89,7 @@ impl error::Error for ErrorStack {}
 
 impl From<ErrorStack> for io::Error {
     fn from(e: ErrorStack) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, e)
+        io::Error::other(e)
     }
 }
 
@@ -127,14 +131,11 @@ impl Error {
                     let data = if flags & ffi::ERR_TXT_STRING != 0 {
                         let bytes = CStr::from_ptr(data as *const _).to_bytes();
                         let data = str::from_utf8(bytes).unwrap();
-                        #[cfg(not(any(boringssl, awslc)))]
                         let data = if flags & ffi::ERR_TXT_MALLOCED != 0 {
                             Cow::Owned(data.to_string())
                         } else {
                             Cow::Borrowed(data)
                         };
-                        #[cfg(any(boringssl, awslc))]
-                        let data = Cow::Borrowed(data);
                         Some(data)
                     } else {
                         None
@@ -156,6 +157,18 @@ impl Error {
                         data,
                     })
                 }
+            }
+        }
+    }
+
+    pub(crate) fn new_internal(message: &'static str) -> Error {
+        unsafe {
+            Error {
+                code: 0,
+                file: ShimStr::new(c"<rust-openssl>".as_ptr()),
+                line: 0,
+                func: None,
+                data: Some(Cow::Borrowed(message)),
             }
         }
     }

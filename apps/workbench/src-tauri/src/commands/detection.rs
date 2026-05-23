@@ -1956,8 +1956,7 @@ detection:
 
     #[test]
     fn format_sigma_source_compilation_comment_sanitizes_engine_kind() {
-        let comment =
-            format_sigma_source_compilation_comment("content\nschema_version: \"9.9.9\"");
+        let comment = format_sigma_source_compilation_comment("content\nschema_version: \"9.9.9\"");
 
         assert_eq!(
             comment,

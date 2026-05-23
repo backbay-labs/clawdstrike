@@ -81,6 +81,21 @@ function looksLikePathToken(t: string): boolean {
   return false;
 }
 
+// Looser classifier used only inside known write-operand commands (mkdir/touch/
+// rm/etc.). Accepts any non-empty, non-URL token — by the time we reach this
+// caller we have already filtered out flags (start with "-") and redirection
+// operators. Accepting numeric names too (e.g. `touch 123`, `mkdir 2026`) is
+// required so the fail-closed `allowed_write_roots` check is not bypassed by
+// commands whose targets happen to be all digits. A small downside is that
+// numeric flag values like `install -m 0644` may be classified as reads (not
+// writes), which is benign — `0644` will not match any forbidden path or
+// allowed write root, so it is dropped harmlessly.
+function looksLikeWriteOperand(t: string): boolean {
+  if (!t) return false;
+  if (t.includes("://")) return false;
+  return true;
+}
+
 const WRITE_PATH_FLAG_NAMES = new Set([
   // Common output flags
   "o",
@@ -95,11 +110,193 @@ const WRITE_PATH_FLAG_NAMES = new Set([
   "logpath",
 ]);
 
+const DESTINATION_DIRECTORY_FLAG_NAMES = new Set(["target-directory"]);
+
+const COMMANDS_WITH_DESTINATION_WRITE_OPERAND = new Set(["cp", "install", "ln", "mv"]);
+
+const COMMANDS_WITH_WRITE_PATH_OPERANDS = new Set([
+  "mkdir",
+  "rm",
+  "rmdir",
+  "tee",
+  "touch",
+  "unlink",
+]);
+
+const SHELL_COMMAND_PREFIXES = new Set([
+  "builtin",
+  "command",
+  "doas",
+  "env",
+  "exec",
+  "nohup",
+  "sudo",
+  "time",
+]);
+
+// Per-wrapper tables of long-form / short-form option NAMES that take a value
+// argument. Scoped per prefix because the same letter means different things
+// across wrappers — e.g. `sudo -p prompt` consumes a value, but bash builtin
+// `time -p` is a boolean (POSIX timing output), so a shared table would let
+// `time -p touch /tmp/x` swallow `touch` as the value for `-p` and bypass
+// write-root enforcement.
+const SUDO_FLAGS_WITH_VALUE = new Set([
+  "argv0",
+  "block-signal",
+  "C",
+  "chdir",
+  "close-from",
+  "D",
+  "default-signal",
+  "g",
+  "group",
+  "h",
+  "host",
+  "ignore-signal",
+  "p",
+  "prompt",
+  "r",
+  "role",
+  "t",
+  "type",
+  "u",
+  "user",
+]);
+
+const DOAS_FLAGS_WITH_VALUE = new Set(["a", "C", "u"]);
+
+const ENV_FLAGS_WITH_VALUE = new Set([
+  "C",
+  "chdir",
+  "S",
+  "split-string",
+  "u",
+  "unset",
+]);
+
+// GNU /usr/bin/time accepts -f FORMAT and -o FILE; bash builtin `time` only
+// understands `-p` (no value). Combining them is fine because the union still
+// excludes `-p`, which is the case Codex flagged.
+const TIME_FLAGS_WITH_VALUE = new Set(["f", "format", "o", "output"]);
+
+const EXEC_FLAGS_WITH_VALUE = new Set(["a"]);
+
+const SHELL_PREFIX_FLAGS_WITH_VALUE_BY_PREFIX: Record<string, Set<string>> = {
+  sudo: SUDO_FLAGS_WITH_VALUE,
+  doas: DOAS_FLAGS_WITH_VALUE,
+  env: ENV_FLAGS_WITH_VALUE,
+  time: TIME_FLAGS_WITH_VALUE,
+  exec: EXEC_FLAGS_WITH_VALUE,
+  // nohup, builtin, command: no flag-with-value options worth modeling.
+};
+
+function shellPrefixFlagsWithValue(prefix: string | null): Set<string> | null {
+  if (!prefix) return null;
+  return SHELL_PREFIX_FLAGS_WITH_VALUE_BY_PREFIX[prefix] ?? null;
+}
+
 function isWritePathFlagToken(t: string): boolean {
   if (!t) return false;
   if (!t.startsWith("-")) return false;
   const normalized = t.replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
   return WRITE_PATH_FLAG_NAMES.has(normalized);
+}
+
+function destinationDirectoryFlagValue(t: string): string | null {
+  const cleaned = cleanPathToken(t);
+  if (cleaned === "-t" || cleaned === "--target-directory") {
+    return null;
+  }
+
+  if (cleaned.startsWith("-t") && cleaned.length > 2 && !cleaned.startsWith("--")) {
+    return cleanPathToken(cleaned.slice(2));
+  }
+
+  const eq = cleaned.indexOf("=");
+  if (eq > 0) {
+    const lhs = cleaned.slice(0, eq).replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
+    if (DESTINATION_DIRECTORY_FLAG_NAMES.has(lhs)) {
+      return cleanPathToken(cleaned.slice(eq + 1));
+    }
+  }
+
+  return null;
+}
+
+function isDestinationDirectoryFlagToken(t: string): boolean {
+  const cleaned = cleanPathToken(t);
+  if (cleaned === "-t") {
+    return true;
+  }
+  const normalized = cleaned.replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
+  return DESTINATION_DIRECTORY_FLAG_NAMES.has(normalized);
+}
+
+// `install -d` / `install --directory` creates each operand as a directory.
+// Detect either the standalone `-d` short flag, the `--directory` long flag,
+// or `-d` clustered with other short flags (e.g. `-pd`).
+function isInstallDirectoryFlagToken(t: string): boolean {
+  const cleaned = cleanPathToken(t);
+  if (!cleaned.startsWith("-") || cleaned.length < 2) return false;
+  if (cleaned.startsWith("--")) {
+    const name = cleaned.slice(2).split("=")[0].toLowerCase().replace(/_/g, "-");
+    return name === "directory";
+  }
+  // Short options can be clustered: -pd, -vd, etc.
+  const cluster = cleaned.slice(1).split("=")[0];
+  return cluster.includes("d");
+}
+
+function isShellCommandPrefixToken(commandToken: string): boolean {
+  return SHELL_COMMAND_PREFIXES.has(commandToken);
+}
+
+function isShellEnvironmentAssignmentToken(t: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*=/.test(t);
+}
+
+function isShellPrefixOptionToken(t: string): boolean {
+  return t === "--" || (t.startsWith("-") && t.length > 1);
+}
+
+function shellPrefixOptionValueArity(t: string, prefix: string | null): number {
+  if (!isShellPrefixOptionToken(t) || t === "--" || t.includes("=")) {
+    return 0;
+  }
+
+  const optionName = t.replace(/^-+/, "");
+  if (!optionName) {
+    return 0;
+  }
+
+  const table = shellPrefixFlagsWithValue(prefix);
+  if (!table) {
+    return 0;
+  }
+
+  if (t.startsWith("--")) {
+    return table.has(optionName) ? 1 : 0;
+  }
+
+  if (optionName.length > 1) {
+    for (let i = 0; i < optionName.length; i++) {
+      if (table.has(optionName[i])) {
+        return i === optionName.length - 1 ? 1 : 0;
+      }
+    }
+    return 0;
+  }
+
+  return table.has(optionName) ? 1 : 0;
+}
+
+function commandNameToken(t: string): string {
+  const cleaned = cleanPathToken(t).toLowerCase();
+  return path.basename(cleaned);
+}
+
+function isShellControlToken(t: string): boolean {
+  return t === "&&" || t === "||" || t === "|" || t === ";" || t === "&";
 }
 
 function extractCommandPathCandidates(
@@ -109,9 +306,205 @@ function extractCommandPathCandidates(
   const tokens = [command, ...args].map((t) => String(t ?? "")).filter(Boolean);
   const reads: string[] = [];
   const writes: string[] = [];
+  let writeOperandMode: "all" | "destination" | null = null;
+  // Name of the command that set writeOperandMode (e.g. "cp", "install"). Used
+  // to apply command-specific switches such as `install -d DIR...` which turns
+  // a normally-destination-mode command into create-all-operands mode.
+  let writeOperandCommand: string | null = null;
+  // True after the POSIX `--` end-of-options marker. Subsequent tokens are
+  // positional and must NOT be filtered out for starting with `-`, otherwise
+  // `touch -- -dashfile` would leave writes empty and bypass the fail-closed
+  // allowed_write_roots gate.
+  let afterDoubleDash = false;
+  let operandPaths: string[] = [];
+  let explicitDestinationOperandPaths: string[] = [];
+  let expectsCommandToken = true;
+  // Name of the shell wrapper currently being scanned for option arguments
+  // (e.g. "sudo", "env", "time"). `null` means we are not currently inside a
+  // wrapper's option list. Used to look up the correct flag-with-value table
+  // so that e.g. `time -p touch /tmp/x` does not consume `touch` as the value
+  // of bash builtin `time -p`.
+  let activeShellPrefix: string | null = null;
+  let shellPrefixOptionValuesRemaining = 0;
+
+  const flushCommandOperands = () => {
+    if (
+      !writeOperandMode ||
+      (operandPaths.length === 0 && explicitDestinationOperandPaths.length === 0)
+    ) {
+      operandPaths = [];
+      explicitDestinationOperandPaths = [];
+      return;
+    }
+
+    if (writeOperandMode === "destination") {
+      if (explicitDestinationOperandPaths.length > 0) {
+        reads.push(...operandPaths);
+        writes.push(...explicitDestinationOperandPaths);
+      } else if (operandPaths.length === 1) {
+        // `ln TARGET` creates a link in the cwd; `install -d DIR` creates
+        // the directory; a malformed `cp X` errors before writing. In every
+        // valid form the single operand is a write target, so classify as a
+        // write to keep the fail-closed allowed_write_roots check effective.
+        writes.push(operandPaths[0]);
+      } else {
+        reads.push(...operandPaths.slice(0, -1));
+        writes.push(operandPaths[operandPaths.length - 1]);
+      }
+    } else {
+      writes.push(...operandPaths);
+    }
+
+    operandPaths = [];
+    explicitDestinationOperandPaths = [];
+  };
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
+    const cleanedToken = cleanPathToken(t);
+    const commandToken = commandNameToken(t);
+
+    if (isShellControlToken(cleanedToken)) {
+      flushCommandOperands();
+      writeOperandMode = null;
+      writeOperandCommand = null;
+      afterDoubleDash = false;
+      expectsCommandToken = true;
+      activeShellPrefix = null;
+      shellPrefixOptionValuesRemaining = 0;
+      continue;
+    }
+
+    if (expectsCommandToken) {
+      if (shellPrefixOptionValuesRemaining > 0) {
+        shellPrefixOptionValuesRemaining -= 1;
+        continue;
+      }
+
+      if (COMMANDS_WITH_DESTINATION_WRITE_OPERAND.has(commandToken)) {
+        flushCommandOperands();
+        writeOperandMode = "destination";
+        writeOperandCommand = commandToken;
+        afterDoubleDash = false;
+        expectsCommandToken = false;
+        activeShellPrefix = null;
+        continue;
+      }
+
+      if (COMMANDS_WITH_WRITE_PATH_OPERANDS.has(commandToken)) {
+        flushCommandOperands();
+        writeOperandMode = "all";
+        writeOperandCommand = commandToken;
+        afterDoubleDash = false;
+        expectsCommandToken = false;
+        activeShellPrefix = null;
+        continue;
+      }
+
+      if (isShellCommandPrefixToken(commandToken)) {
+        activeShellPrefix = commandToken;
+        continue;
+      }
+
+      if (isShellEnvironmentAssignmentToken(cleanedToken)) {
+        // Top-level env assignment (e.g. `FOO=1 mkdir x`) precedes a command
+        // — keep scanning without changing wrapper state. Inside a wrapper
+        // (`env -i PATH=foo -S cmd`), the assignment is a positional arg to
+        // the wrapper, so do NOT reset activeShellPrefix or its arity table
+        // would stop applying to subsequent flags like `-S`.
+        continue;
+      }
+
+      // env -S / --split-string takes a quoted command-line payload that env
+      // splits and executes — `env -S 'touch /tmp/x'` is a real write. If we
+      // let the generic arity table swallow that payload as an opaque value,
+      // the inner command never reaches write-root enforcement. Tokenize the
+      // payload (whitespace split is enough for our heuristic classifier) and
+      // recursively classify it so its reads/writes feed back here.
+      if (activeShellPrefix === "env" && isShellPrefixOptionToken(cleanedToken)) {
+        if (cleanedToken === "-S" || cleanedToken === "--split-string") {
+          const next = tokens[i + 1];
+          if (typeof next === "string" && next.length > 0) {
+            const parts = next.split(/\s+/).filter(Boolean);
+            if (parts.length > 0) {
+              const nested = extractCommandPathCandidates(parts[0], parts.slice(1));
+              reads.push(...nested.reads);
+              writes.push(...nested.writes);
+            }
+            i += 1;
+          }
+          continue;
+        }
+        const eqIdx = cleanedToken.indexOf("=");
+        if (eqIdx > 0) {
+          const lhs = cleanedToken.slice(0, eqIdx).replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
+          if (lhs === "split-string" || lhs === "s") {
+            const parts = cleanedToken.slice(eqIdx + 1).split(/\s+/).filter(Boolean);
+            if (parts.length > 0) {
+              const nested = extractCommandPathCandidates(parts[0], parts.slice(1));
+              reads.push(...nested.reads);
+              writes.push(...nested.writes);
+            }
+            continue;
+          }
+        }
+      }
+
+      if (activeShellPrefix && isShellPrefixOptionToken(cleanedToken)) {
+        shellPrefixOptionValuesRemaining = shellPrefixOptionValueArity(
+          cleanedToken,
+          activeShellPrefix,
+        );
+        continue;
+      }
+
+      expectsCommandToken = false;
+      activeShellPrefix = null;
+    }
+
+    // POSIX `--` end-of-options: every subsequent token in this command is a
+    // positional operand, regardless of leading dashes. Handled before any
+    // other operand classifier so that `touch -- -dashfile` records
+    // `-dashfile` as a write target.
+    if (writeOperandMode && !afterDoubleDash && cleanedToken === "--") {
+      afterDoubleDash = true;
+      continue;
+    }
+
+    if (writeOperandMode && afterDoubleDash) {
+      if (looksLikeWriteOperand(cleanedToken)) {
+        operandPaths.push(cleanedToken);
+      }
+      continue;
+    }
+
+    if (writeOperandMode === "destination") {
+      // `install -d DIR...` / `install --directory DIR...` creates every
+      // operand as a directory rather than copying a file to a destination,
+      // so switch to all-operand-write mode for the rest of this command.
+      if (writeOperandCommand === "install" && isInstallDirectoryFlagToken(t)) {
+        writeOperandMode = "all";
+        continue;
+      }
+
+      const inlineDestinationDirectory = destinationDirectoryFlagValue(t);
+      if (inlineDestinationDirectory && looksLikePathToken(inlineDestinationDirectory)) {
+        explicitDestinationOperandPaths.push(inlineDestinationDirectory);
+        continue;
+      }
+
+      if (isDestinationDirectoryFlagToken(t)) {
+        const next = tokens[i + 1];
+        if (typeof next === "string" && next.length > 0) {
+          const cleaned = cleanPathToken(next);
+          if (looksLikePathToken(cleaned)) {
+            explicitDestinationOperandPaths.push(cleaned);
+            i += 1;
+            continue;
+          }
+        }
+      }
+    }
 
     // Redirection operators: treat as write/read targets.
     if (isRedirectionOp(t)) {
@@ -147,6 +540,15 @@ function extractCommandPathCandidates(
       continue;
     }
 
+    if (
+      writeOperandMode &&
+      !cleanedToken.startsWith("-") &&
+      looksLikeWriteOperand(cleanedToken)
+    ) {
+      operandPaths.push(cleanedToken);
+      continue;
+    }
+
     // Flags like --output /path or -o /path (write targets)
     if (isWritePathFlagToken(t)) {
       const next = tokens[i + 1];
@@ -171,11 +573,12 @@ function extractCommandPathCandidates(
       }
     }
 
-    const cleanedToken = cleanPathToken(t);
     if (looksLikePathToken(cleanedToken)) {
       reads.push(cleanedToken);
     }
   }
+
+  flushCommandOperands();
 
   const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));
   return { reads: uniq(reads), writes: uniq(writes) };
@@ -1159,6 +1562,17 @@ export class PolicyEngine {
         };
         const d = this.checkFilesystem(synthetic);
         if (d.status === "deny" || d.status === "warn") return d;
+      }
+
+      if (writes.length > 0 && !this.policy.filesystem?.allowed_write_roots?.length) {
+        return this.applyOnViolation(
+          denyDecision(
+            POLICY_REASON_CODES.FILESYSTEM_WRITE_ROOT_DENY,
+            "Shell write path not in allowed roots",
+            "forbidden_path",
+            "high",
+          ),
+        );
       }
     }
 

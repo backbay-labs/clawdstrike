@@ -1,5 +1,5 @@
 use super::super::*;
-use libc::*;
+use std::ffi::{c_int, c_long, c_uchar, c_ulong};
 
 pub enum OCSP_CERTID {}
 
@@ -9,14 +9,12 @@ pub enum OCSP_REQUEST {}
 
 pub enum OCSP_BASICRESP {}
 
-const_ptr_api! {
-    extern "C" {
-        pub fn OCSP_cert_to_id(
-            dgst: *const EVP_MD,
-            subject: #[const_ptr_if(any(ossl110, libressl))] X509,
-            issuer: #[const_ptr_if(any(ossl110, libressl))] X509,
-        ) -> *mut OCSP_CERTID;
-    }
+extern "C" {
+    pub fn OCSP_cert_to_id(
+        dgst: *const EVP_MD,
+        subject: *const X509,
+        issuer: *const X509,
+    ) -> *mut OCSP_CERTID;
 }
 
 extern "C" {

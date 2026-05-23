@@ -1,24 +1,15 @@
 use super::super::*;
-use libc::*;
+use libc::size_t;
+use std::ffi::{c_char, c_int, c_long, c_ulong, c_void};
 
 stack!(stack_st_void);
 
-cfg_if! {
-    if #[cfg(any(ossl110, libressl))] {
-        extern "C" {
-            pub fn OpenSSL_version_num() -> c_ulong;
-            pub fn OpenSSL_version(key: c_int) -> *const c_char;
-        }
-    } else {
-        extern "C" {
-            pub fn SSLeay() -> c_ulong;
-            pub fn SSLeay_version(key: c_int) -> *const c_char;
-        }
-    }
+extern "C" {
+    pub fn OpenSSL_version_num() -> c_ulong;
+    pub fn OpenSSL_version(key: c_int) -> *const c_char;
 }
 
 extern "C" {
-    #[cfg(any(ossl110, libressl))]
     pub fn CRYPTO_get_ex_new_index(
         class_index: c_int,
         argl: c_long,
@@ -71,9 +62,9 @@ cfg_if! {
 }
 
 extern "C" {
-    #[cfg(all(ossl102, not(ossl300)))]
+    #[cfg(all(ossl110, not(ossl300)))]
     pub fn FIPS_mode() -> c_int;
-    #[cfg(all(ossl102, not(ossl300)))]
+    #[cfg(all(ossl110, not(ossl300)))]
     pub fn FIPS_mode_set(onoff: c_int) -> c_int;
 
     pub fn CRYPTO_memcmp(a: *const c_void, b: *const c_void, len: size_t) -> c_int;

@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.82.0"
 name = "wasm-encoder"
-version = "0.245.1"
+version = "0.246.2"
 authors = ["Nick Fitzgerald <fitzgen@gmail.com>"]
 build = false
 autolib = false
@@ -50,7 +50,7 @@ version = "0.1.0"
 default-features = false
 
 [dependencies.wasmparser]
-version = "0.245.1"
+version = "0.246.2"
 features = [
     "simd",
     "simd",
@@ -66,7 +66,7 @@ default-features = false
 version = "3.2.0"
 
 [dev-dependencies.wasmprinter]
-version = "0.245.1"
+version = "0.246.2"
 default-features = false
 
 [lints.clippy]
