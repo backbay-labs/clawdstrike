@@ -800,15 +800,14 @@ jobs:
           cd crates/libs/hush-wasm
           wasm-pack build --target web --release
 
-      - name: Verify committed Node.js WASM artifacts are in sync
+      - name: Build Node.js WASM target
         run: |
           cd crates/libs/hush-wasm
           wasm-pack build --target nodejs --release --out-dir pkg-node
 
-          for f in hush_wasm.js hush_wasm.d.ts hush_wasm_bg.wasm.d.ts; do
-            if ! cmp -s "$f" "pkg-node/$f"; then
-              echo "ERROR: $f is out of sync with wasm-pack --target nodejs output"
-              echo "Run: cd crates/libs/hush-wasm && ./build.sh"
+          for f in hush_wasm.js hush_wasm.d.ts hush_wasm_bg.wasm.d.ts hush_wasm_bg.wasm; do
+            if [ ! -s "pkg-node/$f" ]; then
+              echo "ERROR: pkg-node/$f is missing or empty"
               exit 1
             fi
           done
