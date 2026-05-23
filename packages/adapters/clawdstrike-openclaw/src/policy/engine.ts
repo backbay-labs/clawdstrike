@@ -82,19 +82,18 @@ function looksLikePathToken(t: string): boolean {
 }
 
 // Looser classifier used only inside known write-operand commands (mkdir/touch/
-// rm/etc.). Accepts plain relative filenames like `newdir` or `foo.txt` that
-// `looksLikePathToken` rejects, so the fail-closed `allowed_write_roots` check
-// is not bypassed. Excludes purely numeric / size-style tokens to avoid
-// misclassifying flag values such as `install -m 0644` or `dd bs=1024`.
+// rm/etc.). Accepts any non-empty, non-URL token — by the time we reach this
+// caller we have already filtered out flags (start with "-") and redirection
+// operators. Accepting numeric names too (e.g. `touch 123`, `mkdir 2026`) is
+// required so the fail-closed `allowed_write_roots` check is not bypassed by
+// commands whose targets happen to be all digits. A small downside is that
+// numeric flag values like `install -m 0644` may be classified as reads (not
+// writes), which is benign — `0644` will not match any forbidden path or
+// allowed write root, so it is dropped harmlessly.
 function looksLikeWriteOperand(t: string): boolean {
   if (!t) return false;
   if (t.includes("://")) return false;
-  if (looksLikePathToken(t)) return true;
-  // Reject purely numeric/sign/dot tokens (modes, sizes, version numbers).
-  if (/^[+\-]?[0-9.]+$/.test(t)) return false;
-  // Accept anything else that looks like a filename or directory component:
-  // contains a letter, underscore, or path separator.
-  return /[A-Za-z_\/]/.test(t);
+  return true;
 }
 
 const WRITE_PATH_FLAG_NAMES = new Set([

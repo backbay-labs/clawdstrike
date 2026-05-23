@@ -21,6 +21,9 @@ serde_json = "1"
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "time", "net", "macros"] }
 
+# Low-level socket options (IPV6_V6ONLY, SO_REUSEADDR) for dual-stack LAN discovery.
+socket2 = "0.6"
+
 # HTTP client
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 

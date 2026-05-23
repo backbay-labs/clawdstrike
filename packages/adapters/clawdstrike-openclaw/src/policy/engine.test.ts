@@ -1261,6 +1261,11 @@ filesystem:
     { label: "rmdir", command: "rmdir", args: ["old"] },
     { label: "tee", command: "tee", args: ["log.out"] },
     { label: "unlink", command: "unlink", args: ["leftover"] },
+    // Purely numeric names must still be classified as writes — otherwise
+    // `touch 123` / `mkdir 2026` slip past the fail-closed write-root gate.
+    { label: "touch numeric", command: "touch", args: ["123"] },
+    { label: "mkdir numeric year", command: "mkdir", args: ["2026"] },
+    { label: "rm numeric", command: "rm", args: ["4096"] },
   ])(
     "classifies bare relative names as writes for $label so allowed_write_roots is enforced",
     async ({ command, args }) => {
