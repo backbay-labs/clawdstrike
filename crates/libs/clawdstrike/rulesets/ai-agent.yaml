@@ -1,64 +1,37 @@
 # AI Agent Ruleset
 # Optimized for AI coding assistants (Claude, GPT, etc.)
-version: "1.1.0"
+# Inherits all forbidden paths and secret patterns from `default`, adds extra
+# egress allowances for AI/dev tooling, broadens skip_paths for test fixtures,
+# and relaxes patch_integrity limits for larger refactors.
+# Note: prior to consolidation the forbidden_path list was a hand-curated
+# subset; it is now a strict superset of default's (inherits .git-credentials,
+# .password-store, .1password, /etc/sudoers, .npmrc, etc.). This is a deliberate
+# tightening: AI agents have no legitimate need to read those paths.
+version: "1.2.0"
 name: AI Agent
 description: Security rules optimized for AI coding assistants
+extends: default
 
 guards:
   forbidden_path:
-    patterns:
-      # Core sensitive paths
-      - "**/.ssh/**"
-      - "**/id_rsa*"
-      - "**/id_ed25519*"
-      - "**/.aws/**"
-      - "**/.env"
-      - "**/.env.local"
-      - "**/.env.production"
-      - "**/.git-credentials"
-      - "**/.gnupg/**"
-      - "**/.kube/**"
-      - "**/.docker/**"
-      - "**/.npmrc"
-      - "/etc/shadow"
-      - "/etc/passwd"
-      # Windows credential stores
-      - "**/AppData/Roaming/Microsoft/Credentials/**"
-      - "**/AppData/Local/Microsoft/Credentials/**"
-      - "**/AppData/Roaming/Microsoft/Vault/**"
-      # Windows registry hives
-      - "**/NTUSER.DAT"
-      - "**/Windows/System32/config/SAM"
-      - "**/Windows/System32/config/SECURITY"
-      - "**/Windows/System32/config/SYSTEM"
+    # No additional patterns -- inherit default's full list.
     exceptions:
       # Allow reading .env.example for documentation
       - "**/.env.example"
       - "**/.env.template"
 
   egress_allowlist:
-    allow:
-      # AI APIs
-      - "*.openai.com"
-      - "*.anthropic.com"
+    additional_allow:
+      # Additional AI APIs
       - "api.together.xyz"
       - "*.fireworks.ai"
-      # Code hosting
-      - "api.github.com"
-      - "github.com"
-      - "*.githubusercontent.com"
+      # Additional code hosting
       - "gitlab.com"
       - "api.gitlab.com"
       - "bitbucket.org"
       - "api.bitbucket.org"
-      # Package registries
-      - "*.npmjs.org"
-      - "registry.npmjs.org"
+      # Additional package registries
       - "registry.yarnpkg.com"
-      - "pypi.org"
-      - "files.pythonhosted.org"
-      - "crates.io"
-      - "static.crates.io"
       - "rubygems.org"
       - "packagist.org"
       # Documentation
@@ -66,31 +39,15 @@ guards:
       - "*.readthedocs.io"
       - "*.readthedocs.org"
       - "developer.mozilla.org"
-    block: []
-    default_action: block
 
   secret_leak:
-    patterns:
-      - name: aws_access_key
-        pattern: "AKIA[0-9A-Z]{16}"
-        severity: critical
-      - name: github_token
-        pattern: "gh[ps]_[A-Za-z0-9]{36}"
-        severity: critical
-      - name: openai_key
-        pattern: "sk-[A-Za-z0-9]{48}"
-        severity: critical
+    additional_patterns:
       - name: anthropic_key
         pattern: "sk-ant-[A-Za-z0-9\\-]{95}"
         severity: critical
-      - name: private_key
-        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
-        severity: critical
     skip_paths:
-      - "**/test/**"
-      - "**/tests/**"
+      # Inherits default's skip_paths; these are additive.
       - "**/__tests__/**"
-      - "**/*.test.*"
       - "**/*.spec.*"
       - "**/fixtures/**"
       - "**/mocks/**"
@@ -106,11 +63,9 @@ guards:
       - "(?i)chmod\\s+777"
       - "(?i)reverse[_\\-]?shell"
 
-  shell_command:
-    enabled: true
-    enforce_forbidden_paths: true
-
   mcp_tool:
+    # Overrides default's blocklist to permit raw_file_write/delete (AI agents
+    # need editor primitives) and adds CI-style require_confirmation entries.
     allow: []
     block:
       - shell_exec
@@ -119,7 +74,7 @@ guards:
       - git_push
       - deploy
       - publish
-    default_action: allow
+    default_action: block
     max_args_size: 2097152  # 2MB
 
   prompt_injection:

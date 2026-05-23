@@ -1,42 +1,19 @@
 # Strict Ruleset
-# Maximum security with minimal permissions
-version: "1.1.0"
+# Maximum security with minimal permissions.
+# Inherits all forbidden paths, egress denials, secret patterns, and the
+# shell_command guard from `default`. Tightens limits and adds extra
+# vault/credential/private path coverage.
+version: "1.2.0"
 name: Strict
 description: Strict security rules with minimal permissions
+extends: default
 
 guards:
   forbidden_path:
-    patterns:
-      # All default patterns plus more
-      - "**/.ssh/**"
-      - "**/id_rsa*"
-      - "**/id_ed25519*"
-      - "**/id_ecdsa*"
-      - "**/.aws/**"
-      - "**/.env"
-      - "**/.env.*"
-      - "**/.git-credentials"
-      - "**/.gitconfig"
-      - "**/.gnupg/**"
-      - "**/.kube/**"
-      - "**/.docker/**"
-      - "**/.npmrc"
-      - "**/.password-store/**"
-      - "**/pass/**"
-      - "**/.1password/**"
-      - "/etc/shadow"
-      - "/etc/passwd"
-      - "/etc/sudoers"
-      # Windows credential stores
-      - "**/AppData/Roaming/Microsoft/Credentials/**"
-      - "**/AppData/Local/Microsoft/Credentials/**"
-      - "**/AppData/Roaming/Microsoft/Vault/**"
-      # Windows registry hives
-      - "**/NTUSER.DAT"
+    # Additive: inherits default's SSH/AWS/.env/Windows/etc. patterns.
+    additional_patterns:
+      # Windows registry hives (extra)
       - "**/NTUSER.DAT.*"
-      - "**/Windows/System32/config/SAM"
-      - "**/Windows/System32/config/SECURITY"
-      - "**/Windows/System32/config/SYSTEM"
       # Windows certificate stores
       - "**/AppData/Roaming/Microsoft/SystemCertificates/**"
       # Registry export files
@@ -46,29 +23,17 @@ guards:
       - "**/.secrets/**"
       - "**/credentials/**"
       - "**/private/**"
-    exceptions: []
 
   egress_allowlist:
-    allow: []  # No domains allowed by default
+    # Replace allow list with empty -- no outbound egress permitted.
+    allow: []
     block: []
     default_action: block
 
   secret_leak:
-    patterns:
-      - name: aws_access_key
-        pattern: "AKIA[0-9A-Z]{16}"
-        severity: critical
-      - name: github_token
-        pattern: "gh[ps]_[A-Za-z0-9]{36}"
-        severity: critical
-      - name: openai_key
-        pattern: "sk-[A-Za-z0-9]{48}"
-        severity: critical
+    additional_patterns:
       - name: anthropic_key
         pattern: "sk-ant-[A-Za-z0-9\\-]{95}"
-        severity: critical
-      - name: private_key
-        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
         severity: critical
       - name: npm_token
         pattern: "npm_[A-Za-z0-9]{36}"
@@ -79,9 +44,6 @@ guards:
       - name: generic_api_key
         pattern: "(?i)(api[_\\-]?key|apikey)\\s*[:=]\\s*[A-Za-z0-9]{32,}"
         severity: error
-    skip_paths:
-      - "**/test/**"
-      - "**/tests/**"
 
   patch_integrity:
     max_additions: 500
@@ -98,11 +60,8 @@ guards:
       - "(?i)reverse[_\\-]?shell"
       - "(?i)bind[_\\-]?shell"
 
-  shell_command:
-    enabled: true
-    enforce_forbidden_paths: true
-
   mcp_tool:
+    # Allowlist-only mode (overrides default's blocklist).
     allow:
       - read_file
       - list_directory

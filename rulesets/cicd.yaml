@@ -1,34 +1,22 @@
 # CI/CD Ruleset
-# Designed for automated pipeline environments
+# Designed for automated pipeline environments.
+# Inherits forbidden paths, egress denials, secret patterns, patch_integrity
+# and mcp_tool defaults from `default`; adds CI-specific egress targets
+# (container registries, build tools), CI-secret paths, and pipeline file
+# exceptions.
 # HushSpec equivalent: https://github.com/backbay-labs/hush/blob/main/rulesets/cicd.yaml
-version: "1.1.0"
+version: "1.2.0"
 name: CI/CD
 description: Security rules for CI/CD pipeline environments
+extends: default
 
 guards:
   forbidden_path:
-    patterns:
+    additional_patterns:
       # Prevent access to CI secrets
       - "**/.github/secrets/**"
       - "**/.gitlab-ci-secrets/**"
       - "**/.circleci/secrets/**"
-      # Standard sensitive paths
-      - "**/.ssh/**"
-      - "**/id_rsa*"
-      - "**/id_ed25519*"
-      - "**/.aws/**"
-      - "**/.gnupg/**"
-      - "/etc/shadow"
-      - "/etc/passwd"
-      # Windows credential stores
-      - "**/AppData/Roaming/Microsoft/Credentials/**"
-      - "**/AppData/Local/Microsoft/Credentials/**"
-      - "**/AppData/Roaming/Microsoft/Vault/**"
-      # Windows registry hives
-      - "**/NTUSER.DAT"
-      - "**/Windows/System32/config/SAM"
-      - "**/Windows/System32/config/SECURITY"
-      - "**/Windows/System32/config/SYSTEM"
     exceptions:
       # Allow reading workflow files
       - "**/.github/workflows/**"
@@ -36,15 +24,9 @@ guards:
       - "**/.circleci/config.yml"
 
   egress_allowlist:
-    allow:
+    additional_allow:
       # Package registries (essential for CI)
-      - "*.npmjs.org"
-      - "registry.npmjs.org"
       - "registry.yarnpkg.com"
-      - "pypi.org"
-      - "files.pythonhosted.org"
-      - "crates.io"
-      - "static.crates.io"
       - "rubygems.org"
       - "packagist.org"
       - "proxy.golang.org"
@@ -55,36 +37,19 @@ guards:
       - "*.gcr.io"
       - "ghcr.io"
       - "*.ecr.aws"
-      # Code hosting
-      - "github.com"
-      - "api.github.com"
-      - "*.githubusercontent.com"
+      # Additional code hosting
       - "gitlab.com"
       - "api.gitlab.com"
       # Build tools
       - "gradle.org"
       - "plugins.gradle.org"
       - "repo.maven.apache.org"
-    block: []
-    default_action: block
 
   secret_leak:
-    patterns:
-      - name: aws_access_key
-        pattern: "AKIA[0-9A-Z]{16}"
-        severity: critical
-      - name: github_token
-        pattern: "gh[ps]_[A-Za-z0-9]{36}"
-        severity: critical
-      - name: private_key
-        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
-        severity: critical
+    additional_patterns:
       - name: docker_auth
         pattern: "(?i)docker[_\\-]?(password|token)\\s*[:=]"
         severity: critical
-    skip_paths:
-      - "**/test/**"
-      - "**/tests/**"
 
   patch_integrity:
     max_additions: 5000
@@ -97,6 +62,7 @@ guards:
       - "(?i)chmod\\s+777"
 
   mcp_tool:
+    # Allowlist-mode for CI tools (overrides default's blocklist style).
     allow:
       - read_file
       - write_file

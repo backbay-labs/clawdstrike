@@ -11,7 +11,7 @@ use tempfile::TempDir;
 #[test]
 fn test_policy_extends_builtin_strict() {
     let yaml = r#"
-version: "1.1.0"
+version: "1.2.0"
 name: CustomPolicy
 extends: strict
 guards:
@@ -95,7 +95,7 @@ settings:
 #[test]
 fn test_policy_merge_strategy_deep_merge() {
     let yaml = r#"
-version: "1.1.0"
+version: "1.2.0"
 name: CustomPolicy
 extends: strict
 merge_strategy: deep_merge
