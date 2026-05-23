@@ -98,7 +98,7 @@
     "@types/three": "^0.183.1",
     "@vitejs/plugin-react": "^6.0.2",
     "fake-indexeddb": "^6.2.5",
-    "jsdom": "^28.1.0",
+    "jsdom": "^29.1.1",
     "leva": "^0.10.1",
     "msw": "^2.12.10",
     "postcss": "^8.0.0",
