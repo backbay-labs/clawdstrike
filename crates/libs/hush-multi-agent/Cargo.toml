@@ -18,7 +18,7 @@ thiserror.workspace = true
 rusqlite = { workspace = true, optional = true }
 
 [dev-dependencies]
-proptest = "1.10"
+proptest = "1.11"
 rusqlite.workspace = true
 tempfile = "3"
 

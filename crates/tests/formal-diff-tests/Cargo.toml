@@ -10,7 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 clawdstrike = { workspace = true, default-features = false }
-proptest = "1.10"
+proptest = "1.11"
 
 [lints]
 workspace = true
