@@ -1239,6 +1239,56 @@ filesystem:
     expect(decision.status).toBe("allow");
   });
 
+  it.each([
+    {
+      label: "environment assignment",
+      command: "FOO=1",
+      args: ["touch"],
+      path: "env-assigned.txt",
+    },
+    {
+      label: "sudo wrapper",
+      command: "sudo",
+      args: ["cp", join(testDir, "wrapped-source.txt")],
+      path: "sudo-destination.txt",
+    },
+  ])("keeps scanning for write commands after $label prefixes", async ({ command, args, path }) => {
+    const allowedDir = join(testDir, "prefix-command-allowed");
+    mkdirSync(allowedDir, { recursive: true });
+    const policyPath = join(testDir, `${path}-policy.yaml`);
+    writeFileSync(
+      policyPath,
+      `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { patch_integrity: false },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: `command-prefix-${path}`,
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command,
+        args: [...args, join(testDir, path)],
+      },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+    expect(decision.reason).toContain("Write path not in allowed roots");
+  });
+
   it("enforces egress allowlists for network targets inside shell commands", async () => {
     const policyPath = join(testDir, "command-egress-policy.yaml");
     writeFileSync(

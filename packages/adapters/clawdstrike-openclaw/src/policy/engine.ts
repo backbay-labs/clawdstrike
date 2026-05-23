@@ -106,11 +106,30 @@ const COMMANDS_WITH_WRITE_PATH_OPERANDS = new Set([
   "unlink",
 ]);
 
+const SHELL_COMMAND_PREFIXES = new Set([
+  "builtin",
+  "command",
+  "doas",
+  "env",
+  "exec",
+  "nohup",
+  "sudo",
+  "time",
+]);
+
 function isWritePathFlagToken(t: string): boolean {
   if (!t) return false;
   if (!t.startsWith("-")) return false;
   const normalized = t.replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
   return WRITE_PATH_FLAG_NAMES.has(normalized);
+}
+
+function isShellCommandPrefixToken(commandToken: string): boolean {
+  return SHELL_COMMAND_PREFIXES.has(commandToken);
+}
+
+function isShellEnvironmentAssignmentToken(t: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*=/.test(t);
 }
 
 function commandNameToken(t: string): string {
@@ -177,6 +196,13 @@ function extractCommandPathCandidates(
         flushCommandOperands();
         writeOperandMode = "all";
         expectsCommandToken = false;
+        continue;
+      }
+
+      if (
+        isShellCommandPrefixToken(commandToken) ||
+        isShellEnvironmentAssignmentToken(cleanedToken)
+      ) {
         continue;
       }
 
