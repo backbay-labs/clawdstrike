@@ -1,17 +1,17 @@
 /** DAG-based task lifecycle engine with cycle detection and priority scheduling. */
 
-import type { TypedEventEmitter, SwarmEngineEventMap } from "./events.js";
-import type { AgentRegistry } from "./agent-registry.js";
-import { PriorityQueue } from "./collections.js";
-import { generateSwarmId } from "./ids.js";
+import type { TypedEventEmitter, SwarmEngineEventMap } from "./events";
+import type { AgentRegistry } from "./agent-registry";
+import { PriorityQueue } from "./collections";
+import { generateSwarmId } from "./ids";
 import type {
   Task,
   TaskErrorCategory,
   TaskPriority,
   TaskStatus,
   TaskSubmission,
-} from "./types.js";
-import { SWARM_ENGINE_CONSTANTS } from "./types.js";
+} from "./types";
+import { SWARM_ENGINE_CONSTANTS } from "./types";
 
 export interface TaskGraphConfig {
   /** Maximum tasks allowed in the graph. */

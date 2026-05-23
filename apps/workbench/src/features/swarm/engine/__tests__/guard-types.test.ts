@@ -13,14 +13,14 @@ import type {
   AgentPoolConfig,
   AgentPoolState,
   DenyNotification,
-} from "./types.js";
+} from "../types";
 import type {
   GuardEvaluatedEvent,
   ActionDeniedEvent,
   ActionCompletedEvent,
   SwarmEngineEventMap,
-} from "./events.js";
-import type { EnvelopeReceipt } from "./types.js";
+} from "../events";
+import type { EnvelopeReceipt } from "../types";
 
 // ---------------------------------------------------------------------------
 // Helpers

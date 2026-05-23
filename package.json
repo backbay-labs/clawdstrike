@@ -30,7 +30,6 @@
     "packages/sdk/clawdstrike-hunt",
     "packages/sdk/plugin-sdk",
     "packages/cli/create-plugin",
-    "packages/swarm-engine",
     "packages/dev/vite-plugin-clawdstrike"
   ],
   "devDependencies": {

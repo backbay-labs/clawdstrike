@@ -5,16 +5,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { AgentRegistry } from "./agent-registry.js";
-import type { AgentRegistryConfig } from "./agent-registry.js";
-import { TypedEventEmitter } from "./events.js";
-import type { SwarmEngineEventMap } from "./events.js";
+import { AgentRegistry } from "../agent-registry";
+import type { AgentRegistryConfig } from "../agent-registry";
+import { TypedEventEmitter } from "../events";
+import type { SwarmEngineEventMap } from "../events";
 import type {
   AgentRegistration,
   AgentCapabilities,
   AgentSession,
   AgentSessionStatus,
-} from "./types.js";
+} from "../types";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { Deque, PriorityQueue } from "./collections.js";
-import type { TaskPriority } from "./types.js";
+import { Deque, PriorityQueue } from "../collections";
+import type { TaskPriority } from "../types";
 
 // ============================================================================
 // Deque Tests

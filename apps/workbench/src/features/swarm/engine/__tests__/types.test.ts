@@ -6,15 +6,15 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { generateSwarmId } from "./ids.js";
-import type { SwarmEngineIdPrefix } from "./ids.js";
+import { generateSwarmId } from "../ids";
+import type { SwarmEngineIdPrefix } from "../ids";
 import {
   isAgentSession,
   isTask,
   isSwarmEngineEvent,
   isSwarmEngineEnvelope,
   SWARM_ENGINE_CONSTANTS,
-} from "./types.js";
+} from "../types";
 import type {
   AgentSession,
   AgentCapabilities,
@@ -24,7 +24,7 @@ import type {
   GuardedPayload,
   EnvelopeReceipt,
   Verdict,
-} from "./types.js";
+} from "../types";
 
 // ---------------------------------------------------------------------------
 // Helpers

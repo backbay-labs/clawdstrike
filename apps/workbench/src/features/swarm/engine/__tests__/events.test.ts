@@ -6,12 +6,12 @@ import {
   type AgentSpawnedEvent,
   type TaskCreatedEvent,
   type HookTriggeredEvent,
-} from "./events.js";
+} from "../events";
 import type {
   AgentSession,
   AgentMetrics,
   Task,
-} from "./types.js";
+} from "../types";
 
 // ============================================================================
 // Test Fixtures

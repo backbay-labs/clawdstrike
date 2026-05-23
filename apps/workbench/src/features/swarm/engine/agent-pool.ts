@@ -1,10 +1,10 @@
 /** Agent pooling with auto-scaling and health checks. */
 
-import type { TypedEventEmitter } from "./events.js";
-import type { SwarmEngineEventMap } from "./events.js";
-import { generateSwarmId } from "./ids.js";
-import type { AgentPoolConfig, AgentPoolState } from "./types.js";
-import { SWARM_ENGINE_CONSTANTS } from "./types.js";
+import type { TypedEventEmitter } from "./events";
+import type { SwarmEngineEventMap } from "./events";
+import { generateSwarmId } from "./ids";
+import type { AgentPoolConfig, AgentPoolState } from "./types";
+import { SWARM_ENGINE_CONSTANTS } from "./types";
 
 interface PooledAgent {
   agentId: string;

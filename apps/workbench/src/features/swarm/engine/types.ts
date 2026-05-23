@@ -5,7 +5,7 @@
  * @module
  */
 
-export type { SwarmEngineIdPrefix } from "./ids.js";
+export type { SwarmEngineIdPrefix } from "./ids";
 
 // Mirrors ClawdStrike workbench types — must be kept in sync manually.
 

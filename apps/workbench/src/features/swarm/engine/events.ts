@@ -19,7 +19,7 @@ import type {
   GuardedAction,
   GuardEvaluationResult,
   EnvelopeReceipt,
-} from "./types.js";
+} from "./types";
 
 /**
  * Type-safe event emitter wrapping EventTarget.

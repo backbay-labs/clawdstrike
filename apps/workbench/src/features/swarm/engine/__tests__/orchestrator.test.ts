@@ -8,21 +8,21 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { SwarmOrchestrator } from "./orchestrator.js";
-import type { SwarmOrchestratorConfig } from "./orchestrator.js";
-import { TypedEventEmitter } from "./events.js";
-import type { SwarmEngineEventMap } from "./events.js";
-import { AgentRegistry } from "./agent-registry.js";
-import { TaskGraph } from "./task-graph.js";
-import { TopologyManager } from "./topology.js";
+import { SwarmOrchestrator } from "../orchestrator";
+import type { SwarmOrchestratorConfig } from "../orchestrator";
+import { TypedEventEmitter } from "../events";
+import type { SwarmEngineEventMap } from "../events";
+import { AgentRegistry } from "../agent-registry";
+import { TaskGraph } from "../task-graph";
+import { TopologyManager } from "../topology";
 import type {
   GuardEvaluator,
   GuardedAction,
   GuardEvaluationResult,
   TopologyConfig,
   ConsensusConfig,
-} from "./types.js";
-import { SWARM_ENGINE_CONSTANTS } from "./types.js";
+} from "../types";
+import { SWARM_ENGINE_CONSTANTS } from "../types";
 
 // ---------------------------------------------------------------------------
 // Helpers

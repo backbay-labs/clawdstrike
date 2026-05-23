@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { TypedEventEmitter, type SwarmEngineEventMap } from "./events.js";
+import { TypedEventEmitter, type SwarmEngineEventMap } from "../events";
 import type {
   TopologyConfig,
   TopologyState,
-} from "./types.js";
-import { TopologyManager, type AdaptiveThresholds } from "./topology.js";
+} from "../types";
+import { TopologyManager, type AdaptiveThresholds } from "../topology";
 
 // ============================================================================
 // Test helpers

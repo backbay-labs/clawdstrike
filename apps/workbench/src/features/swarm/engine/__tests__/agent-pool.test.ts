@@ -7,10 +7,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { AgentPool } from "./agent-pool.js";
-import { TypedEventEmitter } from "./events.js";
-import type { SwarmEngineEventMap } from "./events.js";
-import type { AgentPoolConfig, AgentPoolState } from "./types.js";
+import { AgentPool } from "../agent-pool";
+import { TypedEventEmitter } from "../events";
+import type { SwarmEngineEventMap } from "../events";
+import type { AgentPoolConfig, AgentPoolState } from "../types";
 
 // ---------------------------------------------------------------------------
 // Helpers

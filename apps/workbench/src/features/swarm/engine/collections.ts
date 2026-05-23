@@ -4,7 +4,7 @@
  * @module
  */
 
-import type { TaskPriority } from "./types.js";
+import type { TaskPriority } from "./types";
 
 /** Circular buffer deque. O(1) pushBack/popFront, auto-grows. */
 export class Deque<T> {

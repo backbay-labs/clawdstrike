@@ -1,11 +1,11 @@
 /** Facade composing all swarm engine subsystems under a single lifecycle. */
 
-import type { TypedEventEmitter, SwarmEngineEventMap } from "./events.js";
-import type { AgentRegistry } from "./agent-registry.js";
-import type { TaskGraph } from "./task-graph.js";
-import type { TopologyManager } from "./topology.js";
-import { AgentPool } from "./agent-pool.js";
-import { generateSwarmId } from "./ids.js";
+import type { TypedEventEmitter, SwarmEngineEventMap } from "./events";
+import type { AgentRegistry } from "./agent-registry";
+import type { TaskGraph } from "./task-graph";
+import type { TopologyManager } from "./topology";
+import { AgentPool } from "./agent-pool";
+import { generateSwarmId } from "./ids";
 import type {
   AgentSession,
   AgentSessionStatus,
@@ -21,7 +21,7 @@ import type {
   SwarmEngineState,
   SwarmEngineStatus,
   TopologyConfig,
-} from "./types.js";
+} from "./types";
 
 export interface SwarmOrchestratorConfig {
   /** Swarm namespace for ID scoping. */

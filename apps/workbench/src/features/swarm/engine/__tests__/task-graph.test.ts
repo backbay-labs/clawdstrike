@@ -9,11 +9,11 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { TaskGraph } from "./task-graph.js";
-import { TypedEventEmitter } from "./events.js";
-import type { SwarmEngineEventMap } from "./events.js";
-import { AgentRegistry } from "./agent-registry.js";
-import type { AgentCapabilities, AgentRegistration, Task, TaskSubmission } from "./types.js";
+import { TaskGraph } from "../task-graph";
+import { TypedEventEmitter } from "../events";
+import type { SwarmEngineEventMap } from "../events";
+import { AgentRegistry } from "../agent-registry";
+import type { AgentCapabilities, AgentRegistration, Task, TaskSubmission } from "../types";
 
 // ---------------------------------------------------------------------------
 // Helpers

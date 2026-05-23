@@ -1,7 +1,7 @@
 /** Bridges SwarmOrchestrator events to the Zustand board store. */
 
 import { useEffect, useRef } from "react";
-import type { SwarmOrchestrator } from "@clawdstrike/swarm-engine";
+import type { SwarmOrchestrator } from "@/features/swarm/engine";
 import {
   createBoardNode,
   useSwarmBoardStore,

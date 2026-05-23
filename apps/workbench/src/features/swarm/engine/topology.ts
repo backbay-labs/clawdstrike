@@ -3,7 +3,7 @@
 import type {
   TypedEventEmitter,
   SwarmEngineEventMap,
-} from "./events.js";
+} from "./events";
 
 import type {
   TopologyConfig,
@@ -13,9 +13,9 @@ import type {
   TopologyPartition,
   TopologyState,
   TopologyType,
-} from "./types.js";
+} from "./types";
 
-import { SWARM_ENGINE_CONSTANTS } from "./types.js";
+import { SWARM_ENGINE_CONSTANTS } from "./types";
 
 export interface AdaptiveThresholds {
   meshMax?: number;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GuardedAction } from "@clawdstrike/swarm-engine";
+import type { GuardedAction } from "@/features/swarm/engine";
 import { usePolicyTabsStore } from "@/features/policy/stores/policy-tabs-store";
 import { simulatePolicy } from "@/lib/workbench/simulation-engine";
 import { workbenchGuardEvaluator } from "../workbench-guard-evaluator";

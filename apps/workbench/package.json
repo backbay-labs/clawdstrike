@@ -4,18 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build:swarm-engine": "npm --prefix ../../packages/swarm-engine run build",
-    "predev": "npm run build:swarm-engine",
-    "prebuild": "npm run build:swarm-engine",
     "postbuild": "vitest run src/__tests__/observatory-bundle-graph-smoke.test.ts",
-    "prepreview": "npm run build:swarm-engine",
-    "pretauri:dev": "npm run build:swarm-engine",
-    "pretauri:build": "npm run build:swarm-engine",
-    "pretest": "npm run build:swarm-engine",
-    "pretest:e2e": "npm run build:swarm-engine",
-    "pretest:e2e:headed": "npm run build:swarm-engine",
-    "pretest:e2e:ui": "npm run build:swarm-engine",
-    "pretypecheck": "npm run build:swarm-engine",
     "dev": "vite",
     "build": "vite build",
     "tauri:prepare": "bun run scripts/prepare-tauri-build.ts",
@@ -79,8 +68,7 @@
     "three": "^0.183.2",
     "wawa-vfx": "^1.2.10",
     "yaml": "^2.7.0",
-    "zustand": "^5.0.12",
-    "@clawdstrike/swarm-engine": "file:../../packages/swarm-engine"
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

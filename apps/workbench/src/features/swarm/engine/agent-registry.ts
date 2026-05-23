@@ -1,7 +1,7 @@
 /** Agent lifecycle management for the swarm engine. */
 
-import type { TypedEventEmitter, SwarmEngineEventMap } from "./events.js";
-import { generateSwarmId } from "./ids.js";
+import type { TypedEventEmitter, SwarmEngineEventMap } from "./events";
+import { generateSwarmId } from "./ids";
 import type {
   AgentCapabilities,
   AgentMetrics,
@@ -11,8 +11,8 @@ import type {
   AgentSessionStatus,
   HealthCheckStatus,
   TaskType,
-} from "./types.js";
-import { SWARM_ENGINE_CONSTANTS } from "./types.js";
+} from "./types";
+import { SWARM_ENGINE_CONSTANTS } from "./types";
 
 export interface AgentRegistryConfig {
   /** Interval between health checks in milliseconds. */
