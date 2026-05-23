@@ -50,11 +50,40 @@ export interface ReceiptSignerConfig {
   keyId?: string;
 }
 
+/**
+ * Signature verifier function. Returns `true` if the signature on `canonical`
+ * (the canonical JSON form of the receipt envelope) is valid for the receipt's
+ * `signature` and `keyId`. Callers must provide their own implementation —
+ * the openclaw adapter does not bundle a crypto backend.
+ *
+ * Implementations MUST resolve `keyId` to a trusted public key out of band
+ * (e.g. JWKS, KMS) — passing `keyId` straight through is not sufficient.
+ */
+export type ReceiptSignatureVerifier = (input: {
+  canonical: string;
+  signature: string;
+  keyId: string;
+  algorithm: "EdDSA";
+}) => boolean | Promise<boolean>;
+
 /** Options for receipt verification. */
 export interface ReceiptVerifyOptions {
   /**
    * Permit unsigned local-development receipts to verify.
-   * Production callers should leave this false.
+   * Production callers must leave this `false` (the default).
    */
   allowUnsignedDevReceipts?: boolean;
+  /**
+   * Pluggable signature verifier. When omitted, signed receipts cannot be
+   * cryptographically validated by this adapter and verification fails
+   * closed (returns `false`).
+   */
+  verifySignature?: ReceiptSignatureVerifier;
+  /**
+   * Throw an error instead of returning `false` when a signed receipt
+   * cannot be verified because no `verifySignature` callback was supplied.
+   * Useful for surfacing misconfiguration early in production builds.
+   * Default: `false`.
+   */
+  strict?: boolean;
 }

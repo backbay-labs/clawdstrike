@@ -64,7 +64,44 @@ export type VercelAiClawdstrikeConfig = AdapterConfig & {
   policyCheckToolName?: string;
   streamingEvaluation?: boolean;
   promptSecurity?: VercelAiPromptSecurityConfig;
+  /**
+   * When `true`, permit the middleware to keep operating with no-op
+   * detectors if the WASM-backed prompt-security components fail to
+   * initialize.
+   *
+   * Default: `false` — middleware construction will throw a
+   * `ClawdstrikeMiddlewareInitError` rather than silently disable security
+   * features. This preserves fail-closed semantics for production
+   * deployments.
+   */
+  allowDegradedSecurity?: boolean;
+  /**
+   * Optional callback fired when degraded mode is opted into AND a
+   * prompt-security detector fails to initialize. Only invoked when
+   * `allowDegradedSecurity: true`. Each detector failure produces one call
+   * with the reason string.
+   */
+  onDegrade?: (reason: string) => void;
 };
+
+/**
+ * Thrown when the middleware refuses to start because WASM-backed
+ * prompt-security detectors could not initialize and the caller did NOT
+ * opt into degraded operation.
+ */
+export class ClawdstrikeMiddlewareInitError extends Error {
+  public readonly detectors: readonly string[];
+  public readonly cause?: unknown;
+  constructor(detectors: readonly string[], cause?: unknown) {
+    super(
+      `Clawdstrike middleware: WASM detectors failed to initialize (${detectors.join(", ") || "unknown"}). ` +
+        "To allow degraded operation, set allowDegradedSecurity: true.",
+    );
+    this.name = "ClawdstrikeMiddlewareInitError";
+    this.detectors = detectors;
+    this.cause = cause;
+  }
+}
 
 export interface SecureToolsOptions {
   context?: SecurityContext;
@@ -93,6 +130,22 @@ export interface ClawdstrikeMiddleware {
   getAuditLog(): AuditEvent[];
 }
 
+/**
+ * Construct a Clawdstrike middleware for use with the Vercel AI SDK.
+ *
+ * Fail-closed semantics:
+ *  - If `config.promptSecurity?.enabled` is true and one or more of the
+ *    WASM-backed detectors (InstructionHierarchyEnforcer, JailbreakDetector,
+ *    OutputSanitizer) fails to initialize, this function THROWS a
+ *    {@link ClawdstrikeMiddlewareInitError} by default.
+ *  - To allow the middleware to keep operating with the affected detectors
+ *    disabled (no-op), set `config.allowDegradedSecurity: true`. This is an
+ *    explicit, audit-visible opt-in. Pair it with `config.onDegrade` to
+ *    receive structured notifications about which detectors are degraded.
+ *
+ * @throws {ClawdstrikeMiddlewareInitError} when WASM detectors fail and
+ *   degraded mode is not opted into.
+ */
 export function createClawdstrikeMiddleware(
   options: CreateClawdstrikeMiddlewareOptions,
 ): ClawdstrikeMiddleware {
@@ -459,6 +512,35 @@ function createPromptSecurityRuntime(
   const jailbreakBlockThreshold = cfg.jailbreakDetection?.config?.blockThreshold ?? 70;
 
   const degraded: string[] = [];
+  const degradeFailures: Array<{ detector: string; cause: unknown }> = [];
+  const allowDegraded = config.allowDegradedSecurity === true;
+
+  const handleWasmFailure = (detector: string, err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    const reason = `${detector} unavailable: ${message}`;
+    if (allowDegraded) {
+      // biome-ignore lint/suspicious/noConsole: degraded-mode diagnostic
+      console.warn(
+        `[clawdstrike/vercel-ai] DEGRADED SECURITY — ${reason}. Detector disabled (no-op).`,
+      );
+      degraded.push(detector);
+      try {
+        config.onDegrade?.(reason);
+      } catch (cbErr) {
+        // biome-ignore lint/suspicious/noConsole: callback error surfacing
+        console.warn(
+          `[clawdstrike/vercel-ai] onDegrade callback threw: ${
+            cbErr instanceof Error ? cbErr.message : String(cbErr)
+          }`,
+        );
+      }
+    } else {
+      degradeFailures.push({ detector, cause: err });
+    }
+  };
+
+  const isWasmInitError = (err: unknown): boolean =>
+    err instanceof Error && /wasm/i.test(err.message);
 
   let hierarchy: InstructionHierarchyEnforcer | undefined;
   if (instructionHierarchyEnabled) {
@@ -468,12 +550,8 @@ function createPromptSecurityRuntime(
         ...(cfg.instructionHierarchy?.config ?? {}),
       });
     } catch (err) {
-      if (err instanceof Error && /wasm/i.test(err.message)) {
-        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
-        console.warn(
-          "[clawdstrike/vercel-ai] InstructionHierarchyEnforcer skipped — WASM unavailable",
-        );
-        degraded.push("InstructionHierarchyEnforcer");
+      if (isWasmInitError(err)) {
+        handleWasmFailure("InstructionHierarchyEnforcer", err);
       } else {
         throw err;
       }
@@ -485,10 +563,8 @@ function createPromptSecurityRuntime(
     try {
       jailbreak = new JailbreakDetector(cfg.jailbreakDetection?.config ?? {});
     } catch (err) {
-      if (err instanceof Error && /wasm/i.test(err.message)) {
-        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
-        console.warn("[clawdstrike/vercel-ai] JailbreakDetector skipped — WASM unavailable");
-        degraded.push("JailbreakDetector");
+      if (isWasmInitError(err)) {
+        handleWasmFailure("JailbreakDetector", err);
       } else {
         throw err;
       }
@@ -500,14 +576,22 @@ function createPromptSecurityRuntime(
     try {
       outputSanitizer = new OutputSanitizer(cfg.outputSanitization?.config ?? {});
     } catch (err) {
-      if (err instanceof Error && /wasm/i.test(err.message)) {
-        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
-        console.warn("[clawdstrike/vercel-ai] OutputSanitizer skipped — WASM unavailable");
-        degraded.push("OutputSanitizer");
+      if (isWasmInitError(err)) {
+        handleWasmFailure("OutputSanitizer", err);
       } else {
         throw err;
       }
     }
+  }
+
+  if (!allowDegraded && degradeFailures.length > 0) {
+    // Fail-closed: refuse to construct the middleware with no-op detectors.
+    // Throwing at construction (rather than per-request) surfaces the
+    // misconfiguration immediately during boot.
+    throw new ClawdstrikeMiddlewareInitError(
+      degradeFailures.map((f) => f.detector),
+      degradeFailures[0]?.cause,
+    );
   }
 
   let watermarkerPromise: Promise<PromptWatermarker> | null = null;
