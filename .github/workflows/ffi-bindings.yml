@@ -16,6 +16,13 @@ on:
       - packages/sdk/hush-go/**
       - packages/sdk/hush-csharp/**
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -24,6 +31,7 @@ jobs:
   bindings:
     name: Go + C# bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -35,17 +43,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-ffi-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-ffi-
-            ${{ runner.os }}-cargo-
+          shared-key: ffi
+          cache-on-failure: true
 
       - name: Build hush-ffi (release)
         run: cargo build -p hush-ffi --release

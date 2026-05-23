@@ -52,6 +52,13 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -60,6 +67,7 @@ jobs:
   detect-core-changes:
     name: Detect core changes
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       core_changed: ${{ steps.detect.outputs.core_changed }}
     steps:
@@ -110,16 +118,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y z3 libz3-dev clang libclang-dev
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-formal-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-formal-
+          shared-key: formal
+          cache-on-failure: true
 
       - name: Verify all built-in rulesets
         run: |
@@ -214,16 +217,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-formal-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-formal-
+          shared-key: formal
+          cache-on-failure: true
 
       - name: Run differential tests
         run: |
@@ -256,16 +254,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-formal-release-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-formal-release-
+          shared-key: formal-release
+          cache-on-failure: true
 
       - name: Build release binary
         run: cargo test -p formal-diff-tests --release --no-run
@@ -332,7 +325,7 @@ jobs:
   lean-build:
     name: Lean 4 Spec Build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
@@ -383,7 +376,7 @@ jobs:
     name: Aeneas Regeneration Check
     runs-on: ubuntu-latest
     needs: detect-core-changes
-    timeout-minutes: 30
+    timeout-minutes: 60
     if: >-
       (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 1') ||
       (github.event_name == 'workflow_dispatch' && inputs.run_aeneas_check) ||
@@ -410,16 +403,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-opam-aeneas-
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-aeneas-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-aeneas-
+          shared-key: aeneas
+          cache-on-failure: true
 
       - name: Install Charon
         env:

@@ -20,6 +20,12 @@ permissions:
   id-token: write
   packages: read
 
+concurrency:
+  # Never cancel nightly schedules in-flight; only collapse rapid manual reruns
+  # against the same ref.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
@@ -30,6 +36,7 @@ jobs:
   resolve-version:
     name: Resolve Candidate Chart Version
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       chart_version: ${{ steps.version.outputs.chart_version }}
     steps:
@@ -64,6 +71,7 @@ jobs:
   resilience-linux:
     name: EKS Resilience + Security
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     needs: resolve-version
     steps:
       - uses: actions/checkout@v6
@@ -126,6 +134,7 @@ jobs:
   openclaw-smoke-skipped:
     name: macOS OpenClaw Smoke Skipped
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: resolve-version
     if: ${{ !(github.event.inputs.run_openclaw_macos == 'true' || vars.ENABLE_MACOS_OPENCLAW_SMOKE == 'true') }}
     steps:
@@ -141,6 +150,7 @@ jobs:
   openclaw-smoke-macos:
     name: macOS OpenClaw Smoke (Optional)
     runs-on: macos-latest
+    timeout-minutes: 45
     needs: resolve-version
     if: ${{ github.event.inputs.run_openclaw_macos == 'true' || vars.ENABLE_MACOS_OPENCLAW_SMOKE == 'true' }}
     continue-on-error: true

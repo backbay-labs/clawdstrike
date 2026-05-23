@@ -31,19 +31,24 @@ env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/backbay-labs/clawdstrike
 
+# packages: write is required so the workflow can push images to GHCR.
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: docker-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Spine is a single Dockerfile that bakes one of three binaries via a BIN
+  # build-arg, so it keeps its own matrix and tag layout (image:<bin>-<tag>).
   spine:
     name: Spine (${{ matrix.bin }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
+      fail-fast: false
       matrix:
         bin: [spine-checkpointer, spine-witness, spine-proofs-api]
     steps:
@@ -77,17 +82,43 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
+        # aquasecurity/trivy-action pinned to v0.30.0 (immutable SHA) instead of
+        # the moving @master ref. continue-on-error was previously enabled to
+        # suppress scan flakes; removed so HIGH/CRITICAL findings actually
+        # block the build.
+        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.30.0
         with:
           image-ref: ${{ env.IMAGE_PREFIX }}/spine:${{ matrix.bin }}-${{ github.sha }}
           format: 'table'
           severity: 'HIGH,CRITICAL'
           exit-code: '1'
 
-  tetragon-bridge:
-    name: Tetragon Bridge
+  # All other images share the same build/push/scan shape; they only differ by
+  # image name and Dockerfile path, so they collapse into a single matrix job.
+  build-image:
+    name: docker:${{ matrix.image }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: tetragon-bridge
+            dockerfile: infra/docker/Dockerfile.tetragon-bridge
+          - image: hubble-bridge
+            dockerfile: infra/docker/Dockerfile.hubble-bridge
+          - image: hushd
+            dockerfile: Dockerfile.hushd
+          - image: control-api
+            dockerfile: infra/docker/Dockerfile.control-api
+          - image: registry
+            dockerfile: Dockerfile.registry
+          - image: auditd-bridge
+            dockerfile: infra/docker/Dockerfile.auditd-bridge
+          - image: k8s-audit-bridge
+            dockerfile: infra/docker/Dockerfile.k8s-audit-bridge
+          - image: eas-anchor
+            dockerfile: infra/docker/Dockerfile.eas-anchor
     steps:
       - uses: actions/checkout@v6
 
@@ -105,310 +136,26 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: infra/docker/Dockerfile.tetragon-bridge
+          file: ${{ matrix.dockerfile }}
           push: true
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}/tetragon-bridge:latest
-            ${{ env.IMAGE_PREFIX }}/tetragon-bridge:${{ github.sha }}
-            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/tetragon-bridge:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:latest
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/{1}:{2}', env.IMAGE_PREFIX, matrix.image, github.event.inputs.release_tag) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
+        # aquasecurity/trivy-action pinned to v0.30.0 (immutable SHA) instead of
+        # the moving @master ref. continue-on-error was previously enabled to
+        # suppress scan flakes; removed so HIGH/CRITICAL findings actually
+        # block the build.
+        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.30.0
         with:
-          image-ref: ${{ env.IMAGE_PREFIX }}/tetragon-bridge:${{ github.sha }}
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
-
-  hubble-bridge:
-    name: Hubble Bridge
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PUSH_TOKEN != '' && secrets.GHCR_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: infra/docker/Dockerfile.hubble-bridge
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/hubble-bridge:latest
-            ${{ env.IMAGE_PREFIX }}/hubble-bridge:${{ github.sha }}
-            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/hubble-bridge:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.IMAGE_PREFIX }}/hubble-bridge:${{ github.sha }}
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
-
-  hushd:
-    name: hushd
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PUSH_TOKEN != '' && secrets.GHCR_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.hushd
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/hushd:latest
-            ${{ env.IMAGE_PREFIX }}/hushd:${{ github.sha }}
-            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/hushd:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.IMAGE_PREFIX }}/hushd:${{ github.sha }}
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
-
-  control-api:
-    name: Control API
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PUSH_TOKEN != '' && secrets.GHCR_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: infra/docker/Dockerfile.control-api
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/control-api:latest
-            ${{ env.IMAGE_PREFIX }}/control-api:${{ github.sha }}
-            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/control-api:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.IMAGE_PREFIX }}/control-api:${{ github.sha }}
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
-
-  registry:
-    name: Registry
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PUSH_TOKEN != '' && secrets.GHCR_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.registry
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/registry:latest
-            ${{ env.IMAGE_PREFIX }}/registry:${{ github.sha }}
-            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/registry:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.IMAGE_PREFIX }}/registry:${{ github.sha }}
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
-
-  auditd-bridge:
-    name: Auditd Bridge
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PUSH_TOKEN != '' && secrets.GHCR_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: infra/docker/Dockerfile.auditd-bridge
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/auditd-bridge:latest
-            ${{ env.IMAGE_PREFIX }}/auditd-bridge:${{ github.sha }}
-            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/auditd-bridge:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.IMAGE_PREFIX }}/auditd-bridge:${{ github.sha }}
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
-
-  k8s-audit-bridge:
-    name: K8s Audit Bridge
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PUSH_TOKEN != '' && secrets.GHCR_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: infra/docker/Dockerfile.k8s-audit-bridge
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/k8s-audit-bridge:latest
-            ${{ env.IMAGE_PREFIX }}/k8s-audit-bridge:${{ github.sha }}
-            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/k8s-audit-bridge:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.IMAGE_PREFIX }}/k8s-audit-bridge:${{ github.sha }}
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
-
-  eas-anchor:
-    name: EAS Anchor
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PUSH_TOKEN != '' && secrets.GHCR_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: infra/docker/Dockerfile.eas-anchor
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/eas-anchor:latest
-            ${{ env.IMAGE_PREFIX }}/eas-anchor:${{ github.sha }}
-            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/eas-anchor:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.IMAGE_PREFIX }}/eas-anchor:${{ github.sha }}
+          image-ref: ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.sha }}
           format: 'table'
           severity: 'HIGH,CRITICAL'
           exit-code: '1'
