@@ -20,7 +20,7 @@
   "files": ["dist"],
   "dependencies": {},
   "devDependencies": {
-    "typescript": "^5.7",
+    "typescript": "^6.0",
     "vitest": "^4.0"
   },
   "peerDependencies": {},
