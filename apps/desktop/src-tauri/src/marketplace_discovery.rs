@@ -630,28 +630,18 @@ fn normalize_local_discovery_addr(
     sender_ip: IpAddr,
     peer_id: &PeerId,
 ) -> Option<Multiaddr> {
+    // SECURITY: The packet body is unauthenticated UDP from the LAN, so the
+    // advertised IP in `listen_addrs` is attacker-controlled. Trust only the
+    // datagram sender IP for the host, and take only the TCP port from the
+    // packet (peer id is validated upstream). This prevents a forged broadcast
+    // from coercing this node into dialing arbitrary external/internal targets.
     let addr = raw_addr.parse::<Multiaddr>().ok()?;
-    let mut tcp_port = None;
-    let mut advertised_ip = None;
+    let port = addr.iter().find_map(|protocol| match protocol {
+        Protocol::Tcp(port) => Some(port),
+        _ => None,
+    })?;
 
-    for protocol in addr.iter() {
-        match protocol {
-            Protocol::Ip4(ip) if !ip.is_unspecified() => {
-                advertised_ip = Some(IpAddr::V4(ip));
-            }
-            Protocol::Ip6(ip) if !ip.is_unspecified() => {
-                advertised_ip = Some(IpAddr::V6(ip));
-            }
-            Protocol::Tcp(port) => {
-                tcp_port = Some(port);
-            }
-            _ => {}
-        }
-    }
-
-    let port = tcp_port?;
-    let ip = advertised_ip.unwrap_or(sender_ip);
-    match ip {
+    match sender_ip {
         IpAddr::V4(ip) if !ip.is_unspecified() => {
             format!("/ip4/{ip}/tcp/{port}/p2p/{peer_id}").parse().ok()
         }
@@ -845,5 +835,74 @@ mod discovery_manager_tests {
         );
 
         let _ = manager.stop().await;
+    }
+
+    fn test_peer_id() -> PeerId {
+        Keypair::generate_ed25519().public().to_peer_id()
+    }
+
+    #[test]
+    fn local_discovery_addr_ignores_advertised_ip_and_uses_sender() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50));
+        // Advertised IP is a hostile external address; must be ignored.
+        let raw = "/ip4/203.0.113.10/tcp/4001";
+        let dial = normalize_local_discovery_addr(raw, sender, &peer_id)
+            .expect("should produce a dial address");
+        let s = dial.to_string();
+        assert!(
+            s.starts_with("/ip4/192.168.1.50/tcp/4001/p2p/"),
+            "expected dial addr to use sender IP, got {s}"
+        );
+        assert!(
+            !s.contains("203.0.113.10"),
+            "advertised external IP must not appear in dial addr: {s}"
+        );
+    }
+
+    #[test]
+    fn local_discovery_addr_takes_port_from_packet() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 7));
+        let raw = "/ip4/10.0.0.7/tcp/9999";
+        let dial = normalize_local_discovery_addr(raw, sender, &peer_id)
+            .expect("should produce a dial address");
+        assert!(dial.to_string().contains("/tcp/9999/"));
+    }
+
+    #[test]
+    fn local_discovery_addr_handles_ipv6_sender() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V6("fe80::1".parse().unwrap());
+        // Advertised v4 IP must be ignored; sender v6 IP is used.
+        let raw = "/ip4/8.8.8.8/tcp/4001";
+        let dial = normalize_local_discovery_addr(raw, sender, &peer_id)
+            .expect("should produce a dial address");
+        let s = dial.to_string();
+        assert!(s.starts_with("/ip6/fe80::1/tcp/4001/p2p/"), "got {s}");
+        assert!(!s.contains("8.8.8.8"));
+    }
+
+    #[test]
+    fn local_discovery_addr_rejects_unspecified_sender() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+        let raw = "/ip4/192.168.1.10/tcp/4001";
+        assert!(normalize_local_discovery_addr(raw, sender, &peer_id).is_none());
+    }
+
+    #[test]
+    fn local_discovery_addr_rejects_missing_tcp_port() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50));
+        let raw = "/ip4/192.168.1.50/udp/4001";
+        assert!(normalize_local_discovery_addr(raw, sender, &peer_id).is_none());
+    }
+
+    #[test]
+    fn local_discovery_addr_rejects_unparseable_input() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50));
+        assert!(normalize_local_discovery_addr("not-a-multiaddr", sender, &peer_id).is_none());
     }
 }

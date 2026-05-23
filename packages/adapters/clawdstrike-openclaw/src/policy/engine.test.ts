@@ -1253,6 +1253,84 @@ filesystem:
     },
   );
 
+  it.each([
+    { label: "touch", command: "touch", args: ["foo.txt"] },
+    { label: "mkdir", command: "mkdir", args: ["newdir"] },
+    { label: "mkdir -p", command: "mkdir", args: ["-p", "deep"] },
+    { label: "rm", command: "rm", args: ["doomed"] },
+    { label: "rmdir", command: "rmdir", args: ["old"] },
+    { label: "tee", command: "tee", args: ["log.out"] },
+    { label: "unlink", command: "unlink", args: ["leftover"] },
+  ])(
+    "classifies bare relative names as writes for $label so allowed_write_roots is enforced",
+    async ({ command, args }) => {
+      const allowedDir = join(testDir, `relwrite-${command}-allowed`);
+      mkdirSync(allowedDir, { recursive: true });
+      const policyPath = join(testDir, `relwrite-${command}-policy.yaml`);
+      writeFileSync(
+        policyPath,
+        `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+      );
+
+      const engine = new PolicyEngine({
+        policy: policyPath,
+        mode: "deterministic",
+        logLevel: "error",
+        guards: { patch_integrity: false },
+      });
+
+      const decision = await engine.evaluate({
+        eventId: `command-${command}-relative-write`,
+        eventType: "command_exec",
+        timestamp: new Date().toISOString(),
+        data: { type: "command", command, args },
+      });
+
+      expect(decision.status).toBe("deny");
+      expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+    },
+  );
+
+  it("does not misclassify numeric flag values (install -m 0644) as write operands", async () => {
+    const allowedDir = join(testDir, "install-mode-allowed");
+    mkdirSync(allowedDir, { recursive: true });
+    const policyPath = join(testDir, "install-mode-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { patch_integrity: false },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: "command-install-mode",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "install",
+        args: ["-m", "0644", join(allowedDir, "src.txt"), join(allowedDir, "dst.txt")],
+      },
+    });
+
+    expect(decision.status).toBe("allow");
+  });
+
   it("does not treat write-command names in arguments as shell write modes", async () => {
     const allowedDir = join(testDir, "argument-command-token-allowed");
     mkdirSync(allowedDir, { recursive: true });
