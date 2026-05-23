@@ -1162,16 +1162,18 @@ function sanitizeStreamChunkIfNeeded(
 
   const type = chunk.type;
   if (type === "text-delta") {
-    // V2 stream-part text-delta carries the delta as `delta` (V3+) or
-    // `textDelta` (V2-era providers). Accept either field; emit using the
-    // incoming shape preserved by spread.
+    // V2 stream-part text-delta carries the delta as `delta` (Vercel AI SDK
+    // v6+) or `textDelta` (v5-era providers). Accept either field, and write
+    // the sanitized text back to every field that was present so downstream
+    // consumers see redacted output regardless of which field they read.
     const partRecord = chunk as Record<string, unknown>;
-    const delta =
-      typeof partRecord.textDelta === "string"
-        ? (partRecord.textDelta as string)
-        : typeof partRecord.delta === "string"
-          ? (partRecord.delta as string)
-          : undefined;
+    const hasTextDelta = typeof partRecord.textDelta === "string";
+    const hasDelta = typeof partRecord.delta === "string";
+    const delta = hasTextDelta
+      ? (partRecord.textDelta as string)
+      : hasDelta
+        ? (partRecord.delta as string)
+        : undefined;
     if (typeof delta !== "string") {
       return chunk;
     }
@@ -1181,8 +1183,17 @@ function sanitizeStreamChunkIfNeeded(
       return null;
     }
     // Use the stream-processed chunk. This may differ from the incoming delta
-    // due to buffering and cross-boundary redaction.
-    return { ...chunk, textDelta: result.sanitized };
+    // due to buffering and cross-boundary redaction. Update whichever field(s)
+    // carried the incoming text so the structural Object spread cannot leak
+    // the unsanitized value through a sibling field.
+    const sanitizedChunk: Record<string, unknown> = { ...chunk };
+    if (hasTextDelta) {
+      sanitizedChunk.textDelta = result.sanitized;
+    }
+    if (hasDelta) {
+      sanitizedChunk.delta = result.sanitized;
+    }
+    return sanitizedChunk;
   }
 
   if (type === "finish" || type === "error") {
@@ -1209,9 +1220,14 @@ function sanitizeStreamChunkIfNeeded(
 
     // Always emit remaining buffered text before the finish/error event.
     // Without this, clean (non-redacted) text accumulated in the buffer
-    // since the last flush would be silently dropped.
+    // since the last flush would be silently dropped. The synthesized chunk
+    // populates both `delta` (v6+) and `textDelta` (v5-era) so consumers
+    // reading either field see the flushed text.
     if (type === "finish" && final.sanitized.length > 0) {
-      return [{ type: "text-delta", textDelta: final.sanitized }, chunk];
+      return [
+        { type: "text-delta", delta: final.sanitized, textDelta: final.sanitized },
+        chunk,
+      ];
     }
     return chunk;
   }

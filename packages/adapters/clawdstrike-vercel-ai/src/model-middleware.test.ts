@@ -301,6 +301,97 @@ describe("wrapLanguageModel", () => {
       ).toBe(true);
     },
   );
+
+  it.skipIf(!wasmAvailable)(
+    "sanitizes streaming text deltas on both `delta` and `textDelta` fields (Vercel AI v6+ vs v5 shape)",
+    async () => {
+      const engine: PolicyEngineLike = {
+        evaluate: () => ({ allowed: true, denied: false, warn: false }),
+      };
+
+      const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+        ...model,
+        doStream: (params: any) =>
+          middleware.wrapStream({
+            doStream: () => model.doStream(params),
+            params,
+            model,
+          }),
+      }));
+
+      const security = createClawdstrikeMiddleware({
+        engine,
+        config: {
+          promptSecurity: {
+            enabled: true,
+            mode: "audit",
+            jailbreakDetection: { enabled: false },
+            instructionHierarchy: { enabled: false },
+            watermarking: { enabled: false },
+            outputSanitization: { enabled: true },
+          },
+        },
+        aiSdk: { experimental_wrapLanguageModel },
+      });
+
+      const key = `sk-${"a".repeat(48)}`;
+      const chunk1 = key.slice(0, 10);
+      const chunk2 = key.slice(10);
+
+      // Source provider emits Vercel AI SDK v6+ shape: `delta` field only.
+      const baseModel = {
+        async doStream(_params?: any) {
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: "text-delta", delta: `hello ${chunk1}` });
+              controller.enqueue({ type: "text-delta", delta: `${chunk2} bye` });
+              controller.enqueue({ type: "finish" });
+              controller.close();
+            },
+          });
+          return { stream };
+        },
+      };
+
+      const model = security.wrapLanguageModel(baseModel);
+      const result = await (model as any).doStream({ prompt: [] });
+
+      const out: any[] = [];
+      const reader = result.stream.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        out.push(value);
+      }
+
+      const textChunks = out.filter((c) => c.type === "text-delta");
+
+      // Concatenate via the `delta` field (v6+ consumer view): must be sanitized.
+      const deltaText = textChunks.map((c) => c.delta ?? "").join("");
+      expect(deltaText).not.toContain(key);
+      expect(deltaText).toContain("[REDACTED:openai_api_key]");
+
+      // Any chunk that started with `delta` must NOT leak the unsanitized value
+      // via a sibling `textDelta` field. The two fields must agree when both
+      // are present, ensuring downstream consumers reading either path see
+      // identical sanitized text.
+      for (const part of textChunks) {
+        if (typeof part.delta === "string" && typeof part.textDelta === "string") {
+          expect(part.delta).toBe(part.textDelta);
+        }
+        if (typeof part.delta === "string") {
+          expect(part.delta).not.toContain(key);
+        }
+        if (typeof part.textDelta === "string") {
+          expect(part.textDelta).not.toContain(key);
+        }
+      }
+
+      expect(
+        security.getAuditLog().some((e) => e.type === "prompt_security_output_sanitized"),
+      ).toBe(true);
+    },
+  );
 });
 
 describe("prompt-security EDR event builder", () => {
