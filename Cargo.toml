@@ -185,9 +185,6 @@ nono = { path = "infra/vendor/nono", version = "0.11.0", default-features = fals
 lto = true
 codegen-units = 1
 
-[patch.crates-io]
-async-nats = { path = "infra/vendor/async-nats" }
-
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
