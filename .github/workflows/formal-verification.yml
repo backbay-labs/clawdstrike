@@ -232,7 +232,7 @@ jobs:
 
       - name: Upload proptest regressions
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: proptest-regressions
           path: '**/proptest-regressions/**'
@@ -306,7 +306,7 @@ jobs:
 
       - name: Upload proptest regressions
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-proptest-regressions
           path: '**/proptest-regressions/**'

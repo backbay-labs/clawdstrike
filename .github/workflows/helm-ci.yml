@@ -41,7 +41,7 @@ jobs:
         run: helm show chart "dist/helm/clawdstrike-0.0.0-ci.${{ github.run_number }}.tgz"
 
       - name: Upload packaged chart artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: helm-fast-package-${{ github.run_number }}
           path: dist/helm/clawdstrike-0.0.0-ci.${{ github.run_number }}.tgz
