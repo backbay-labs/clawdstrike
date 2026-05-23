@@ -1,8 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-capability",
-  "description": "Huntronomer desktop capabilities. Deny-everything baseline: this app is mostly read-only and exposes only a minimal set of Tauri commands; permissions should be added explicitly as new capabilities are exercised.",
+  "description": "Huntronomer desktop capabilities. Grants the default core IPC surface so the frontend can call registered #[tauri::command] handlers and listen for events emitted by Rust.",
   "windows": ["main"],
   "platforms": ["linux", "macOS", "windows"],
-  "permissions": []
+  "permissions": [
+    "core:default"
+  ]
 }
