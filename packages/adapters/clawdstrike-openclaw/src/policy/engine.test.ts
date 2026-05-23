@@ -1376,6 +1376,47 @@ filesystem:
     },
   );
 
+  it.each([
+    { label: "touch -- -dashfile", command: "touch", args: ["--", "-dashfile"] },
+    { label: "mkdir -- -dir", command: "mkdir", args: ["--", "-dir"] },
+    { label: "rm -- -doomed", command: "rm", args: ["--", "-doomed"] },
+    { label: "cp src -- -dst", command: "cp", args: ["src", "--", "-dst"] },
+    { label: "install -d -- -dashdir", command: "install", args: ["-d", "--", "-dashdir"] },
+  ])(
+    "classifies $label dash-prefixed operands after `--` as writes",
+    async ({ command, args }) => {
+      const allowedDir = join(testDir, `dash-${command}-${args.length}-allowed`);
+      mkdirSync(allowedDir, { recursive: true });
+      const policyPath = join(testDir, `dash-${command}-${args.length}-policy.yaml`);
+      writeFileSync(
+        policyPath,
+        `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+      );
+
+      const engine = new PolicyEngine({
+        policy: policyPath,
+        mode: "deterministic",
+        logLevel: "error",
+        guards: { patch_integrity: false },
+      });
+
+      const decision = await engine.evaluate({
+        eventId: `command-${command}-dash-operand`,
+        eventType: "command_exec",
+        timestamp: new Date().toISOString(),
+        data: { type: "command", command, args },
+      });
+
+      expect(decision.status).toBe("deny");
+      expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+    },
+  );
+
   it("classifies every install -d operand as a write", async () => {
     const allowedDir = join(testDir, "install-d-multi-allowed");
     mkdirSync(allowedDir, { recursive: true });

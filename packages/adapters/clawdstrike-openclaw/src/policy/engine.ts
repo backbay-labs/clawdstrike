@@ -311,6 +311,11 @@ function extractCommandPathCandidates(
   // to apply command-specific switches such as `install -d DIR...` which turns
   // a normally-destination-mode command into create-all-operands mode.
   let writeOperandCommand: string | null = null;
+  // True after the POSIX `--` end-of-options marker. Subsequent tokens are
+  // positional and must NOT be filtered out for starting with `-`, otherwise
+  // `touch -- -dashfile` would leave writes empty and bypass the fail-closed
+  // allowed_write_roots gate.
+  let afterDoubleDash = false;
   let operandPaths: string[] = [];
   let explicitDestinationOperandPaths: string[] = [];
   let expectsCommandToken = true;
@@ -363,6 +368,7 @@ function extractCommandPathCandidates(
       flushCommandOperands();
       writeOperandMode = null;
       writeOperandCommand = null;
+      afterDoubleDash = false;
       expectsCommandToken = true;
       activeShellPrefix = null;
       shellPrefixOptionValuesRemaining = 0;
@@ -379,6 +385,7 @@ function extractCommandPathCandidates(
         flushCommandOperands();
         writeOperandMode = "destination";
         writeOperandCommand = commandToken;
+        afterDoubleDash = false;
         expectsCommandToken = false;
         activeShellPrefix = null;
         continue;
@@ -388,6 +395,7 @@ function extractCommandPathCandidates(
         flushCommandOperands();
         writeOperandMode = "all";
         writeOperandCommand = commandToken;
+        afterDoubleDash = false;
         expectsCommandToken = false;
         activeShellPrefix = null;
         continue;
@@ -415,6 +423,22 @@ function extractCommandPathCandidates(
 
       expectsCommandToken = false;
       activeShellPrefix = null;
+    }
+
+    // POSIX `--` end-of-options: every subsequent token in this command is a
+    // positional operand, regardless of leading dashes. Handled before any
+    // other operand classifier so that `touch -- -dashfile` records
+    // `-dashfile` as a write target.
+    if (writeOperandMode && !afterDoubleDash && cleanedToken === "--") {
+      afterDoubleDash = true;
+      continue;
+    }
+
+    if (writeOperandMode && afterDoubleDash) {
+      if (looksLikeWriteOperand(cleanedToken)) {
+        operandPaths.push(cleanedToken);
+      }
+      continue;
     }
 
     if (writeOperandMode === "destination") {
