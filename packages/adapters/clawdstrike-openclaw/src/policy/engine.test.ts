@@ -1259,10 +1259,28 @@ filesystem:
       path: "sudo-user-destination.txt",
     },
     {
+      label: "sudo long wrapper option",
+      command: "sudo",
+      args: ["--user", "root", "touch"],
+      path: "sudo-long-user-destination.txt",
+    },
+    {
+      label: "sudo clustered wrapper option",
+      command: "sudo",
+      args: ["-Eu", "root", "touch"],
+      path: "sudo-cluster-user-destination.txt",
+    },
+    {
       label: "env wrapper option",
       command: "env",
       args: ["-i", "cp", join(testDir, "env-source.txt")],
       path: "env-destination.txt",
+    },
+    {
+      label: "env unset wrapper option",
+      command: "env",
+      args: ["-u", "FOO", "cp", join(testDir, "env-unset-source.txt")],
+      path: "env-unset-destination.txt",
     },
   ])("keeps scanning for write commands after $label prefixes", async ({ command, args, path }) => {
     const allowedDir = join(testDir, "prefix-command-allowed");

@@ -171,6 +171,11 @@ function shellPrefixOptionValueArity(t: string): number {
   }
 
   if (optionName.length > 1) {
+    for (let i = 0; i < optionName.length; i++) {
+      if (SHELL_PREFIX_FLAGS_WITH_VALUE.has(optionName[i])) {
+        return i === optionName.length - 1 ? 1 : 0;
+      }
+    }
     return 0;
   }
 
