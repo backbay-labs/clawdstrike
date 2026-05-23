@@ -6,6 +6,7 @@
 
 import { ensureWasmSync, getWasmModule } from "./crypto/backend.js";
 import { toSnakeCaseKeys } from "./case-convert.js";
+import type { WasmInstructionHierarchyEnforcerInstance } from "./types/wasm.js";
 
 export enum InstructionLevel {
   Platform = 0,
@@ -114,8 +115,7 @@ function prepareMessages(messages: HierarchyMessage[]): unknown[] {
 }
 
 export class InstructionHierarchyEnforcer {
-  // biome-ignore lint/suspicious/noExplicitAny: WASM instance type is dynamic
-  private inner: any;
+  private inner: WasmInstructionHierarchyEnforcerInstance;
 
   constructor(config?: HierarchyEnforcerConfig) {
     ensureWasmSync();

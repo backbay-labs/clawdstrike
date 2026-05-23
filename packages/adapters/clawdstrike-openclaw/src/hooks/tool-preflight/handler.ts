@@ -38,6 +38,7 @@ import {
   recordApproval,
 } from "../approval-state.js";
 import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
+import { isCuaBridgeEvaluated } from "../cua-bridge-evaluated.js";
 import {
   clearAllToolInvocations,
   rememberToolInvocation,
@@ -514,7 +515,7 @@ const handler: HookHandler = async (
   // Skip if the CUA bridge handler already evaluated this tool call.
   // CUA tools receive specialized policy evaluation via the bridge; running
   // the general preflight handler as well would cause double evaluation.
-  if ((event as any).__cuaBridgeEvaluated) return;
+  if (isCuaBridgeEvaluated(event)) return;
 
   const toolName = isModern
     ? event.toolName

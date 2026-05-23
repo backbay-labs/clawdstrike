@@ -70,7 +70,11 @@ export function FindingDetailPage() {
     (findingId: string) => {
       const targetFinding = findings.find((entry) => entry.id === findingId);
       if (!targetFinding) return;
-      // Force policy format by passing a gap hint that prefers clawdstrike_policy
+      // Force policy format by passing a gap hint that prefers clawdstrike_policy.
+      // The third arg is typed as `CoverageGapCandidate` but the hook only reads the
+      // `suggestedFormats` hint slot in this code path — full reconciliation tracked
+      // as a follow-up in the TS `any` Sprint 2/3 (schema migration) work.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial-shape hint; see comment
       void draftFromFinding(targetFinding, allSignals, {
         techniqueHints: [],
         dataSourceHints: [],

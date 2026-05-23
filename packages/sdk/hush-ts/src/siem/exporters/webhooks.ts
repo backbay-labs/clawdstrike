@@ -288,7 +288,9 @@ export class WebhookExporter extends BaseExporter {
     const response = await fetch(cfg.url, {
       method,
       headers,
-      body: body as any,
+      // `body` is either a string or a Uint8Array, both valid for fetch().
+      // tsconfig omits the DOM lib (no `BodyInit` global) so we widen via unknown.
+      body: body as unknown as Uint8Array | string,
     });
 
     if (!response.ok && response.status !== 202) {
@@ -306,7 +308,7 @@ export class WebhookExporter extends BaseExporter {
       return JSON.stringify(event);
     }
 
-    const rendered = renderTemplate(template, event as any);
+    const rendered = renderTemplate(template, event as unknown as Record<string, unknown>);
     if (contentType.includes("application/json")) {
       try {
         const parsed = JSON.parse(rendered);
@@ -344,7 +346,7 @@ function severityOrd(sev: SecuritySeverity): number {
   }
 }
 
-function renderTemplate(template: string, data: Record<string, any>): string {
+function renderTemplate(template: string, data: Record<string, unknown>): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_match, path: string) => {
     const value = getByPath(data, path);
     if (value === undefined) {
@@ -360,14 +362,14 @@ function renderTemplate(template: string, data: Record<string, any>): string {
   });
 }
 
-function getByPath(obj: Record<string, any>, path: string): unknown {
+function getByPath(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split(".").filter(Boolean);
-  let cur: any = obj;
+  let cur: unknown = obj;
   for (const p of parts) {
     if (cur == null || typeof cur !== "object") {
       return undefined;
     }
-    cur = cur[p];
+    cur = (cur as Record<string, unknown>)[p];
   }
   return cur;
 }

@@ -1,5 +1,6 @@
 import { ensureWasmSync, getWasmModule } from "./crypto/backend.js";
 import { camelToSnake, toSnakeCaseKeys } from "./case-convert.js";
+import type { WasmOutputSanitizerInstance } from "./types/wasm.js";
 
 export type SensitiveCategory = "secret" | "pii" | "internal" | "custom";
 
@@ -113,8 +114,7 @@ function prepareConfig(config: OutputSanitizerConfig): unknown {
 }
 
 export class OutputSanitizer {
-  // biome-ignore lint/suspicious/noExplicitAny: WASM instance type is dynamic
-  private readonly inner: any;
+  private readonly inner: WasmOutputSanitizerInstance;
 
   constructor(config?: OutputSanitizerConfig) {
     ensureWasmSync();

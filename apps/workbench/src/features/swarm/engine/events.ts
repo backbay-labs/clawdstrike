@@ -29,7 +29,7 @@ export class TypedEventEmitter<Events extends Record<string, unknown>> {
   private target = new EventTarget();
   private listeners = new Map<
     string,
-    Array<{ handler: (data: any) => void; listener: EventListener }>
+    Array<{ handler: (data: unknown) => void; listener: EventListener }>
   >();
 
   /** Register a handler. Returns a cleanup function. */
@@ -44,7 +44,10 @@ export class TypedEventEmitter<Events extends Record<string, unknown>> {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
-    this.listeners.get(event)!.push({ handler, listener });
+    this.listeners.get(event)!.push({
+      handler: handler as (data: unknown) => void,
+      listener,
+    });
 
     return () => {
       this.target.removeEventListener(event, listener);
@@ -55,7 +58,7 @@ export class TypedEventEmitter<Events extends Record<string, unknown>> {
 
       const registrationIndex = registrations.findIndex(
         (registration) =>
-          registration.handler === handler &&
+          registration.handler === (handler as (data: unknown) => void) &&
           registration.listener === listener,
       );
       if (registrationIndex !== -1) {

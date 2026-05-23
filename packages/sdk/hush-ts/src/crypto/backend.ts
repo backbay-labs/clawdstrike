@@ -8,6 +8,7 @@
 
 import { createNobleBackend } from "./noble-backend";
 import { createWasmBackend } from "./wasm-backend";
+import type { HushWasmModule } from "../types/wasm.js";
 
 export interface CryptoBackend {
   readonly name: "wasm" | "noble";
@@ -31,20 +32,18 @@ let currentBackend: CryptoBackend = createNobleBackend();
  * Detection code (JailbreakDetector, OutputSanitizer, etc.) accesses
  * this via `getWasmModule()` rather than re-importing `@clawdstrike/wasm`.
  */
-// biome-ignore lint/suspicious/noExplicitAny: WASM module shape is dynamic
-let wasmModule: any = null;
+let wasmModule: HushWasmModule | null = null;
 let wasmInitPromise: Promise<boolean> | null = null;
 
 /**
  * Return the raw WASM module, or `null` if initialization has not happened
  * yet (or failed).
  */
-// biome-ignore lint/suspicious/noExplicitAny: WASM module shape is dynamic
-export function getWasmModule(): any {
+export function getWasmModule(): HushWasmModule | null {
   return wasmModule;
 }
 
-function isCompatibleWasmModule(wasm: unknown): boolean {
+function isCompatibleWasmModule(wasm: unknown): wasm is HushWasmModule {
   // Keep this in sync with `packages/sdk/hush-ts/src/crypto/wasm-backend.ts`.
   const required = [
     "hash_sha256_bytes",
@@ -55,20 +54,21 @@ function isCompatibleWasmModule(wasm: unknown): boolean {
     "public_key_from_private",
   ] as const;
 
+  if (!wasm || typeof wasm !== "object") return false;
   for (const key of required) {
-    if (typeof (wasm as any)?.[key] !== "function") return false;
+    if (typeof (wasm as Record<string, unknown>)[key] !== "function") return false;
   }
   return true;
 }
 
 // Some package shapes expose function stubs before the underlying wasm bytes
 // are initialized. This cheap probe avoids activating those broken modules.
-function isOperationalWasmModule(wasm: unknown): boolean {
+function isOperationalWasmModule(wasm: unknown): wasm is HushWasmModule {
   if (!isCompatibleWasmModule(wasm)) {
     return false;
   }
   try {
-    const digest = (wasm as any).hash_sha256_bytes(new Uint8Array());
+    const digest = wasm.hash_sha256_bytes(new Uint8Array());
     return digest instanceof Uint8Array && digest.length === 32;
   } catch {
     return false;
@@ -77,31 +77,41 @@ function isOperationalWasmModule(wasm: unknown): boolean {
 
 // Some WASM bundles are published as CJS and are surfaced under `default`
 // when imported from ESM; normalize to a plain function-bearing object.
-// biome-ignore lint/suspicious/noExplicitAny: WASM module shape is dynamic
-function normalizeWasmModule(wasm: any): any {
+function normalizeWasmModule(wasm: unknown): HushWasmModule | unknown {
   if (isCompatibleWasmModule(wasm)) return wasm;
-  if (isCompatibleWasmModule(wasm?.default)) return wasm.default;
+  const nested = (wasm as { default?: unknown } | null | undefined)?.default;
+  if (isCompatibleWasmModule(nested)) return nested;
   return wasm;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: Node require type is not available in browser builds
-type NodeRequire = ((id: string) => any) & {
+// Node require type is not available in browser builds; widen via unknown.
+type NodeRequire = ((id: string) => unknown) & {
   resolve?: (id: string) => string;
 };
 
-function nodeRequire(): NodeRequire | null {
+interface NodeProcessLike {
+  getBuiltinModule?: (name: string) => unknown;
+}
+
+interface NodeModuleLike {
+  createRequire?: (filename: string | URL) => NodeRequire;
+}
+
+function getBuiltinModuleFn(): ((name: string) => unknown) | null {
   // Prefer process.getBuiltinModule so we can create require() in ESM without
   // statically importing node:module (which breaks browser bundlers).
-  // biome-ignore lint/suspicious/noExplicitAny: runtime feature detection
-  const getBuiltin: any = (globalThis as any)?.process?.getBuiltinModule;
-  if (typeof getBuiltin !== "function") {
-    return null;
-  }
+  const proc = (globalThis as { process?: NodeProcessLike }).process;
+  const getBuiltin = proc?.getBuiltinModule;
+  return typeof getBuiltin === "function" ? getBuiltin.bind(proc) : null;
+}
+
+function nodeRequire(): NodeRequire | null {
+  const getBuiltin = getBuiltinModuleFn();
+  if (!getBuiltin) return null;
   try {
-    // biome-ignore lint/suspicious/noExplicitAny: runtime feature detection
-    const mod: any = getBuiltin("node:module") ?? getBuiltin("module");
-    if (typeof mod?.createRequire === "function") {
-      return mod.createRequire(import.meta.url) as NodeRequire;
+    const mod = (getBuiltin("node:module") ?? getBuiltin("module")) as NodeModuleLike | null;
+    if (mod && typeof mod.createRequire === "function") {
+      return mod.createRequire(import.meta.url);
     }
   } catch {
     // Node builtin module not accessible in this runtime.
@@ -109,12 +119,9 @@ function nodeRequire(): NodeRequire | null {
   return null;
 }
 
-function nodeBuiltinModule(name: string): any {
-  // biome-ignore lint/suspicious/noExplicitAny: runtime feature detection
-  const getBuiltin: any = (globalThis as any)?.process?.getBuiltinModule;
-  if (typeof getBuiltin !== "function") {
-    return null;
-  }
+function nodeBuiltinModule(name: string): unknown {
+  const getBuiltin = getBuiltinModuleFn();
+  if (!getBuiltin) return null;
   try {
     return getBuiltin(name);
   } catch {
@@ -122,25 +129,35 @@ function nodeBuiltinModule(name: string): any {
   }
 }
 
+interface FsLike {
+  readFileSync(path: string): Uint8Array;
+}
+
+interface PathLike {
+  join(...parts: string[]): string;
+  dirname(p: string): string;
+}
+
 // Older @clawdstrike/wasm builds require explicit initSync(wasmBytes) in Node.
 // Attempt that path before giving up on module activation.
 function tryLegacyInitSync(
   requireFn: NodeRequire,
-  // biome-ignore lint/suspicious/noExplicitAny: WASM module shape is dynamic
-  imported: any,
+  imported: unknown,
 ): boolean {
+  type WithInitSync = { initSync?: (args: { module: Uint8Array }) => unknown };
+  const importedAsObj = (imported ?? {}) as WithInitSync & { default?: WithInitSync };
   const initSync =
-    typeof imported?.initSync === "function"
-      ? imported.initSync
-      : typeof imported?.default?.initSync === "function"
-        ? imported.default.initSync
+    typeof importedAsObj.initSync === "function"
+      ? importedAsObj.initSync
+      : typeof importedAsObj.default?.initSync === "function"
+        ? importedAsObj.default!.initSync!
         : null;
   if (!initSync || typeof requireFn.resolve !== "function") {
     return false;
   }
 
-  const fs = nodeBuiltinModule("node:fs") ?? nodeBuiltinModule("fs");
-  const path = nodeBuiltinModule("node:path") ?? nodeBuiltinModule("path");
+  const fs = (nodeBuiltinModule("node:fs") ?? nodeBuiltinModule("fs")) as FsLike | null;
+  const path = (nodeBuiltinModule("node:path") ?? nodeBuiltinModule("path")) as PathLike | null;
   if (typeof fs?.readFileSync !== "function" || typeof path?.join !== "function") {
     return false;
   }
@@ -156,8 +173,7 @@ function tryLegacyInitSync(
   }
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: WASM module shape is dynamic
-function activateWasmModule(wasm: any): boolean {
+function activateWasmModule(wasm: unknown): boolean {
   const normalized = normalizeWasmModule(wasm);
   if (!isOperationalWasmModule(normalized)) {
     return false;
@@ -233,11 +249,13 @@ async function initializeWasm(): Promise<boolean> {
 
   for (const specifier of candidates) {
     try {
-      // biome-ignore lint/suspicious/noExplicitAny: dynamic ESM/CJS namespace
-      const imported: any = await import(specifier as string);
+      // Dynamic ESM/CJS namespace — `as unknown` because the static import-type
+      // graph cannot guarantee the optional `@clawdstrike/wasm` shape.
+      const imported = (await import(specifier as string)) as unknown;
       // Web-target bundles expose an async default init function.
-      if (typeof imported.default === "function") {
-        await imported.default();
+      const importedDefault = (imported as { default?: unknown }).default;
+      if (typeof importedDefault === "function") {
+        await (importedDefault as () => unknown)();
       }
       if (activateWasmModule(imported)) {
         return true;

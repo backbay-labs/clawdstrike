@@ -1,5 +1,6 @@
 import { ensureWasmSync, getWasmModule } from "./crypto/backend.js";
 import { toSnakeCaseKeys } from "./case-convert.js";
+import type { WasmJailbreakDetectorInstance } from "./types/wasm.js";
 
 export type JailbreakSeverity = "safe" | "suspicious" | "likely" | "confirmed";
 
@@ -94,8 +95,7 @@ export interface JailbreakLinearModelConfig {
  * WASM is loaded lazily on construction.
  */
 export class JailbreakDetector {
-  // biome-ignore lint/suspicious/noExplicitAny: WasmJailbreakDetector is untyped
-  private readonly inner: any;
+  private readonly inner: WasmJailbreakDetectorInstance;
 
   constructor(config?: JailbreakDetectorConfig) {
     ensureWasmSync();

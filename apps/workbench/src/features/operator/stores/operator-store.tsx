@@ -264,7 +264,7 @@ const useOperatorStoreBase = create<OperatorStoreState>()(
         _init: () => {
           const operator = loadPersistedOperator();
           set((state) => {
-            state.currentOperator = operator as any;
+            state.currentOperator = operator;
             state.initialized = true;
             state.loading = false;
           });
@@ -274,7 +274,7 @@ const useOperatorStoreBase = create<OperatorStoreState>()(
           const { identity, secretKeyHex } = await createOperatorIdentity(displayName);
           await secureStore.set(SECRET_KEY_STORE_KEY, secretKeyHex);
           set((state) => {
-            state.currentOperator = identity as any;
+            state.currentOperator = identity;
             state.loading = false;
           });
           schedulePersist(identity);
@@ -293,7 +293,7 @@ const useOperatorStoreBase = create<OperatorStoreState>()(
         linkIdp: (claims: IdpClaims) => {
           set((state) => {
             if (state.currentOperator) {
-              state.currentOperator.idpClaims = claims as any;
+              state.currentOperator.idpClaims = claims;
             }
           });
           schedulePersist(get().currentOperator);
@@ -366,7 +366,7 @@ const useOperatorStoreBase = create<OperatorStoreState>()(
               devices: [{ deviceId, deviceName: "imported", addedAt: now, lastSeenAt: now }],
             };
             set((state) => {
-              state.currentOperator = identity as any;
+              state.currentOperator = identity;
               state.loading = false;
             });
             schedulePersist(identity);

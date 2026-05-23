@@ -1,4 +1,5 @@
 import { ensureWasm, getWasmModule } from "./crypto/backend.js";
+import type { HushWasmModule, WasmPolicyLabInstance } from "./types/wasm.js";
 
 export interface SynthResult {
   policyYaml: string;
@@ -35,16 +36,13 @@ export interface SimulateResult {
  * WASM is initialized lazily on first use.
  */
 export class PolicyLab {
-  // biome-ignore lint/suspicious/noExplicitAny: WasmPolicyLab is untyped
-  private readonly inner: any;
+  private readonly inner: WasmPolicyLabInstance;
 
-  // biome-ignore lint/suspicious/noExplicitAny: WasmPolicyLab is untyped
-  private constructor(inner: any) {
+  private constructor(inner: WasmPolicyLabInstance) {
     this.inner = inner;
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: WASM module shape is dynamic
-  private static async getWasmModule(): Promise<any> {
+  private static async getWasmModule(): Promise<HushWasmModule> {
     await ensureWasm();
     const wasm = getWasmModule();
     if (

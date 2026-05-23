@@ -84,7 +84,10 @@ export class SumoLogicExporter extends BaseExporter {
     const response = await fetch(this.cfg.httpSourceUrl, {
       method: "POST",
       headers,
-      body: payload as any,
+      // `payload` is either a gzipped Buffer or a string — both are valid for fetch().
+      // We cast through `Uint8Array | string` because the tsconfig omits the DOM lib
+      // (and therefore the `BodyInit` global type).
+      body: payload as unknown as Uint8Array | string,
     });
 
     if (!response.ok && response.status !== 202) {
@@ -124,23 +127,24 @@ export class SumoLogicExporter extends BaseExporter {
 
   private filterFields(event: SecurityEvent): Record<string, unknown> {
     if (this.cfg.fields.includeAll) {
-      const data = JSON.parse(JSON.stringify(event)) as any;
+      const data = JSON.parse(JSON.stringify(event)) as Record<string, unknown>;
       for (const field of this.cfg.fields.exclude) {
         deletePath(data, field);
       }
-      return data as Record<string, unknown>;
+      return data;
     }
 
     const out: Record<string, unknown> = {};
+    const eventRecord = event as unknown as Record<string, unknown>;
     for (const field of this.cfg.fields.include) {
-      const value = getPath(event as any, field);
+      const value = getPath(eventRecord, field);
       if (value !== undefined) {
-        setPath(out as any, field, value);
+        setPath(out, field, value);
       }
     }
 
     for (const field of this.cfg.fields.exclude) {
-      deletePath(out as any, field);
+      deletePath(out, field);
     }
 
     return out;
@@ -167,43 +171,47 @@ function escapeKv(value: string): string {
   return value.replace(/"/g, "'").replace(/\s+/g, " ");
 }
 
-function getPath(obj: Record<string, any>, path: string): unknown {
+type Indexable = Record<string, unknown>;
+
+function getPath(obj: Indexable, path: string): unknown {
   const parts = path.split(".").filter(Boolean);
-  let cur: any = obj;
+  let cur: unknown = obj;
   for (const part of parts) {
     if (cur == null || typeof cur !== "object") {
       return undefined;
     }
-    cur = cur[part];
+    cur = (cur as Indexable)[part];
   }
   return cur;
 }
 
-function setPath(obj: Record<string, any>, path: string, value: unknown): void {
+function setPath(obj: Indexable, path: string, value: unknown): void {
   const parts = path.split(".").filter(Boolean);
-  let cur: any = obj;
+  let cur: Indexable = obj;
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
     if (i === parts.length - 1) {
       cur[part] = value;
       return;
     }
-    if (!cur[part] || typeof cur[part] !== "object") {
+    const next = cur[part];
+    if (!next || typeof next !== "object") {
       cur[part] = {};
     }
-    cur = cur[part];
+    cur = cur[part] as Indexable;
   }
 }
 
-function deletePath(obj: Record<string, any>, path: string): void {
+function deletePath(obj: Indexable, path: string): void {
   const parts = path.split(".").filter(Boolean);
-  let cur: any = obj;
+  let cur: Indexable | undefined = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
     if (!cur || typeof cur !== "object") {
       return;
     }
-    cur = cur[part];
+    const next: unknown = cur[part];
+    cur = (next && typeof next === "object" ? (next as Indexable) : undefined);
   }
   const last = parts[parts.length - 1];
   if (cur && typeof cur === "object" && last) {
