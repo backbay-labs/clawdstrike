@@ -1377,6 +1377,58 @@ filesystem:
   );
 
   it.each([
+    { label: "env -S touch payload", command: "env", args: ["-S", "touch /tmp/forbidden.txt"] },
+    {
+      label: "env --split-string payload",
+      command: "env",
+      args: ["--split-string", "mkdir /tmp/forbidden-dir"],
+    },
+    {
+      label: "env --split-string=payload (= form)",
+      command: "env",
+      args: ["--split-string=touch /tmp/forbidden-eq.txt"],
+    },
+    {
+      label: "env -S after env vars",
+      command: "env",
+      args: ["-i", "PATH=/usr/bin", "-S", "touch /tmp/forbidden-i.txt"],
+    },
+  ])(
+    "classifies $label inner write through env split-string payload",
+    async ({ command, args }) => {
+      const allowedDir = join(testDir, `env-s-${args.length}-allowed`);
+      mkdirSync(allowedDir, { recursive: true });
+      const policyPath = join(testDir, `env-s-${args.length}-policy.yaml`);
+      writeFileSync(
+        policyPath,
+        `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+      );
+
+      const engine = new PolicyEngine({
+        policy: policyPath,
+        mode: "deterministic",
+        logLevel: "error",
+        guards: { patch_integrity: false },
+      });
+
+      const decision = await engine.evaluate({
+        eventId: `command-env-s-${args.length}`,
+        eventType: "command_exec",
+        timestamp: new Date().toISOString(),
+        data: { type: "command", command, args },
+      });
+
+      expect(decision.status).toBe("deny");
+      expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+    },
+  );
+
+  it.each([
     { label: "touch -- -dashfile", command: "touch", args: ["--", "-dashfile"] },
     { label: "mkdir -- -dir", command: "mkdir", args: ["--", "-dir"] },
     { label: "rm -- -doomed", command: "rm", args: ["--", "-doomed"] },

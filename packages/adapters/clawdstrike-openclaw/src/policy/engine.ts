@@ -407,10 +407,47 @@ function extractCommandPathCandidates(
       }
 
       if (isShellEnvironmentAssignmentToken(cleanedToken)) {
-        // Env assignments precede a command; no wrapper-specific option arity
-        // applies to subsequent flags until a real wrapper is seen.
-        activeShellPrefix = null;
+        // Top-level env assignment (e.g. `FOO=1 mkdir x`) precedes a command
+        // — keep scanning without changing wrapper state. Inside a wrapper
+        // (`env -i PATH=foo -S cmd`), the assignment is a positional arg to
+        // the wrapper, so do NOT reset activeShellPrefix or its arity table
+        // would stop applying to subsequent flags like `-S`.
         continue;
+      }
+
+      // env -S / --split-string takes a quoted command-line payload that env
+      // splits and executes — `env -S 'touch /tmp/x'` is a real write. If we
+      // let the generic arity table swallow that payload as an opaque value,
+      // the inner command never reaches write-root enforcement. Tokenize the
+      // payload (whitespace split is enough for our heuristic classifier) and
+      // recursively classify it so its reads/writes feed back here.
+      if (activeShellPrefix === "env" && isShellPrefixOptionToken(cleanedToken)) {
+        if (cleanedToken === "-S" || cleanedToken === "--split-string") {
+          const next = tokens[i + 1];
+          if (typeof next === "string" && next.length > 0) {
+            const parts = next.split(/\s+/).filter(Boolean);
+            if (parts.length > 0) {
+              const nested = extractCommandPathCandidates(parts[0], parts.slice(1));
+              reads.push(...nested.reads);
+              writes.push(...nested.writes);
+            }
+            i += 1;
+          }
+          continue;
+        }
+        const eqIdx = cleanedToken.indexOf("=");
+        if (eqIdx > 0) {
+          const lhs = cleanedToken.slice(0, eqIdx).replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
+          if (lhs === "split-string" || lhs === "s") {
+            const parts = cleanedToken.slice(eqIdx + 1).split(/\s+/).filter(Boolean);
+            if (parts.length > 0) {
+              const nested = extractCommandPathCandidates(parts[0], parts.slice(1));
+              reads.push(...nested.reads);
+              writes.push(...nested.writes);
+            }
+            continue;
+          }
+        }
       }
 
       if (activeShellPrefix && isShellPrefixOptionToken(cleanedToken)) {
