@@ -110,3 +110,27 @@ vendor/
 !infra/vendor/
 !infra/vendor/**
 .planning/
+
+# Wave-cleanup additions
+.tmp-release-venv/
+.playwright-cli/
+tmp/
+output/
+coverage/
+.worktrees/
+# Cloud-dashboard build artifacts (not a real app; build-output-only)
+apps/agent/src-tauri/resources/cloud-dashboard/
+# WASM artifact bundles emitted by build.sh (keep src/, README, package.json)
+crates/libs/hush-wasm/hush_wasm.js
+crates/libs/hush-wasm/hush_wasm.d.ts
+crates/libs/hush-wasm/hush_wasm.d.ts.template
+crates/libs/hush-wasm/hush_wasm_bg.wasm
+crates/libs/hush-wasm/hush_wasm_bg.wasm.d.ts
+# hush-py distributable wheels/sdists
+packages/sdk/hush-py/dist/
+# academy demo route (do not deploy)
+apps/academy/src/app/test-mdx/
+
+# Bun lockfiles (npm is the canonical package manager — see "packageManager" in package.json)
+bun.lockb
+bun.lock
