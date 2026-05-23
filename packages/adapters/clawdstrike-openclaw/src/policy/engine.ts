@@ -232,6 +232,21 @@ function isDestinationDirectoryFlagToken(t: string): boolean {
   return DESTINATION_DIRECTORY_FLAG_NAMES.has(normalized);
 }
 
+// `install -d` / `install --directory` creates each operand as a directory.
+// Detect either the standalone `-d` short flag, the `--directory` long flag,
+// or `-d` clustered with other short flags (e.g. `-pd`).
+function isInstallDirectoryFlagToken(t: string): boolean {
+  const cleaned = cleanPathToken(t);
+  if (!cleaned.startsWith("-") || cleaned.length < 2) return false;
+  if (cleaned.startsWith("--")) {
+    const name = cleaned.slice(2).split("=")[0].toLowerCase().replace(/_/g, "-");
+    return name === "directory";
+  }
+  // Short options can be clustered: -pd, -vd, etc.
+  const cluster = cleaned.slice(1).split("=")[0];
+  return cluster.includes("d");
+}
+
 function isShellCommandPrefixToken(commandToken: string): boolean {
   return SHELL_COMMAND_PREFIXES.has(commandToken);
 }
@@ -292,6 +307,10 @@ function extractCommandPathCandidates(
   const reads: string[] = [];
   const writes: string[] = [];
   let writeOperandMode: "all" | "destination" | null = null;
+  // Name of the command that set writeOperandMode (e.g. "cp", "install"). Used
+  // to apply command-specific switches such as `install -d DIR...` which turns
+  // a normally-destination-mode command into create-all-operands mode.
+  let writeOperandCommand: string | null = null;
   let operandPaths: string[] = [];
   let explicitDestinationOperandPaths: string[] = [];
   let expectsCommandToken = true;
@@ -318,7 +337,11 @@ function extractCommandPathCandidates(
         reads.push(...operandPaths);
         writes.push(...explicitDestinationOperandPaths);
       } else if (operandPaths.length === 1) {
-        reads.push(operandPaths[0]);
+        // `ln TARGET` creates a link in the cwd; `install -d DIR` creates
+        // the directory; a malformed `cp X` errors before writing. In every
+        // valid form the single operand is a write target, so classify as a
+        // write to keep the fail-closed allowed_write_roots check effective.
+        writes.push(operandPaths[0]);
       } else {
         reads.push(...operandPaths.slice(0, -1));
         writes.push(operandPaths[operandPaths.length - 1]);
@@ -339,6 +362,7 @@ function extractCommandPathCandidates(
     if (isShellControlToken(cleanedToken)) {
       flushCommandOperands();
       writeOperandMode = null;
+      writeOperandCommand = null;
       expectsCommandToken = true;
       activeShellPrefix = null;
       shellPrefixOptionValuesRemaining = 0;
@@ -354,6 +378,7 @@ function extractCommandPathCandidates(
       if (COMMANDS_WITH_DESTINATION_WRITE_OPERAND.has(commandToken)) {
         flushCommandOperands();
         writeOperandMode = "destination";
+        writeOperandCommand = commandToken;
         expectsCommandToken = false;
         activeShellPrefix = null;
         continue;
@@ -362,6 +387,7 @@ function extractCommandPathCandidates(
       if (COMMANDS_WITH_WRITE_PATH_OPERANDS.has(commandToken)) {
         flushCommandOperands();
         writeOperandMode = "all";
+        writeOperandCommand = commandToken;
         expectsCommandToken = false;
         activeShellPrefix = null;
         continue;
@@ -392,6 +418,14 @@ function extractCommandPathCandidates(
     }
 
     if (writeOperandMode === "destination") {
+      // `install -d DIR...` / `install --directory DIR...` creates every
+      // operand as a directory rather than copying a file to a destination,
+      // so switch to all-operand-write mode for the rest of this command.
+      if (writeOperandCommand === "install" && isInstallDirectoryFlagToken(t)) {
+        writeOperandMode = "all";
+        continue;
+      }
+
       const inlineDestinationDirectory = destinationDirectoryFlagValue(t);
       if (inlineDestinationDirectory && looksLikePathToken(inlineDestinationDirectory)) {
         explicitDestinationOperandPaths.push(inlineDestinationDirectory);

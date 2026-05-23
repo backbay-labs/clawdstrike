@@ -1336,6 +1336,85 @@ filesystem:
     expect(decision.status).toBe("allow");
   });
 
+  it.each([
+    { label: "ln single target", command: "ln", args: ["link-target"] },
+    { label: "install -d single dir", command: "install", args: ["-d", "newdir"] },
+    { label: "install --directory single dir", command: "install", args: ["--directory", "newdir"] },
+    { label: "cp single arg (malformed)", command: "cp", args: ["solo"] },
+  ])(
+    "classifies single-operand $label as a write for fail-closed enforcement",
+    async ({ command, args }) => {
+      const allowedDir = join(testDir, `single-operand-${command}-${args.length}-allowed`);
+      mkdirSync(allowedDir, { recursive: true });
+      const policyPath = join(testDir, `single-operand-${command}-${args.length}-policy.yaml`);
+      writeFileSync(
+        policyPath,
+        `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+      );
+
+      const engine = new PolicyEngine({
+        policy: policyPath,
+        mode: "deterministic",
+        logLevel: "error",
+        guards: { patch_integrity: false },
+      });
+
+      const decision = await engine.evaluate({
+        eventId: `command-${command}-single-operand`,
+        eventType: "command_exec",
+        timestamp: new Date().toISOString(),
+        data: { type: "command", command, args },
+      });
+
+      expect(decision.status).toBe("deny");
+      expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+    },
+  );
+
+  it("classifies every install -d operand as a write", async () => {
+    const allowedDir = join(testDir, "install-d-multi-allowed");
+    mkdirSync(allowedDir, { recursive: true });
+    const policyPath = join(testDir, "install-d-multi-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { patch_integrity: false },
+    });
+
+    // The first directory is OUTSIDE allowed_write_roots; if `install -d`
+    // classifies operands in old destination-mode (only last is a write),
+    // this slips through.
+    const decision = await engine.evaluate({
+      eventId: "command-install-d-multi",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "install",
+        args: ["-d", join(testDir, "outside-dir"), join(allowedDir, "inside-dir")],
+      },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+  });
+
   it("does not treat write-command names in arguments as shell write modes", async () => {
     const allowedDir = join(testDir, "argument-command-token-allowed");
     mkdirSync(allowedDir, { recursive: true });
