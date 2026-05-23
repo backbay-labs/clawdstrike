@@ -84,7 +84,7 @@ jobs:
           ls -lh "$ARTIFACT_DIR"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-macos-unsigned-${{ github.run_number }}
           path: artifacts/desktop-macos-unsigned/*

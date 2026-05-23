@@ -713,7 +713,7 @@ jobs:
           ls -la wheelhouse
 
       - name: Upload native wheel artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: wheelhouse/*.whl
@@ -885,7 +885,7 @@ jobs:
           cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
@@ -902,7 +902,7 @@ jobs:
 
       - name: Upload release archive
         if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.archive }}.tar.gz
           path: ${{ matrix.archive }}.tar.gz
@@ -981,7 +981,7 @@ jobs:
           cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Upload hushd artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
@@ -1153,7 +1153,7 @@ jobs:
           security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
 
       - name: Upload agent DMG artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: clawdstrike-agent-dmg
           path: apps/agent/src-tauri/target/release/bundle/dmg/*.dmg
@@ -1161,7 +1161,7 @@ jobs:
 
       - name: Upload notarization evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: clawdstrike-agent-notarization
           path: ${{ env.NOTARIZE_OUT_DIR }}/
