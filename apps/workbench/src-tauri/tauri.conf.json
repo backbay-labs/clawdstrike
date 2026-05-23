@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicegui-org/nicegui/main/nicegui/tauri/tauri.conf.schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "ClawdStrike Workbench",
   "version": "0.1.0",
   "identifier": "com.clawdstrike.workbench",

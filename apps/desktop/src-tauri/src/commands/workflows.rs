@@ -117,7 +117,7 @@ fn get_workflows() -> &'static RwLock<HashMap<String, Workflow>> {
 
 fn get_workflows_file_path() -> PathBuf {
     let app_data = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    app_data.join("sdr-desktop").join("workflows.json")
+    app_data.join("clawdstrike-desktop").join("workflows.json")
 }
 
 fn load_workflows_from_file() -> Option<HashMap<String, Workflow>> {
