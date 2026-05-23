@@ -1,3 +1,4 @@
+export { type ClawdstrikeLike, type SecuritySource } from "@clawdstrike/adapter-core";
 export {
   ClawdstrikeBlockedError,
   ClawdstrikePromptSecurityError,
@@ -16,4 +17,3 @@ export type { StreamChunk, StreamingToolGuardOptions } from "./streaming-tool-gu
 export { StreamingToolGuard } from "./streaming-tool-guard.js";
 export type { VercelAiToolLike, VercelAiToolSet } from "./tools.js";
 export { secureTools } from "./tools.js";
-export { type ClawdstrikeLike, type SecuritySource } from "@clawdstrike/adapter-core";
