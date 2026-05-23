@@ -1,8 +1,16 @@
-export type PolicySchemaVersion = "1.1.0" | "1.2.0" | "1.3.0";
+/**
+ * Canonical Clawdstrike policy type surface.
+ *
+ * The runtime *shape* is owned by `schema.zod.ts`; this file owns the
+ * exported TypeScript types. They are written by hand (rather than
+ * `z.infer`) because the root `policySchema` carries a deep superRefine
+ * graph that exceeds TS's declaration-emit serialization budget. Keep these
+ * in lock-step with `schema.zod.ts` -- new fields go in both files.
+ */
 
+export type PolicySchemaVersion = "1.1.0" | "1.2.0" | "1.3.0";
 export type TimeoutBehavior = "allow" | "deny" | "warn" | "defer";
 export type AsyncExecutionMode = "parallel" | "sequential" | "background";
-
 export type MergeStrategy = "replace" | "merge" | "deep_merge";
 
 export interface AsyncCachePolicyConfig {

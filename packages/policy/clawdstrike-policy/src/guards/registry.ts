@@ -4,7 +4,7 @@ import { resolvePlaceholders } from "../policy/placeholders.js";
 import type { Policy } from "../policy/schema.js";
 
 import { createSafeBrowsingGuard, type SafeBrowsingConfig } from "./threat-intel/safe-browsing.js";
-import { createSnykGuard, type SnykConfig } from "./threat-intel/snyk.js";
+import { createSnykGuard, type SnykConfig, type SnykSeverity } from "./threat-intel/snyk.js";
 import { createVirusTotalGuard, type VirusTotalConfig } from "./threat-intel/virustotal.js";
 
 export function buildAsyncGuards(policy: Policy): Array<{ index: number; guard: AsyncGuard }> {
@@ -65,10 +65,17 @@ function assertSnyk(cfg: Record<string, unknown>): SnykConfig {
   const api_token = requiredString(cfg.api_token, "config.api_token");
   const org_id = requiredString(cfg.org_id, "config.org_id");
   const base_url = optionalString(cfg.base_url);
-  const severity_threshold = optionalString(cfg.severity_threshold) as any;
+  const severity_threshold = optionalSnykSeverity(cfg.severity_threshold);
   const fail_on_upgradable =
     typeof cfg.fail_on_upgradable === "boolean" ? cfg.fail_on_upgradable : undefined;
   return { api_token, org_id, base_url, severity_threshold, fail_on_upgradable };
+}
+
+function optionalSnykSeverity(value: unknown): SnykSeverity | undefined {
+  if (value === "low" || value === "medium" || value === "high" || value === "critical") {
+    return value;
+  }
+  return undefined;
 }
 
 function requiredString(value: unknown, field: string): string {

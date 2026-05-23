@@ -76,13 +76,11 @@ function buildCustomGuardsFromPolicy(
   policy: Policy,
   registry: CustomGuardRegistry | undefined,
 ): CustomGuard[] {
-  const specs = Array.isArray((policy as any).custom_guards)
-    ? ((policy as any).custom_guards as unknown[])
-    : [];
+  const specs = policy.custom_guards ?? [];
   if (specs.length === 0) return [];
 
   if (!registry) {
-    const firstId = isPlainObject(specs[0]) ? String((specs[0] as any).id ?? "") : "";
+    const firstId = typeof specs[0]?.id === "string" ? specs[0].id : "";
     const suffix = firstId ? ` ${firstId}` : "";
     throw new Error(
       `Policy requires custom guard${suffix} but no CustomGuardRegistry was provided`,
@@ -91,12 +89,9 @@ function buildCustomGuardsFromPolicy(
 
   const out: CustomGuard[] = [];
   for (const spec of specs) {
-    if (!isPlainObject(spec)) continue;
-    if ((spec as any).enabled === false) continue;
-    const id = String((spec as any).id ?? "");
-    const rawConfig = isPlainObject((spec as any).config)
-      ? ((spec as any).config as Record<string, unknown>)
-      : {};
+    if (spec.enabled === false) continue;
+    const id = spec.id;
+    const rawConfig = isPlainObject(spec.config) ? spec.config : {};
     const config = resolvePlaceholders(rawConfig) as Record<string, unknown>;
     out.push(registry.build(id, config));
   }
@@ -148,10 +143,7 @@ function normalizeCustomGuardResult(guardName: string, value: unknown): GuardRes
     };
   }
 
-  const allowed = (value as any).allowed;
-  const severity = (value as any).severity;
-  const message = (value as any).message;
-  const details = (value as any).details;
+  const { allowed, severity, message, details } = value;
 
   if (typeof allowed !== "boolean") {
     return {
@@ -168,7 +160,7 @@ function normalizeCustomGuardResult(guardName: string, value: unknown): GuardRes
 
   const out: GuardResult = { allowed, guard: guardName, severity: sev, message: msg };
   if (isPlainObject(details)) {
-    out.details = details as Record<string, unknown>;
+    out.details = details;
   }
 
   return out;
@@ -203,7 +195,7 @@ function decisionFromOverall(overall: GuardResult): Decision {
     status,
     reason_code: status === "warn" ? "ADC_POLICY_WARN" : "ADC_POLICY_DENY",
     guard: overall.guard,
-    severity: overall.severity as any,
+    severity: overall.severity,
     message: overall.message,
   };
 }

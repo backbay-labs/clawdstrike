@@ -518,7 +518,11 @@ export const policyCustomGuardSpecSchema = z
 // Root policy
 // ---------------------------------------------------------------------------
 
-export const policySchema = z
+// Annotated as `z.ZodTypeAny` to keep TS from trying to fully serialize the
+// deeply-recursive inferred shape into emitted `.d.ts` (TS7056). The runtime
+// shape is unaffected; downstream consumers use the `Policy` interface from
+// `schema.ts` for the static type.
+export const policySchema: z.ZodTypeAny = z
   .object({
     version: strictSemverSchema.optional(),
     name: z.string().optional(),
@@ -541,21 +545,21 @@ export const policySchema = z
       });
     }
 
-    // path_allowlist requires >=1.2.0
+    // path_allowlist requires >=1.2.0 -- bare message (tests assert exact string).
     if (version === "1.1.0" && val.guards && val.guards.path_allowlist !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "path_allowlist requires policy version 1.2.0",
-        path: ["guards", "path_allowlist"],
+        path: [],
       });
     }
 
-    // posture requires >=1.2.0
+    // posture requires >=1.2.0 -- bare message (tests assert exact string).
     if (version === "1.1.0" && val.posture !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "posture requires policy version 1.2.0",
-        path: ["posture"],
+        path: [],
       });
     }
 

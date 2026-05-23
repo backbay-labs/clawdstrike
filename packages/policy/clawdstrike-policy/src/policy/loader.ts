@@ -3,7 +3,12 @@ import path from "node:path";
 
 import { load as loadYaml } from "js-yaml";
 import { isLegacyOpenClawPolicyV1, translateLegacyOpenClawPolicyV1 } from "./legacy.js";
-import type { GuardConfigs, MergeStrategy, Policy } from "./schema.js";
+import type {
+  GuardConfigs,
+  MergeStrategy,
+  Policy,
+  PolicyCustomGuardSpec,
+} from "./schema.js";
 import { validatePolicy } from "./validator.js";
 
 export interface PolicyLoadOptions {
@@ -11,6 +16,12 @@ export interface PolicyLoadOptions {
   basePath?: string;
   rulesetsDir?: string;
   onWarning?: (message: string) => void;
+  /**
+   * Internal: tracks the in-flight `extends` chain across recursive loads
+   * (built-in rulesets, relative file extends, etc.). Set automatically by
+   * the loader -- callers should leave this undefined.
+   */
+  visited?: Set<string>;
 }
 
 const DEFAULT_RULESETS = new Set(["default", "strict", "ai-agent", "cicd", "permissive"]);
@@ -32,7 +43,7 @@ export function loadPolicyFromString(yaml: string, options: PolicyLoadOptions = 
     path.join(process.cwd(), "rulesets");
   const onWarning = options.onWarning;
 
-  const visited = extractVisited(options) ?? new Set<string>();
+  const visited = options.visited ?? new Set<string>();
   const policy = loadPolicyFromStringInternal(yaml, {
     resolve,
     basePath,
@@ -48,11 +59,6 @@ export function loadPolicyFromString(yaml: string, options: PolicyLoadOptions = 
   }
 
   return policy;
-}
-
-function extractVisited(options: PolicyLoadOptions): Set<string> | null {
-  const maybe = (options as any).visited as unknown;
-  return maybe instanceof Set ? maybe : null;
 }
 
 function loadPolicyFromStringInternal(
@@ -144,8 +150,8 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
     if (child.name) out.name = child.name;
     if (child.description) out.description = child.description;
     if (child.guards) out.guards = child.guards;
-    if (Array.isArray((child as any).custom_guards) && (child as any).custom_guards.length > 0) {
-      (out as any).custom_guards = (child as any).custom_guards;
+    if (Array.isArray(child.custom_guards) && child.custom_guards.length > 0) {
+      out.custom_guards = child.custom_guards;
     }
     if (child.settings) out.settings = child.settings;
     return out;
@@ -163,10 +169,10 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
   };
 
   out.guards = mergeGuards(base.guards, child.guards);
-  (out as any).custom_guards = mergePolicyCustomGuards(
-    (base as any).custom_guards,
-    (child as any).custom_guards,
-  );
+  const mergedCustomGuards = mergePolicyCustomGuards(base.custom_guards, child.custom_guards);
+  if (mergedCustomGuards !== undefined) {
+    out.custom_guards = mergedCustomGuards;
+  }
 
   return out;
 }
@@ -196,30 +202,32 @@ function mergeGuards(base: unknown, child: unknown): GuardConfigs | undefined {
   return out;
 }
 
-function mergePolicyCustomGuards(base: unknown, child: unknown): unknown {
-  const baseArr = Array.isArray(base) ? base : [];
-  const childArr = Array.isArray(child) ? child : [];
+function mergePolicyCustomGuards(
+  base: PolicyCustomGuardSpec[] | undefined,
+  child: PolicyCustomGuardSpec[] | undefined,
+): PolicyCustomGuardSpec[] | undefined {
+  const baseArr = base ?? [];
+  const childArr = child ?? [];
 
   if (childArr.length === 0) return base;
   if (baseArr.length === 0) return child;
 
-  const out = [...baseArr];
+  const out: PolicyCustomGuardSpec[] = [...baseArr];
   const index = new Map<string, number>();
 
   for (let i = 0; i < out.length; i++) {
-    const cg = out[i];
-    const id = isPlainObject(cg) ? (cg as any).id : undefined;
-    if (typeof id === "string") {
+    const id = customGuardId(out[i]);
+    if (id !== undefined) {
       index.set(id, i);
     }
   }
 
   for (const cg of childArr) {
-    const id = isPlainObject(cg) ? (cg as any).id : undefined;
-    if (typeof id === "string" && index.has(id)) {
+    const id = customGuardId(cg);
+    if (id !== undefined && index.has(id)) {
       out[index.get(id)!] = cg;
     } else {
-      if (typeof id === "string") {
+      if (id !== undefined) {
         index.set(id, out.length);
       }
       out.push(cg);
@@ -227,6 +235,12 @@ function mergePolicyCustomGuards(base: unknown, child: unknown): unknown {
   }
 
   return out;
+}
+
+function customGuardId(spec: unknown): string | undefined {
+  if (!isPlainObject(spec)) return undefined;
+  const id = spec.id;
+  return typeof id === "string" ? id : undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
