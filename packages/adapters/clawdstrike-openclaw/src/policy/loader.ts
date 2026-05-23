@@ -43,7 +43,7 @@ function isBuiltinRef(ref: string): string | null {
   return resolveBuiltinPolicy(candidate) ? candidate : null;
 }
 
-function deepMerge(base: any, overlay: any): any {
+function deepMerge(base: unknown, overlay: unknown): unknown {
   if (!isPlainObject(base) || !isPlainObject(overlay)) return overlay;
 
   const out: Record<string, unknown> = { ...base };
@@ -51,15 +51,15 @@ function deepMerge(base: any, overlay: any): any {
   for (const [key, value] of Object.entries(overlay)) {
     if (value === undefined) continue;
 
-    const existing = (out as any)[key];
+    const existing = out[key];
 
     if (isPlainObject(existing) && isPlainObject(value)) {
-      (out as any)[key] = deepMerge(existing, value);
+      out[key] = deepMerge(existing, value);
       continue;
     }
 
     // Arrays and scalars replace.
-    (out as any)[key] = value;
+    out[key] = value;
   }
 
   return out;
@@ -252,11 +252,11 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
     version: "clawdstrike-v1.0",
   };
 
-  const guards = canonical.guards as Record<string, any> | undefined;
+  const guards = canonical.guards as Record<string, unknown> | undefined;
   const toggles: Record<string, boolean> = {};
   if (guards) {
-    const customGuards: unknown[] = Array.isArray((guards as any).custom)
-      ? [...((guards as any).custom as unknown[])]
+    const customGuards: unknown[] = Array.isArray(guards.custom)
+      ? [...(guards.custom as unknown[])]
       : [];
 
     if (typeof guards.forbidden_path === "object") {
