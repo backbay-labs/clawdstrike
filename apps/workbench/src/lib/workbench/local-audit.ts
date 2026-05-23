@@ -2,6 +2,7 @@
 // when disconnected from a fleet hushd instance.
 
 import { useCallback, useSyncExternalStore } from "react";
+import { logger } from "@/lib/logger";
 
 
 export type AuditSource =
@@ -44,14 +45,14 @@ function readFromStorage(): LocalAuditEvent[] {
     }
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
-      console.warn("[local-audit] stored data is not an array, resetting");
+      logger.warn("[local-audit] stored data is not an array, resetting");
       cachedEvents = [];
       return cachedEvents;
     }
     cachedEvents = parsed as LocalAuditEvent[];
     return cachedEvents;
   } catch (e) {
-    console.warn("[local-audit] localStorage read failed:", e);
+    logger.warn("[local-audit] localStorage read failed:", e);
     cachedEvents = [];
     return cachedEvents;
   }
@@ -62,7 +63,7 @@ function writeToStorage(events: LocalAuditEvent[]) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(events));
   } catch (e) {
-    console.warn("[local-audit] localStorage write failed:", e);
+    logger.warn("[local-audit] localStorage write failed:", e);
   }
   notifyListeners();
 }

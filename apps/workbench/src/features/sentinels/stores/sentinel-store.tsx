@@ -20,6 +20,7 @@ import {
   retireSentinel as engineRetireSentinel,
   updateStats as engineUpdateStats,
 } from "@/lib/workbench/sentinel-manager";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,7 +64,7 @@ function schedulePersist(state: SentinelState): void {
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
     } catch (e) {
-      console.error("[sentinel-store] persistSentinels failed:", e);
+      logger.error("[sentinel-store] persistSentinels failed:", e);
     }
     persistTimer = null;
   }, 500);
@@ -75,7 +76,7 @@ function loadPersistedSentinels(): Pick<SentinelState, "sentinels" | "activeSent
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.sentinels)) {
-      console.warn("[sentinel-store] Invalid persisted sentinel data, using defaults");
+      logger.warn("[sentinel-store] Invalid persisted sentinel data, using defaults");
       return null;
     }
 
@@ -113,7 +114,7 @@ function loadPersistedSentinels(): Pick<SentinelState, "sentinels" | "activeSent
       loading: false,
     };
   } catch (e) {
-    console.warn("[sentinel-store] loadPersistedSentinels failed:", e);
+    logger.warn("[sentinel-store] loadPersistedSentinels failed:", e);
     return null;
   }
 }

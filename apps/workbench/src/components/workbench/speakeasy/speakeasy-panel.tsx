@@ -19,6 +19,7 @@ import { usePresenceStore } from "@/features/presence/stores/presence-store";
 import { usePaneStore, getActivePane } from "@/features/panes/pane-store";
 import { getPaneActiveView } from "@/features/panes/pane-tree";
 import { toPresencePath } from "@/features/presence/presence-paths";
+import { logger } from "@/lib/logger";
 
 
 interface SpeakeasyPanelProps {
@@ -287,7 +288,7 @@ export function SpeakeasyPanel({
     } catch (err) {
       // Restore text on failure
       setComposeText(text);
-      console.error("[speakeasy-panel] send failed:", err);
+      logger.error("[speakeasy-panel] send failed:", err);
     } finally {
       setSending(false);
     }
@@ -312,7 +313,7 @@ export function SpeakeasyPanel({
       try {
         await onSendSentinelRequest(sentinelFingerprint, prompt);
       } catch (err) {
-        console.error("[speakeasy-panel] sentinel request failed:", err);
+        logger.error("[speakeasy-panel] sentinel request failed:", err);
       }
     },
     [onSendSentinelRequest],

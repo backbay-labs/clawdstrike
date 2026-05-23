@@ -6,6 +6,7 @@
  * status-bar-registry.ts and view-registry.ts.
  */
 import { useSyncExternalStore } from "react";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,15 +88,15 @@ export default createPlugin({
     },
   },
   activate(ctx) {
-    console.log("[MyPlugin] activated!");
+    logger.info("[MyPlugin] activated!");
     ctx.commands.register(
       { id: "playground.hello", title: "Playground: Hello World", category: "Playground" },
-      () => console.log("Hello from the playground!"),
+      () => logger.info("Hello from the playground!"),
     );
     return [];
   },
   deactivate() {
-    console.log("[MyPlugin] deactivated");
+    logger.info("[MyPlugin] deactivated");
   },
 });
 `;

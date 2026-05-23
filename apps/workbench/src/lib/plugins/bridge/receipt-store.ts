@@ -11,6 +11,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import type { PluginActionReceipt } from "./receipt-types";
+import { logger } from "@/lib/logger";
 
 // ---- Constants ----
 
@@ -143,14 +144,14 @@ export class PluginReceiptStore {
       }
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
-        console.warn("[receipt-store] stored data is not an array, resetting");
+        logger.warn("[receipt-store] stored data is not an array, resetting");
         this.cache = [];
         return this.cache;
       }
       this.cache = parsed as PluginActionReceipt[];
       return this.cache;
     } catch (e) {
-      console.warn("[receipt-store] localStorage read failed:", e);
+      logger.warn("[receipt-store] localStorage read failed:", e);
       this.cache = [];
       return this.cache;
     }
@@ -161,7 +162,7 @@ export class PluginReceiptStore {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(receipts));
     } catch (e) {
-      console.warn("[receipt-store] localStorage write failed:", e);
+      logger.warn("[receipt-store] localStorage write failed:", e);
     }
     this.notifyListeners();
   }

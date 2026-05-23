@@ -9,6 +9,7 @@ import {
 } from "@/lib/workbench/hunt-engine";
 import type { AgentBaseline, AgentEvent } from "@/lib/workbench/hunt-types";
 import { useHuntStore } from "../stores/hunt-store";
+import { logger } from "@/lib/logger";
 
 const HUNT_POLL_MS = 30_000;
 
@@ -60,7 +61,7 @@ export function HuntTelemetryBridge() {
         stats: computeStreamStats(telemetry.events),
       });
     } catch (error) {
-      console.warn("[hunt-telemetry-bridge] Failed to refresh hunt telemetry:", error);
+      logger.warn("[hunt-telemetry-bridge] Failed to refresh hunt telemetry:", error);
     } finally {
       huntActions.setLoading(false);
     }

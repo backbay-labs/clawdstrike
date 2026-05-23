@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 
 export type SdkFramework =
   | "python-sdk"
@@ -367,7 +368,7 @@ const shellTool = new DynamicTool({
 const guardedTools = secureTools([readFileTool, shellTool], {
   clawdstrike: cs,
   onBlocked: (tool, decision) => {
-    console.log(\`BLOCKED \${tool.name}: \${decision.message}\`);
+    logger.info(\`BLOCKED \${tool.name}: \${decision.message}\`);
   },
 });
 
@@ -375,9 +376,9 @@ const guardedTools = secureTools([readFileTool, shellTool], {
 for (const tool of guardedTools) {
   try {
     const result = await tool.invoke("~/.ssh/id_rsa");
-    console.log(\`\${tool.name}: \${result}\`);
+    logger.info(\`\${tool.name}: \${result}\`);
   } catch (err) {
-    console.log(\`\${tool.name}: \${(err as Error).message}\`);
+    logger.info(\`\${tool.name}: \${(err as Error).message}\`);
   }
 }
 `,
@@ -404,7 +405,7 @@ const cs = await Clawdstrike.fromPolicy("my-policy.yaml");
 const middleware = createClawdstrikeMiddleware({
   clawdstrike: cs,
   onViolation: (event) => {
-    console.warn(\`Policy violation: \${event.guard} — \${event.message}\`);
+    logger.warn(\`Policy violation: \${event.guard} — \${event.message}\`);
   },
 });
 
@@ -439,8 +440,8 @@ const result = await generateText({
   prompt: "Read the file at ~/.ssh/id_rsa",
 });
 
-console.log("Result:", result.text);
-console.log("Tool calls:", result.toolCalls.length);
+logger.info("Result:", result.text);
+logger.info("Tool calls:", result.toolCalls.length);
 `,
   },
 
@@ -467,13 +468,13 @@ const checks = [
   { name: "Unknown domain",     fn: () => cs.checkNetwork("evil.example.com") },
 ];
 
-console.log("--- Policy Check Results ---");
+logger.info("--- Policy Check Results ---");
 for (const { name, fn } of checks) {
   const result = await fn();
   const icon = result.verdict === "deny" ? "\\u2717" : "\\u2713";
-  console.log(\`  \${icon} \${result.verdict.padEnd(5)} \${name}\`);
+  logger.info(\`  \${icon} \${result.verdict.padEnd(5)} \${name}\`);
   if (result.guard) {
-    console.log(\`    Guard: \${result.guard} — \${result.message}\`);
+    logger.info(\`    Guard: \${result.guard} — \${result.message}\`);
   }
 }
 
@@ -489,7 +490,7 @@ async function guardedToolCall(action: string, target: string) {
 try {
   await guardedToolCall("file_access", "~/.ssh/id_rsa");
 } catch (err) {
-  console.log(\`Caught: \${(err as Error).message}\`);
+  logger.info(\`Caught: \${(err as Error).message}\`);
 }
 `,
   },
@@ -506,7 +507,7 @@ export class SdkScriptStore {
       this.db = await openDB();
     } catch (err) {
       this.initFailed = true;
-      console.error("[sdk-script-store] Failed to open IndexedDB:", err);
+      logger.error("[sdk-script-store] Failed to open IndexedDB:", err);
       // Graceful degradation: store stays null, all operations become no-ops or return empty
     }
   }

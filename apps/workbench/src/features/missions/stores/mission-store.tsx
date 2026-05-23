@@ -16,6 +16,7 @@ import type {
   MissionRuntimeEvent,
   MissionStage,
 } from "@/lib/workbench/mission-types";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // State types
@@ -518,7 +519,7 @@ function loadPersistedMissions(): MissionState | null {
       loading: false,
     };
   } catch (error) {
-    console.warn("[mission-store] load failed:", error);
+    logger.warn("[mission-store] load failed:", error);
     return null;
   }
 }
@@ -533,7 +534,7 @@ function persistMissions(state: MissionState): void {
       }),
     );
   } catch (error) {
-    console.error("[mission-store] persist failed:", error);
+    logger.error("[mission-store] persist failed:", error);
   }
 }
 

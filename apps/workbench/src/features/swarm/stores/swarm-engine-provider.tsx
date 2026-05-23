@@ -32,6 +32,7 @@ import {
   type SpawnWorktreeSessionOptions,
 } from "./swarm-board-store";
 import { workbenchGuardEvaluator } from "./workbench-guard-evaluator";
+import { logger } from "@/lib/logger";
 
 export interface SwarmEngineContextValue {
   engine: SwarmOrchestrator | null;
@@ -233,7 +234,7 @@ export function SwarmEngineProvider({
       orchestrator = null;
       if (cancelled) return;
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(
+      logger.warn(
         "[SwarmEngineProvider] Engine init failed, falling back to manual mode:",
         message,
       );
@@ -294,7 +295,7 @@ export function SwarmEngineProvider({
         const message =
           guardErr instanceof Error ? guardErr.message : String(guardErr);
         const { actions } = useSwarmBoardStore.getState();
-        console.warn(
+        logger.warn(
           "[SwarmEngineProvider] Guard evaluation failed; denying spawn:",
           message,
         );

@@ -35,6 +35,7 @@ import {
   commandRegistry,
   type CommandCategory,
 } from "../../command-registry";
+import { logger } from "@/lib/logger";
 
 const COMMAND_CATEGORIES: ReadonlySet<CommandCategory> = new Set([
   "Navigate",
@@ -224,7 +225,7 @@ export class PluginBridgeHost {
         void this.receiptMiddleware
           .recordDenied(method, params, "revocation")
           .catch((e) =>
-            console.warn("[bridge-host] receipt recordDenied failed:", e),
+            logger.warn("[bridge-host] receipt recordDenied failed:", e),
           );
       }
       return;
@@ -244,7 +245,7 @@ export class PluginBridgeHost {
           void this.receiptMiddleware
             .recordDenied(method, params, requiredPerm)
             .catch((e) =>
-              console.warn("[bridge-host] receipt recordDenied failed:", e),
+              logger.warn("[bridge-host] receipt recordDenied failed:", e),
             );
         }
         return;
@@ -273,7 +274,7 @@ export class PluginBridgeHost {
               void this.receiptMiddleware
                 .recordAllowed(method, params, durationMs)
                 .catch((e) =>
-                  console.warn("[bridge-host] receipt recordAllowed failed:", e),
+                  logger.warn("[bridge-host] receipt recordAllowed failed:", e),
                 );
             }
           })
@@ -293,13 +294,13 @@ export class PluginBridgeHost {
                 void this.receiptMiddleware
                   .recordDenied(method, params, requiredPerm)
                   .catch((e) =>
-                    console.warn("[bridge-host] receipt recordDenied failed:", e),
+                    logger.warn("[bridge-host] receipt recordDenied failed:", e),
                   );
               } else {
                 void this.receiptMiddleware
                   .recordError(method, params, durationMs)
                   .catch((e) =>
-                    console.warn("[bridge-host] receipt recordError failed:", e),
+                    logger.warn("[bridge-host] receipt recordError failed:", e),
                   );
               }
             }
@@ -312,7 +313,7 @@ export class PluginBridgeHost {
           void this.receiptMiddleware
             .recordAllowed(method, params, durationMs)
             .catch((e) =>
-              console.warn("[bridge-host] receipt recordAllowed failed:", e),
+              logger.warn("[bridge-host] receipt recordAllowed failed:", e),
             );
         }
       }
@@ -331,13 +332,13 @@ export class PluginBridgeHost {
           void this.receiptMiddleware
             .recordDenied(method, params, requiredPerm)
             .catch((e) =>
-              console.warn("[bridge-host] receipt recordDenied failed:", e),
+              logger.warn("[bridge-host] receipt recordDenied failed:", e),
             );
         } else {
           void this.receiptMiddleware
             .recordError(method, params, durationMs)
             .catch((e) =>
-              console.warn("[bridge-host] receipt recordError failed:", e),
+              logger.warn("[bridge-host] receipt recordError failed:", e),
             );
         }
       }

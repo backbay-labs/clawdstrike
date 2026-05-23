@@ -10,6 +10,7 @@ import { usePolicyTabsStore } from "@/features/policy/stores/policy-tabs-store";
 import { usePolicyEditStore } from "@/features/policy/stores/policy-edit-store";
 import { useWorkbenchUIStore } from "@/features/policy/stores/workbench-ui-store";
 import { sanitizeYamlForStorageWithMetadata } from "@/lib/workbench/storage-sanitizer";
+import { logger } from "@/lib/logger";
 
 export function usePolicyBootstrap(): void {
   // Reset stores on mount — ensures clean state in tests where localStorage
@@ -38,7 +39,7 @@ export function usePolicyBootstrap(): void {
         JSON.stringify(savedPolicies),
       );
     } catch (e) {
-      console.error(
+      logger.error(
         "[policy-bootstrap] persist saved policies failed:",
         e,
       );
@@ -82,7 +83,7 @@ export function usePolicyBootstrap(): void {
           JSON.stringify(persisted),
         );
       } catch (e) {
-        console.error(
+        logger.error(
           "[policy-bootstrap] persistTabs failed:",
           e,
         );

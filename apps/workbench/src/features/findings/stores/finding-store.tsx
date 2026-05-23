@@ -20,6 +20,7 @@ import {
   setVerdict as engineSetVerdict,
   archiveExpiredFindings as engineArchiveExpired,
 } from "@/lib/workbench/finding-engine";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,7 +80,7 @@ function schedulePersist(state: FindingState): void {
       localStorage.setItem(STORAGE_KEY, raw);
       lastFindingStorageSnapshot = raw;
     } catch (e) {
-      console.error("[finding-store] persistFindings failed:", e);
+      logger.error("[finding-store] persistFindings failed:", e);
     }
     persistTimer = null;
   }, 500);
@@ -99,7 +100,7 @@ function flushPersist(state: FindingState): void {
       localStorage.setItem(STORAGE_KEY, raw);
       lastFindingStorageSnapshot = raw;
     } catch (e) {
-      console.error("[finding-store] flushPersist failed:", e);
+      logger.error("[finding-store] flushPersist failed:", e);
     }
   }
 }
@@ -110,7 +111,7 @@ function loadPersistedFindings(): Pick<FindingState, "findings" | "activeFinding
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.findings)) {
-      console.warn("[finding-store] Invalid persisted finding data, using defaults");
+      logger.warn("[finding-store] Invalid persisted finding data, using defaults");
       return null;
     }
 
@@ -137,7 +138,7 @@ function loadPersistedFindings(): Pick<FindingState, "findings" | "activeFinding
       activeFindingId,
     };
   } catch (e) {
-    console.warn("[finding-store] loadPersistedFindings failed:", e);
+    logger.warn("[finding-store] loadPersistedFindings failed:", e);
     return null;
   }
 }

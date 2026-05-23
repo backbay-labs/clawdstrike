@@ -17,6 +17,7 @@ import {
 } from "@/lib/workbench/operator-crypto";
 import { signDetachedPayload } from "@/lib/workbench/signature-adapter";
 import { secureStore } from "@/features/settings/secure-store";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,7 +170,7 @@ function schedulePersist(operator: OperatorIdentity | null): void {
         lastOperatorStorageSnapshot = null;
       }
     } catch (e) {
-      console.error("[operator-store] persistOperator failed:", e);
+      logger.error("[operator-store] persistOperator failed:", e);
     }
     persistTimer = null;
   }, 500);
@@ -186,7 +187,7 @@ function persistOperatorSync(operator: OperatorIdentity | null): void {
       lastOperatorStorageSnapshot = null;
     }
   } catch (e) {
-    console.error("[operator-store] persistOperator failed:", e);
+    logger.error("[operator-store] persistOperator failed:", e);
   }
 }
 
@@ -201,12 +202,12 @@ function loadPersistedOperator(): OperatorIdentity | null {
       typeof parsed.publicKey !== "string" ||
       typeof parsed.fingerprint !== "string"
     ) {
-      console.warn("[operator-store] Invalid persisted operator data, ignoring");
+      logger.warn("[operator-store] Invalid persisted operator data, ignoring");
       return null;
     }
     return parsed as OperatorIdentity;
   } catch (e) {
-    console.warn("[operator-store] loadPersistedOperator failed:", e);
+    logger.warn("[operator-store] loadPersistedOperator failed:", e);
     return null;
   }
 }

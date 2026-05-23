@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { getVersionStore } from "@/lib/workbench/version-store";
 import type { WorkbenchPolicy } from "@/lib/workbench/types";
+import { logger } from "@/lib/logger";
 
 /**
  * Auto-versioning hook: creates a version snapshot whenever the policy
@@ -28,7 +29,7 @@ export function useAutoVersion(
     if (initRef.current) return;
     initRef.current = true;
     storeRef.current.init().catch((err) => {
-      console.error("[auto-version] Failed to init store:", err);
+      logger.error("[auto-version] Failed to init store:", err);
     });
   }, []);
 
@@ -40,7 +41,7 @@ export function useAutoVersion(
         .saveVersion(policyId, yaml, policy)
         .then(() => storeRef.current.deleteOldVersions(policyId, 200))
         .catch((err) => {
-          console.error("[auto-version] Failed to auto-save version:", err);
+          logger.error("[auto-version] Failed to auto-save version:", err);
         });
     }
     wasDirtyRef.current = dirty;

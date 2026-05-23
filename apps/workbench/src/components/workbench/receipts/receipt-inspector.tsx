@@ -28,6 +28,7 @@ import {
 import { IconCloudUpload, IconCloudDownload, IconCircleDot, IconDots } from "@tabler/icons-react";
 import { usePolicyTabsStore } from "@/features/policy/stores/policy-tabs-store";
 import { usePolicyEditStore } from "@/features/policy/stores/policy-edit-store";
+import { logger } from "@/lib/logger";
 
 function randomHex(len: number): string {
   const bytes = new Uint8Array(len / 2);
@@ -580,7 +581,7 @@ export function ReceiptInspector() {
           : null;
 
       if (!extractedSignature) {
-        console.warn(
+        logger.warn(
           "[receipt-inspector] Could not extract signer signature from signed_receipt:",
           rawSigner,
         );
@@ -658,7 +659,7 @@ export function ReceiptInspector() {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error("[receipt-inspector] generate real receipt failed:", err);
+      logger.error("[receipt-inspector] generate real receipt failed:", err);
       setGenerateError(message);
     } finally {
       setGenerating(false);
@@ -703,7 +704,7 @@ export function ReceiptInspector() {
             : null;
 
         if (!extractedSignature) {
-          console.warn(
+          logger.warn(
             "[receipt-inspector] Could not extract signer signature from signed_receipt. " +
               "Expected resp.signed_receipt.signatures.signer to be a non-empty string, " +
               "got:",
@@ -753,7 +754,7 @@ export function ReceiptInspector() {
         });
       }
     } catch (err) {
-      console.error("[receipt-inspector] sign_receipt failed:", err);
+      logger.error("[receipt-inspector] sign_receipt failed:", err);
     } finally {
       setSigning(false);
     }

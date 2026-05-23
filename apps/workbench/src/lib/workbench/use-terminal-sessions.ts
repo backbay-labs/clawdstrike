@@ -19,6 +19,7 @@ import {
 import type { SwarmBoardNodeData } from "./swarm-board-types";
 import type { Node } from "@xyflow/react";
 import { useOptionalSwarmEngine } from "@/features/swarm/stores/swarm-engine-provider";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types re-exported for convenience
@@ -143,7 +144,7 @@ function useTerminalSessionsWithSource({
           } catch (err) {
             // Kill failed (IPC error, timeout, etc.) — still remove the node
             // so the UI doesn't get stuck with an unkillable tile.
-            console.warn("[use-terminal-sessions] killSession failed during removal:", err);
+            logger.warn("[use-terminal-sessions] killSession failed during removal:", err);
           }
         }
       }

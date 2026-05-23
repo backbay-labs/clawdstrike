@@ -6,6 +6,7 @@ import type { ReactElement, ReactNode } from "react";
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { createSelectors } from "@/lib/create-selectors";
+import { logger } from "@/lib/logger";
 
 
 export interface ReputationEvent {
@@ -32,7 +33,7 @@ function schedulePersist(events: Record<string, ReputationEvent[]>): void {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
     } catch (e) {
-      console.error("[reputation-store] persistReputation failed:", e);
+      logger.error("[reputation-store] persistReputation failed:", e);
     }
     persistTimer = null;
   }, 500);
@@ -46,7 +47,7 @@ function loadPersistedReputation(): Record<string, ReputationEvent[]> | null {
     if (!parsed || typeof parsed !== "object") return null;
     return parsed as Record<string, ReputationEvent[]>;
   } catch (e) {
-    console.warn("[reputation-store] loadPersistedReputation failed:", e);
+    logger.warn("[reputation-store] loadPersistedReputation failed:", e);
     return null;
   }
 }

@@ -4,6 +4,7 @@ import { immer } from "zustand/middleware/immer";
 import { createSelectors } from "@/lib/create-selectors";
 import type { Intel } from "@/lib/workbench/sentinel-types";
 import { isIntel } from "@/lib/workbench/sentinel-types";
+import { logger } from "@/lib/logger";
 
 export const INTEL_STORAGE_KEY = "clawdstrike_workbench_intel";
 
@@ -152,7 +153,7 @@ function loadPersistedIntel(): IntelState | null {
       activeIntelId,
     };
   } catch (error) {
-    console.warn("[intel-store] loadPersistedIntel failed:", error);
+    logger.warn("[intel-store] loadPersistedIntel failed:", error);
     return null;
   }
 }
@@ -167,7 +168,7 @@ function persistIntel(state: IntelState): void {
     localStorage.setItem(INTEL_STORAGE_KEY, raw);
     lastIntelStorageSnapshot = raw;
   } catch (error) {
-    console.error("[intel-store] persistIntel failed:", error);
+    logger.error("[intel-store] persistIntel failed:", error);
   }
 }
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DocumentCoverageEntry } from "./coverage-gap-engine";
 import { buildPublishedCoverage } from "./coverage-projection";
 import { getPublicationStore } from "./publication-store";
+import { logger } from "@/lib/logger";
 
 export function usePublishedCoverage(): DocumentCoverageEntry[] {
   const [coverage, setCoverage] = useState<DocumentCoverageEntry[]>([]);
@@ -13,7 +14,7 @@ export function usePublishedCoverage(): DocumentCoverageEntry[] {
       const manifests = await store.getAllManifests();
       setCoverage(buildPublishedCoverage(manifests));
     } catch (error) {
-      console.warn("[use-published-coverage] Failed to load publication coverage:", error);
+      logger.warn("[use-published-coverage] Failed to load publication coverage:", error);
       setCoverage([]);
     }
   }, []);

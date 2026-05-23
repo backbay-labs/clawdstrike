@@ -16,6 +16,7 @@ import { useProjectStore } from "@/features/project/stores/project-store";
 import { useToast } from "@/components/ui/toast";
 import { usePaneStore } from "@/features/panes/pane-store";
 import { useSignalCorrelator } from "@/features/findings/hooks/use-signal-correlator";
+import { logger } from "@/lib/logger";
 
 function LoadingFallback() {
   return (
@@ -152,7 +153,7 @@ function useWorkspaceBootstrap(toastRef: React.RefObject<ReturnType<typeof useTo
       }
     }
     init().catch((err) => {
-      console.warn("[workspace-bootstrap] Init failed:", err);
+      logger.warn("[workspace-bootstrap] Init failed:", err);
       useProjectStore.getState().actions.setLoading(false);
     });
   }, []);
@@ -196,7 +197,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("[error-boundary]", error, info.componentStack);
+    logger.error("[error-boundary]", error, info.componentStack);
   }
 
   render() {
@@ -298,21 +299,21 @@ export function App() {
       try {
         await secureStore.init();
       } catch (err) {
-        console.warn("[secure-store] Startup init failed:", err);
+        logger.warn("[secure-store] Startup init failed:", err);
         return;
       }
 
       try {
         await migrateCredentialsToStronghold();
       } catch (err) {
-        console.warn("[secure-store] Credential migration failed (non-fatal):", err);
+        logger.warn("[secure-store] Credential migration failed (non-fatal):", err);
       }
 
       await bootstrapThreatIntelPlugins();
     }
 
     bootstrapSecureStore().catch((err) => {
-      console.warn("[plugins] Threat intel bootstrap failed:", err);
+      logger.warn("[plugins] Threat intel bootstrap failed:", err);
     });
   }, []);
 

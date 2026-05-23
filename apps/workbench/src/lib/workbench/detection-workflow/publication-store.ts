@@ -4,6 +4,7 @@
  */
 
 import type { PublicationManifest } from "./shared-types";
+import { logger } from "@/lib/logger";
 
 const DB_NAME = "clawdstrike_publications";
 const DB_VERSION = 2;
@@ -63,7 +64,7 @@ export class PublicationStore {
     try {
       this.db = await openDB();
     } catch (err) {
-      console.error("[publication-store] Failed to open IndexedDB:", err);
+      logger.error("[publication-store] Failed to open IndexedDB:", err);
     }
   }
 

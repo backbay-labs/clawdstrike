@@ -30,6 +30,7 @@ import { reduceFleetEvent } from "@/features/fleet/fleet-event-reducer";
 import type { CheckEventData } from "@/features/fleet/fleet-event-reducer";
 import { useSignalStore } from "@/features/findings/stores/signal-store";
 import type { Signal } from "@/lib/workbench/signal-pipeline";
+import { logger } from "@/lib/logger";
 
 // ---- Types ----
 
@@ -323,7 +324,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
             set((state) => {
               state.pollError = `Agent polling failing repeatedly: ${message}`;
             });
-            console.warn(
+            logger.warn(
               `[fleet-connection] pollAgents: ${consecutivePollFailures} consecutive failures — ${message}`,
             );
           }

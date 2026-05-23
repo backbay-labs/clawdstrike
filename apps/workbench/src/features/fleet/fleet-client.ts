@@ -26,6 +26,7 @@ import {
   type HubConfig,
 } from "@/features/swarm/swarm-protocol";
 import { yamlToPolicy } from "@/features/policy/yaml-utils";
+import { logger } from "@/lib/logger";
 
 export {
   isPrivateOrLoopbackFleetHostname,
@@ -53,7 +54,7 @@ function sanitizeStoredFleetUrl(url: string | null | undefined, fieldName: strin
     return normalizedValidatedFleetUrl(url, fieldName);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[fleet-client] ignoring invalid ${fieldName} from storage: ${message}`);
+    logger.warn(`[fleet-client] ignoring invalid ${fieldName} from storage: ${message}`);
     return "";
   }
 }
@@ -73,7 +74,7 @@ function proxyUrl(absoluteUrl: string, kind: "hushd" | "control"): string {
     return `/_proxy/${kind}${u.pathname}${u.search}`;
   } catch {
     // Don't log the raw URL to avoid credential leakage (Finding M3)
-    console.warn("[fleet-client] Invalid URL format for proxy rewrite");
+    logger.warn("[fleet-client] Invalid URL format for proxy rewrite");
     return normalizedUrl;
   }
 }
@@ -252,7 +253,7 @@ export function loadSavedConnection(): Partial<FleetConnection> {
       controlApiToken: "",
     };
   } catch (e) {
-    console.warn("[fleet-client] localStorage read failed:", e);
+    logger.warn("[fleet-client] localStorage read failed:", e);
     return { hushdUrl: "", controlApiUrl: "", apiKey: "", controlApiToken: "" };
   }
 }
@@ -286,7 +287,7 @@ export async function loadSavedConnectionAsync(): Promise<Partial<FleetConnectio
       };
     }
   } catch (e) {
-    console.warn("[fleet-client] secureStore read failed, using localStorage:", e);
+    logger.warn("[fleet-client] secureStore read failed, using localStorage:", e);
   }
 
   return bootstrap;
@@ -321,7 +322,7 @@ export async function saveConnectionConfig(config: {
       secureStore.set(SS_CONTROL_TOKEN, config.controlApiToken),
     ]);
   } catch (e) {
-    console.warn("[fleet-client] secureStore write failed — credentials may not be persisted securely:", e);
+    logger.warn("[fleet-client] secureStore write failed — credentials may not be persisted securely:", e);
     throw new Error("Failed to persist credentials securely");
   }
 
@@ -331,7 +332,7 @@ export async function saveConnectionConfig(config: {
     localStorage.setItem(LS_HUSHD_URL, hushdUrl);
     localStorage.setItem(LS_CONTROL_API_URL, controlApiUrl);
   } catch (e) {
-    console.warn("[fleet-client] localStorage write failed:", e);
+    logger.warn("[fleet-client] localStorage write failed:", e);
   }
 }
 
@@ -350,7 +351,7 @@ export function clearConnectionConfig() {
     localStorage.removeItem(LS_API_KEY);
     localStorage.removeItem(LS_CONTROL_TOKEN);
   } catch (e) {
-    console.warn("[fleet-client] localStorage removeItem failed:", e);
+    logger.warn("[fleet-client] localStorage removeItem failed:", e);
   }
 }
 
@@ -363,7 +364,7 @@ export function clearCredentials() {
     localStorage.removeItem(LS_API_KEY);
     localStorage.removeItem(LS_CONTROL_TOKEN);
   } catch (e) {
-    console.warn("[fleet-client] localStorage credential removal failed:", e);
+    logger.warn("[fleet-client] localStorage credential removal failed:", e);
   }
 }
 
@@ -838,7 +839,7 @@ export async function fetchAgentCount(conn: FleetConnection): Promise<number> {
   try {
     return (await fetchAgentList(conn)).length;
   } catch (e) {
-    console.warn("[fleet-client] fetchAgentCount failed:", e);
+    logger.warn("[fleet-client] fetchAgentCount failed:", e);
     return 0;
   }
 }
@@ -859,7 +860,7 @@ export async function fetchAgentList(
     );
     return res.endpoints ?? [];
   } catch (e) {
-    console.warn("[fleet-client] hushd agent list failed, trying control-api:", e);
+    logger.warn("[fleet-client] hushd agent list failed, trying control-api:", e);
     if (!conn.controlApiUrl) return [];
     const ctrlUrl = normalizedValidatedFleetUrl(conn.controlApiUrl, "control API URL");
     const res = await jsonFetch<unknown>(proxyUrl(`${ctrlUrl}/api/v1/agents`, "control"), {
@@ -918,7 +919,7 @@ export async function fetchAuditEvents(
     if (validateAuditEvent(item)) {
       valid.push(item);
     } else {
-      console.warn("[fleet-client] fetchAuditEvents: dropping invalid audit event", item);
+      logger.warn("[fleet-client] fetchAuditEvents: dropping invalid audit event", item);
     }
   }
   return valid;
@@ -1199,7 +1200,7 @@ function adaptApprovalsResponse(
   }
 
   // Unknown shape -- return empty (fail-closed)
-  console.warn(
+  logger.warn(
     "[fleet-client] fetchApprovals: unexpected response shape, returning empty",
   );
   return { requests: [], decisions: [] };
@@ -1274,7 +1275,7 @@ export async function fetchDelegationGraphFromApi(
     });
     return validGrants.length > 0 ? grantsToGraph(validGrants) : null;
   } catch (e) {
-    console.warn("[fleet-client] Failed to fetch delegation graph:", e);
+    logger.warn("[fleet-client] Failed to fetch delegation graph:", e);
     return null;
   }
 }
@@ -1361,7 +1362,7 @@ export async function fetchDelegationGraphSnapshot(
     const graph = mapBackendGraphToFrontend(res);
     return graph.nodes.length > 0 ? graph : null;
   } catch (e) {
-    console.warn("[fleet-client] delegation-graph endpoint unavailable, falling back to grants:", e);
+    logger.warn("[fleet-client] delegation-graph endpoint unavailable, falling back to grants:", e);
     // Fallback to the alternate grants-based graph path.
     return fetchDelegationGraphFromApi(conn);
   }
@@ -1388,7 +1389,7 @@ export async function fetchPrincipals(
         return list;
       }
     } catch (e) {
-      console.warn(`[fleet-client] fetchPrincipals failed for ${path}:`, e);
+      logger.warn(`[fleet-client] fetchPrincipals failed for ${path}:`, e);
     }
   }
 
@@ -1533,7 +1534,7 @@ export async function fetchScopedPolicies(
       return typeof obj.id === "string" && typeof obj.scope_id === "string";
     });
   } catch (e) {
-    console.warn("[fleet-client] fetchScopedPolicies failed:", e);
+    logger.warn("[fleet-client] fetchScopedPolicies failed:", e);
     return [];
   }
 }
@@ -1594,7 +1595,7 @@ export async function fetchPolicyAssignments(
       return typeof obj.id === "string" && typeof obj.scope_id === "string";
     });
   } catch (e) {
-    console.warn("[fleet-client] fetchPolicyAssignments failed:", e);
+    logger.warn("[fleet-client] fetchPolicyAssignments failed:", e);
     return [];
   }
 }
@@ -1851,7 +1852,7 @@ export async function fetchReceiptChain(
     }
     throw new Error("[fleet-client] fetchReceiptChain: unexpected response shape");
   } catch (e) {
-    console.warn("[fleet-client] fetchReceiptChain failed:", e);
+    logger.warn("[fleet-client] fetchReceiptChain failed:", e);
     return [];
   }
 }
@@ -2023,7 +2024,7 @@ export async function fetchCatalogTemplate(
     }
     return toCatalogTemplate(res);
   } catch (e) {
-    console.warn("[fleet-client] fetchCatalogTemplate failed:", e);
+    logger.warn("[fleet-client] fetchCatalogTemplate failed:", e);
     return null;
   }
 }
@@ -2197,7 +2198,7 @@ export async function fetchHierarchyNodes(
 
     return list.filter(isHierarchyNode);
   } catch (e) {
-    console.warn("[fleet-client] fetchHierarchyNodes failed:", e);
+    logger.warn("[fleet-client] fetchHierarchyNodes failed:", e);
     return [];
   }
 }
@@ -2232,7 +2233,7 @@ export async function fetchHierarchyTree(
       nodes: (obj.nodes as unknown[]).filter(isHierarchyNode),
     };
   } catch (e) {
-    console.warn("[fleet-client] fetchHierarchyTree failed:", e);
+    logger.warn("[fleet-client] fetchHierarchyTree failed:", e);
     return null;
   }
 }
@@ -2345,7 +2346,7 @@ export const fleetClient = {
       await testConnection(conn.hushdUrl, conn.apiKey);
       return true;
     } catch (e) {
-      console.warn("[fleet-client] healthCheck failed:", e);
+      logger.warn("[fleet-client] healthCheck failed:", e);
       return false;
     }
   },
@@ -2371,7 +2372,7 @@ export const fleetClient = {
     try {
       return await fetchApprovals(conn);
     } catch (e) {
-      console.warn("[fleet-client] fetchApprovals failed:", e);
+      logger.warn("[fleet-client] fetchApprovals failed:", e);
       return null;
     }
   },

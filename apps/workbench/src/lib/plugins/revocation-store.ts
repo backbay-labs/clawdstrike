@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * Plugin Revocation Store
  *
@@ -197,7 +198,7 @@ export class PluginRevocationStore {
 
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
-        console.warn(
+        logger.warn(
           "[revocation-store] stored data is not an array, resetting",
         );
         return;
@@ -207,7 +208,7 @@ export class PluginRevocationStore {
         this.entries.set(entry.pluginId, entry);
       }
     } catch (e) {
-      console.warn("[revocation-store] localStorage read failed:", e);
+      logger.warn("[revocation-store] localStorage read failed:", e);
     }
   }
 
@@ -216,7 +217,7 @@ export class PluginRevocationStore {
       const arr = Array.from(this.entries.values());
       localStorage.setItem(LS_KEY, JSON.stringify(arr));
     } catch (e) {
-      console.warn("[revocation-store] localStorage write failed:", e);
+      logger.warn("[revocation-store] localStorage write failed:", e);
     }
   }
 }
