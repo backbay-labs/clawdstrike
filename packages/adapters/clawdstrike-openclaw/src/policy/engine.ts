@@ -95,12 +95,10 @@ const WRITE_PATH_FLAG_NAMES = new Set([
   "logpath",
 ]);
 
+const COMMANDS_WITH_DESTINATION_WRITE_OPERAND = new Set(["cp", "install", "ln", "mv"]);
+
 const COMMANDS_WITH_WRITE_PATH_OPERANDS = new Set([
-  "cp",
-  "install",
-  "ln",
   "mkdir",
-  "mv",
   "rm",
   "rmdir",
   "tee",
@@ -131,7 +129,28 @@ function extractCommandPathCandidates(
   const tokens = [command, ...args].map((t) => String(t ?? "")).filter(Boolean);
   const reads: string[] = [];
   const writes: string[] = [];
-  let writeOperandMode = false;
+  let writeOperandMode: "all" | "destination" | null = null;
+  let operandPaths: string[] = [];
+
+  const flushCommandOperands = () => {
+    if (!writeOperandMode || operandPaths.length === 0) {
+      operandPaths = [];
+      return;
+    }
+
+    if (writeOperandMode === "destination") {
+      if (operandPaths.length === 1) {
+        reads.push(operandPaths[0]);
+      } else {
+        reads.push(...operandPaths.slice(0, -1));
+        writes.push(operandPaths[operandPaths.length - 1]);
+      }
+    } else {
+      writes.push(...operandPaths);
+    }
+
+    operandPaths = [];
+  };
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
@@ -139,12 +158,20 @@ function extractCommandPathCandidates(
     const commandToken = commandNameToken(t);
 
     if (isShellControlToken(cleanedToken)) {
-      writeOperandMode = false;
+      flushCommandOperands();
+      writeOperandMode = null;
+      continue;
+    }
+
+    if (COMMANDS_WITH_DESTINATION_WRITE_OPERAND.has(commandToken)) {
+      flushCommandOperands();
+      writeOperandMode = "destination";
       continue;
     }
 
     if (COMMANDS_WITH_WRITE_PATH_OPERANDS.has(commandToken)) {
-      writeOperandMode = true;
+      flushCommandOperands();
+      writeOperandMode = "all";
       continue;
     }
 
@@ -187,7 +214,8 @@ function extractCommandPathCandidates(
       !cleanedToken.startsWith("-") &&
       looksLikePathToken(cleanedToken)
     ) {
-      writes.push(cleanedToken);
+      operandPaths.push(cleanedToken);
+      continue;
     }
 
     // Flags like --output /path or -o /path (write targets)
@@ -218,6 +246,8 @@ function extractCommandPathCandidates(
       reads.push(cleanedToken);
     }
   }
+
+  flushCommandOperands();
 
   const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));
   return { reads: uniq(reads), writes: uniq(writes) };

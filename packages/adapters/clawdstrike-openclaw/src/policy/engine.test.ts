@@ -1129,6 +1129,81 @@ filesystem:
     expect(decision.status).toBe("allow");
   });
 
+  it.each(["cp", "mv", "ln"])(
+    "treats %s source operands as reads and only the destination as a write",
+    async (command) => {
+      const allowedDir = join(testDir, "copy-allowed");
+      mkdirSync(allowedDir, { recursive: true });
+      const policyPath = join(testDir, `${command}-source-destination-policy.yaml`);
+      writeFileSync(
+        policyPath,
+        `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+      );
+
+      const engine = new PolicyEngine({
+        policy: policyPath,
+        mode: "deterministic",
+        logLevel: "error",
+        guards: { patch_integrity: false },
+      });
+
+      const decision = await engine.evaluate({
+        eventId: `command-${command}-source-outside-roots-destination-inside`,
+        eventType: "command_exec",
+        timestamp: new Date().toISOString(),
+        data: {
+          type: "command",
+          command,
+          args: [join(testDir, "source.txt"), join(allowedDir, "dest.txt")],
+        },
+      });
+
+      expect(decision.status).toBe("allow");
+    },
+  );
+
+  it("denies cp when only the destination operand is outside configured write roots", async () => {
+    const allowedDir = join(testDir, "copy-allowed-deny");
+    mkdirSync(allowedDir, { recursive: true });
+    const policyPath = join(testDir, "cp-destination-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: { patch_integrity: false },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: "command-cp-destination-outside-roots",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "command",
+        command: "cp",
+        args: [join(allowedDir, "source.txt"), join(testDir, "dest.txt")],
+      },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+    expect(decision.reason).toContain("Write path not in allowed roots");
+  });
+
   it("enforces egress allowlists for network targets inside shell commands", async () => {
     const policyPath = join(testDir, "command-egress-policy.yaml");
     writeFileSync(
