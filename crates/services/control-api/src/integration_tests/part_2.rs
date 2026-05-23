@@ -829,6 +829,7 @@ async fn create_tenant_rolls_back_when_nats_provisioning_fails() {
             stale_check_interval_secs: 60,
             stale_threshold_secs: 120,
             dead_threshold_secs: 300,
+            cors: crate::config::CorsConfig::default(),
         },
         db: harness.db.clone(),
         nats: harness.nats.clone(),

@@ -19,6 +19,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::http::{HeaderName, HeaderValue, Method};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -305,9 +306,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let cors = build_cors_layer(&config.cors);
     let app = routes::router(state.clone())
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive());
+        .layer(cors);
 
     let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
     tracing::info!(addr = %config.listen_addr, "Listening");
@@ -333,6 +335,60 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Shut down cleanly");
     Ok(())
+}
+
+/// Build a CORS layer from configuration.
+///
+/// Defaults to a closed (same-origin) policy when no origins are configured.
+/// When `allowed_origins` is non-empty, only those origins are accepted and
+/// only the methods/headers required by the control API are exposed.
+fn build_cors_layer(cors: &crate::config::CorsConfig) -> CorsLayer {
+    if cors.allowed_origins.is_empty() {
+        // Default-deny: no cross-origin requests allowed. Same-origin still works.
+        return CorsLayer::new();
+    }
+
+    let mut parsed_origins: Vec<HeaderValue> = Vec::with_capacity(cors.allowed_origins.len());
+    for origin in &cors.allowed_origins {
+        match HeaderValue::from_str(origin) {
+            Ok(v) => parsed_origins.push(v),
+            Err(e) => {
+                tracing::warn!(
+                    origin = %origin,
+                    error = %e,
+                    "Skipping invalid CORS allowed origin"
+                );
+            }
+        }
+    }
+
+    if parsed_origins.is_empty() {
+        tracing::warn!(
+            "CONTROL_API_CORS_ALLOWED_ORIGINS contained no valid origins; \
+             defaulting to closed CORS policy"
+        );
+        return CorsLayer::new();
+    }
+
+    tracing::info!(
+        allowed_origins = ?cors.allowed_origins,
+        "CORS allow-list active"
+    );
+
+    CorsLayer::new()
+        .allow_origin(parsed_origins)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::PATCH,
+            Method::OPTIONS,
+        ])
+        .allow_headers([
+            HeaderName::from_static("authorization"),
+            HeaderName::from_static("content-type"),
+        ])
 }
 
 fn stream_subjects_for_consumer(

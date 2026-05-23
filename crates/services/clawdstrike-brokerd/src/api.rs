@@ -188,12 +188,22 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// Verify the `Authorization: Bearer <token>` header against the configured
-/// admin token.  When no admin token is configured the check is a no-op
-/// (backward compatible).
+/// admin token.
+///
+/// When `admin_token` is `None`, the only path to reach this function is via
+/// the explicit `insecure_disable_admin_auth` opt-out (enforced by
+/// `Config::from_env`).  In that case the check is intentionally a no-op,
+/// but we log a per-request warning so the insecure mode is visible.
 fn require_admin_auth(headers: &HeaderMap, state: &AppState) -> Result<(), ApiError> {
     let expected = match state.config.admin_token.as_deref() {
         Some(token) => token,
-        None => return Ok(()), // No token configured — auth disabled.
+        None => {
+            tracing::warn!(
+                "Admin endpoint reached with admin auth disabled \
+                 (CLAWDSTRIKE_BROKERD_INSECURE_DISABLE_ADMIN_AUTH=true)"
+            );
+            return Ok(());
+        }
     };
     let header_value = headers
         .get(axum::http::header::AUTHORIZATION)
@@ -1205,6 +1215,7 @@ mod tests {
             allow_http_loopback: false,
             allow_private_upstream_hosts: false,
             allow_invalid_upstream_tls: false,
+            insecure_disable_admin_auth: admin_token.is_none(),
             admin_token,
         };
         AppState {

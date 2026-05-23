@@ -30,8 +30,15 @@ pub struct Config {
     pub allow_private_upstream_hosts: bool,
     pub allow_invalid_upstream_tls: bool,
     /// Optional bearer token required for admin and mutation endpoints.
-    /// When `None`, authentication is skipped (backward compatible).
+    ///
+    /// When `None`, admin auth is only permitted to be skipped if
+    /// `insecure_disable_admin_auth` is `true` (an explicit opt-out for
+    /// local development).  Otherwise `Config::from_env` refuses to start.
     pub admin_token: Option<String>,
+    /// Explicit opt-out for admin authentication.  When `true` and
+    /// `admin_token` is `None`, the broker starts with admin endpoints open
+    /// and logs a loud startup warning.
+    pub insecure_disable_admin_auth: bool,
 }
 
 fn env_bool(key: &str) -> bool {
@@ -96,6 +103,8 @@ impl Config {
         let admin_token = std::env::var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN")
             .ok()
             .filter(|value| !value.trim().is_empty());
+        let insecure_disable_admin_auth =
+            env_bool("CLAWDSTRIKE_BROKERD_INSECURE_DISABLE_ADMIN_AUTH");
 
         let trusted_hushd_public_keys = std::env::var("CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS")
             .map_err(|_| anyhow::anyhow!("CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS is required"))?
@@ -118,6 +127,26 @@ impl Config {
             ));
         }
 
+        // Fail-closed: require an admin token unless the operator has
+        // explicitly opted out via CLAWDSTRIKE_BROKERD_INSECURE_DISABLE_ADMIN_AUTH.
+        if admin_token.is_none() {
+            if !insecure_disable_admin_auth {
+                anyhow::bail!(
+                    "CLAWDSTRIKE_BROKERD_ADMIN_TOKEN is unset; refusing to start. \
+                     Set CLAWDSTRIKE_BROKERD_ADMIN_TOKEN=<token> or, for local \
+                     development only, set \
+                     CLAWDSTRIKE_BROKERD_INSECURE_DISABLE_ADMIN_AUTH=true to \
+                     leave admin and mutation endpoints unauthenticated."
+                );
+            }
+            tracing::warn!(
+                "CLAWDSTRIKE_BROKERD_ADMIN_TOKEN is unset and \
+                 CLAWDSTRIKE_BROKERD_INSECURE_DISABLE_ADMIN_AUTH=true; \
+                 starting with admin/mutation endpoints UNAUTHENTICATED. \
+                 DO NOT use this configuration in production."
+            );
+        }
+
         Ok(Self {
             listen,
             hushd_base_url,
@@ -130,6 +159,7 @@ impl Config {
             allow_private_upstream_hosts,
             allow_invalid_upstream_tls,
             admin_token,
+            insecure_disable_admin_auth,
         })
     }
 }
@@ -156,6 +186,10 @@ mod tests {
     }
 
     /// Set the minimum required env vars for a valid config (file backend).
+    ///
+    /// Includes a default admin token so the fail-closed admin-auth check
+    /// in `Config::from_env` is satisfied.  Tests that need to exercise the
+    /// missing-token path should clear or shadow this var explicitly.
     fn set_minimum_env() {
         let keypair = Keypair::generate();
         std::env::set_var(
@@ -163,6 +197,7 @@ mod tests {
             keypair.public_key().to_hex(),
         );
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_FILE", "/tmp/test-secrets.json");
+        std::env::set_var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN", "test-admin-token");
     }
 
     #[test]
@@ -234,6 +269,7 @@ mod tests {
             keypair.public_key().to_hex(),
         );
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "env");
+        std::env::set_var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN", "test-admin-token");
 
         let config = Config::from_env().expect("should parse");
         match &config.secret_backend {
@@ -255,6 +291,7 @@ mod tests {
         );
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "env");
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_ENV_PREFIX", "MY_PREFIX_");
+        std::env::set_var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN", "test-admin-token");
 
         let config = Config::from_env().expect("should parse");
         match &config.secret_backend {
@@ -279,6 +316,7 @@ mod tests {
             "CLAWDSTRIKE_BROKERD_SECRET_HTTP_URL",
             "https://vault.example.com",
         );
+        std::env::set_var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN", "test-admin-token");
 
         let config = Config::from_env().expect("should parse");
         match &config.secret_backend {
@@ -311,6 +349,7 @@ mod tests {
         );
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_HTTP_TOKEN", "vault-token");
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_HTTP_PATH_PREFIX", "/v2/managed");
+        std::env::set_var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN", "test-admin-token");
 
         let config = Config::from_env().expect("should parse");
         match &config.secret_backend {
@@ -342,6 +381,7 @@ mod tests {
             "https://vault.example.com",
         );
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_HTTP_TOKEN", "  ");
+        std::env::set_var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN", "test-admin-token");
 
         let config = Config::from_env().expect("should parse");
         match &config.secret_backend {
@@ -545,5 +585,58 @@ mod tests {
                 "allow_invalid_upstream_tls should be false for '{falsy}'"
             );
         }
+    }
+
+    #[test]
+    fn from_env_refuses_to_start_without_admin_token() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        clear_env();
+        let keypair = Keypair::generate();
+        std::env::set_var(
+            "CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS",
+            keypair.public_key().to_hex(),
+        );
+        std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_FILE", "/tmp/test-secrets.json");
+        // Deliberately do NOT set CLAWDSTRIKE_BROKERD_ADMIN_TOKEN.
+        let err = Config::from_env().expect_err(
+            "broker must refuse to start without an admin token by default (fail-closed)",
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN"),
+            "error must point operator at the missing env var: {msg}"
+        );
+    }
+
+    #[test]
+    fn from_env_default_is_secure() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        clear_env();
+        set_minimum_env();
+        let config = Config::from_env().expect("should parse");
+        assert!(
+            config.admin_token.is_some(),
+            "default config must require admin token"
+        );
+        assert!(
+            !config.insecure_disable_admin_auth,
+            "insecure admin-auth override must default to false"
+        );
+    }
+
+    #[test]
+    fn from_env_allows_missing_admin_token_with_explicit_insecure_opt_in() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        clear_env();
+        let keypair = Keypair::generate();
+        std::env::set_var(
+            "CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS",
+            keypair.public_key().to_hex(),
+        );
+        std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_FILE", "/tmp/test-secrets.json");
+        std::env::set_var("CLAWDSTRIKE_BROKERD_INSECURE_DISABLE_ADMIN_AUTH", "true");
+        let config = Config::from_env().expect("should parse with explicit insecure opt-in");
+        assert!(config.admin_token.is_none());
+        assert!(config.insecure_disable_admin_auth);
     }
 }
