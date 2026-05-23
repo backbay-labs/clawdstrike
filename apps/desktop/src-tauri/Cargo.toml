@@ -63,6 +63,7 @@ spine = { package = "hush-spine", path = "../../../crates/libs/spine" }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
+tempfile = "3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # macOS-specific dependencies if needed
