@@ -95,6 +95,8 @@ const WRITE_PATH_FLAG_NAMES = new Set([
   "logpath",
 ]);
 
+const DESTINATION_DIRECTORY_FLAG_NAMES = new Set(["target-directory"]);
+
 const COMMANDS_WITH_DESTINATION_WRITE_OPERAND = new Set(["cp", "install", "ln", "mv"]);
 
 const COMMANDS_WITH_WRITE_PATH_OPERANDS = new Set([
@@ -142,6 +144,36 @@ function isWritePathFlagToken(t: string): boolean {
   if (!t.startsWith("-")) return false;
   const normalized = t.replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
   return WRITE_PATH_FLAG_NAMES.has(normalized);
+}
+
+function destinationDirectoryFlagValue(t: string): string | null {
+  const cleaned = cleanPathToken(t);
+  if (cleaned === "-t" || cleaned === "--target-directory") {
+    return null;
+  }
+
+  if (cleaned.startsWith("-t") && cleaned.length > 2 && !cleaned.startsWith("--")) {
+    return cleanPathToken(cleaned.slice(2));
+  }
+
+  const eq = cleaned.indexOf("=");
+  if (eq > 0) {
+    const lhs = cleaned.slice(0, eq).replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
+    if (DESTINATION_DIRECTORY_FLAG_NAMES.has(lhs)) {
+      return cleanPathToken(cleaned.slice(eq + 1));
+    }
+  }
+
+  return null;
+}
+
+function isDestinationDirectoryFlagToken(t: string): boolean {
+  const cleaned = cleanPathToken(t);
+  if (cleaned === "-t") {
+    return true;
+  }
+  const normalized = cleaned.replace(/^-+/, "").toLowerCase().replace(/_/g, "-");
+  return DESTINATION_DIRECTORY_FLAG_NAMES.has(normalized);
 }
 
 function isShellCommandPrefixToken(commandToken: string): boolean {
@@ -200,18 +232,26 @@ function extractCommandPathCandidates(
   const writes: string[] = [];
   let writeOperandMode: "all" | "destination" | null = null;
   let operandPaths: string[] = [];
+  let explicitDestinationOperandPaths: string[] = [];
   let expectsCommandToken = true;
   let scanningShellPrefix = false;
   let shellPrefixOptionValuesRemaining = 0;
 
   const flushCommandOperands = () => {
-    if (!writeOperandMode || operandPaths.length === 0) {
+    if (
+      !writeOperandMode ||
+      (operandPaths.length === 0 && explicitDestinationOperandPaths.length === 0)
+    ) {
       operandPaths = [];
+      explicitDestinationOperandPaths = [];
       return;
     }
 
     if (writeOperandMode === "destination") {
-      if (operandPaths.length === 1) {
+      if (explicitDestinationOperandPaths.length > 0) {
+        reads.push(...operandPaths);
+        writes.push(...explicitDestinationOperandPaths);
+      } else if (operandPaths.length === 1) {
         reads.push(operandPaths[0]);
       } else {
         reads.push(...operandPaths.slice(0, -1));
@@ -222,6 +262,7 @@ function extractCommandPathCandidates(
     }
 
     operandPaths = [];
+    explicitDestinationOperandPaths = [];
   };
 
   for (let i = 0; i < tokens.length; i++) {
@@ -275,6 +316,26 @@ function extractCommandPathCandidates(
 
       expectsCommandToken = false;
       scanningShellPrefix = false;
+    }
+
+    if (writeOperandMode === "destination") {
+      const inlineDestinationDirectory = destinationDirectoryFlagValue(t);
+      if (inlineDestinationDirectory && looksLikePathToken(inlineDestinationDirectory)) {
+        explicitDestinationOperandPaths.push(inlineDestinationDirectory);
+        continue;
+      }
+
+      if (isDestinationDirectoryFlagToken(t)) {
+        const next = tokens[i + 1];
+        if (typeof next === "string" && next.length > 0) {
+          const cleaned = cleanPathToken(next);
+          if (looksLikePathToken(cleaned)) {
+            explicitDestinationOperandPaths.push(cleaned);
+            i += 1;
+            continue;
+          }
+        }
+      }
     }
 
     // Redirection operators: treat as write/read targets.

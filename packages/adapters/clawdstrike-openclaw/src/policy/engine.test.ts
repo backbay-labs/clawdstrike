@@ -1204,6 +1204,55 @@ filesystem:
     expect(decision.reason).toContain("Write path not in allowed roots");
   });
 
+  it.each([
+    { args: ["-t"], targetPath: "target-dir-short" },
+    { args: ["--target-directory"], targetPath: "target-dir-long" },
+    { args: [], targetPath: "target-dir-inline", inline: true },
+  ])(
+    "treats cp target-directory flag destination as the write operand",
+    async ({ args, targetPath, inline }) => {
+      const allowedDir = join(testDir, "copy-target-allowed");
+      const deniedDir = join(testDir, targetPath);
+      mkdirSync(allowedDir, { recursive: true });
+      const policyPath = join(testDir, `${targetPath}-policy.yaml`);
+      writeFileSync(
+        policyPath,
+        `
+extends: clawdstrike:ai-agent-minimal
+filesystem:
+  allowed_write_roots:
+    - ${allowedDir}
+`,
+      );
+
+      const engine = new PolicyEngine({
+        policy: policyPath,
+        mode: "deterministic",
+        logLevel: "error",
+        guards: { patch_integrity: false },
+      });
+
+      const commandArgs = inline
+        ? [`--target-directory=${deniedDir}`, join(allowedDir, "source.txt")]
+        : [...args, deniedDir, join(allowedDir, "source.txt")];
+
+      const decision = await engine.evaluate({
+        eventId: `command-cp-${targetPath}-outside-roots`,
+        eventType: "command_exec",
+        timestamp: new Date().toISOString(),
+        data: {
+          type: "command",
+          command: "cp",
+          args: commandArgs,
+        },
+      });
+
+      expect(decision.status).toBe("deny");
+      expect(decision.reason_code).toBe("OCLAW_FILESYSTEM_WRITE_ROOT_DENY");
+      expect(decision.reason).toContain("Write path not in allowed roots");
+    },
+  );
+
   it("does not treat write-command names in arguments as shell write modes", async () => {
     const allowedDir = join(testDir, "argument-command-token-allowed");
     mkdirSync(allowedDir, { recursive: true });
