@@ -24,10 +24,6 @@
 </p>
 
 <p align="center">
-  <img src=".github/assets/divider.png" alt="" width="520" />
-</p>
-
-<p align="center">
   <img src=".github/assets/sigils/claw-light.svg#gh-light-mode-only" height="42" alt="" />
   <img src=".github/assets/sigils/claw-dark.svg#gh-dark-mode-only"   height="42" alt="" />
 </p>
@@ -625,7 +621,7 @@ See the full workflow in [`docs/src/guides/observe-synth.md`](docs/src/guides/ob
 ```bash
 # 1) Create a Spider-Sense policy
 cat > spider-sense.quickstart.yaml <<'YAML'
-version: "1.3.0"
+version: "1.5.0"
 name: "spider-sense-quickstart"
 extends: "clawdstrike:default"
 guards:
@@ -698,7 +694,7 @@ Clawdstrike policies are versioned, deterministic policy-as-code artifacts desig
 
 | Capability | What You Get |
 | ---------- | ------------ |
-| **Versioned schema** | Explicit `1.1.0` / `1.2.0` policy versions with strict validation and unknown-field rejection |
+| **Versioned schema** | Explicit `1.1.0` through `1.5.0` policy versions with strict validation and unknown-field rejection |
 | **Composable inheritance** | `extends` from built-ins, local files, and remote refs to build layered policy stacks |
 | **Secure remote composition** | Remote `extends` is disabled by default, host-allowlisted, and integrity-pinned via `#sha256=<64-hex>` |
 | **Controlled merges** | `replace`, `merge`, and `deep_merge` strategies for predictable override behavior |

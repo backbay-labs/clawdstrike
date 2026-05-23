@@ -1,4 +1,4 @@
-version: "1.0.0"
+version: "1.5.0"
 name: "secure-coding-assistant-example"
 description: "Example policy for a local coding assistant"
 extends: "clawdstrike:ai-agent"

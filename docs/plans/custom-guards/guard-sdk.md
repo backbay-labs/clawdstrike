@@ -1315,7 +1315,7 @@ hush guard profile --event ./test-event.json
 
 - Documentation: https://docs.clawdstrike.dev/sdk
 - GitHub Issues: https://github.com/clawdstrike/guard-sdk/issues
-- Discord: https://discord.gg/clawdstrike
+- Discord: https://discord.gg/fdbCZHm8zM
 - Email: sdk-support@clawdstrike.dev
 
 ---

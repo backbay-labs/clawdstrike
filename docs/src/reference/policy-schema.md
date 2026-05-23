@@ -14,10 +14,12 @@ When a policy file starts with `hushspec:` instead of `version:`, Clawdstrike au
 - `1.2.0`
 - `1.3.0`
 - `1.4.0`
+- `1.5.0`
 
 Notes:
 
-- `1.4.0` is the latest schema version (adds `origins` for Origin Enclaves).
+- `1.5.0` is the current schema version.
+- `1.4.0` added `origins` for Origin Enclaves.
 - Some SDK validators still default to `1.2.0` when `version` is omitted; set `version` explicitly in production policies.
 
 ## Top-Level Fields
@@ -50,7 +52,7 @@ Integrity pinning and resolver hardening:
 ## Full Example
 
 ```yaml
-version: "1.3.0"
+version: "1.5.0"
 name: Example
 description: Example policy with core guards, posture, and Spider-Sense
 extends: clawdstrike:default

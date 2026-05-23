@@ -1,4 +1,4 @@
-schema_version: "1.1.0"
+version: "1.5.0"
 name: reviewer-policy
 description: Reviewer agent - strictly read-only access
 guards:
