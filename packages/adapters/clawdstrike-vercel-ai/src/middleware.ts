@@ -363,7 +363,13 @@ function createLazyWrappedModel(
       }
       return async (...args: unknown[]) => {
         const wrapped = await getWrapped();
-        const fn = (wrapped as any)[prop] as (...innerArgs: unknown[]) => unknown;
+        // Proxy forward: `prop` is a `string | symbol` indexed onto an
+        // opaque LanguageModel-shaped object whose method set varies per
+        // provider. Coerce through a permissive record shape rather than
+        // `any` so callers don't lose all type safety on the boundary.
+        const fn = (wrapped as Record<string | symbol, unknown>)[prop] as
+          | ((...innerArgs: unknown[]) => unknown)
+          | undefined;
         if (typeof fn !== "function") {
           throw new Error(`Wrapped model is missing method ${String(prop)}`);
         }

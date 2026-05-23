@@ -1,7 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import type { Decision, PolicyEngineLike, SecurityContext } from "@clawdstrike/adapter-core";
 import { BaseToolInterceptor, createSecurityContext } from "@clawdstrike/adapter-core";
-import type { ChatInit, UIMessage } from "ai";
+import type { ChatInit, ChatOnToolCallCallback, UIMessage } from "ai";
 import { useCallback, useMemo, useState } from "react";
 
 import { ClawdstrikeBlockedError } from "../errors.js";
@@ -19,6 +19,19 @@ export interface SecurityStatus {
 type UseChatInitOptions<UI_MESSAGE extends UIMessage> = ChatInit<UI_MESSAGE> & {
   experimental_throttle?: number;
   resume?: boolean;
+};
+
+/**
+ * Shape of the `toolCall` argument delivered to `ChatOnToolCallCallback`
+ * in `@ai-sdk/react@3+`. The exported `ChatOnToolCallCallback` type is
+ * parameterized over a `UI_MESSAGE`'s tools generic that the wrapper
+ * cannot see at compile time (the engine is opaque), so we narrow at
+ * runtime to the structural slice we actually consume — matching
+ * `BaseToolCall & { toolName: string; input: unknown }` from `ai`'s
+ * `DynamicToolCall` (the always-permitted shape).
+ */
+type SecureToolCallArg = {
+  toolCall: { toolCallId: string; toolName: string; input: unknown };
 };
 
 export type UseSecureChatOptions<UI_MESSAGE extends UIMessage = UIMessage> =
@@ -66,8 +79,8 @@ export function useSecureChat<UI_MESSAGE extends UIMessage = UIMessage>(
   const [lastDecision, setLastDecision] = useState<Decision | null>(null);
 
   const secureToolCall = useCallback(
-    async ({ toolCall }: { toolCall: { toolName: string; args: unknown } }) => {
-      const result = await interceptor.beforeExecute(toolCall.toolName, toolCall.args, context);
+    async ({ toolCall }: SecureToolCallArg) => {
+      const result = await interceptor.beforeExecute(toolCall.toolName, toolCall.input, context);
       const decision = result.decision;
 
       setLastDecision(decision);
@@ -88,14 +101,17 @@ export function useSecureChat<UI_MESSAGE extends UIMessage = UIMessage>(
         throw new ClawdstrikeBlockedError(toolCall.toolName, decision);
       }
 
-      return onToolCall?.({ toolCall } as any);
+      // The user-supplied `onToolCall` from `ChatInit<UI_MESSAGE>` is
+      // parameterized on the chat's tools generic; forward through the
+      // exported `ChatOnToolCallCallback` type by structural cast.
+      return (onToolCall as ChatOnToolCallCallback | undefined)?.({ toolCall });
     },
     [context, interceptor, onToolCall],
   );
 
   const chatHelpers = useChat({
     ...chatOptions,
-    onToolCall: secureToolCall as any,
+    onToolCall: secureToolCall as ChatOnToolCallCallback<UI_MESSAGE>,
   });
 
   const clearBlockedTools = useCallback(() => {
