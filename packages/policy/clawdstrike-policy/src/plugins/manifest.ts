@@ -1,3 +1,21 @@
+/**
+ * Plugin manifest types and parser.
+ *
+ * The runtime shape is defined in `manifest.zod.ts`; this file re-exports
+ * the inferred types and provides `parsePluginManifest` -- a thin wrapper
+ * that produces the prior error-message format from `ZodError.issues`.
+ */
+
+import { z } from "zod";
+
+import {
+  pluginCapabilitiesSchema,
+  pluginGuardEntrySchema,
+  pluginManifestSchema,
+  pluginResourceLimitsSchema,
+  pluginVersionCompatibilitySchema,
+} from "./manifest.zod.js";
+
 export type PluginTrustLevel = "trusted" | "untrusted";
 export type PluginTrustSandbox = "node" | "wasm";
 export type PluginGuardHandle =
@@ -10,35 +28,10 @@ export type PluginGuardHandle =
   | "secret_access"
   | "custom";
 
-export interface PluginGuardManifestEntry {
-  name: string;
-  entrypoint: string;
-  handles?: PluginGuardHandle[];
-  configSchema?: string;
-}
-
-export interface PluginVersionCompatibility {
-  minVersion?: string;
-  maxVersion?: string;
-}
-
-export interface PluginCapabilities {
-  network: boolean;
-  subprocess: boolean;
-  filesystem: {
-    read: string[];
-    write: boolean;
-  };
-  secrets: {
-    access: boolean;
-  };
-}
-
-export interface PluginResourceLimits {
-  maxMemoryMb: number;
-  maxCpuMs: number;
-  maxTimeoutMs: number;
-}
+export type PluginGuardManifestEntry = z.infer<typeof pluginGuardEntrySchema>;
+export type PluginVersionCompatibility = z.infer<typeof pluginVersionCompatibilitySchema>;
+export type PluginCapabilities = z.infer<typeof pluginCapabilitiesSchema>;
+export type PluginResourceLimits = z.infer<typeof pluginResourceLimitsSchema>;
 
 export interface PluginManifest {
   schema?: string;
@@ -58,325 +51,108 @@ export interface PluginManifest {
   };
 }
 
+const DEFAULT_CAPABILITIES: PluginCapabilities = {
+  network: false,
+  subprocess: false,
+  filesystem: { read: [], write: false },
+  secrets: { access: false },
+};
+
+const DEFAULT_RESOURCES: PluginResourceLimits = {
+  maxMemoryMb: 64,
+  maxCpuMs: 100,
+  maxTimeoutMs: 5000,
+};
+
 export function parsePluginManifest(value: unknown): PluginManifest {
   if (!isPlainObject(value)) {
     throw new Error("plugin manifest must be an object");
   }
 
-  const version = value.version;
-  if (typeof version !== "string" || version.trim() === "") {
-    throw new Error("plugin manifest.version must be a non-empty string");
+  const result = pluginManifestSchema.safeParse(value);
+  if (!result.success) {
+    throw new Error(formatManifestIssue(result.error.issues[0]));
   }
 
-  const name = value.name;
-  if (typeof name !== "string" || name.trim() === "") {
-    throw new Error("plugin manifest.name must be a non-empty string");
-  }
-
-  const trust = (value as any).trust;
-  if (!isPlainObject(trust)) {
-    throw new Error("plugin manifest.trust must be an object");
-  }
-  const level = (trust as any).level;
-  if (level !== "trusted" && level !== "untrusted") {
-    throw new Error('plugin manifest.trust.level must be "trusted" or "untrusted"');
-  }
-  const sandboxRaw = (trust as any).sandbox;
-  if (sandboxRaw !== undefined && sandboxRaw !== "node" && sandboxRaw !== "wasm") {
-    throw new Error('plugin manifest.trust.sandbox must be "node" or "wasm"');
-  }
-  const sandbox: PluginTrustSandbox = sandboxRaw ?? "node";
-
-  const compatibility = parseCompatibility((value as any).clawdstrike);
-  const capabilities = parseCapabilities((value as any).capabilities);
-  const resources = parseResources((value as any).resources);
-
-  const guards = (value as any).guards;
-  if (!Array.isArray(guards) || guards.length === 0) {
-    throw new Error("plugin manifest.guards must be a non-empty array");
-  }
-
-  const guardNames = new Set<string>();
-  const parsedGuards: PluginGuardManifestEntry[] = [];
-  for (let i = 0; i < guards.length; i++) {
-    const g = guards[i];
-    const base = `plugin manifest.guards[${i}]`;
-    if (!isPlainObject(g)) {
-      throw new Error(`${base} must be an object`);
-    }
-
-    const guardName = (g as any).name;
-    if (typeof guardName !== "string" || guardName.trim() === "") {
-      throw new Error(`${base}.name must be a non-empty string`);
-    }
-    if (guardNames.has(guardName)) {
-      throw new Error(`${base}.name duplicates guard: ${guardName}`);
-    }
-    guardNames.add(guardName);
-
-    const entrypoint = (g as any).entrypoint;
-    if (typeof entrypoint !== "string" || entrypoint.trim() === "") {
-      throw new Error(`${base}.entrypoint must be a non-empty string`);
-    }
-
-    const handlesRaw = (g as any).handles;
-    const handles = parseHandles(handlesRaw, `${base}.handles`);
-
-    const configSchema = (g as any).configSchema;
-    if (
-      configSchema !== undefined &&
-      (typeof configSchema !== "string" || configSchema.trim() === "")
-    ) {
-      throw new Error(`${base}.configSchema must be a non-empty string when provided`);
-    }
-
-    parsedGuards.push({
-      name: guardName,
-      entrypoint,
-      handles,
-      configSchema,
-    });
-  }
+  const parsed = result.data;
+  const schemaField =
+    typeof value.$schema === "string" && value.$schema.trim() !== "" ? value.$schema : undefined;
 
   return {
-    schema:
-      typeof (value as any).$schema === "string" && (value as any).$schema.trim() !== ""
-        ? String((value as any).$schema)
-        : undefined,
-    version,
-    name,
-    displayName: parseOptionalString((value as any).displayName, "plugin manifest.displayName"),
-    description: parseOptionalString((value as any).description, "plugin manifest.description"),
-    author: parseOptionalString((value as any).author, "plugin manifest.author"),
-    license: parseOptionalString((value as any).license, "plugin manifest.license"),
-    clawdstrike: compatibility,
-    guards: parsedGuards,
-    capabilities,
-    resources,
-    trust: { level, sandbox },
+    schema: schemaField,
+    version: parsed.version,
+    name: parsed.name,
+    displayName: parsed.displayName,
+    description: parsed.description,
+    author: parsed.author,
+    license: parsed.license,
+    clawdstrike: parsed.clawdstrike,
+    guards: parsed.guards.map((g) => ({
+      name: g.name,
+      entrypoint: g.entrypoint,
+      handles: g.handles,
+      configSchema: g.configSchema,
+    })),
+    capabilities: parsed.capabilities ?? DEFAULT_CAPABILITIES,
+    resources: parsed.resources ?? DEFAULT_RESOURCES,
+    trust: parsed.trust,
   };
 }
 
-function parseHandles(value: unknown, base: string): PluginGuardHandle[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!Array.isArray(value)) {
-    throw new Error(`${base} must be an array when provided`);
-  }
+/**
+ * Translate a zod issue into the legacy `Error` message format. Existing
+ * tests assert on phrases like `/duplicates guard/i` and
+ * `/minVersion must be strict semver/i`, so the structure must roughly
+ * mirror the old `parseXxx` helper messages.
+ */
+function formatManifestIssue(issue: z.ZodIssue | undefined): string {
+  if (!issue) return "plugin manifest is invalid";
 
-  const out: PluginGuardHandle[] = [];
-  for (let i = 0; i < value.length; i++) {
-    const v = value[i];
-    if (!isPluginGuardHandle(v)) {
-      throw new Error(`${base}[${i}] must be a valid handle event type`);
-    }
-    out.push(v);
-  }
-  return out;
-}
+  const prefixParts = ["plugin manifest", ...issue.path.map((p) => String(p))];
+  const prefix = prefixParts.join(".");
 
-function parseCompatibility(value: unknown): PluginVersionCompatibility | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!isPlainObject(value)) {
-    throw new Error("plugin manifest.clawdstrike must be an object when provided");
-  }
-
-  const minVersion = parseOptionalString(
-    value.minVersion,
-    "plugin manifest.clawdstrike.minVersion",
-  );
-  if (minVersion !== undefined && !isStrictSemver(minVersion)) {
-    throw new Error("plugin manifest.clawdstrike.minVersion must be strict semver (x.y.z)");
-  }
-
-  const maxVersion = parseOptionalString(
-    value.maxVersion,
-    "plugin manifest.clawdstrike.maxVersion",
-  );
-  if (maxVersion !== undefined && !isSemverRange(maxVersion)) {
-    throw new Error(
-      "plugin manifest.clawdstrike.maxVersion must be semver or wildcard range (e.g. 1.x)",
-    );
-  }
-
-  return { minVersion, maxVersion };
-}
-
-function parseCapabilities(value: unknown): PluginCapabilities {
-  if (value === undefined) {
-    return defaultCapabilities();
-  }
-  if (!isPlainObject(value)) {
-    throw new Error("plugin manifest.capabilities must be an object when provided");
-  }
-
-  const network =
-    parseOptionalBoolean(value.network, "plugin manifest.capabilities.network") ?? false;
-  const subprocess =
-    parseOptionalBoolean(value.subprocess, "plugin manifest.capabilities.subprocess") ?? false;
-
-  const filesystemRaw = value.filesystem;
-  let filesystem = { read: [] as string[], write: false };
-  if (filesystemRaw !== undefined) {
-    if (!isPlainObject(filesystemRaw)) {
-      throw new Error("plugin manifest.capabilities.filesystem must be an object when provided");
-    }
-
-    const readRaw = filesystemRaw.read;
-    let read: string[] = [];
-    if (readRaw !== undefined) {
-      if (readRaw === false) {
-        read = [];
-      } else if (Array.isArray(readRaw)) {
-        read = readRaw.map((v, i) => {
-          if (typeof v !== "string" || v.trim() === "") {
-            throw new Error(
-              `plugin manifest.capabilities.filesystem.read[${i}] must be a non-empty string`,
-            );
-          }
-          return v;
-        });
-      } else {
-        throw new Error(
-          "plugin manifest.capabilities.filesystem.read must be false or an array of strings",
-        );
+  switch (issue.code) {
+    case "invalid_type":
+      return prefixedExpected(prefix, issue);
+    case "too_small": {
+      const ts = issue as z.ZodTooSmallIssue;
+      if (ts.type === "array") {
+        return `${prefix} must be a non-empty array`;
       }
+      return `${prefix} ${issue.message}`;
     }
-
-    const write =
-      parseOptionalBoolean(filesystemRaw.write, "plugin manifest.capabilities.filesystem.write") ??
-      false;
-    filesystem = { read, write };
+    case "invalid_enum_value":
+      if (issue.path.includes("level")) {
+        return 'plugin manifest.trust.level must be "trusted" or "untrusted"';
+      }
+      if (issue.path.includes("sandbox")) {
+        return 'plugin manifest.trust.sandbox must be "node" or "wasm"';
+      }
+      return `${prefix} ${issue.message}`;
+    case "custom":
+      // superRefine issues (e.g. duplicate guard names) carry their final
+      // message; just re-emit them with the manifest prefix when useful.
+      if (/^duplicates guard/.test(issue.message)) {
+        return `${prefix} ${issue.message}`;
+      }
+      return `${prefix} ${issue.message}`;
+    default:
+      return `${prefix} ${issue.message}`;
   }
-
-  const secretsRaw = value.secrets;
-  let secretsAccess = false;
-  if (secretsRaw !== undefined) {
-    if (typeof secretsRaw === "boolean") {
-      secretsAccess = secretsRaw;
-    } else if (isPlainObject(secretsRaw)) {
-      secretsAccess =
-        parseOptionalBoolean(secretsRaw.access, "plugin manifest.capabilities.secrets.access") ??
-        false;
-    } else {
-      throw new Error("plugin manifest.capabilities.secrets must be a boolean or object");
-    }
-  }
-
-  return {
-    network,
-    subprocess,
-    filesystem,
-    secrets: {
-      access: secretsAccess,
-    },
-  };
 }
 
-function parseResources(value: unknown): PluginResourceLimits {
-  const defaults = defaultResources();
-  if (value === undefined) {
-    return defaults;
+function prefixedExpected(prefix: string, issue: z.ZodIssue): string {
+  if (issue.code !== "invalid_type") return `${prefix} ${issue.message}`;
+  const expected = (issue as z.ZodInvalidTypeIssue).expected;
+  if (expected === "object") {
+    if (prefix === "plugin manifest") return "plugin manifest must be an object";
+    return `${prefix} must be an object`;
   }
-  if (!isPlainObject(value)) {
-    throw new Error("plugin manifest.resources must be an object when provided");
-  }
-
-  const maxMemoryMb =
-    parseOptionalPositiveInt(value.maxMemoryMb, "plugin manifest.resources.maxMemoryMb") ??
-    defaults.maxMemoryMb;
-  const maxCpuMs =
-    parseOptionalPositiveInt(value.maxCpuMs, "plugin manifest.resources.maxCpuMs") ??
-    defaults.maxCpuMs;
-  const maxTimeoutMs =
-    parseOptionalPositiveInt(value.maxTimeoutMs, "plugin manifest.resources.maxTimeoutMs") ??
-    defaults.maxTimeoutMs;
-
-  return {
-    maxMemoryMb,
-    maxCpuMs,
-    maxTimeoutMs,
-  };
-}
-
-function parseOptionalString(value: unknown, field: string): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`${field} must be a non-empty string when provided`);
-  }
-  return value;
-}
-
-function parseOptionalBoolean(value: unknown, field: string): boolean | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "boolean") {
-    throw new Error(`${field} must be a boolean when provided`);
-  }
-  return value;
-}
-
-function parseOptionalPositiveInt(value: unknown, field: string): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw new Error(`${field} must be a positive integer when provided`);
-  }
-  return value;
-}
-
-function isPluginGuardHandle(value: unknown): value is PluginGuardHandle {
-  return (
-    value === "file_read" ||
-    value === "file_write" ||
-    value === "command_exec" ||
-    value === "network_egress" ||
-    value === "tool_call" ||
-    value === "patch_apply" ||
-    value === "secret_access" ||
-    value === "custom"
-  );
-}
-
-function isStrictSemver(value: string): boolean {
-  return /^(\d+)\.(\d+)\.(\d+)$/.test(value);
-}
-
-function isSemverRange(value: string): boolean {
-  return (
-    /^(\d+)\.(\d+)\.(\d+)$/.test(value) ||
-    /^(\d+)\.x$/.test(value) ||
-    /^(\d+)\.(\d+)\.x$/.test(value)
-  );
-}
-
-function defaultCapabilities(): PluginCapabilities {
-  return {
-    network: false,
-    subprocess: false,
-    filesystem: {
-      read: [],
-      write: false,
-    },
-    secrets: {
-      access: false,
-    },
-  };
-}
-
-function defaultResources(): PluginResourceLimits {
-  return {
-    maxMemoryMb: 64,
-    maxCpuMs: 100,
-    maxTimeoutMs: 5000,
-  };
+  if (expected === "array") return `${prefix} must be a non-empty array`;
+  if (expected === "string") return `${prefix} must be a non-empty string`;
+  if (expected === "boolean") return `${prefix} must be a boolean when provided`;
+  if (expected === "number") return `${prefix} must be a positive integer when provided`;
+  return `${prefix} ${issue.message}`;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
