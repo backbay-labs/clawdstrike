@@ -1252,6 +1252,18 @@ filesystem:
       args: ["cp", join(testDir, "wrapped-source.txt")],
       path: "sudo-destination.txt",
     },
+    {
+      label: "sudo wrapper option",
+      command: "sudo",
+      args: ["-u", "root", "touch"],
+      path: "sudo-user-destination.txt",
+    },
+    {
+      label: "env wrapper option",
+      command: "env",
+      args: ["-i", "cp", join(testDir, "env-source.txt")],
+      path: "env-destination.txt",
+    },
   ])("keeps scanning for write commands after $label prefixes", async ({ command, args, path }) => {
     const allowedDir = join(testDir, "prefix-command-allowed");
     mkdirSync(allowedDir, { recursive: true });

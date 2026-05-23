@@ -117,6 +117,26 @@ const SHELL_COMMAND_PREFIXES = new Set([
   "time",
 ]);
 
+const SHELL_PREFIX_FLAGS_WITH_VALUE = new Set([
+  "argv0",
+  "block-signal",
+  "C",
+  "chdir",
+  "close-from",
+  "D",
+  "default-signal",
+  "g",
+  "group",
+  "h",
+  "host",
+  "ignore-signal",
+  "p",
+  "prompt",
+  "u",
+  "unset",
+  "user",
+]);
+
 function isWritePathFlagToken(t: string): boolean {
   if (!t) return false;
   if (!t.startsWith("-")) return false;
@@ -130,6 +150,31 @@ function isShellCommandPrefixToken(commandToken: string): boolean {
 
 function isShellEnvironmentAssignmentToken(t: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*=/.test(t);
+}
+
+function isShellPrefixOptionToken(t: string): boolean {
+  return t === "--" || (t.startsWith("-") && t.length > 1);
+}
+
+function shellPrefixOptionValueArity(t: string): number {
+  if (!isShellPrefixOptionToken(t) || t === "--" || t.includes("=")) {
+    return 0;
+  }
+
+  const optionName = t.replace(/^-+/, "");
+  if (!optionName) {
+    return 0;
+  }
+
+  if (t.startsWith("--")) {
+    return SHELL_PREFIX_FLAGS_WITH_VALUE.has(optionName) ? 1 : 0;
+  }
+
+  if (optionName.length > 1) {
+    return 0;
+  }
+
+  return SHELL_PREFIX_FLAGS_WITH_VALUE.has(optionName) ? 1 : 0;
 }
 
 function commandNameToken(t: string): string {
@@ -151,6 +196,8 @@ function extractCommandPathCandidates(
   let writeOperandMode: "all" | "destination" | null = null;
   let operandPaths: string[] = [];
   let expectsCommandToken = true;
+  let scanningShellPrefix = false;
+  let shellPrefixOptionValuesRemaining = 0;
 
   const flushCommandOperands = () => {
     if (!writeOperandMode || operandPaths.length === 0) {
@@ -181,14 +228,22 @@ function extractCommandPathCandidates(
       flushCommandOperands();
       writeOperandMode = null;
       expectsCommandToken = true;
+      scanningShellPrefix = false;
+      shellPrefixOptionValuesRemaining = 0;
       continue;
     }
 
     if (expectsCommandToken) {
+      if (shellPrefixOptionValuesRemaining > 0) {
+        shellPrefixOptionValuesRemaining -= 1;
+        continue;
+      }
+
       if (COMMANDS_WITH_DESTINATION_WRITE_OPERAND.has(commandToken)) {
         flushCommandOperands();
         writeOperandMode = "destination";
         expectsCommandToken = false;
+        scanningShellPrefix = false;
         continue;
       }
 
@@ -196,6 +251,7 @@ function extractCommandPathCandidates(
         flushCommandOperands();
         writeOperandMode = "all";
         expectsCommandToken = false;
+        scanningShellPrefix = false;
         continue;
       }
 
@@ -203,10 +259,17 @@ function extractCommandPathCandidates(
         isShellCommandPrefixToken(commandToken) ||
         isShellEnvironmentAssignmentToken(cleanedToken)
       ) {
+        scanningShellPrefix = true;
+        continue;
+      }
+
+      if (scanningShellPrefix && isShellPrefixOptionToken(cleanedToken)) {
+        shellPrefixOptionValuesRemaining = shellPrefixOptionValueArity(cleanedToken);
         continue;
       }
 
       expectsCommandToken = false;
+      scanningShellPrefix = false;
     }
 
     // Redirection operators: treat as write/read targets.
