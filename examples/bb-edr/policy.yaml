@@ -1,41 +1,48 @@
-# Clawdstrike/OpenClaw policy for the bb-edr example.
+# Clawdstrike canonical policy for the bb-edr example.
 #
-# This file is consumed by the @clawdstrike/openclaw plugin (not the Rust `clawdstrike::Policy` type).
+# This file is consumable by both the canonical Rust engine and the
+# @clawdstrike/openclaw plugin (which translates the canonical shape).
 # Validate it with:
+#   clawdstrike policy validate ./policy.yaml
 #   npx clawdstrike policy lint ./policy.yaml
 
-version: "clawdstrike-v1.0"
+version: "1.2.0"
+name: bb-edr
+description: EDR response policy - contained writes and curated egress
 
-filesystem:
-  # Keep the EDR "response" actions contained to local folders.
-  allowed_write_roots:
-    - "./.hush"
-    - "./reports"
-    - "./state"
-  forbidden_paths:
-    - "~/.ssh"
-    - "~/.aws"
-    - "~/.gnupg"
-    - ".env"
-    - ".env.*"
+guards:
+  forbidden_path:
+    additional_patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.gnupg/**"
+      - "**/.env"
+      - "**/.env.*"
 
-egress:
-  mode: allowlist
-  allowed_domains:
-    - "api.github.com"
-    - "api.openai.com"
-  denied_domains:
-    - "*.onion"
-    - "localhost"
-    - "127.*"
-    - "10.*"
-    - "192.168.*"
+  path_allowlist:
+    enabled: true
+    file_write_allow:
+      - "./.hush/**"
+      - "./reports/**"
+      - "./state/**"
 
-execution:
-  denied_patterns:
-    - "rm\\s+(-rf?|--recursive)\\s+[/\\\\]"
-    - "curl\\s+[^|]*\\|\\s*(bash|sh|zsh)"
-    - "wget\\s+[^|]*\\|\\s*(bash|sh|zsh)"
+  egress_allowlist:
+    allow:
+      - "api.github.com"
+      - "api.openai.com"
+    block:
+      - "*.onion"
+      - "localhost"
+      - "127.*"
+      - "10.*"
+      - "192.168.*"
+    default_action: block
 
-on_violation: cancel
+  patch_integrity:
+    forbidden_patterns:
+      - "rm\\s+(-rf?|--recursive)\\s+[/\\\\]"
+      - "curl\\s+[^|]*\\|\\s*(bash|sh|zsh)"
+      - "wget\\s+[^|]*\\|\\s*(bash|sh|zsh)"
 
+settings:
+  fail_fast: true
