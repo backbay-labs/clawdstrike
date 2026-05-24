@@ -24,12 +24,9 @@ use crate::settings::{IntegrationSettings, RuntimeAgentRegistration, Settings};
 use crate::telemetry_publisher::TelemetryPublisher;
 use crate::updater::{HushdUpdater, OtaStatus};
 use anyhow::{Context, Result};
-use axum::body::Body;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::{Form, Path, Query, Request, State};
-use axum::http::header::{
-    ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
-};
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE};
 use axum::http::{uri::Authority, HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -70,7 +67,7 @@ use clawdstrike_policy_event::edr::{
 };
 use clawdstrike_policy_event::event::PolicyEvent;
 use clawdstrike_policy_event::simulate::replay_events;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt};
 use hush_core::{canonicalize_json, sha256, Keypair, SignedReceipt};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -88,6 +85,8 @@ use tokio::sync::{broadcast, Mutex, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
 use tower_http::services::{ServeDir, ServeFile};
 
+mod daemon_proxy;
+
 pub(crate) use crate::edr::conversion::*;
 pub(crate) use crate::edr::dto::*;
 pub(crate) use crate::edr::handlers::*;
@@ -95,13 +94,17 @@ pub(crate) use crate::edr::policy_events::*;
 pub(crate) use crate::edr::queries::*;
 pub(crate) use crate::edr::response::*;
 
+use daemon_proxy::{proxy_daemon_events, proxy_daemon_get, proxy_daemon_mutation};
+#[cfg(test)]
+use daemon_proxy::build_daemon_proxy_target;
+
 const HUSHD_AUTHORIZATION_HEADER: &str = "x-hushd-authorization";
 const AGENT_AUTH_COOKIE_NAME: &str = "clawdstrike_agent_auth";
 const POLICY_VERSION_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
 const POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(20);
-const AGENT_API_MAX_BODY_BYTES: usize = 256 * 1024;
-const BROKER_MUTATION_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+pub(crate) const AGENT_API_MAX_BODY_BYTES: usize = 256 * 1024;
+pub(crate) const BROKER_MUTATION_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 pub(crate) const EDR_MAX_OBSERVATIONS_PER_REQUEST: usize = 10_000;
 pub(crate) const EDR_MAX_HONEY_ARTIFACTS_PER_REQUEST: usize = 1_000;
 pub(crate) const EDR_MAX_STORED_FINDINGS: usize = 10_000;
@@ -1156,23 +1159,6 @@ fn resolve_control_console_dist() -> Option<PathBuf> {
         .find(|candidate| candidate.join("index.html").is_file())
 }
 
-fn build_daemon_proxy_target(daemon_url: &str, uri: &Uri) -> Result<String, (StatusCode, String)> {
-    let path_and_query = uri
-        .path_and_query()
-        .map(|value| value.as_str())
-        .unwrap_or_else(|| uri.path());
-
-    if !path_and_query.starts_with('/') {
-        return Err((StatusCode::BAD_REQUEST, "invalid proxy path".to_string()));
-    }
-
-    Ok(format!(
-        "{}{}",
-        daemon_url.trim_end_matches('/'),
-        path_and_query
-    ))
-}
-
 fn merged_authorization_header(
     request_headers: &HeaderMap,
     daemon_api_key: Option<&str>,
@@ -1618,152 +1604,6 @@ async fn ui_bootstrap_verify(
     let token = current_auth_token(&state);
     set_ui_auth_cookie(&mut response, &token, secure_cookie);
     response
-}
-
-async fn send_daemon_get_request(
-    state: &AgentApiState,
-    request_headers: &HeaderMap,
-    uri: &Uri,
-) -> Result<reqwest::Response, (StatusCode, String)> {
-    send_daemon_request(state, request_headers, reqwest::Method::GET, uri, None).await
-}
-
-async fn send_daemon_request(
-    state: &AgentApiState,
-    request_headers: &HeaderMap,
-    method: reqwest::Method,
-    uri: &Uri,
-    body: Option<Vec<u8>>,
-) -> Result<reqwest::Response, (StatusCode, String)> {
-    let (daemon_url, daemon_api_key) = {
-        let settings = state.settings.read().await;
-        (settings.daemon_url(), settings.api_key.clone())
-    };
-
-    let target_url = build_daemon_proxy_target(&daemon_url, uri)?;
-    let mut request = state.http_client.request(method, target_url);
-
-    if let Some(value) = request_headers
-        .get(ACCEPT)
-        .and_then(|value| value.to_str().ok())
-    {
-        request = request.header(ACCEPT.as_str(), value);
-    }
-    if let Some(value) = request_headers
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-    {
-        request = request.header(CONTENT_TYPE.as_str(), value);
-    }
-
-    if let Some(auth_header) =
-        merged_authorization_header(request_headers, daemon_api_key.as_deref())
-    {
-        request = request.header(AUTHORIZATION.as_str(), auth_header);
-    }
-    if let Some(body) = body {
-        request = request.body(body);
-    }
-
-    request
-        .send()
-        .await
-        .map_err(|err| internal_error(err.into()))
-}
-
-async fn proxy_http_response(
-    response: reqwest::Response,
-) -> Result<Response, (StatusCode, String)> {
-    let status =
-        StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let content_type = response.headers().get(CONTENT_TYPE).cloned();
-    let body = response
-        .bytes()
-        .await
-        .map_err(|err| internal_error(err.into()))?;
-
-    let mut headers = HeaderMap::new();
-    if let Some(value) = content_type {
-        headers.insert(CONTENT_TYPE, value);
-    }
-
-    Ok((status, headers, body).into_response())
-}
-
-async fn proxy_daemon_get(
-    State(state): State<Arc<AgentApiState>>,
-    mut headers: HeaderMap,
-    uri: Uri,
-) -> Result<Response, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    // Do not forward the local agent auth token to hushd.
-    // A caller can provide a daemon token via `X-Hushd-Authorization`; otherwise we
-    // fall back to the configured daemon API key from settings.
-    headers.remove(AUTHORIZATION);
-    let response = send_daemon_get_request(&state, &headers, &uri).await?;
-    proxy_http_response(response).await
-}
-
-async fn proxy_daemon_events(
-    State(state): State<Arc<AgentApiState>>,
-    mut headers: HeaderMap,
-    uri: Uri,
-) -> Result<Response, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    // Do not forward the local agent auth token to hushd.
-    // A caller can provide a daemon token via `X-Hushd-Authorization`; otherwise we
-    // fall back to the configured daemon API key from settings.
-    headers.remove(AUTHORIZATION);
-    let response = send_daemon_get_request(&state, &headers, &uri).await?;
-    let status =
-        StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-
-    if !status.is_success() {
-        return proxy_http_response(response).await;
-    }
-
-    let content_type = response
-        .headers()
-        .get(CONTENT_TYPE)
-        .cloned()
-        .unwrap_or_else(|| HeaderValue::from_static("text/event-stream"));
-    let stream = response.bytes_stream().map_err(std::io::Error::other);
-    let body = Body::from_stream(stream);
-
-    let mut out_headers = HeaderMap::new();
-    out_headers.insert(CONTENT_TYPE, content_type);
-    out_headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-    out_headers.insert(CONNECTION, HeaderValue::from_static("keep-alive"));
-
-    Ok((status, out_headers, body).into_response())
-}
-
-async fn proxy_daemon_mutation(
-    State(state): State<Arc<AgentApiState>>,
-    mut headers: HeaderMap,
-    uri: Uri,
-    request: Request,
-) -> Result<Response, (StatusCode, String)> {
-    require_auth(&headers, &state)?;
-    headers.remove(AUTHORIZATION);
-
-    let method = reqwest::Method::from_bytes(request.method().as_str().as_bytes())
-        .map_err(|err| internal_error(err.into()))?;
-    let max_bytes = if uri.path().starts_with("/api/v1/broker/") {
-        BROKER_MUTATION_MAX_BODY_BYTES
-    } else {
-        AGENT_API_MAX_BODY_BYTES
-    };
-    let body = axum::body::to_bytes(request.into_body(), max_bytes)
-        .await
-        .map_err(|err| internal_error(err.into()))?;
-    let body = if body.is_empty() {
-        None
-    } else {
-        Some(body.to_vec())
-    };
-    let response = send_daemon_request(&state, &headers, method, &uri, body).await?;
-    proxy_http_response(response).await
 }
 
 fn normalize_integration_settings(settings: &mut IntegrationSettings) {
