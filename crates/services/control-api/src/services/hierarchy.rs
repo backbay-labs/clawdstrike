@@ -93,8 +93,7 @@ pub async fn create_node(
     let node_type = parse_node_type(params.node_type)?;
     ensure_parentless_node_allowed(node_type, params.parent_id)?;
 
-    // Resolve the stored node_type string — map legacy "agent" to "endpoint"
-    // so new rows always use the canonical type.
+    // Persist "agent" as "endpoint" so new rows use the canonical type only.
     let stored_node_type = match node_type {
         HierarchyNodeType::Agent => HierarchyNodeType::Endpoint.as_str(),
         other => other.as_str(),

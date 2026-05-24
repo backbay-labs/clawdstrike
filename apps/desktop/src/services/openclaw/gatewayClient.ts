@@ -379,8 +379,8 @@ export class OpenClawGatewayClient {
 
         if (frame.type === "event") {
           if (frame.event === "connect.challenge") {
-            // For now we rely on token-based auth. Signed challenges are supported
-            // via device identity (future wave); still send connect promptly.
+            // Token-based auth only. Gateway supports signed challenges, but the
+            // desktop has no signing key yet.
             sendConnect();
           }
           for (const listener of this.eventListeners) listener(frame);

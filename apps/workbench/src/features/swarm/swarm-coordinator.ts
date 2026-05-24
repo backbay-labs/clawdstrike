@@ -993,7 +993,7 @@ export class SwarmCoordinator {
 
       if (success) {
         this.reconnectAttempts = 0;
-        // Re-subscribe to all previously active swarm topics
+        // Reconnect: the transport drops subscriptions on disconnect, so restore them.
         for (const [swarmId, topics] of this.activeSwarms) {
           for (const topic of topics) {
             this.transport.subscribe(topic);

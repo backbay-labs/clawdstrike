@@ -1,7 +1,5 @@
-// General Settings — app-level preferences (theme, editor, autosave)
-// Persisted to localStorage independently of the policy store.
-//
-// Zustand + immer store (migrated from React Context + useState).
+// App-level preferences (theme, editor, autosave). Persists to localStorage
+// independently of the policy store.
 import type { ReactElement, ReactNode } from "react";
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
