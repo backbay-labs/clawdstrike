@@ -51,18 +51,24 @@ export interface PluginManifest {
   };
 }
 
-const DEFAULT_CAPABILITIES: PluginCapabilities = {
-  network: false,
-  subprocess: false,
-  filesystem: { read: [], write: false },
-  secrets: { access: false },
-};
+// Return fresh objects each call so callers cannot mutate one parsed
+// manifest's defaults and leak that state into subsequent parses.
+function defaultCapabilities(): PluginCapabilities {
+  return {
+    network: false,
+    subprocess: false,
+    filesystem: { read: [], write: false },
+    secrets: { access: false },
+  };
+}
 
-const DEFAULT_RESOURCES: PluginResourceLimits = {
-  maxMemoryMb: 64,
-  maxCpuMs: 100,
-  maxTimeoutMs: 5000,
-};
+function defaultResources(): PluginResourceLimits {
+  return {
+    maxMemoryMb: 64,
+    maxCpuMs: 100,
+    maxTimeoutMs: 5000,
+  };
+}
 
 export function parsePluginManifest(value: unknown): PluginManifest {
   if (!isPlainObject(value)) {
@@ -93,8 +99,8 @@ export function parsePluginManifest(value: unknown): PluginManifest {
       handles: g.handles,
       configSchema: g.configSchema,
     })),
-    capabilities: parsed.capabilities ?? DEFAULT_CAPABILITIES,
-    resources: parsed.resources ?? DEFAULT_RESOURCES,
+    capabilities: parsed.capabilities ?? defaultCapabilities(),
+    resources: parsed.resources ?? defaultResources(),
     trust: parsed.trust,
   };
 }
