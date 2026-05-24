@@ -3,9 +3,9 @@
 //! The agent owns the local-network surface; these helpers extend that surface
 //! to the daemon without exposing daemon credentials to the caller.
 
+use super::auth::{merged_authorization_header, require_auth};
 use super::{
-    internal_error, merged_authorization_header, require_auth, AgentApiState,
-    AGENT_API_MAX_BODY_BYTES, BROKER_MUTATION_MAX_BODY_BYTES,
+    internal_error, AgentApiState, AGENT_API_MAX_BODY_BYTES, BROKER_MUTATION_MAX_BODY_BYTES,
 };
 
 use axum::body::Body;

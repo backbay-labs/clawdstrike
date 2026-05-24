@@ -5,10 +5,12 @@
 //! intentionally local-only and rate-limited — see `route_rate_limit` and
 //! `attach_ui_auth_cookie` in the parent module.
 
-use super::{
+use super::auth::{
     current_auth_token, is_local_host_header, request_is_secure_uri, require_auth,
-    set_ui_auth_cookie, AgentApiState, UI_BOOTSTRAP_MAX_ATTEMPTS, UI_BOOTSTRAP_MAX_SESSIONS,
-    UI_BOOTSTRAP_TTL,
+    set_ui_auth_cookie,
+};
+use super::{
+    AgentApiState, UI_BOOTSTRAP_MAX_ATTEMPTS, UI_BOOTSTRAP_MAX_SESSIONS, UI_BOOTSTRAP_TTL,
 };
 
 use crate::security::auth::constant_time_eq_token;
