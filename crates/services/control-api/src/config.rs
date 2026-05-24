@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// Application configuration loaded from environment variables.
 #[derive(Debug, Clone)]
@@ -48,9 +48,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            listen_addr: "127.0.0.1:8080"
-                .parse()
-                .expect("static default listen addr"),
+            listen_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080),
             cors_allowed_origins: Vec::new(),
             database_url: String::new(),
             nats_url: "nats://localhost:4222".to_string(),
