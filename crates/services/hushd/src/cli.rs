@@ -133,7 +133,6 @@ pub async fn run_bin(bin_name: &'static str) -> anyhow::Result<()> {
 }
 
 async fn run(cli: Cli) -> anyhow::Result<()> {
-    // Load configuration
     let mut config = if let Some(ref path) = cli.config {
         Config::from_file(path)?
     } else {
@@ -147,7 +146,6 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         _ => tracing::Level::TRACE,
     };
 
-    // Initialize logging
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(tracing_subscriber::filter::LevelFilter::from_level(
@@ -205,13 +203,11 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     // Create application state
     let state = AppState::new(config.clone()).await?;
 
-    // Create router
     let app = api::create_router(state.clone());
 
     // Parse listen address
     let addr: SocketAddr = config.listen.parse()?;
 
-    // Create listener
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(address = %addr, "Listening");
 
@@ -300,7 +296,6 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
         tracing::info!("Shutdown signal received");
     };
 
-    // Run server
     if let Some(ref tls) = config.tls {
         let tls_listener = TlsListener::new(listener, tls)?;
         axum::serve(

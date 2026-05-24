@@ -85,10 +85,6 @@ pub async fn get_node(
     HierarchyNode::from_row(row).map_err(ApiError::Database)
 }
 
-// ---------------------------------------------------------------------------
-// Create node
-// ---------------------------------------------------------------------------
-
 pub async fn create_node(
     db: &PgPool,
     params: &CreateNodeParams<'_>,
@@ -156,10 +152,6 @@ pub async fn create_node(
     tx.commit().await.map_err(ApiError::Database)?;
     Ok(node)
 }
-
-// ---------------------------------------------------------------------------
-// Update node
-// ---------------------------------------------------------------------------
 
 pub async fn update_node(
     db: &PgPool,
@@ -443,10 +435,6 @@ fn map_unique_violation(err: sqlx::error::Error) -> ApiError {
     }
     ApiError::Database(err)
 }
-
-// ---------------------------------------------------------------------------
-// Delete node
-// ---------------------------------------------------------------------------
 
 pub async fn delete_node(
     db: &PgPool,
