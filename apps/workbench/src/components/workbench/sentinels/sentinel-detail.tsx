@@ -41,6 +41,7 @@ import type {
   SentinelGoal,
   SigilType,
 } from "@/lib/workbench/sentinel-manager";
+import { logger } from "@/lib/logger";
 
 
 const MODE_COLORS: Record<SentinelMode, string> = {
@@ -756,7 +757,7 @@ export function SentinelDetail({
     try {
       onUpdate(activateSentinel(sentinel));
     } catch (err) {
-      console.error("[sentinel-detail] Failed to activate:", err);
+      logger.error("[sentinel-detail] Failed to activate:", err);
     }
   }, [sentinel, onUpdate]);
 
@@ -764,7 +765,7 @@ export function SentinelDetail({
     try {
       onUpdate(pauseSentinel(sentinel));
     } catch (err) {
-      console.error("[sentinel-detail] Failed to pause:", err);
+      logger.error("[sentinel-detail] Failed to pause:", err);
     }
   }, [sentinel, onUpdate]);
 
@@ -772,7 +773,7 @@ export function SentinelDetail({
     try {
       onUpdate(retireSentinel(sentinel));
     } catch (err) {
-      console.error("[sentinel-detail] Failed to retire:", err);
+      logger.error("[sentinel-detail] Failed to retire:", err);
     }
   }, [sentinel, onUpdate]);
 

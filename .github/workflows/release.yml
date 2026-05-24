@@ -27,6 +27,7 @@ jobs:
   resolve-version:
     name: Resolve Version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
@@ -56,6 +57,7 @@ jobs:
   preflight:
     name: Preflight Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: resolve-version
     steps:
       - uses: actions/checkout@v6
@@ -131,6 +133,7 @@ jobs:
   publish-crates:
     name: Publish crates.io
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: [resolve-version, preflight]
     steps:
       - uses: actions/checkout@v6
@@ -235,6 +238,7 @@ jobs:
   publish-npm:
     name: Publish npm packages
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [resolve-version, preflight]
     steps:
       - uses: actions/checkout@v6
@@ -445,6 +449,7 @@ jobs:
   publish-wasm-npm:
     name: Publish @clawdstrike/wasm
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [resolve-version, preflight, publish-npm]
     steps:
       - uses: actions/checkout@v6
@@ -513,6 +518,7 @@ jobs:
   pypi-detect:
     name: Detect PyPI package status
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [resolve-version, preflight]
     outputs:
       name: ${{ steps.detect.outputs.name }}
@@ -589,6 +595,7 @@ jobs:
   build-pypi-native-wheels:
     name: Build native PyPI wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     needs: [resolve-version, preflight, pypi-detect]
     if: needs.pypi-detect.outputs.none_missing == 'false'
     strategy:
@@ -722,6 +729,7 @@ jobs:
   publish-pypi:
     name: Publish PyPI package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [resolve-version, preflight, pypi-detect, build-pypi-native-wheels]
     if: >
       always() &&
@@ -808,6 +816,7 @@ jobs:
   build-binaries:
     name: Build Binaries
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     needs: preflight
     strategy:
       matrix:
@@ -910,6 +919,7 @@ jobs:
   build-hushd-binaries:
     name: Build hushd Binaries
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     needs: preflight
     strategy:
       matrix:
@@ -989,6 +999,7 @@ jobs:
   build-agent-dmg:
     name: Build Agent DMG
     runs-on: macos-latest
+    timeout-minutes: 120
     needs: preflight
     env:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -1170,7 +1181,9 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [resolve-version, build-binaries, build-hushd-binaries, build-agent-dmg, publish-crates, publish-npm, publish-wasm-npm, publish-pypi]
+    # contents: write is required to create the release and upload assets.
     permissions:
       contents: write
     steps:
@@ -1284,6 +1297,7 @@ jobs:
   update-homebrew:
     name: Update Homebrew Tap
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [resolve-version, create-release]
     steps:
       - name: Download release archives

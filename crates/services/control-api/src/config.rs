@@ -41,6 +41,19 @@ pub struct Config {
     pub stale_check_interval_secs: u64,
     pub stale_threshold_secs: i64,
     pub dead_threshold_secs: i64,
+    pub cors: CorsConfig,
+}
+
+/// CORS policy configuration.
+///
+/// Defaults to a closed cross-origin policy (no allowed origins). To open up
+/// cross-origin access, set `CONTROL_API_CORS_ALLOWED_ORIGINS` to a
+/// comma-separated list of allowed origins (e.g. `https://app.example.com`).
+#[derive(Debug, Clone, Default)]
+pub struct CorsConfig {
+    /// Explicit list of allowed cross-origin origins. Empty means same-origin
+    /// requests only.
+    pub allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -56,8 +69,10 @@ pub enum ConfigError {
 impl Config {
     /// Load configuration from environment variables.
     pub fn from_env() -> Result<Self, ConfigError> {
+        // Default to loopback only. Operators must explicitly set LISTEN_ADDR
+        // (e.g. `0.0.0.0:8080`) to expose the API beyond the local host.
         let listen_addr = std::env::var("LISTEN_ADDR")
-            .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
+            .unwrap_or_else(|_| "127.0.0.1:8080".to_string())
             .parse::<SocketAddr>()?;
 
         let database_url = std::env::var("DATABASE_URL")
@@ -180,6 +195,20 @@ impl Config {
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(300);
 
+        let cors_allowed_origins: Vec<String> =
+            std::env::var("CONTROL_API_CORS_ALLOWED_ORIGINS")
+                .ok()
+                .map(|raw| {
+                    raw.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+        let cors = CorsConfig {
+            allowed_origins: cors_allowed_origins,
+        };
+
         validate_consumer_stream_configuration(
             approval_consumer_enabled,
             heartbeat_consumer_enabled,
@@ -243,6 +272,7 @@ impl Config {
             stale_check_interval_secs,
             stale_threshold_secs,
             dead_threshold_secs,
+            cors,
         })
     }
 }
@@ -597,6 +627,7 @@ mod tests {
             "STALE_CHECK_INTERVAL_SECS",
             "STALE_THRESHOLD_SECS",
             "DEAD_THRESHOLD_SECS",
+            "CONTROL_API_CORS_ALLOWED_ORIGINS",
         ];
         with_env_vars(
             &[
@@ -608,7 +639,12 @@ mod tests {
             &all_env_keys,
             || {
                 let config = Config::from_env().expect("should parse with defaults");
-                assert_eq!(config.listen_addr.to_string(), "0.0.0.0:8080");
+                // Secure-by-default: bind to loopback unless LISTEN_ADDR is set explicitly.
+                assert_eq!(config.listen_addr.to_string(), "127.0.0.1:8080");
+                assert!(
+                    config.cors.allowed_origins.is_empty(),
+                    "CORS allow-list must be empty by default (no cross-origin access)"
+                );
                 assert_eq!(config.database_url, "postgres://test:test@localhost/test");
                 assert_eq!(config.nats_url, "nats://localhost:4222");
                 assert_eq!(config.agent_nats_url, "nats://localhost:4222");
@@ -752,6 +788,51 @@ mod tests {
             || {
                 let config = Config::from_env().expect("should parse");
                 assert!(config.nats_allow_insecure_mock_provisioner);
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_allows_explicit_public_bind() {
+        with_env_vars(
+            &[
+                ("LISTEN_ADDR", "0.0.0.0:8080"),
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().expect("should parse");
+                assert_eq!(config.listen_addr.to_string(), "0.0.0.0:8080");
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_parses_cors_allowed_origins() {
+        with_env_vars(
+            &[
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+                (
+                    "CONTROL_API_CORS_ALLOWED_ORIGINS",
+                    "https://app.example.com, https://admin.example.com",
+                ),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().expect("should parse");
+                assert_eq!(
+                    config.cors.allowed_origins,
+                    vec![
+                        "https://app.example.com".to_string(),
+                        "https://admin.example.com".to_string(),
+                    ]
+                );
             },
         );
     }

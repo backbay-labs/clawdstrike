@@ -95,15 +95,31 @@ pub struct ApiKeyConfig {
 }
 
 /// Authentication configuration
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
-    /// Whether authentication is required for API endpoints
-    #[serde(default)]
+    /// Whether authentication is required for API endpoints.
+    ///
+    /// Defaults to `true` (fail-closed). Set `enabled = false` explicitly to
+    /// disable authentication for local development or testing.
+    #[serde(default = "default_auth_enabled")]
     pub enabled: bool,
     /// API keys
     #[serde(default)]
     pub api_keys: Vec<ApiKeyConfig>,
+}
+
+fn default_auth_enabled() -> bool {
+    true
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_auth_enabled(),
+            api_keys: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1694,9 +1710,36 @@ log_level = "debug"
 
     #[test]
     fn test_auth_config_default() {
+        // Secure-by-default: auth is enabled unless explicitly disabled.
         let config = Config::default();
-        assert!(!config.auth.enabled);
+        assert!(config.auth.enabled);
         assert!(config.auth.api_keys.is_empty());
+    }
+
+    #[test]
+    fn test_auth_config_default_from_empty_toml() {
+        // Even with no `[auth]` section, auth should default to enabled.
+        let toml = r#"
+listen = "127.0.0.1:9876"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(
+            config.auth.enabled,
+            "auth must default to enabled (fail-closed) when no [auth] section is provided"
+        );
+    }
+
+    #[test]
+    fn test_auth_config_explicit_disable() {
+        // Operators may explicitly opt out of auth (e.g. for local development).
+        let toml = r#"
+listen = "127.0.0.1:9876"
+
+[auth]
+enabled = false
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(!config.auth.enabled);
     }
 
     #[test]

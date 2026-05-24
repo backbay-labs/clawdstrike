@@ -172,6 +172,8 @@ dependencies = [
 [[package]]
 name = "async-nats"
 version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e23419d455dc57d3ae60a2f4278cf561fc74fe866e548e14d2b0ad3e1b8ca0b2"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -187,7 +189,7 @@ dependencies = [
  "ring",
  "rustls-native-certs 0.7.3",
  "rustls-pemfile",
- "rustls-webpki",
+ "rustls-webpki 0.102.8",
  "serde",
  "serde_json",
  "serde_nanos",
@@ -654,6 +656,39 @@ dependencies = [
  "unicode-normalization",
  "uuid",
  "zstd",
+]
+
+[[package]]
+name = "clawdstrike-desktop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "chrono",
+ "clawdstrike",
+ "dirs",
+ "futures",
+ "hush-core",
+ "hush-spine",
+ "libp2p-core",
+ "libp2p-gossipsub",
+ "libp2p-identity",
+ "libp2p-noise",
+ "libp2p-swarm",
+ "libp2p-tcp",
+ "libp2p-yamux",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-shell",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -4183,7 +4218,7 @@ dependencies = [
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki",
+ "rustls-webpki 0.103.13",
  "subtle",
  "zeroize",
 ]
@@ -4246,7 +4281,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs 0.8.3",
  "rustls-platform-verifier-android",
- "rustls-webpki",
+ "rustls-webpki 0.103.13",
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
@@ -4258,6 +4293,16 @@ name = "rustls-platform-verifier-android"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
+
+[[package]]
+name = "rustls-webpki"
+version = "0.102.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
+dependencies = [
+ "rustls-pki-types",
+ "untrusted",
+]
 
 [[package]]
 name = "rustls-webpki"
@@ -4368,38 +4413,6 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
-name = "sdr-desktop"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-nats",
- "chrono",
- "clawdstrike",
- "dirs",
- "futures",
- "hush-core",
- "hush-spine",
- "libp2p-core",
- "libp2p-gossipsub",
- "libp2p-identity",
- "libp2p-noise",
- "libp2p-swarm",
- "libp2p-tcp",
- "libp2p-yamux",
- "reqwest",
- "serde",
- "serde_json",
- "socket2",
- "tauri",
- "tauri-build",
- "tauri-plugin-shell",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "uuid",
-]
 
 [[package]]
 name = "security-framework"

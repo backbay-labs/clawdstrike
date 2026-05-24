@@ -15,6 +15,12 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  # Release publishing must never cancel itself; coalesce by ref so multiple
+  # taggings for the same ref collapse but parallel tags still publish.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   HELM_OCI_REPO: oci://ghcr.io/backbay-labs/clawdstrike/helm
   CHART_NAME: clawdstrike
@@ -23,6 +29,7 @@ jobs:
   publish-oci:
     name: Package and Publish OCI Chart
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       version: ${{ steps.resolve-version.outputs.version }}
     steps:
@@ -69,6 +76,7 @@ jobs:
   publish-artifacthub-metadata:
     name: Publish Artifact Hub Metadata
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: publish-oci
     env:
       ARTIFACTHUB_REPOSITORY_ID: ${{ secrets.ARTIFACTHUB_REPOSITORY_ID }}

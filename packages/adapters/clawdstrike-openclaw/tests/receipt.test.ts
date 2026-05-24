@@ -288,5 +288,82 @@ describe('ReceiptSigner', () => {
 
       expect(ReceiptSigner.verify(receipt)).toBe(false);
     });
+
+    it('throws in strict mode for signed receipts without a verifier', () => {
+      const signer = new ReceiptSigner();
+      const receipt = signer.createReceipt(
+        makeDenyDecision(),
+        makeToolEvent(),
+        SAMPLE_POLICY_HASH,
+      ) as DecisionReceipt;
+      receipt.signature = 'fake-signature-value';
+      receipt.keyId = 'key-001';
+
+      expect(() => ReceiptSigner.verify(receipt, { strict: true })).toThrow(
+        /no verifySignature callback/i,
+      );
+    });
+
+    it('delegates to the verifySignature callback for signed receipts', () => {
+      const signer = new ReceiptSigner();
+      const receipt = signer.createReceipt(
+        makeDenyDecision(),
+        makeToolEvent(),
+        SAMPLE_POLICY_HASH,
+      ) as DecisionReceipt;
+      receipt.signature = 'fake-signature-value';
+      receipt.keyId = 'key-001';
+
+      let capturedCanonical: string | null = null;
+      const ok = ReceiptSigner.verify(receipt, {
+        verifySignature: ({ canonical, signature, keyId }) => {
+          capturedCanonical = canonical;
+          return signature === 'fake-signature-value' && keyId === 'key-001';
+        },
+      });
+
+      expect(ok).toBe(true);
+      expect(capturedCanonical).not.toBeNull();
+      // Canonical input must NOT contain the signature itself.
+      expect(capturedCanonical).not.toContain('fake-signature-value');
+    });
+
+    it('refuses to fail-open on a Promise-returning verifier in sync verify', () => {
+      const signer = new ReceiptSigner();
+      const receipt = signer.createReceipt(
+        makeDenyDecision(),
+        makeToolEvent(),
+        SAMPLE_POLICY_HASH,
+      ) as DecisionReceipt;
+      receipt.signature = 'fake-signature-value';
+      receipt.keyId = 'key-001';
+
+      expect(() =>
+        ReceiptSigner.verify(receipt, {
+          verifySignature: async () => true,
+        }),
+      ).toThrow(/use verifyAsync/i);
+    });
+
+    it('verifyAsync delegates to an async verifier', async () => {
+      const signer = new ReceiptSigner();
+      const receipt = signer.createReceipt(
+        makeDenyDecision(),
+        makeToolEvent(),
+        SAMPLE_POLICY_HASH,
+      ) as DecisionReceipt;
+      receipt.signature = 'fake-signature-value';
+      receipt.keyId = 'key-001';
+
+      const ok = await ReceiptSigner.verifyAsync(receipt, {
+        verifySignature: async () => true,
+      });
+      expect(ok).toBe(true);
+
+      const denied = await ReceiptSigner.verifyAsync(receipt, {
+        verifySignature: async () => false,
+      });
+      expect(denied).toBe(false);
+    });
   });
 });

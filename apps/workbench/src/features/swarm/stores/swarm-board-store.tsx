@@ -21,6 +21,7 @@ import type {
 } from "@/features/swarm/swarm-board-types";
 import { terminalService, worktreeService } from "@/lib/workbench/terminal-service";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { logger } from "@/lib/logger";
 
 export const MAX_ACTIVE_TERMINALS = 8;
 
@@ -81,14 +82,14 @@ function persistBoard(state: SwarmBoardState): void {
     if (state.bundlePath) {
       import("@/lib/tauri-bridge").then(({ writeSwarmBoardJson }) => {
         writeSwarmBoardJson(state.bundlePath, persisted).catch((err: unknown) => {
-          console.error("[swarm-board-store] file persist failed:", err);
+          logger.error("[swarm-board-store] file persist failed:", err);
         });
       }).catch(() => {
         // Not in Tauri environment
       });
     }
   } catch (e) {
-    console.error("[swarm-board-store] persistBoard failed:", e);
+    logger.error("[swarm-board-store] persistBoard failed:", e);
   }
 }
 
@@ -152,7 +153,7 @@ function loadPersistedBoard(): Partial<SwarmBoardState> | null {
       edges: validEdges,
     };
   } catch (e) {
-    console.warn("[swarm-board-store] loadPersistedBoard failed:", e);
+    logger.warn("[swarm-board-store] loadPersistedBoard failed:", e);
     return null;
   }
 }
@@ -787,7 +788,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
           rfEdges: toRfEdges(edges),
         });
       } catch (err) {
-        console.error("[swarm-board-store] loadFromBundle failed:", err);
+        logger.error("[swarm-board-store] loadFromBundle failed:", err);
         set({ bundlePath });
       }
     },
@@ -1278,7 +1279,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
           exitListenersRef.current.set(sessionId, unlisten);
         })
         .catch((err) => {
-          console.error("[swarm-board-store] Failed to monitor exit:", err);
+          logger.error("[swarm-board-store] Failed to monitor exit:", err);
         });
     },
     [cleanupSessionTracking],
@@ -1299,7 +1300,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
       }
       if (!cwd) {
         cwd = "/tmp";
-        console.warn("[swarm-board-store] No working directory for session; falling back to /tmp");
+        logger.warn("[swarm-board-store] No working directory for session; falling back to /tmp");
       }
 
       const sessionInfo = await terminalService.create(cwd, opts.shell);
@@ -1327,7 +1328,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
       if (opts.launchClaude) {
         setTimeout(() => {
           terminalService.write(sessionInfo.id, "claude\n").catch((err) => {
-            console.error("[swarm-board-store] Failed to launch claude:", err);
+            logger.error("[swarm-board-store] Failed to launch claude:", err);
           });
         }, 500);
       }
@@ -1336,7 +1337,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
         const cmd = opts.command;
         setTimeout(() => {
           terminalService.write(sessionInfo.id, cmd).catch((err) => {
-            console.error("[swarm-board-store] Failed to write initial command:", err);
+            logger.error("[swarm-board-store] Failed to write initial command:", err);
           });
         }, 500);
       }
@@ -1363,7 +1364,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
 
       if (!cwd) {
         cwd = "/tmp";
-        console.warn("[swarm-board-store] No working directory available; falling back to /tmp");
+        logger.warn("[swarm-board-store] No working directory available; falling back to /tmp");
       }
 
       let worktreePath: string | undefined;
@@ -1414,7 +1415,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
 
       setTimeout(() => {
         terminalService.write(sessionInfo.id, "claude\n").catch((err) => {
-          console.error("[swarm-board-store] Failed to launch claude:", err);
+          logger.error("[swarm-board-store] Failed to launch claude:", err);
           useSwarmBoardStore.getState().actions.setSessionStatus(sessionInfo.id, "failed");
         });
 
@@ -1422,7 +1423,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
           const prompt = opts.prompt;
           setTimeout(() => {
             terminalService.write(sessionInfo.id, prompt + "\n").catch((err) => {
-              console.error("[swarm-board-store] Failed to send prompt:", err);
+              logger.error("[swarm-board-store] Failed to send prompt:", err);
             });
           }, 2000);
         }
@@ -1496,7 +1497,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
         try {
           await terminalService.kill(sessionId);
         } catch (err) {
-          console.warn("[swarm-board-store] Failed to kill session:", err);
+          logger.warn("[swarm-board-store] Failed to kill session:", err);
           finalStatus = "failed";
         }
 
@@ -1504,7 +1505,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
           try {
             await worktreeService.remove(state.repoRoot, wtPath);
           } catch (err) {
-            console.warn("[swarm-board-store] Worktree cleanup failed:", err);
+            logger.warn("[swarm-board-store] Worktree cleanup failed:", err);
             finalStatus = "failed";
           }
         }

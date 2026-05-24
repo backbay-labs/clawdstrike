@@ -1,19 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Usage:
+#   TEAM_ID=ABCDE12345 \
+#     render-mdm-profiles.sh \
+#       --org-identifier ORG_ID \
+#       --out-dir OUT_DIR \
+#       [--team-id TEAM_ID] \
+#       [--app-bundle-id APP_ID] \
+#       [--extension-bundle-id EXT_ID]
+#
+# TEAM_ID MUST be supplied either via the TEAM_ID environment variable or the
+# --team-id flag. There is no hard-coded default; the previous hard-coded value
+# was tied to a single Apple Developer account and has been removed.
+#
+# APP_BUNDLE_ID defaults to dev.clawdstrike.agent.
+# SYSTEM_EXTENSION_BUNDLE_ID defaults to dev.clawdstrike.agent.system-extension.
+
 usage() {
   cat >&2 <<'USAGE'
 Usage:
-  render-mdm-profiles.sh --team-id TEAM_ID --app-bundle-id APP_ID --extension-bundle-id EXT_ID --org-identifier ORG_ID --out-dir OUT_DIR
+  TEAM_ID=ABCDE12345 render-mdm-profiles.sh \
+    --org-identifier ORG_ID \
+    --out-dir OUT_DIR \
+    [--team-id TEAM_ID] \
+    [--app-bundle-id APP_ID] \
+    [--extension-bundle-id EXT_ID]
+
+TEAM_ID is required (env var or --team-id flag); the Apple Developer Team ID
+must be a 10-character uppercase alphanumeric string.
 
 Defaults:
-  TEAM_ID defaults to JB6682CJY9 when --team-id is omitted.
   APP_ID defaults to dev.clawdstrike.agent when --app-bundle-id is omitted.
   EXT_ID defaults to dev.clawdstrike.agent.system-extension when --extension-bundle-id is omitted.
 USAGE
 }
 
-TEAM_ID="JB6682CJY9"
+# Read TEAM_ID from environment if set, otherwise leave empty so that
+# the --team-id flag or the required-check below can pick it up.
+TEAM_ID="${TEAM_ID:-}"
 APP_BUNDLE_ID="dev.clawdstrike.agent"
 SYSTEM_EXTENSION_BUNDLE_ID="dev.clawdstrike.agent.system-extension"
 ORG_IDENTIFIER=""
@@ -55,6 +80,12 @@ done
 
 if [[ -z "$ORG_IDENTIFIER" || -z "$OUT_DIR" ]]; then
   echo "[mdm-profiles] --org-identifier and --out-dir are required" >&2
+  usage
+  exit 2
+fi
+
+if [[ -z "$TEAM_ID" ]]; then
+  echo "[mdm-profiles] TEAM_ID is required (set TEAM_ID env var or pass --team-id)" >&2
   usage
   exit 2
 fi
@@ -120,8 +151,21 @@ render_template "$script_dir/system-extension-approval.mobileconfig.in" "$OUT_DI
 render_template "$script_dir/full-disk-access.mobileconfig.in" "$OUT_DIR/clawdstrike-full-disk-access.mobileconfig"
 render_template "$script_dir/network-content-filter.mobileconfig.in" "$OUT_DIR/clawdstrike-network-content-filter.mobileconfig"
 
+# Render the developer-id-profile-template.plist (uses @@TEAM_ID@@ placeholder
+# rather than the {{...}} convention used by the .mobileconfig.in templates).
+if [[ -f "$script_dir/developer-id-profile-template.plist" ]]; then
+  sed "s|@@TEAM_ID@@|$(sed_escape "$TEAM_ID")|g" \
+    "$script_dir/developer-id-profile-template.plist" \
+    > "$OUT_DIR/developer-id-profile.plist"
+fi
+
 if grep -R "{{" "$OUT_DIR" >/dev/null; then
   echo "[mdm-profiles] rendered profiles still contain template tokens" >&2
+  exit 1
+fi
+
+if grep -R "@@TEAM_ID@@" "$OUT_DIR" >/dev/null; then
+  echo "[mdm-profiles] rendered profiles still contain @@TEAM_ID@@ placeholder" >&2
   exit 1
 fi
 

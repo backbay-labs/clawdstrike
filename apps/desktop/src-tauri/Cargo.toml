@@ -1,5 +1,5 @@
 [package]
-name = "sdr-desktop"
+name = "clawdstrike-desktop"
 version = "0.1.0"
 description = "Huntronomer desktop command deck for autonomous threat hunting swarms"
 edition = "2021"
@@ -63,6 +63,7 @@ spine = { package = "hush-spine", path = "../../../crates/libs/spine" }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
+tempfile = "3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # macOS-specific dependencies if needed
@@ -70,6 +71,3 @@ tauri = { version = "2", features = ["test"] }
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-
-[patch.crates-io]
-async-nats = { path = "../../../infra/vendor/async-nats" }

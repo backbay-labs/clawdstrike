@@ -1,4 +1,5 @@
 import type { TestResult } from "./test-store";
+import { logger } from "@/lib/logger";
 
 
 export interface StoredTestRun {
@@ -79,7 +80,7 @@ export class TestHistoryStore {
     try {
       this.db = await openDB();
     } catch (err) {
-      console.error("[test-history-store] Failed to open IndexedDB:", err);
+      logger.error("[test-history-store] Failed to open IndexedDB:", err);
       // Graceful degradation: store stays null, all operations become no-ops or return empty
     }
   }
@@ -133,7 +134,7 @@ export class TestHistoryStore {
       await txPromise(tx);
     } catch (err) {
       if (err instanceof DOMException && err.name === "ConstraintError") {
-        console.warn("[test-history-store] ConstraintError on addRun, skipping duplicate");
+        logger.warn("[test-history-store] ConstraintError on addRun, skipping duplicate");
         return;
       }
       throw err;

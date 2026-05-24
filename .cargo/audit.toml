@@ -1,0 +1,158 @@
+# cargo-audit configuration
+#
+# Run with: cargo audit
+#
+# This file consolidates the previously inlined --ignore list from
+# .github/workflows/ci.yml so the rationale, owner, and expiry for each
+# accepted advisory live in source instead of being scattered across shell
+# arrays. cargo-audit's [advisories.ignore] field is a flat list of IDs, so
+# justification metadata is captured in the TOML comment immediately above
+# each entry. The advisory-expiry guard
+# (tools/scripts/check-advisory-expiry.sh) is responsible for failing CI
+# when an expiry date passes.
+#
+# Format for each entry:
+#   # <ID> — <crate / short rationale>
+#   # Owner: <handle>, Expiry: <YYYY-MM-DD>
+#   "<RUSTSEC-XXXX-XXXX>",
+
+[advisories]
+ignore = [
+    # RUSTSEC-2024-0375 — `atty` unmaintained.
+    # Owner: @security-team, Expiry: 2026-06-30
+    # Transitively pulled via `rust-xmlsec` (SAML stack); no maintained drop-in yet.
+    "RUSTSEC-2024-0375",
+
+    # RUSTSEC-2025-0141 — `bincode` unmaintained.
+    # Owner: @policy-runtime, Expiry: 2026-06-30
+    # `regorus` currently depends on bincode 2.x; migration tracked upstream.
+    "RUSTSEC-2025-0141",
+
+    # RUSTSEC-2024-0388 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0388",
+
+    # RUSTSEC-2024-0411 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0411",
+
+    # RUSTSEC-2024-0412 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0412",
+
+    # RUSTSEC-2024-0413 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0413",
+
+    # RUSTSEC-2024-0414 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0414",
+
+    # RUSTSEC-2024-0415 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0415",
+
+    # RUSTSEC-2024-0416 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0416",
+
+    # RUSTSEC-2024-0417 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0417",
+
+    # RUSTSEC-2024-0418 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0418",
+
+    # RUSTSEC-2024-0419 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0419",
+
+    # RUSTSEC-2024-0420 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0420",
+
+    # RUSTSEC-2024-0429 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0429",
+
+    # RUSTSEC-2024-0436 — `paste` unmaintained.
+    # Owner: @deps-maintainers, Expiry: 2026-06-30
+    # Pulled transitively through the Alloy stack; no maintained drop-in yet.
+    "RUSTSEC-2024-0436",
+
+    # RUSTSEC-2025-0057 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2025-0057",
+
+    # RUSTSEC-2025-0134 — `rustls-pemfile` unmaintained.
+    # Owner: @messaging-platform, Expiry: 2026-06-30
+    # Transitive via `async-nats`; migration to `rustls-pki-types` APIs tracked.
+    "RUSTSEC-2025-0134",
+
+    # RUSTSEC-2024-0370 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2024-0370",
+
+    # RUSTSEC-2021-0145 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2021-0145",
+
+    # RUSTSEC-2025-0075 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2025-0075",
+
+    # RUSTSEC-2025-0080 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2025-0080",
+
+    # RUSTSEC-2025-0081 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2025-0081",
+
+    # RUSTSEC-2025-0098 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2025-0098",
+
+    # RUSTSEC-2025-0100 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2025-0100",
+
+    # RUSTSEC-2025-0119 — `number_prefix` unmaintained.
+    # Owner: @deps-maintainers, Expiry: 2026-06-30
+    # Transitive via indicatif 0.17 → number_prefix 0.4; no patched release yet.
+    "RUSTSEC-2025-0119",
+
+    # RUSTSEC-2026-0097 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2026-0097",
+
+    # RUSTSEC-2026-0105 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2026-0105",
+
+    # RUSTSEC-2026-0118 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2026-0118",
+
+    # RUSTSEC-2026-0119 — pending triage from prior workflow ignore.
+    # Owner: TODO, Expiry: 2026-08-01
+    "RUSTSEC-2026-0119",
+
+    # RUSTSEC-2017-0008 — transitive via portable-pty -> serial in workbench PTY stack.
+    # Owner: @workbench-team (tracking: SEC-PTY-001), Expiry: 2026-08-01
+    # Mitigated by command hardening (shell/env allowlists + backend-minted
+    # capability tokens bound to trusted-window context).
+    "RUSTSEC-2017-0008",
+
+    # aws-lc-rs advisories (2026-03-23). Transitive via rustls.
+    # Awaiting patched release. Owner: @deps-maintainers, Expiry: 2026-08-01
+    "RUSTSEC-2026-0044",
+    "RUSTSEC-2026-0045",
+    "RUSTSEC-2026-0046",
+    "RUSTSEC-2026-0047",
+    "RUSTSEC-2026-0048",
+    "RUSTSEC-2026-0049",
+    "RUSTSEC-2026-0067",
+    "RUSTSEC-2026-0068",
+]

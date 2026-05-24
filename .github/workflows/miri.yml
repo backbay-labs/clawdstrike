@@ -5,6 +5,15 @@ on:
   schedule:
     - cron: '0 5 * * 1'
 
+permissions:
+  contents: read
+
+concurrency:
+  # Scheduled Miri runs should never cancel each other; coalesce manual reruns
+  # against the same ref.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1

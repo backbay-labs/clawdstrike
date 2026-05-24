@@ -1,5 +1,11 @@
 # Permissive Ruleset
 # Development-friendly: allows all egress and relaxes patch limits.
+#
+# NOTE: This ruleset is intentionally standalone (does NOT `extends: default`).
+# Inheriting default would activate forbidden_path / secret_leak / mcp_tool
+# enforcement, which contradicts permissive's "allow everything for local dev"
+# stance. If you need dev-friendly defaults WITH credential protection, copy
+# this file and add `extends: default` plus selective overrides.
 # HushSpec equivalent: https://github.com/backbay-labs/hush/blob/main/rulesets/permissive.yaml
 version: "1.1.0"
 name: Permissive

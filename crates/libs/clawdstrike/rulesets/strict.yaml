@@ -1,6 +1,16 @@
 # Strict Ruleset
-# Maximum security with minimal permissions
-version: "1.1.0"
+# Maximum security with minimal permissions.
+#
+# NOTE: Intentionally standalone (does not extend `default`).
+# strict tightens egress to an empty allow list (zero permitted
+# domains). EgressAllowlistConfig::merge_with treats a child
+# `allow: []` as "no override" -- it only replaces the base list
+# when the child's `allow` is non-empty -- so an `extends: default`
+# child would silently inherit default's OpenAI/GitHub/npm/etc.
+# permissions and quietly broaden egress. Keeping strict standalone
+# guarantees the in-file intent ("no outbound egress permitted")
+# holds regardless of merge semantics.
+version: "1.2.0"
 name: Strict
 description: Strict security rules with minimal permissions
 

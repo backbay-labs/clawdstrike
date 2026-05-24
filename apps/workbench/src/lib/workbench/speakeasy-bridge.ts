@@ -227,8 +227,11 @@ function toHex(bytes: Uint8Array): string {
 
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Bun vs @types/web ArrayBuffer mismatch
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data as any);
+  // Copy into a fresh ArrayBuffer-backed Uint8Array so SubtleCrypto accepts
+  // it as a BufferSource (avoids SharedArrayBuffer-typed inputs).
+  const copy = new Uint8Array(data.byteLength);
+  copy.set(data);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", copy);
   return toHex(new Uint8Array(hashBuffer));
 }
 

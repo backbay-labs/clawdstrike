@@ -5,7 +5,7 @@ import {
   type GuardSimResult,
   type GuardedAction,
   type Receipt,
-} from "@clawdstrike/swarm-engine";
+} from "@/features/swarm/engine";
 import { DEFAULT_POLICY } from "@/features/policy/stores/policy-store";
 import { usePolicyEditStore } from "@/features/policy/stores/policy-edit-store";
 import { usePolicyTabsStore } from "@/features/policy/stores/policy-tabs-store";

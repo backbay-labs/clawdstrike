@@ -55,23 +55,15 @@ installation: {
 | `minWorkbenchVersion` | Minimum compatible workbench version (semver, optional) |
 | `maxWorkbenchVersion` | Maximum compatible workbench version (semver, optional) |
 
-### 4. Sign the manifest
+### 4. Publish (and sign)
 
-Plugin manifests are signed with Ed25519 to ensure integrity. The signature covers the canonical JSON (RFC 8785) representation of the manifest:
-
-```bash
-clawdstrike pkg sign --manifest package.json --key ~/.clawdstrike/publisher.key
-```
-
-See the [Trust & Verification](../package-manager/trust-verification.md) guide for details on key management and the verification model.
-
-### 5. Publish
+Plugin manifests are signed with Ed25519 to ensure integrity. Signing is performed as part of the publish step — `hush pkg publish` packs the archive, signs the canonical (RFC 8785) JSON manifest with your publisher key, and uploads the result to the registry:
 
 ```bash
-clawdstrike pkg publish
+hush pkg publish
 ```
 
-This uploads the package to the registry and makes it available for installation.
+If you do not yet have a publisher keypair, one is generated on first publish and stored under `~/.clawdstrike/`. See the [Trust & Verification](../package-manager/trust-verification.md) guide for details on key management and the verification model.
 
 ## Version compatibility
 

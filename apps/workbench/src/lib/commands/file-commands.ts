@@ -3,6 +3,7 @@ import type { Command } from "@/lib/command-registry";
 import { usePolicyTabsStore } from "@/features/policy/stores/policy-tabs-store";
 import { usePolicyEditStore } from "@/features/policy/stores/policy-edit-store";
 import { usePaneStore } from "@/features/panes/pane-store";
+import { logger } from "@/lib/logger";
 
 export interface FileCommandDeps {
   saveFile: () => Promise<void>;
@@ -44,7 +45,7 @@ export function registerFileCommands(deps: FileCommandDeps): void {
               usePolicyTabsStore.getState().setDirty(activeTab.id, false);
               return;
             } catch (err) {
-              console.error("[file.save] Save failed:", err);
+              logger.error("[file.save] Save failed:", err);
               return;
             }
           }
@@ -78,7 +79,7 @@ export function registerFileCommands(deps: FileCommandDeps): void {
               usePolicyTabsStore.getState().setDirty(activeTab.id, false);
               return;
             } catch (err) {
-              console.error("[file.saveAs] Save failed:", err);
+              logger.error("[file.saveAs] Save failed:", err);
               return;
             }
           }

@@ -18,10 +18,18 @@ on:
       - "scripts/helm-resilience-security.sh"
       - "scripts/release-helm-chart.sh"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint-and-template:
     name: Helm Lint and Template
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 

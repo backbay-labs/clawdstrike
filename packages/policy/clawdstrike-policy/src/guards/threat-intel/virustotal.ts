@@ -175,14 +175,14 @@ function fileSha256Hex(event: PolicyEvent): string | null {
     return sha256Hex(bytes);
   }
 
-  const raw = (event.data as any).contentHash;
+  const raw = (event.data as { contentHash?: unknown }).contentHash;
   if (typeof raw !== "string") return null;
   return normalizeSha256Hex(raw);
 }
 
 function fileContentBytes(event: PolicyEvent): Buffer | null {
   if (event.data.type !== "file") return null;
-  const data = event.data as any;
+  const data = event.data as { contentBase64?: unknown; content?: unknown };
   if (typeof data.contentBase64 === "string") {
     try {
       return Buffer.from(data.contentBase64, "base64");
@@ -220,10 +220,10 @@ function analysisStats(json: unknown): { malicious: number; suspicious: number }
 }
 
 function pointer(value: unknown, path: string[]): unknown {
-  let cur: any = value;
+  let cur: unknown = value;
   for (const p of path) {
     if (!cur || typeof cur !== "object") return undefined;
-    cur = cur[p];
+    cur = (cur as Record<string, unknown>)[p];
   }
   return cur;
 }

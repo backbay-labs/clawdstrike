@@ -6,6 +6,15 @@ on:
     # Daily at 03:00 UTC
     - cron: '0 3 * * *'
 
+permissions:
+  contents: read
+
+concurrency:
+  # Scheduled fuzz runs should never cancel each other; per-ref cancellation
+  # for manual dispatches is still useful for fast iteration.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -14,6 +23,7 @@ jobs:
   fuzz:
     name: Fuzz All Targets
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 

@@ -1,6 +1,13 @@
 # AI Agent Ruleset
 # Optimized for AI coding assistants (Claude, GPT, etc.)
-version: "1.1.0"
+# HushSpec equivalent: https://github.com/backbay-labs/hush/blob/main/rulesets/ai-agent.yaml
+#
+# NOTE: Intentionally standalone (does not extend `default`).
+# ai-agent broadens default's egress allowlist for AI APIs; the
+# Logos verifier treats `extends: default` + child-broadens as a
+# "weakened prohibition" error. Treated as policy intent until the
+# verifier supports `weaken-permitted` annotations.
+version: "1.2.0"
 name: AI Agent
 description: Security rules optimized for AI coding assistants
 
@@ -106,10 +113,6 @@ guards:
       - "(?i)chmod\\s+777"
       - "(?i)reverse[_\\-]?shell"
 
-  shell_command:
-    enabled: true
-    enforce_forbidden_paths: true
-
   mcp_tool:
     allow: []
     block:
@@ -119,7 +122,7 @@ guards:
       - git_push
       - deploy
       - publish
-    default_action: allow
+    default_action: block
     max_args_size: 2097152  # 2MB
 
   prompt_injection:

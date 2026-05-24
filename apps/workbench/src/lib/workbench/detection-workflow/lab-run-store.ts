@@ -6,6 +6,7 @@
  */
 
 import type { LabRun } from "./shared-types";
+import { logger } from "@/lib/logger";
 
 const DB_NAME = "clawdstrike_lab_runs";
 const DB_VERSION = 1;
@@ -58,7 +59,7 @@ export class LabRunStore {
     try {
       this.db = await openDB();
     } catch (err) {
-      console.error("[lab-run-store] Failed to open IndexedDB:", err);
+      logger.error("[lab-run-store] Failed to open IndexedDB:", err);
     }
   }
 
@@ -84,7 +85,7 @@ export class LabRunStore {
     try {
       await this.pruneOldRuns(run.documentId, MAX_RUNS_PER_DOCUMENT);
     } catch (err) {
-      console.warn("[lab-run-store] Auto-prune failed (non-fatal):", err);
+      logger.warn("[lab-run-store] Auto-prune failed (non-fatal):", err);
     }
 
     return run;

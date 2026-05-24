@@ -1228,6 +1228,7 @@ async fn setup_harness() -> Harness {
         stale_check_interval_secs: 60,
         stale_threshold_secs: 120,
         dead_threshold_secs: 300,
+        cors: crate::config::CorsConfig::default(),
     };
 
     let provisioner = TenantProvisioner::new(

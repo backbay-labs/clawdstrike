@@ -108,20 +108,84 @@ pub struct WorkflowDryRunAction {
 // In-memory workflow storage (persisted to file)
 static WORKFLOWS: OnceLock<RwLock<HashMap<String, Workflow>>> = OnceLock::new();
 
+const APP_DATA_DIR: &str = "clawdstrike-desktop";
+const LEGACY_APP_DATA_DIR: &str = "sdr-desktop";
+const WORKFLOWS_FILENAME: &str = "workflows.json";
+
 fn get_workflows() -> &'static RwLock<HashMap<String, Workflow>> {
     WORKFLOWS.get_or_init(|| {
-        let workflows = load_workflows_from_file().unwrap_or_default();
+        let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+        let workflows = load_workflows_from_dir(&base).unwrap_or_default();
         RwLock::new(workflows)
     })
 }
 
-fn get_workflows_file_path() -> PathBuf {
-    let app_data = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    app_data.join("sdr-desktop").join("workflows.json")
+fn workflows_path_in(base: &std::path::Path) -> PathBuf {
+    base.join(APP_DATA_DIR).join(WORKFLOWS_FILENAME)
 }
 
-fn load_workflows_from_file() -> Option<HashMap<String, Workflow>> {
-    let path = get_workflows_file_path();
+fn legacy_workflows_path_in(base: &std::path::Path) -> PathBuf {
+    base.join(LEGACY_APP_DATA_DIR).join(WORKFLOWS_FILENAME)
+}
+
+/// Moves `<data_local>/sdr-desktop/workflows.json` to the new
+/// `clawdstrike-desktop/` location on first startup after the rename.
+fn migrate_legacy_workflows_dir(base: &std::path::Path) {
+    let new_path = workflows_path_in(base);
+    if new_path.exists() {
+        return;
+    }
+    let legacy_path = legacy_workflows_path_in(base);
+    if !legacy_path.exists() {
+        return;
+    }
+
+    let Some(new_parent) = new_path.parent() else {
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(new_parent) {
+        tracing::warn!(
+            error = %e,
+            target = ?new_parent,
+            "failed to create workflows directory during legacy migration"
+        );
+        return;
+    }
+
+    if let Err(rename_err) = std::fs::rename(&legacy_path, &new_path) {
+        // Cross-filesystem moves return EXDEV; fall back to copy + remove.
+        match std::fs::copy(&legacy_path, &new_path) {
+            Ok(_) => {
+                if let Err(e) = std::fs::remove_file(&legacy_path) {
+                    tracing::warn!(
+                        error = %e,
+                        path = ?legacy_path,
+                        "copied legacy workflows.json but failed to remove the source"
+                    );
+                }
+            }
+            Err(copy_err) => {
+                tracing::warn!(
+                    rename_error = %rename_err,
+                    copy_error = %copy_err,
+                    from = ?legacy_path,
+                    to = ?new_path,
+                    "failed to migrate legacy workflows.json"
+                );
+                return;
+            }
+        }
+    }
+
+    if let Some(legacy_dir) = legacy_path.parent() {
+        // Remove the legacy directory if it's empty after the move.
+        let _ = std::fs::remove_dir(legacy_dir);
+    }
+}
+
+fn load_workflows_from_dir(base: &std::path::Path) -> Option<HashMap<String, Workflow>> {
+    migrate_legacy_workflows_dir(base);
+    let path = workflows_path_in(base);
     if !path.exists() {
         return None;
     }
@@ -131,7 +195,8 @@ fn load_workflows_from_file() -> Option<HashMap<String, Workflow>> {
 }
 
 fn save_workflows_to_file(workflows: &HashMap<String, Workflow>) -> Result<(), String> {
-    let path = get_workflows_file_path();
+    let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    let path = workflows_path_in(&base);
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
@@ -687,6 +752,59 @@ mod tests {
         assert!(parse_window("0m").is_err());
         assert!(parse_window("5w").is_err());
         assert!(parse_window("m").is_err());
+    }
+
+    #[test]
+    fn migrate_legacy_workflows_dir_moves_file_and_cleans_up() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let base = tmp.path();
+        let legacy_dir = base.join(LEGACY_APP_DATA_DIR);
+        std::fs::create_dir_all(&legacy_dir).expect("create legacy dir");
+        let legacy_file = legacy_dir.join(WORKFLOWS_FILENAME);
+        let payload = r#"{"wf1":{"id":"wf1","name":"n","enabled":true,"trigger":{"type":"event_match","conditions":[]},"actions":[],"last_run":null,"run_count":0,"created_at":"2026-05-23T00:00:00Z"}}"#;
+        std::fs::write(&legacy_file, payload).expect("write legacy payload");
+
+        let loaded = load_workflows_from_dir(base).expect("loaded workflows");
+        assert!(loaded.contains_key("wf1"));
+
+        let new_file = base.join(APP_DATA_DIR).join(WORKFLOWS_FILENAME);
+        assert!(new_file.exists(), "new path should hold the migrated file");
+        assert!(!legacy_file.exists(), "legacy file should be gone");
+        assert!(
+            !legacy_dir.exists(),
+            "empty legacy directory should be removed"
+        );
+    }
+
+    #[test]
+    fn migrate_legacy_workflows_dir_skips_when_new_path_exists() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let base = tmp.path();
+        let legacy_dir = base.join(LEGACY_APP_DATA_DIR);
+        let new_dir = base.join(APP_DATA_DIR);
+        std::fs::create_dir_all(&legacy_dir).expect("legacy dir");
+        std::fs::create_dir_all(&new_dir).expect("new dir");
+        std::fs::write(legacy_dir.join(WORKFLOWS_FILENAME), "{\"legacy\":true}")
+            .expect("legacy file");
+        std::fs::write(new_dir.join(WORKFLOWS_FILENAME), "{}").expect("new file");
+
+        migrate_legacy_workflows_dir(base);
+
+        assert!(
+            legacy_dir.join(WORKFLOWS_FILENAME).exists(),
+            "legacy file must not be touched once the new path is populated"
+        );
+        let contents =
+            std::fs::read_to_string(new_dir.join(WORKFLOWS_FILENAME)).expect("read new");
+        assert_eq!(contents, "{}", "existing new file must not be overwritten");
+    }
+
+    #[test]
+    fn migrate_legacy_workflows_dir_is_noop_without_legacy() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        migrate_legacy_workflows_dir(tmp.path());
+        assert!(!tmp.path().join(APP_DATA_DIR).exists());
+        assert!(!tmp.path().join(LEGACY_APP_DATA_DIR).exists());
     }
 
     #[test]

@@ -39,6 +39,7 @@ import {
   type TabEditState,
 } from "@/features/policy/stores/policy-edit-store";
 import { usePolicyEditStore } from "@/features/policy/stores/policy-edit-store";
+import { logger } from "@/lib/logger";
 
 // Re-export types that consumers depend on
 export type { TabEditState } from "@/features/policy/stores/policy-edit-store";
@@ -120,7 +121,7 @@ export function pushRecentFile(filePath: string): void {
     );
     localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updated));
   } catch (e) {
-    console.warn(
+    logger.warn(
       "[policy-tabs-store] pushRecentFile localStorage operation failed:",
       e,
     );
@@ -223,7 +224,7 @@ function persistTabs(tabs: TabMeta[], activeTabId: string): void {
     };
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(persisted));
   } catch (e) {
-    console.error(
+    logger.error(
       "[policy-tabs-store] persistTabs failed — changes may be lost on reload:",
       e,
     );
@@ -240,7 +241,7 @@ function loadPersistedTabs(): {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.tabs)) {
-      console.warn(
+      logger.warn(
         "[policy-tabs-store] Invalid persisted tab data, using defaults",
       );
       return null;
@@ -299,7 +300,7 @@ function loadPersistedTabs(): {
 
     return { tabs, activeTabId, editStates };
   } catch (e) {
-    console.warn("[policy-tabs-store] loadPersistedTabs failed:", e);
+    logger.warn("[policy-tabs-store] loadPersistedTabs failed:", e);
     return null;
   }
 }
@@ -946,7 +947,7 @@ export const usePolicyTabsStore = create<PolicyTabsStore>((set, get) => {
           JSON.stringify(policies.map(sanitizeSavedPolicy)),
         );
       } catch (e) {
-        console.error(
+        logger.error(
           "[policy-tabs-store] persist saved policies failed:",
           e,
         );
@@ -964,7 +965,7 @@ export const usePolicyTabsStore = create<PolicyTabsStore>((set, get) => {
           JSON.stringify(policies.map(sanitizeSavedPolicy)),
         );
       } catch (e) {
-        console.error(
+        logger.error(
           "[policy-tabs-store] persist saved policies failed:",
           e,
         );
@@ -982,7 +983,7 @@ export const usePolicyTabsStore = create<PolicyTabsStore>((set, get) => {
         if (stored) {
           const parsed: unknown = JSON.parse(stored);
           if (!Array.isArray(parsed)) {
-            console.warn(
+            logger.warn(
               "[policy-tabs-store] Saved policies is not an array, skipping hydration",
             );
             set({ _hydrated: true });
@@ -1005,7 +1006,7 @@ export const usePolicyTabsStore = create<PolicyTabsStore>((set, get) => {
           set({ _hydrated: true });
         }
       } catch (e) {
-        console.warn(
+        logger.warn(
           "[policy-tabs-store] hydrate saved policies failed:",
           e,
         );

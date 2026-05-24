@@ -35,6 +35,7 @@ import {
   type FindingTrustPolicyDecision,
   type FindingTrustPolicyRejectionReason,
 } from "@/features/swarm/swarm-trust-policy";
+import { logger } from "@/lib/logger";
 
 export const SWARM_FEED_STORAGE_KEY = "clawdstrike_workbench_swarm_feed";
 let lastSwarmFeedStorageSnapshot =
@@ -873,7 +874,7 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
       ),
     };
   } catch (error) {
-    console.warn("[swarm-feed-store] loadPersistedSwarmFeed failed:", error);
+    logger.warn("[swarm-feed-store] loadPersistedSwarmFeed failed:", error);
     return FAIL_CLOSED_SWARM_FEED_STATE;
   }
 }
@@ -897,7 +898,7 @@ function persistSwarmFeed(state: SwarmFeedState): void {
     localStorage.setItem(SWARM_FEED_STORAGE_KEY, raw);
     lastSwarmFeedStorageSnapshot = raw;
   } catch (error) {
-    console.error("[swarm-feed-store] persistSwarmFeed failed:", error);
+    logger.error("[swarm-feed-store] persistSwarmFeed failed:", error);
   }
 }
 
@@ -1708,7 +1709,7 @@ function queueFindingDigestHydration(record: SwarmFindingEnvelopeRecord): void {
       schedulePersist(useSwarmFeedStoreBase.getState());
     })
     .catch((error) => {
-      console.warn("[swarm-feed-store] finding digest hydration failed:", error);
+      logger.warn("[swarm-feed-store] finding digest hydration failed:", error);
     })
     .finally(() => {
       if (_digestHydrationPending.get(replayKey) === generation) {

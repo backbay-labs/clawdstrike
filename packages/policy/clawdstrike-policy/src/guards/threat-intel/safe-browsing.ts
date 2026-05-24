@@ -77,7 +77,8 @@ export function createSafeBrowsingGuard(
         signal,
       );
 
-      const matches = Array.isArray((resp.json as any)?.matches) ? (resp.json as any).matches : [];
+      const json = resp.json as { matches?: unknown } | null | undefined;
+      const matches = Array.isArray(json?.matches) ? json.matches : [];
       if (matches.length > 0) {
         return deny(
           "clawdstrike-safe-browsing",

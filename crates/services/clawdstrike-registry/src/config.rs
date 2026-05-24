@@ -41,6 +41,22 @@ impl Config {
         let api_key = std::env::var("CLAWDSTRIKE_REGISTRY_API_KEY").unwrap_or_default();
         let allow_insecure_no_auth = parse_bool_env("CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH")?;
 
+        // Fail-closed: refuse to start without an API key unless the operator
+        // has explicitly opted in via CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH.
+        if api_key.trim().is_empty() {
+            if !allow_insecure_no_auth {
+                anyhow::bail!(
+                    "CLAWDSTRIKE_REGISTRY_API_KEY is unset or empty; refusing to start. \
+                     Set CLAWDSTRIKE_REGISTRY_API_KEY=<token> or, for local development only, \
+                     set CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH=true to disable auth."
+                );
+            }
+            tracing::warn!(
+                "Registry API key is unset and CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH=true; \
+                 starting with authenticated routes wide open. DO NOT use this in production."
+            );
+        }
+
         let max_upload_bytes: usize = std::env::var("CLAWDSTRIKE_REGISTRY_MAX_UPLOAD_BYTES")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -120,5 +136,74 @@ mod tests {
                 .as_nanos()
         );
         assert!(matches!(parse_bool_env(&unique), Ok(false)));
+    }
+
+    /// Serialize env-var manipulation across tests so concurrent tests don't
+    /// race on shared CLAWDSTRIKE_REGISTRY_* state.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_clean_env<F: FnOnce() -> R, R>(f: F) -> R {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let keys = [
+            "CLAWDSTRIKE_REGISTRY_API_KEY",
+            "CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH",
+            "CLAWDSTRIKE_REGISTRY_HOST",
+            "CLAWDSTRIKE_REGISTRY_PORT",
+            "CLAWDSTRIKE_REGISTRY_DATA_DIR",
+            "CLAWDSTRIKE_REGISTRY_MAX_UPLOAD_BYTES",
+        ];
+        let saved: Vec<(&str, Option<String>)> = keys
+            .iter()
+            .map(|k| (*k, std::env::var(k).ok()))
+            .collect();
+        for (k, _) in &saved {
+            std::env::remove_var(k);
+        }
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        for (k, original) in &saved {
+            match original {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+        match result {
+            Ok(value) => value,
+            Err(e) => std::panic::resume_unwind(e),
+        }
+    }
+
+    #[test]
+    fn from_env_refuses_to_start_without_api_key() {
+        with_clean_env(|| {
+            let err = Config::from_env().expect_err("must reject empty api key by default");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("CLAWDSTRIKE_REGISTRY_API_KEY"),
+                "error message must point operator at the missing env var: {msg}"
+            );
+        });
+    }
+
+    #[test]
+    fn from_env_allows_empty_api_key_when_insecure_flag_set() {
+        with_clean_env(|| {
+            std::env::set_var("CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH", "true");
+            // Provide a data dir so we don't depend on home dir resolution.
+            std::env::set_var("CLAWDSTRIKE_REGISTRY_DATA_DIR", "/tmp/registry-test");
+            let config = Config::from_env().expect("should load with explicit insecure opt-in");
+            assert!(config.api_key.is_empty());
+            assert!(config.allow_insecure_no_auth);
+        });
+    }
+
+    #[test]
+    fn from_env_succeeds_with_api_key_set() {
+        with_clean_env(|| {
+            std::env::set_var("CLAWDSTRIKE_REGISTRY_API_KEY", "secret-token");
+            std::env::set_var("CLAWDSTRIKE_REGISTRY_DATA_DIR", "/tmp/registry-test");
+            let config = Config::from_env().expect("should load");
+            assert_eq!(config.api_key, "secret-token");
+            assert!(!config.allow_insecure_no_auth);
+        });
     }
 }

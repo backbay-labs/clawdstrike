@@ -3,14 +3,15 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import "./globals.css";
 import "@/lib/workbench/detection-workflow/index";
+import { logger } from "@/lib/logger";
 
 
 window.addEventListener("unhandledrejection", (event) => {
-  console.error("[unhandled-rejection]", event.reason);
+  logger.error("[unhandled-rejection]", event.reason);
 });
 
 window.onerror = (message, source, lineno, colno, error) => {
-  console.error("[uncaught-error]", { message, source, lineno, colno, error });
+  logger.error("[uncaught-error]", { message, source, lineno, colno, error });
 };
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

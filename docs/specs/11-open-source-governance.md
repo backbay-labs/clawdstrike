@@ -258,7 +258,7 @@ Requirements for CNCF Sandbox application:
 | Channel                                                                       | Purpose                                  |
 | ----------------------------------------------------------------------------- | ---------------------------------------- |
 | [GitHub Discussions](https://github.com/backbay-labs/clawdstrike/discussions) | Q&A, feature ideas, architecture         |
-| [Discord](https://discord.gg/clawdstrike)                                     | Real-time chat, contributor coordination |
+| [Discord](https://discord.gg/fdbCZHm8zM)                                      | Real-time chat, contributor coordination |
 | Weekly community call                                                         | Demos, roadmap, contributor spotlights   |
 | Monthly security office hours                                                 | Guard design, threat modeling            |
 ```

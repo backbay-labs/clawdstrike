@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Agent: sentinel variant, blood-black field with outer guard ring -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#1d0e0e"/>
+      <stop offset="100%" stop-color="#0a0404"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="192" fill="url(#bg)"/>
+  <!-- outer sentinel ring -->
+  <circle cx="512" cy="512" r="420" fill="none" stroke="#7a5a26" stroke-width="6" opacity="0.55"/>
+  <circle cx="512" cy="512" r="396" fill="none" stroke="#d4a84b" stroke-width="2" opacity="0.45"/>
+  <!-- tick marks at cardinal points -->
+  <g stroke="#d4a84b" stroke-width="6" stroke-linecap="square" opacity="0.7">
+    <line x1="512" y1="80" x2="512" y2="116"/>
+    <line x1="512" y1="908" x2="512" y2="944"/>
+    <line x1="80" y1="512" x2="116" y2="512"/>
+    <line x1="908" y1="512" x2="944" y2="512"/>
+  </g>
+  <g transform="translate(512 512) scale(34) translate(-12 -12)" fill="none" stroke="#d4a84b" stroke-width="2" stroke-linejoin="miter">
+    <path d="M12 3.3 L17.6 8.9 L20.7 12 L17.6 15.1 L12 20.7 L6.4 15.1 L3.3 12 L6.4 8.9 Z"/>
+    <path d="M12 3.3 L11.2 5.0 L12.8 5.0 Z" fill="#d4a84b" stroke="none"/>
+    <path d="M20.7 12 L19.0 11.2 L19.0 12.8 Z" fill="#d4a84b" stroke="none"/>
+    <path d="M12 20.7 L12.8 19.0 L11.2 19.0 Z" fill="#d4a84b" stroke="none"/>
+    <path d="M3.3 12 L5.0 12.8 L5.0 11.2 Z" fill="#d4a84b" stroke="none"/>
+    <circle cx="12" cy="12" r="1.35"/>
+    <path d="M8.2 7.9 L6.9 16.0" stroke-linecap="square"/>
+    <path d="M12 7.2 L12 16.8" stroke-linecap="square"/>
+    <path d="M15.8 7.9 L17.1 16.0" stroke-linecap="square"/>
+    <path d="M9.7 6.9 L10.2 8.0" stroke-linecap="square" opacity="0.9"/>
+    <path d="M14.3 6.9 L13.8 8.0" stroke-linecap="square" opacity="0.9"/>
+  </g>
+</svg>

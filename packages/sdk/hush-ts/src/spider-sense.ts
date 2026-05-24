@@ -1,5 +1,6 @@
 import { ensureWasmSync, getWasmModule } from "./crypto/backend.js";
 import { toSnakeCaseKeys } from "./case-convert.js";
+import type { WasmSpiderSenseDetectorInstance } from "./types/wasm.js";
 
 export type ScreeningVerdict = "deny" | "ambiguous" | "allow";
 
@@ -38,8 +39,7 @@ export interface SpiderSenseDetectorConfig {
  * WASM is loaded lazily on construction.
  */
 export class SpiderSenseDetector {
-  // biome-ignore lint/suspicious/noExplicitAny: WasmSpiderSenseDetector is untyped
-  private readonly inner: any;
+  private readonly inner: WasmSpiderSenseDetectorInstance;
 
   constructor(config?: SpiderSenseDetectorConfig) {
     ensureWasmSync();

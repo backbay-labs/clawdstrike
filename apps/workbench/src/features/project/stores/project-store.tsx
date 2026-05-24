@@ -17,6 +17,7 @@ import {
   replaceProjectPathBasename,
 } from "@/features/project/utils/resolve-project-path";
 import { getWorkbenchE2EBridge } from "@/lib/workbench/e2e-bridge";
+import { logger } from "@/lib/logger";
 
 const TAURI_FS_SPECIFIER = "@tauri-apps/plugin-fs";
 
@@ -766,7 +767,7 @@ const useProjectStoreBase = create<ProjectStoreState>()((set, get) => ({
 
         set(buildProjectSelectionPatch(get().projectRoots, newProjects));
       } catch (err) {
-        console.error("[project-store] Failed to load root:", rootPath, err);
+        logger.error("[project-store] Failed to load root:", rootPath, err);
       }
     },
 

@@ -10,7 +10,7 @@ Clawdstrike is a multi-language repo (Rust crates + TypeScript/Python SDKs + an 
 
 | Schema | Used by | Version field | File format | Notes |
 |---|---|---|---|---|
-| Rust **policy** schema | `clawdstrike` engine + `clawdstrike` CLI + `hushd`/`clawdstriked` | `policy.version` (`"1.1.0"` or `"1.2.0"`, default `"1.2.0"`) | YAML | Parsed with strict semver + unknown-field rejection. |
+| Rust **policy** schema | `clawdstrike` engine + `clawdstrike` CLI + `hushd`/`clawdstriked` | `policy.version` (`"1.1.0"` through `"1.5.0"`, current `"1.5.0"`) | YAML | Parsed with strict semver + unknown-field rejection. |
 | OpenClaw **policy** schema | `@clawdstrike/openclaw` | `policy.version` (`"clawdstrike-v1.0"` legacy, or canonical `"1.1.0"`/`"1.2.0"`) | YAML | Runtime shape is OpenClaw-specific; canonical policies are translated before enforcement. Strict validation + unknown-field rejection. |
 | **Receipt** schema | `hush-core` + SDKs | `receipt.version` (`"1.0.0"`) | JSON | Signed receipts use canonical JSON (RFC 8785 / JCS). |
 

@@ -35,6 +35,7 @@ import type { FileType } from "@/lib/workbench/file-type-registry";
 import type { YamlEditorError } from "@/components/ui/yaml-editor";
 import { DEFAULT_POLICY } from "@/features/policy/stores/policy-store";
 import { FileEditorToolbar } from "./file-editor-toolbar";
+import { logger } from "@/lib/logger";
 
 /** Convert a TestScenario to the SuiteScenario format used by the test runner. */
 function extractTarget(s: TestScenario): string {
@@ -218,7 +219,7 @@ export function FileEditorShell() {
       // Clear dirty in tabs store (drives pane tab dirty dot)
       usePolicyTabsStore.getState().setDirty(tabId, false);
     } catch (err) {
-      console.error("[FileEditorShell] Save failed:", err);
+      logger.error("[FileEditorShell] Save failed:", err);
     }
   }, [tabId, tabFileType, tabFilePath, tabName, tabDirty, editStateYaml]);
 
@@ -251,7 +252,7 @@ export function FileEditorShell() {
 
     async function loadFile() {
       try {
-        console.debug("[FileEditorShell] Loading file from disk:", filePath);
+        logger.debug("[FileEditorShell] Loading file from disk:", filePath);
         const { readDetectionFileByPath } = await import(
           "@/lib/tauri-bridge"
         );
@@ -264,11 +265,11 @@ export function FileEditorShell() {
             filePath.split("/").pop() ?? "File",
           );
         } else {
-          console.warn("[FileEditorShell] readDetectionFileByPath returned null for:", filePath);
+          logger.warn("[FileEditorShell] readDetectionFileByPath returned null for:", filePath);
           setLoadFailed(true);
         }
       } catch (err) {
-        console.warn("[FileEditorShell] Failed to load file:", filePath, err);
+        logger.warn("[FileEditorShell] Failed to load file:", filePath, err);
         setLoadFailed(true);
       }
     }

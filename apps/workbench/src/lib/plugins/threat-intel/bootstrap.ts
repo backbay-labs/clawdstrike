@@ -6,6 +6,7 @@ import {
 } from "@/lib/workbench/threat-intel-registry";
 import { MISP_MANIFEST } from "./misp-plugin";
 import { BUILTIN_THREAT_INTEL_PLUGINS } from "./catalog";
+import { logger } from "@/lib/logger";
 
 // Bootstrap
 /**
@@ -33,7 +34,7 @@ export async function bootstrapThreatIntelPlugins(): Promise<number> {
 
       const primarySecret = secrets[0];
       if (!primarySecret) {
-        console.info(
+        logger.info(
           `[threat-intel-bootstrap] Skipping ${manifest.displayName ?? manifest.name} -- no API key configured`,
         );
         continue;
@@ -42,7 +43,7 @@ export async function bootstrapThreatIntelPlugins(): Promise<number> {
       if (manifest.id === MISP_MANIFEST.id) {
         const baseUrl = secrets[1];
         if (!baseUrl || !/^https?:\/\/.+/.test(baseUrl)) {
-          console.warn(
+          logger.warn(
             `[threat-intel-bootstrap] Skipping ${manifest.displayName ?? manifest.name} -- base_url not configured or invalid`,
           );
           continue;
@@ -54,18 +55,18 @@ export async function bootstrapThreatIntelPlugins(): Promise<number> {
       registerThreatIntelSource(source);
       pluginRegistry.setState(manifest.id, "activated");
       registered++;
-      console.info(
+      logger.info(
         `[threat-intel-bootstrap] Registered ${manifest.displayName ?? manifest.name} (${source.id})`,
       );
     } catch (err: unknown) {
-      console.warn(
+      logger.warn(
         `[threat-intel-bootstrap] Failed to register ${manifest.displayName ?? manifest.name}:`,
         err instanceof Error ? err.message : String(err),
       );
     }
   }
 
-  console.info(
+  logger.info(
     `[threat-intel-bootstrap] ${registered}/${BUILTIN_THREAT_INTEL_PLUGINS.length} threat intel sources registered`,
   );
   return registered;

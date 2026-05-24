@@ -1,5 +1,5 @@
 # Example: Extending the strict ruleset
-version: "1.0.0"
+version: "1.5.0"
 name: Custom Strict
 description: Strict ruleset with additional patterns for our company
 

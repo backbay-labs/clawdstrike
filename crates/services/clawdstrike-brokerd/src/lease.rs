@@ -678,6 +678,7 @@ mod tests {
             allow_private_upstream_hosts: false,
             allow_invalid_upstream_tls: false,
             admin_token: None,
+            insecure_disable_admin_auth: true,
         };
         let provider = Arc::new(FileSecretProvider::new(secrets));
         AppState {

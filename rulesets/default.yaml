@@ -1,7 +1,7 @@
 # Default Ruleset
 # Balanced security for AI agent execution
 # HushSpec equivalent: https://github.com/backbay-labs/hush/blob/main/rulesets/default.yaml
-version: "1.1.0"
+version: "1.2.0"
 name: Default
 description: Default security rules for AI agent execution
 
@@ -112,6 +112,19 @@ guards:
       - git_push
     default_action: block
     max_args_size: 1048576
+
+  # Filesystem allowlist: opt-in deny-by-default for reads/writes/patches.
+  # Disabled by default so existing deployments using only forbidden_path keep
+  # working. Child rulesets (e.g. strict.yaml) may enable and scope these lists
+  # to the project root.
+  path_allowlist:
+    enabled: false
+    file_access_allow:
+      - "./**"
+      - "/tmp/**"
+    file_write_allow:
+      - "./**"
+      - "/tmp/**"
 
 settings:
   fail_fast: false

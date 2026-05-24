@@ -3,7 +3,7 @@
 # Required env:
 #   GSB_API_KEY
 #   GSB_CLIENT_ID
-version: "1.0.0"
+version: "1.5.0"
 name: Threat Intel - Safe Browsing
 
 guards:

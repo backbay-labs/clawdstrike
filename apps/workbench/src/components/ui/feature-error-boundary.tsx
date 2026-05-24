@@ -1,5 +1,6 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { logger } from "@/lib/logger";
 
 interface FeatureErrorBoundaryProps {
   /** Human-readable feature name shown in the error card (e.g. "Swarm Board"). */
@@ -29,7 +30,7 @@ export class FeatureErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error(
+    logger.error(
       `[feature-error-boundary][${this.props.feature}]`,
       error,
       info.componentStack,

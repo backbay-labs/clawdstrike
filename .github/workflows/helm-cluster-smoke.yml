@@ -24,6 +24,10 @@ permissions:
   id-token: write
   packages: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
@@ -34,6 +38,7 @@ jobs:
   gate:
     name: Determine Execution Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       should_run: ${{ steps.gate.outputs.should_run }}
       reason: ${{ steps.gate.outputs.reason }}
@@ -90,6 +95,7 @@ jobs:
   skipped:
     name: Smoke Gate Skipped
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: gate
     if: needs.gate.outputs.should_run != 'true'
     steps:
@@ -106,6 +112,7 @@ jobs:
   smoke:
     name: EKS OCI Smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: gate
     if: needs.gate.outputs.should_run == 'true'
     steps:

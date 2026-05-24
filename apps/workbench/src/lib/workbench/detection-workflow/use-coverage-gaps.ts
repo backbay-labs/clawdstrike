@@ -15,6 +15,7 @@ import {
   rankGaps,
   suppressNoisyGaps,
 } from "./coverage-gap-engine";
+import { logger } from "@/lib/logger";
 
 export interface UseCoverageGapsResult {
   /** Ranked, deduplicated gap candidates. */
@@ -58,7 +59,7 @@ export function useCoverageGaps(
       try {
         localStorage.setItem(storageKey, JSON.stringify([...ids]));
       } catch (error) {
-        console.warn("[use-coverage-gaps] Failed to persist dismissed coverage gaps:", error);
+        logger.warn("[use-coverage-gaps] Failed to persist dismissed coverage gaps:", error);
       }
     },
     [storageKey],

@@ -17,6 +17,7 @@ import {
   MAX_STRUCTURED_EVENT_SIZE,
   MAX_BYTE_SAMPLE_SIZE,
 } from "./evidence-redaction";
+import { logger } from "@/lib/logger";
 
 // ---- Import validation types ----
 
@@ -78,7 +79,7 @@ export function useEvidencePacks(
           return result[0].id;
         });
       } catch (err) {
-        console.error("[use-evidence-packs] Failed to load packs:", err);
+        logger.error("[use-evidence-packs] Failed to load packs:", err);
         if (!cancelled) {
           setPacks([]);
           setSelectedPackId(null);

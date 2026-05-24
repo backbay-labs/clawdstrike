@@ -12,6 +12,7 @@ import {
   ingestAuditEvent as pipelineIngestAuditEvent,
   evictExpiredSignals as pipelineEvictExpired,
 } from "@/lib/workbench/signal-pipeline";
+import { logger } from "@/lib/logger";
 
 export interface SignalState {
   signals: Signal[];
@@ -102,7 +103,7 @@ async function persistSignalsToIdb(signals: Signal[]): Promise<void> {
       };
     });
   } catch (e) {
-    console.error("[signal-store] persistSignalsToIdb failed:", e);
+    logger.error("[signal-store] persistSignalsToIdb failed:", e);
   }
 }
 
@@ -134,7 +135,7 @@ async function loadSignalsFromIdb(): Promise<Signal[]> {
       };
     });
   } catch (e) {
-    console.warn("[signal-store] loadSignalsFromIdb failed:", e);
+    logger.warn("[signal-store] loadSignalsFromIdb failed:", e);
     return [];
   }
 }
@@ -155,7 +156,7 @@ async function clearSignalIdb(): Promise<void> {
       };
     });
   } catch (e) {
-    console.warn("[signal-store] clearSignalIdb failed:", e);
+    logger.warn("[signal-store] clearSignalIdb failed:", e);
   }
 }
 

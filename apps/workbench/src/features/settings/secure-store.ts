@@ -1,4 +1,5 @@
 import { isDesktop } from "@/lib/tauri-bridge";
+import { logger } from "@/lib/logger";
 
 async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -22,7 +23,7 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
 //    callers should be aware they are stored in plaintext and visible to same-
 //    origin scripts.
 //
-// A console.warn is emitted the first time any key hits either fallback path so
+// A logger.warn is emitted the first time any key hits either fallback path so
 // that operators can diagnose missing Stronghold support in production.
 // ---------------------------------------------------------------------------
 
@@ -72,12 +73,12 @@ function warnInMemoryFallback(key: string, sensitive: boolean): void {
   if (warnedFallback.has(key)) return;
   warnedFallback.add(key);
   if (sensitive) {
-    console.warn(
+    logger.warn(
       `[secure-store] Stronghold unavailable; sensitive key "${key}" is using in-memory fallback (not persisted). ` +
       `The value will be lost when this tab closes.`,
     );
   } else {
-    console.warn(
+    logger.warn(
       `[secure-store] Stronghold unavailable; key "${key}" is using in-memory fallback (not persisted).`,
     );
   }
@@ -86,7 +87,7 @@ function warnInMemoryFallback(key: string, sensitive: boolean): void {
 function warnSessionStorageFallback(key: string): void {
   if (warnedFallback.has(key)) return;
   warnedFallback.add(key);
-  console.warn(
+  logger.warn(
     `[secure-store] Stronghold unavailable; key "${key}" is falling back to sessionStorage (plaintext, same-origin accessible).`,
   );
 }
@@ -101,7 +102,7 @@ async function ensureStronghold(): Promise<boolean> {
       tauriInvoke<boolean>("init_stronghold"),
       new Promise<boolean>((resolve) => {
         timeoutId = setTimeout(() => {
-          console.warn("[secure-store] Stronghold init timed out after 5s, using degraded fallback storage");
+          logger.warn("[secure-store] Stronghold init timed out after 5s, using degraded fallback storage");
           resolve(false);
         }, 5000);
       }),
@@ -113,7 +114,7 @@ async function ensureStronghold(): Promise<boolean> {
       return result;
     }).catch((err) => {
       if (timeoutId !== null) clearTimeout(timeoutId);
-      console.error("[secure-store] Stronghold init failed:", err);
+      logger.error("[secure-store] Stronghold init failed:", err);
       strongholdReady = null;
       return false;
     });
@@ -244,7 +245,7 @@ export async function migrateCredentialsToStronghold(): Promise<void> {
         migrated++;
       }
     } catch (err) {
-      console.warn(
+      logger.warn(
         `[secure-store] Migration failed for ${lsKey}:`,
         err,
       );
@@ -252,7 +253,7 @@ export async function migrateCredentialsToStronghold(): Promise<void> {
   }
 
   if (migrated > 0) {
-    console.info(
+    logger.info(
       `[secure-store] Migrated ${migrated} credential(s) from localStorage to Stronghold.`,
     );
   }

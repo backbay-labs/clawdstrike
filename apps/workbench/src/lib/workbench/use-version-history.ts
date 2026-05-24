@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getVersionStore, type PolicyVersion } from "./version-store";
 import { diffVersions, type VersionDiff } from "./version-diff";
 import type { WorkbenchPolicy } from "./types";
+import { logger } from "@/lib/logger";
 
 const PAGE_SIZE = 20;
 const MAX_VERSIONS = 200;
@@ -21,7 +22,7 @@ export function useVersionHistory(policyId: string | undefined) {
     storeRef.current.init().then(() => {
       if (!cancelled) setInitialized(true);
     }).catch((err) => {
-      console.error("[use-version-history] Failed to init store:", err);
+      logger.error("[use-version-history] Failed to init store:", err);
       if (!cancelled) setInitialized(true); // still mark initialized to avoid hanging
     });
     return () => { cancelled = true; };
@@ -48,7 +49,7 @@ export function useVersionHistory(policyId: string | undefined) {
         offsetRef.current = versionList.length;
       })
       .catch((err) => {
-        console.error("[use-version-history] Failed to load versions:", err);
+        logger.error("[use-version-history] Failed to load versions:", err);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -72,7 +73,7 @@ export function useVersionHistory(policyId: string | undefined) {
         setHasMore(currentOffset + moreVersions.length < totalCount);
       })
       .catch((err) => {
-        console.error("[use-version-history] Failed to load more:", err);
+        logger.error("[use-version-history] Failed to load more:", err);
       })
       .finally(() => {
         setLoading(false);
@@ -102,7 +103,7 @@ export function useVersionHistory(policyId: string | undefined) {
 
         return version;
       } catch (err) {
-        console.error("[use-version-history] Failed to save version:", err);
+        logger.error("[use-version-history] Failed to save version:", err);
         return null;
       }
     },

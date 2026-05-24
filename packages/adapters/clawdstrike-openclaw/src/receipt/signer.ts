@@ -92,18 +92,99 @@ export class ReceiptSigner {
   /**
    * Verify a receipt signature.
    *
-   * Unsigned receipts are development artifacts, not verified attestations.
-   * Callers that need legacy local-dev behavior must opt in explicitly.
+   * Fail-closed behavior:
+   *   - Unsigned receipts return `false` unless the caller explicitly opts
+   *     into `allowUnsignedDevReceipts: true` (intended for local dev only).
+   *   - Signed receipts return `false` (or throw when `strict: true`) unless
+   *     the caller supplies a `verifySignature` callback that performs the
+   *     actual Ed25519 verification against a trusted public key resolved
+   *     from `keyId`.
+   *
+   * This adapter intentionally does not embed a crypto backend; production
+   * callers should wire `verifySignature` to `@clawdstrike/sdk`'s
+   * `verifySignature` (or an equivalent KMS-backed verifier).
    */
   static verify(receipt: DecisionReceipt, options: ReceiptVerifyOptions = {}): boolean {
+    if (receipt.signature === null) {
+      // Unsigned: never a verified attestation. Honor the explicit dev opt-in
+      // but default to fail-closed.
+      return options.allowUnsignedDevReceipts === true;
+    }
+
+    const verifier = options.verifySignature;
+    if (!verifier) {
+      if (options.strict === true) {
+        throw new Error(
+          "ReceiptSigner.verify: signed receipt cannot be verified — no verifySignature callback was provided",
+        );
+      }
+      return false;
+    }
+
+    const canonical = canonicalizeReceiptForSignature(receipt);
+    const result = verifier({
+      canonical,
+      signature: receipt.signature,
+      keyId: receipt.keyId ?? "",
+      algorithm: receipt.algorithm,
+    });
+    // Refuse to fail-open on async verifiers: callers must use verifyAsync.
+    if (typeof (result as Promise<boolean>)?.then === "function") {
+      throw new Error(
+        "ReceiptSigner.verify: verifySignature returned a Promise — use verifyAsync for async verifiers",
+      );
+    }
+    return result === true;
+  }
+
+  /**
+   * Async variant of {@link verify}. Required when the supplied
+   * `verifySignature` callback is asynchronous (e.g. KMS-backed).
+   */
+  static async verifyAsync(
+    receipt: DecisionReceipt,
+    options: ReceiptVerifyOptions = {},
+  ): Promise<boolean> {
     if (receipt.signature === null) {
       return options.allowUnsignedDevReceipts === true;
     }
 
-    // TODO: Delegate to hush-wasm Ed25519 verification when available.
-    // For now, signed receipts cannot be verified on the TS side.
-    return false;
+    const verifier = options.verifySignature;
+    if (!verifier) {
+      if (options.strict === true) {
+        throw new Error(
+          "ReceiptSigner.verifyAsync: signed receipt cannot be verified — no verifySignature callback was provided",
+        );
+      }
+      return false;
+    }
+
+    const canonical = canonicalizeReceiptForSignature(receipt);
+    const result = await verifier({
+      canonical,
+      signature: receipt.signature,
+      keyId: receipt.keyId ?? "",
+      algorithm: receipt.algorithm,
+    });
+    return result === true;
   }
+}
+
+/**
+ * Compute the canonical signing input for a receipt — all fields except
+ * the signature itself (which is what the signer would have signed).
+ */
+function canonicalizeReceiptForSignature(receipt: DecisionReceipt): string {
+  const envelope: Omit<DecisionReceipt, "signature"> = {
+    id: receipt.id,
+    timestamp: receipt.timestamp,
+    policyHash: receipt.policyHash,
+    decision: receipt.decision,
+    event: receipt.event,
+    algorithm: receipt.algorithm,
+    keyId: receipt.keyId,
+  };
+  return JSON.stringify(sortKeys(envelope));
 }
 
 /**

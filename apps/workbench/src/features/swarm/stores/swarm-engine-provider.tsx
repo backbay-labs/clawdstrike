@@ -23,7 +23,7 @@ import {
   type GuardedAction,
   type SwarmEngineEventMap,
   type SwarmOrchestratorConfig,
-} from "@clawdstrike/swarm-engine";
+} from "@/features/swarm/engine";
 import type { SwarmBoardNodeData } from "../swarm-board-types";
 import {
   useSwarmBoardStore,
@@ -32,15 +32,10 @@ import {
   type SpawnWorktreeSessionOptions,
 } from "./swarm-board-store";
 import { workbenchGuardEvaluator } from "./workbench-guard-evaluator";
+import { logger } from "@/lib/logger";
 
 export interface SwarmEngineContextValue {
   engine: SwarmOrchestrator | null;
-  /** @deprecated Use engine.getState().agents instead. Kept for migration. */
-  agentRegistry: AgentRegistry | null;
-  /** @deprecated Use engine.getState().tasks instead. Kept for migration. */
-  taskGraph: TaskGraph | null;
-  /** @deprecated Use engine.getState().topology instead. Kept for migration. */
-  topology: TopologyManager | null;
   isReady: boolean;
   mode: "engine" | "manual" | "error";
   error: string | null;
@@ -100,9 +95,6 @@ const WORKBENCH_CONFIG: SwarmOrchestratorConfig = {
 
 const MANUAL_CONTEXT_STATE: SwarmEngineContextState = {
   engine: null,
-  agentRegistry: null,
-  taskGraph: null,
-  topology: null,
   isReady: false,
   mode: "manual",
   error: null,
@@ -221,9 +213,6 @@ export function SwarmEngineProvider({
       engineRef.current = orchestrator;
       setContextState({
         engine: orchestrator,
-        agentRegistry: registry,
-        taskGraph,
-        topology: topologyMgr,
         isReady: true,
         mode: "engine",
         error: null,
@@ -233,16 +222,13 @@ export function SwarmEngineProvider({
       orchestrator = null;
       if (cancelled) return;
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(
+      logger.warn(
         "[SwarmEngineProvider] Engine init failed, falling back to manual mode:",
         message,
       );
       engineRef.current = null;
       setContextState({
         engine: null,
-        agentRegistry: null,
-        taskGraph: null,
-        topology: null,
         isReady: false,
         mode: "error",
         error: message,
@@ -294,7 +280,7 @@ export function SwarmEngineProvider({
         const message =
           guardErr instanceof Error ? guardErr.message : String(guardErr);
         const { actions } = useSwarmBoardStore.getState();
-        console.warn(
+        logger.warn(
           "[SwarmEngineProvider] Guard evaluation failed; denying spawn:",
           message,
         );

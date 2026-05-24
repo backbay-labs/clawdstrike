@@ -7,17 +7,20 @@
 
 import type { CryptoBackend } from "./backend";
 import { fromHex, toHex } from "./hash";
+import type { HushWasmFreeFunctions } from "../types/wasm.js";
 
-interface WasmModule {
-  hash_sha256_bytes(data: Uint8Array): Uint8Array;
-  hash_keccak256_bytes(data: Uint8Array): Uint8Array;
-  generate_keypair(): { privateKey: string; publicKey: string };
-  sign_ed25519(privateKeyHex: string, message: Uint8Array): string;
-  verify_ed25519(publicKeyHex: string, message: Uint8Array, signatureHex: string): boolean;
-  public_key_from_private(privateKeyHex: string): string;
-}
+/** Subset of HushWasmModule used by the crypto backend. */
+export type CryptoWasmModule = Pick<
+  HushWasmFreeFunctions,
+  | "hash_sha256_bytes"
+  | "hash_keccak256_bytes"
+  | "generate_keypair"
+  | "sign_ed25519"
+  | "verify_ed25519"
+  | "public_key_from_private"
+>;
 
-export function createWasmBackend(wasm: WasmModule): CryptoBackend {
+export function createWasmBackend(wasm: CryptoWasmModule): CryptoBackend {
   return {
     name: "wasm",
 
@@ -35,8 +38,14 @@ export function createWasmBackend(wasm: WasmModule): CryptoBackend {
     }> {
       const kp = wasm.generate_keypair();
       // wasm_bindgen serializes Rust structs as JS Maps, not plain objects
-      const privHex = kp instanceof Map ? kp.get("privateKey") : kp.privateKey;
-      const pubHex = kp instanceof Map ? kp.get("publicKey") : kp.publicKey;
+      const privHex =
+        kp instanceof Map
+          ? (kp.get("privateKey") ?? "")
+          : kp.privateKey;
+      const pubHex =
+        kp instanceof Map
+          ? (kp.get("publicKey") ?? "")
+          : kp.publicKey;
       return {
         privateKey: fromHex(privHex),
         publicKey: fromHex(pubHex),

@@ -221,6 +221,7 @@ async fn register_agent_rollback_clears_endpoint_hierarchy_link_on_provision_fai
             stale_check_interval_secs: 60,
             stale_threshold_secs: 120,
             dead_threshold_secs: 300,
+            cors: crate::config::CorsConfig::default(),
         },
         db: harness.db.clone(),
         nats: harness.nats.clone(),

@@ -32,6 +32,7 @@ jobs:
   # Build job
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -60,6 +61,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build
     steps:
       - name: Deploy to GitHub Pages
@@ -69,6 +71,7 @@ jobs:
   # Link checker (runs in parallel)
   linkcheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6

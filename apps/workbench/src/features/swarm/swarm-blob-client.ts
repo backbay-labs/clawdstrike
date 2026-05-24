@@ -249,8 +249,11 @@ export async function requestSwarmBlobPin(
 }
 
 export async function hashRawBytesSha256(bytes: Uint8Array): Promise<ProtocolDigest> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Bun/@types mismatch
-  const digestBuffer = await crypto.subtle.digest("SHA-256", bytes as any);
+  // Copy into a fresh ArrayBuffer-backed Uint8Array so SubtleCrypto accepts
+  // it as a BufferSource (avoids SharedArrayBuffer-typed inputs).
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const digestBuffer = await crypto.subtle.digest("SHA-256", copy);
   const digest = Array.from(new Uint8Array(digestBuffer))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");

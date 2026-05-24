@@ -38,6 +38,7 @@ import {
   registerHuntronomerCommands,
 } from "./index";
 import { ShortcutHelpDialog } from "@/components/desktop/shortcut-help-dialog";
+import { logger } from "@/lib/logger";
 
 /**
  * Component that initializes all commands and manages the shortcut help dialog.
@@ -104,7 +105,7 @@ export function InitCommands() {
       );
       pushRecentFile(result.path);
     } catch (err) {
-      console.error("[init-commands] Failed to open file:", err);
+      logger.error("[init-commands] Failed to open file:", err);
     }
   }, []);
 
@@ -131,7 +132,7 @@ export function InitCommands() {
       usePolicyTabsStore.getState().setDirty(activeTabId, false);
       pushRecentFile(savedPath);
     } catch (err) {
-      console.error("[init-commands] Failed to save file:", err);
+      logger.error("[init-commands] Failed to save file:", err);
     }
   }, [exportYaml]);
 
@@ -158,7 +159,7 @@ export function InitCommands() {
         await saveFileAs();
       }
     } catch (err) {
-      console.error("[init-commands] Failed to save file:", err);
+      logger.error("[init-commands] Failed to save file:", err);
     }
   }, [exportYaml, saveFileAs]);
 

@@ -9,6 +9,7 @@
 import type { EvidencePack, EvidenceDatasetKind, EvidenceItem } from "./shared-types";
 import { createEmptyDatasets } from "./shared-types";
 import { redactEvidencePack } from "./evidence-redaction";
+import { logger } from "@/lib/logger";
 
 const DB_NAME = "clawdstrike_evidence_packs";
 const DB_VERSION = 1;
@@ -59,7 +60,7 @@ export class EvidencePackStore {
     try {
       this.db = await openDB();
     } catch (err) {
-      console.error("[evidence-pack-store] Failed to open IndexedDB:", err);
+      logger.error("[evidence-pack-store] Failed to open IndexedDB:", err);
     }
   }
 

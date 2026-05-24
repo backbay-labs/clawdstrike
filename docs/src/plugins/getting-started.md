@@ -9,13 +9,21 @@ This guide walks you through creating, building, testing, and loading your first
 
 ## Step 1: Scaffold the project
 
-Use the `create-plugin` scaffolding tool to generate a new plugin project:
+Use the `@clawdstrike/create-plugin` scaffolding tool to generate a new plugin project. The interactive flow walks you through the available options:
 
-```typescript,ignore
-npm create @clawdstrike/plugin my-first-plugin --type guard
+```bash
+npm init @clawdstrike/plugin@latest my-first-plugin
+```
+
+To skip the interactive prompts (e.g. in CI), pass `--non-interactive` along with the desired flags. Anything after `--` is forwarded to the scaffolder:
+
+```bash
+npm init @clawdstrike/plugin@latest my-first-plugin -- --type guard --non-interactive
 ```
 
 This creates a `my-first-plugin/` directory with a complete project structure.
+
+> Note: `npm init @clawdstrike/plugin` is npm's shorthand for `npm exec @clawdstrike/create-plugin` — the underlying package is `@clawdstrike/create-plugin`. The `npm create ...` alias works the same way.
 
 ## Step 2: Project structure
 
@@ -90,7 +98,7 @@ Key manifest fields:
 
 - **id**: Reverse-domain identifier for your plugin (must be unique).
 - **name**: Package name (kebab-case).
-- **trust**: Loading strategy. Use `"community"` for third-party plugins.
+- **trust**: Loading strategy. Use `"community"` for third-party plugins. The `"internal"` tier is reserved for first-party plugins that ship inside the workbench. The `"mcp"` tier is reserved for future MCP-bridged plugins and is **not currently loadable** — it is part of the type surface but no loader implementation is wired up yet.
 - **activationEvents**: When the plugin should be activated. `"onStartup"` activates immediately.
 - **contributions**: Declares what the plugin contributes (guards, commands, file types, etc.).
 

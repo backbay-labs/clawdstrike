@@ -1,4 +1,7 @@
 {
+  "name": "clawdstrike-workspace",
+  "version": "0.0.0",
+  "packageManager": "npm@10.9.0",
   "private": true,
   "scripts": {
     "format": "biome check --write",
@@ -27,7 +30,7 @@
     "packages/sdk/clawdstrike-hunt",
     "packages/sdk/plugin-sdk",
     "packages/cli/create-plugin",
-    "packages/swarm-engine"
+    "packages/dev/vite-plugin-clawdstrike"
   ],
   "devDependencies": {
     "@biomejs/biome": "^2.4.4"

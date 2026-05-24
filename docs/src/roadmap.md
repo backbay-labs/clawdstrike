@@ -630,7 +630,7 @@ The roadmap is open. If you want to work on any of these initiatives:
 2. Comment on the relevant issue to signal interest
 3. For new guard contributions, start with the [Custom Guards guide](guides/custom-guards.md)
 4. For policy pack contributions, see the [Certification Program overview](https://github.com/backbay-labs/clawdstrike/blob/main/docs/plans/certification/overview.md)
-5. Join the [Discord](https://discord.gg/clawdstrike) `#contributors` channel
+5. Join the [Discord](https://discord.gg/fdbCZHm8zM) `#contributors` channel
 
 **Every contribution that touches the guard pipeline must include:**
 - Tests (unit + integration against fixture actions)
