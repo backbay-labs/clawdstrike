@@ -698,7 +698,7 @@ Clawdstrike policies are versioned, deterministic policy-as-code artifacts desig
 
 | Capability | What You Get |
 | ---------- | ------------ |
-| **Versioned schema** | Explicit `1.1.0` / `1.2.0` policy versions with strict validation and unknown-field rejection |
+| **Versioned schema** | Supported policy versions `1.1.0`-`1.5.0` (current: `1.5.0`) with strict validation and unknown-field rejection |
 | **Composable inheritance** | `extends` from built-ins, local files, and remote refs to build layered policy stacks |
 | **Secure remote composition** | Remote `extends` is disabled by default, host-allowlisted, and integrity-pinned via `#sha256=<64-hex>` |
 | **Controlled merges** | `replace`, `merge`, and `deep_merge` strategies for predictable override behavior |

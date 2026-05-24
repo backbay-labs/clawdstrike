@@ -64,7 +64,7 @@ Run each of the following 6 checks in order. For each check, report PASS or FAIL
 
 **Remediation on failure**:
 - Review the lint errors -- they indicate specific schema violations
-- Check `schema_version` matches the expected format (e.g., "1.2.0")
+- Check the `version` field matches a supported schema (`1.1.0`-`1.5.0`; current is `1.5.0`)
 - Validate guard names are spelled correctly
 - Ensure required fields are present for each guard configuration
 
@@ -112,7 +112,7 @@ ClawdStrike Self-Test Results
 
 [PASS] CLI Binary          - clawdstrike v0.1.x
 [PASS] hushd Connectivity  - Connected
-[PASS] Policy Load         - schema v1.2.0, 6 guards active
+[PASS] Policy Load         - schema v1.5.0, 6 guards active
 [FAIL] Policy Lint         - 2 errors found
 [PASS] MCP Tool Ping       - policy_eval responded in Xms
 [PASS] Receipt Directory   - ~/.clawdstrike/receipts writable

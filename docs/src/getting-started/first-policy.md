@@ -2,12 +2,12 @@
 
 Policies are YAML files parsed into `clawdstrike::Policy`. They configure the built-in guards under `guards.*` and engine settings under `settings.*`.
 
-Policy schema `1.2.0` is current. Posture is optional.
+Policy schema `1.5.0` is current; versions `1.1.0`-`1.5.0` are supported. Posture is optional.
 
 ## Minimal policy (inherit a ruleset)
 
 ```yaml
-version: "1.2.0"
+version: "1.5.0"
 name: My Policy
 extends: clawdstrike:default
 ```

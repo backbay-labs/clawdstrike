@@ -7,7 +7,7 @@ This is the main Rust library crate for the Clawdstrike system. It provides secu
 ## Features
 
 - **Security guards** -- ForbiddenPath, PathAllowlist, EgressAllowlist, SecretLeak, PatchIntegrity, McpTool, PromptInjection, Jailbreak
-- **Policy engine** -- YAML-based policy configuration (schema v1.2.0) with inheritance via `extends`
+- **Policy engine** -- YAML-based policy configuration (schema v1.5.0, backward-compatible with v1.1.0) with inheritance via `extends`
 - **Receipt signing** -- Ed25519-signed attestations of decisions, policies, and evidence
 - **Jailbreak detection** -- Multi-layer detection (heuristic, statistical, ML, optional LLM judge)
 - **Prompt hygiene** -- Instruction hierarchy enforcement, prompt injection detection
@@ -38,7 +38,7 @@ let matches = secret_guard.scan(b"api_key = sk-1234567890abcdef");
 use clawdstrike::Policy;
 
 let yaml = r#"
-version: "1.2.0"
+version: "1.5.0"
 name: "example"
 settings:
   fail_fast: true
