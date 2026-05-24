@@ -20,7 +20,32 @@ pub struct Config {
     pub max_upload_bytes: usize,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            host: "0.0.0.0".to_string(),
+            port: 3100,
+            data_dir: PathBuf::from("."),
+            api_key: String::new(),
+            allow_insecure_no_auth: false,
+            max_upload_bytes: 50 * 1024 * 1024,
+        }
+    }
+}
+
 impl Config {
+    /// Refuse to start when the API key is unset unless the operator has
+    /// explicitly opted into insecure mode via `allow_insecure_no_auth`.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.api_key.trim().is_empty() && !self.allow_insecure_no_auth {
+            anyhow::bail!(
+                "CLAWDSTRIKE_REGISTRY_API_KEY is unset; refuse to start. \
+                 Set the API key, or set CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH=true to opt in."
+            );
+        }
+        Ok(())
+    }
+
     /// Load configuration from environment variables.
     pub fn from_env() -> anyhow::Result<Self> {
         let host = std::env::var("CLAWDSTRIKE_REGISTRY_HOST").unwrap_or_else(|_| "0.0.0.0".into());
@@ -46,14 +71,16 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .unwrap_or(50 * 1024 * 1024);
 
-        Ok(Self {
+        let config = Self {
             host,
             port,
             data_dir,
             api_key,
             allow_insecure_no_auth,
             max_upload_bytes,
-        })
+        };
+        config.validate()?;
+        Ok(config)
     }
 
     pub fn db_path(&self) -> PathBuf {
@@ -108,6 +135,34 @@ mod tests {
         assert_eq!(config.blob_dir(), PathBuf::from("/tmp/registry/blobs"));
         assert_eq!(config.index_dir(), PathBuf::from("/tmp/registry/index"));
         assert_eq!(config.keys_dir(), PathBuf::from("/tmp/registry/keys"));
+    }
+
+    #[test]
+    fn validate_rejects_empty_api_key_without_insecure_opt_in() {
+        let config = Config {
+            api_key: String::new(),
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_allows_empty_api_key_when_insecure_opt_in_set() {
+        let config = Config {
+            api_key: String::new(),
+            allow_insecure_no_auth: true,
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_non_empty_api_key() {
+        let config = Config {
+            api_key: "secret".to_string(),
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok());
     }
 
     #[test]
