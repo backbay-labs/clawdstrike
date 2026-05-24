@@ -1,7 +1,0 @@
-#!/bin/bash
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
-set -eo pipefail
-
-cargo xtask pre-push

@@ -1,7 +1,0 @@
-Document:
-  - Element:
-      tag_name: svg@http://www.w3.org/2000/svg
-      attributes:
-        a: "b"
-      namespaces:
-        None: http://www.w3.org/2000/svg

@@ -1,4 +1,0 @@
-<!DOCTYPE test [
-    <!ENTITY v 'b'>
-]>
-<p a='&v;'/>

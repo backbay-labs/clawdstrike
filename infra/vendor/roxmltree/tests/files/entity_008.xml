@@ -1,4 +1,0 @@
-<!DOCTYPE test [
-    <!ENTITY p '   <p/>   '>
-]>
-<root>&p;</root>

@@ -1,2 +1,0 @@
-[target.wasm32-wasi]
-runner = "wasmtime run --wasm-features all --dir ."

@@ -1,6 +1,0 @@
-Document:
-  - Element:
-      tag_name: p@http://www.w3.org
-      namespaces:
-        None: http://www.w3.org
-        t: http://www.w3.org

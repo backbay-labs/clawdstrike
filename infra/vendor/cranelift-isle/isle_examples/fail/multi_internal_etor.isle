@@ -1,2 +1,0 @@
-(decl multi A (u32) u32)
-(extractor (A x) x)
