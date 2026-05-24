@@ -5,7 +5,8 @@ use std::path::PathBuf;
 /// Registry service configuration.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// Listen host (default: 0.0.0.0).
+    /// Listen host. Defaults to localhost (127.0.0.1); set to 0.0.0.0 explicitly
+    /// to accept connections from any interface.
     pub host: String,
     /// Listen port (default: 3100).
     pub port: u16,
@@ -23,7 +24,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0".to_string(),
+            host: "127.0.0.1".to_string(),
             port: 3100,
             data_dir: PathBuf::from("."),
             api_key: String::new(),
@@ -48,7 +49,7 @@ impl Config {
 
     /// Load configuration from environment variables.
     pub fn from_env() -> anyhow::Result<Self> {
-        let host = std::env::var("CLAWDSTRIKE_REGISTRY_HOST").unwrap_or_else(|_| "0.0.0.0".into());
+        let host = std::env::var("CLAWDSTRIKE_REGISTRY_HOST").unwrap_or_else(|_| "127.0.0.1".into());
         let port: u16 = std::env::var("CLAWDSTRIKE_REGISTRY_PORT")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -163,6 +164,12 @@ mod tests {
             ..Default::default()
         };
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn default_host_binds_localhost() {
+        let config = Config::default();
+        assert_eq!(config.host, "127.0.0.1");
     }
 
     #[test]
