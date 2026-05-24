@@ -95,15 +95,28 @@ pub struct ApiKeyConfig {
 }
 
 /// Authentication configuration
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
     /// Whether authentication is required for API endpoints
-    #[serde(default)]
+    #[serde(default = "default_auth_enabled")]
     pub enabled: bool,
     /// API keys
     #[serde(default)]
     pub api_keys: Vec<ApiKeyConfig>,
+}
+
+fn default_auth_enabled() -> bool {
+    true
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_auth_enabled(),
+            api_keys: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1695,7 +1708,7 @@ log_level = "debug"
     #[test]
     fn test_auth_config_default() {
         let config = Config::default();
-        assert!(!config.auth.enabled);
+        assert!(config.auth.enabled);
         assert!(config.auth.api_keys.is_empty());
     }
 
