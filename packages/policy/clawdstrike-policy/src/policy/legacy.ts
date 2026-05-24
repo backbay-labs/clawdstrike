@@ -194,7 +194,13 @@ function narrow(legacy: LegacyOpenClawPolicyV1): NarrowedLegacy {
 
 function stringArrayOrUndefined(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  return value.filter((v): v is string => typeof v === "string");
+  // Fail-closed: a mixed-type array (e.g. allowed_domains: ["api.github.com", 42])
+  // rejects the whole list. Returning the filtered subset would silently trust
+  // the well-formed entries, turning a malformed allowlist into a partial
+  // allowlist. Each caller treats `undefined` as "absent", which downstream
+  // collapses to an empty `[]` and the strictest default_action.
+  if (!value.every((v): v is string => typeof v === "string")) return undefined;
+  return value;
 }
 
 function attachDebugPassthrough(policy: Policy, legacy: LegacyOpenClawPolicyV1): void {
