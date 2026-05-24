@@ -28,7 +28,7 @@ describe("wrapLanguageModel", () => {
       }),
     };
 
-    const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+    const wrapLanguageModel = vi.fn(({ model, middleware }) => ({
       ...model,
       doGenerate: (params: any) =>
         middleware.wrapGenerate({
@@ -41,7 +41,7 @@ describe("wrapLanguageModel", () => {
     const security = createClawdstrikeMiddleware({
       engine,
       config: { blockOnViolation: true },
-      aiSdk: { experimental_wrapLanguageModel },
+      aiSdk: { wrapLanguageModel },
     });
 
     const baseModel = {
@@ -58,7 +58,7 @@ describe("wrapLanguageModel", () => {
       ClawdstrikeBlockedError,
     );
 
-    expect(experimental_wrapLanguageModel).toHaveBeenCalledTimes(1);
+    expect(wrapLanguageModel).toHaveBeenCalledTimes(1);
   });
 
   it("wraps doStream and uses StreamingToolGuard when enabled", async () => {
@@ -69,7 +69,7 @@ describe("wrapLanguageModel", () => {
       }),
     };
 
-    const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+    const wrapLanguageModel = vi.fn(({ model, middleware }) => ({
       ...model,
       doStream: (params: any) =>
         middleware.wrapStream({
@@ -82,7 +82,7 @@ describe("wrapLanguageModel", () => {
     const security = createClawdstrikeMiddleware({
       engine,
       config: { blockOnViolation: true, streamingEvaluation: true },
-      aiSdk: { experimental_wrapLanguageModel },
+      aiSdk: { wrapLanguageModel },
     });
 
     const baseModel = {
@@ -133,7 +133,7 @@ describe("wrapLanguageModel", () => {
       evaluate: () => ({ allowed: true, denied: false, warn: false }),
     };
 
-    const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+    const wrapLanguageModel = vi.fn(({ model, middleware }) => ({
       ...model,
       doGenerate: (params: any) =>
         middleware.wrapGenerate({
@@ -155,7 +155,7 @@ describe("wrapLanguageModel", () => {
           watermarking: { enabled: false },
         },
       },
-      aiSdk: { experimental_wrapLanguageModel },
+      aiSdk: { wrapLanguageModel },
     });
 
     const baseModel = {
@@ -185,7 +185,7 @@ describe("wrapLanguageModel", () => {
         evaluate: () => ({ allowed: true, denied: false, warn: false }),
       };
 
-      const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+      const wrapLanguageModel = vi.fn(({ model, middleware }) => ({
         ...model,
         doGenerate: (params: any) =>
           middleware.wrapGenerate({
@@ -207,7 +207,7 @@ describe("wrapLanguageModel", () => {
             outputSanitization: { enabled: true },
           },
         },
-        aiSdk: { experimental_wrapLanguageModel },
+        aiSdk: { wrapLanguageModel },
       });
 
       const key = `sk-${"a".repeat(48)}`;
@@ -236,7 +236,7 @@ describe("wrapLanguageModel", () => {
         evaluate: () => ({ allowed: true, denied: false, warn: false }),
       };
 
-      const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+      const wrapLanguageModel = vi.fn(({ model, middleware }) => ({
         ...model,
         doStream: (params: any) =>
           middleware.wrapStream({
@@ -258,7 +258,7 @@ describe("wrapLanguageModel", () => {
             outputSanitization: { enabled: true },
           },
         },
-        aiSdk: { experimental_wrapLanguageModel },
+        aiSdk: { wrapLanguageModel },
       });
 
       const key = `sk-${"a".repeat(48)}`;
@@ -309,7 +309,7 @@ describe("wrapLanguageModel", () => {
         evaluate: () => ({ allowed: true, denied: false, warn: false }),
       };
 
-      const experimental_wrapLanguageModel = vi.fn(({ model, middleware }) => ({
+      const wrapLanguageModel = vi.fn(({ model, middleware }) => ({
         ...model,
         doStream: (params: any) =>
           middleware.wrapStream({
@@ -331,7 +331,7 @@ describe("wrapLanguageModel", () => {
             outputSanitization: { enabled: true },
           },
         },
-        aiSdk: { experimental_wrapLanguageModel },
+        aiSdk: { wrapLanguageModel },
       });
 
       const key = `sk-${"a".repeat(48)}`;
