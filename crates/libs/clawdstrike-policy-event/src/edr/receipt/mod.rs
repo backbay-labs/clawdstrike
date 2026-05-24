@@ -6,7 +6,7 @@ pub use evidence::*;
 pub use families::*;
 pub use inputs::*;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -21,30 +21,20 @@ use super::{
     actor::{
         EndpointClockState, EndpointDecisionActor, EndpointPolicySnapshot, EndpointReceiptSigner,
     },
-    causal::{CausalGraph, CausalNode},
-    deception::{
-        DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan,
-        DeceptionRotationReport,
-    },
-    detection::{DetectionFinding, DetectionSeverity},
-    event::EndpointObservation,
-    privacy::EndpointTelemetryPrivacyReport,
+    detection::DetectionSeverity,
     response::{
-        EndpointResponseAcknowledgementReport, EndpointResponseControlCorrelation,
-        EndpointResponseExecutionEffect, EndpointResponseExecutionReport,
-        EndpointResponseExecutionStatus, EndpointResponsePlan, EndpointResponseRollbackReport,
+        EndpointResponseControlCorrelation, EndpointResponseExecutionEffect,
+        EndpointResponseExecutionStatus,
     },
     sensor_state::{EndpointProviderState, EndpointSensorState},
     simulation::{
         impact_level_for_score, simulation_action_would_block, simulation_context_evidence_value,
-        EndpointPolicySimulationReport,
     },
 };
 use super::{
     endpoint_decision_actor_content_hash, endpoint_observation_content_hash,
     endpoint_policy_delta_id, endpoint_policy_event_impact_id, endpoint_policy_event_replay_id,
-    endpoint_sensor_state_content_hash, event_target_field, evidence_hash_for_value, finding,
-    stable_id,
+    endpoint_sensor_state_content_hash, event_target_field, stable_id,
 };
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
@@ -2476,54 +2466,6 @@ fn expected_live_response_rollback_ref(
     expected_response_rollback_ref(action, false, response_action_id)
 }
 
-fn telemetry_privacy_report_id_from_values(
-    privacy_mode: &str,
-    raw_artifact_upload_permitted: bool,
-    raw_artifact_approval_id: Option<&str>,
-    raw_artifact_approval_reason_hash: Option<&str>,
-    count_values: [&str; 7],
-) -> String {
-    let privacy_mode_hash = sha256(privacy_mode.as_bytes()).to_hex_prefixed();
-    let raw_permitted = raw_artifact_upload_permitted.to_string();
-    let raw_permitted_hash = sha256(raw_permitted.as_bytes()).to_hex_prefixed();
-    let observation_count_hash = sha256(count_values[0].as_bytes()).to_hex_prefixed();
-    let field_count_hash = sha256(count_values[1].as_bytes()).to_hex_prefixed();
-    let hash_only_count_hash = sha256(count_values[2].as_bytes()).to_hex_prefixed();
-    let metadata_only_count_hash = sha256(count_values[3].as_bytes()).to_hex_prefixed();
-    let redacted_count_hash = sha256(count_values[4].as_bytes()).to_hex_prefixed();
-    let raw_suppressed_count_hash = sha256(count_values[5].as_bytes()).to_hex_prefixed();
-    let local_only_count_hash = sha256(count_values[6].as_bytes()).to_hex_prefixed();
-    let mut evidence_hashes = vec![
-        privacy_mode_hash.as_str(),
-        raw_permitted_hash.as_str(),
-        observation_count_hash.as_str(),
-        field_count_hash.as_str(),
-        hash_only_count_hash.as_str(),
-        metadata_only_count_hash.as_str(),
-        redacted_count_hash.as_str(),
-        raw_suppressed_count_hash.as_str(),
-        local_only_count_hash.as_str(),
-    ];
-    let raw_artifact_approval_id_hash =
-        raw_artifact_approval_id.map(|value| sha256(value.as_bytes()).to_hex_prefixed());
-    let raw_artifact_approval_reason_hash_hash =
-        raw_artifact_approval_reason_hash.map(|value| sha256(value.as_bytes()).to_hex_prefixed());
-    let empty_hash = sha256(b"").to_hex_prefixed();
-    if raw_artifact_upload_permitted {
-        evidence_hashes.push(
-            raw_artifact_approval_id_hash
-                .as_deref()
-                .unwrap_or(empty_hash.as_str()),
-        );
-        evidence_hashes.push(
-            raw_artifact_approval_reason_hash_hash
-                .as_deref()
-                .unwrap_or(empty_hash.as_str()),
-        );
-    }
-    telemetry_privacy_report_id_from_evidence_hashes(evidence_hashes)
-}
-
 fn telemetry_privacy_report_id_from_evidence(
     evidence: &[EndpointReceiptEvidence],
 ) -> Result<String> {
@@ -3004,20 +2946,6 @@ fn response_execution_reason_evidence_hash(evidence: &[EndpointReceiptEvidence])
 struct ResponseExecutionEffectBindingEntry {
     key: String,
     value_hash: String,
-}
-
-fn response_execution_id_from_effects(
-    response_action_id: &str,
-    evidence_bundle_id: &str,
-    effects: &[EndpointResponseExecutionEffect],
-) -> Result<String> {
-    let effect_binding_digest = response_execution_effect_binding_digest_from_effects(effects)?
-        .ok_or_else(|| anyhow!("response execution effect binding requires at least one effect"))?;
-    Ok(response_execution_id_from_effect_digest(
-        response_action_id,
-        evidence_bundle_id,
-        effect_binding_digest.as_str(),
-    ))
 }
 
 fn response_execution_id_from_effect_digest(
@@ -6384,16 +6312,3 @@ fn camel_debug_to_snake(value: &str) -> String {
     out
 }
 
-fn reconstruct_path(from: &str, to: &str, previous: &BTreeMap<String, String>) -> Vec<String> {
-    let mut path = vec![to.to_string()];
-    let mut cursor = to;
-    while let Some(prev) = previous.get(cursor) {
-        path.push(prev.clone());
-        if prev == from {
-            break;
-        }
-        cursor = prev;
-    }
-    path.reverse();
-    path
-}

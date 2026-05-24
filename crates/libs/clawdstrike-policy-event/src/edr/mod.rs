@@ -42,21 +42,19 @@ pub use response::*;
 pub use sensor_state::*;
 pub use simulation::*;
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead as _, BufReader, ErrorKind, Read as _, Seek as _, SeekFrom, Write as _};
+use std::io::Write as _;
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use hush_core::{
-    canonicalize_json, sha256, Hash, Provenance, Receipt, SignedReceipt, Signer, Verdict,
-};
-use serde::{Deserialize, Serialize};
+use hush_core::{canonicalize_json, sha256};
+use serde::Serialize;
 
 use crate::event::{
-    CommandEventData, CustomEventData, FileEventData, NetworkEventData, PolicyEvent,
-    PolicyEventData, PolicyEventType, SecretEventData, ToolEventData,
+    CustomEventData, FileEventData, NetworkEventData, PolicyEvent, PolicyEventData,
+    PolicyEventType,
 };
 
 pub(crate) const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
@@ -64,13 +62,6 @@ pub(crate) const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 pub(crate) const ENDPOINT_FLIGHT_RECORDER_HISTORY_INDEX_SCHEMA_VERSION: u8 = 10;
 pub(crate) const ENDPOINT_FLIGHT_RECORDER_GRAPH_INDEX_SCHEMA_VERSION: u8 = 1;
 pub(crate) const ENDPOINT_FLIGHT_RECORDER_GRAPH_EDGE_INDEX_SCHEMA_VERSION: u8 = 1;
-
-fn canonical_graph_content_hash(graph: &CausalGraph) -> Option<String> {
-    serde_json::to_value(graph)
-        .ok()
-        .and_then(|value| canonicalize_json(&value).ok())
-        .map(|canonical_graph| sha256(canonical_graph.as_bytes()).to_hex_prefixed())
-}
 
 pub(crate) fn endpoint_sensor_state_content_hash(sensor_state: &EndpointSensorState) -> String {
     let value = serde_json::to_value(sensor_state).unwrap_or(serde_json::Value::Null);
@@ -2310,13 +2301,6 @@ fn telemetry_privacy_report_id_from_evidence_hashes<'a>(
     stable_id("telemetry_privacy_report", evidence_hashes)
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ResponseExecutionEffectBindingEntry {
-    key: String,
-    value_hash: String,
-}
-
 fn response_execution_id_from_effects(
     response_action_id: &str,
     evidence_bundle_id: &str,
@@ -2386,6 +2370,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::event::ToolEventData;
 
     static TEMP_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 

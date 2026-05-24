@@ -1,17 +1,14 @@
 pub mod compaction;
 pub mod index;
 
-pub use compaction::*;
-pub use index::*;
-
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead as _, BufReader, ErrorKind, Read as _, Seek as _, SeekFrom, Write as _};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use self::compaction::{
     EndpointFlightRecorderCompactionRecord, EndpointFlightRecorderCompactionReport,
@@ -20,15 +17,12 @@ use self::index::{
     EndpointFlightRecorderGraphEdgeIndexEntry, EndpointFlightRecorderGraphNodeIndexEntry,
     EndpointFlightRecorderHistoryIndexEntry,
 };
-use super::causal::{
-    CausalEdge, CausalEdgeKind, CausalGraph, CausalGraphRecorder, CausalNode, CausalNodeKind,
-};
+use super::causal::{CausalGraph, CausalGraphRecorder};
 use super::event::EndpointObservation;
 use super::{
     agent_id_field, approval_id_field, credential_kind_field, event_target_field,
-    event_target_hash_field, normalize_path_string, observation_age_seconds,
-    process_command_line_hash_field, process_image_hash_field, stable_id, string_field,
-    tool_call_id_field, tool_name_field, workload_id_field,
+    event_target_hash_field, observation_age_seconds, process_command_line_hash_field,
+    process_image_hash_field, tool_call_id_field, tool_name_field, workload_id_field,
     ENDPOINT_FLIGHT_RECORDER_GRAPH_EDGE_INDEX_SCHEMA_VERSION,
     ENDPOINT_FLIGHT_RECORDER_GRAPH_INDEX_SCHEMA_VERSION,
     ENDPOINT_FLIGHT_RECORDER_HISTORY_INDEX_SCHEMA_VERSION,

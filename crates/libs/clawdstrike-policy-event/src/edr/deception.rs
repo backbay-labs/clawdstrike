@@ -1,16 +1,13 @@
-use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::event::{EndpointEvent, EndpointObservation};
 use super::{
     create_new_honey_file, ensure_safe_relative_path, honey_artifact, hostname_from_url_like,
-    normalize_hostname, normalize_path_string, stable_id,
+    normalize_hostname, normalize_path_string,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

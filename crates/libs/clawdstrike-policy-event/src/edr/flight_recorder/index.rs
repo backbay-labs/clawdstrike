@@ -4,9 +4,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::super::causal::node::{CausalEdgeKind, CausalNodeKind};
-use super::super::ENDPOINT_FLIGHT_RECORDER_GRAPH_EDGE_INDEX_SCHEMA_VERSION;
-use super::super::ENDPOINT_FLIGHT_RECORDER_GRAPH_INDEX_SCHEMA_VERSION;
-use super::super::ENDPOINT_FLIGHT_RECORDER_HISTORY_INDEX_SCHEMA_VERSION;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
