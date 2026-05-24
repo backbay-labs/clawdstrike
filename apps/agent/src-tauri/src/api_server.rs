@@ -98,11 +98,16 @@ mod auth;
 mod constants;
 mod daemon_proxy;
 mod edr_paths;
+mod error;
 mod rate_limit;
 mod state;
 mod ui_bootstrap;
 
 pub(crate) use constants::*;
+// `ApiResult` is the long-term return type for migrated handlers; the enum and
+// shim let existing tuple-typed handlers coexist during the gradual migration.
+#[allow(unused_imports)]
+pub(crate) use error::{AgentApiError, ApiResult};
 // `FleetHuntEventPublishFuture` is referenced in tests and by downstream `use
 // crate::api_server::*` glob importers; the re-export is part of the public API.
 #[allow(unused_imports)]
