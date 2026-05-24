@@ -2,7 +2,7 @@
  * Workbench swarm engine — internal port of the former `@clawdstrike/swarm-engine`
  * package. Only the guard-gated spawn + bookkeeping surface is kept; the
  * consensus, HNSW memory, and protocol-bridge subsystems were dropped during
- * the fold per `.audit/wave3/H-swarm-engine-viability.md`.
+ * the fold per a prior viability audit.
  */
 
 export * from "./types";
