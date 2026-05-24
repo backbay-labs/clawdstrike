@@ -549,7 +549,6 @@ export function convertSigmaToPolicy(sigmaYaml: string): SigmaConversionResult {
   const diagnostics: SigmaConversionDiagnostic[] = [];
   const fieldMappings: SigmaFieldMapping[] = [];
 
-  // Step 1: Parse Sigma YAML
   const { rule, errors } = parseSigmaYaml(sigmaYaml);
 
   if (errors.length > 0) {
@@ -569,7 +568,6 @@ export function convertSigmaToPolicy(sigmaYaml: string): SigmaConversionResult {
     };
   }
 
-  // Step 2: Check for missing detection section
   if (!rule.detection || typeof rule.detection !== "object") {
     diagnostics.push({
       severity: "error",
@@ -585,10 +583,8 @@ export function convertSigmaToPolicy(sigmaYaml: string): SigmaConversionResult {
     };
   }
 
-  // Step 3: Determine primary guard from logsource
   const primaryGuard = logsourceToGuard(rule.logsource, diagnostics) ?? "shell_command";
 
-  // Step 4: Initialize guard config accumulators
   const acc: GuardAccumulator = {
     shellCommand: {},
     forbiddenPath: {},
@@ -596,7 +592,6 @@ export function convertSigmaToPolicy(sigmaYaml: string): SigmaConversionResult {
     fieldMappings,
   };
 
-  // Step 5: Extract and process all selection blocks
   const selections = extractSelections(rule.detection as Record<string, unknown>);
 
   if (selections.length === 0) {
@@ -612,7 +607,6 @@ export function convertSigmaToPolicy(sigmaYaml: string): SigmaConversionResult {
     }
   }
 
-  // Step 6: Build guards config
   const guards: GuardConfigMap = {};
 
   if (acc.shellCommand.enabled && acc.shellCommand.forbidden_patterns?.length) {
@@ -641,10 +635,8 @@ export function convertSigmaToPolicy(sigmaYaml: string): SigmaConversionResult {
     });
   }
 
-  // Step 7: Map level to policy mode
   const mode = levelToPolicyMode(rule.level);
 
-  // Step 8: Build description
   const descriptionParts: string[] = [];
   if (rule.description) {
     descriptionParts.push(rule.description);
@@ -655,7 +647,6 @@ export function convertSigmaToPolicy(sigmaYaml: string): SigmaConversionResult {
   }
   const description = descriptionParts.join(" ");
 
-  // Step 9: Construct WorkbenchPolicy
   const policy: WorkbenchPolicy = {
     version: "1.2.0",
     name: rule.title || "Converted Sigma Rule",
@@ -665,7 +656,6 @@ export function convertSigmaToPolicy(sigmaYaml: string): SigmaConversionResult {
     settings: mode.settings,
   };
 
-  // Step 10: Generate YAML
   const policyYaml = policyToYaml(policy);
 
   diagnostics.push({

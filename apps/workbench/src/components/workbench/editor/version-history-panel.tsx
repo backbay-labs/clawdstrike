@@ -142,7 +142,6 @@ export function VersionHistoryPanel({
     return () => document.removeEventListener("mousedown", handler);
   }, [contextMenu]);
 
-  // Save version
   const handleSaveVersion = useCallback(async () => {
     if (!policyId) return;
     const msg = commitMessage.trim() || undefined;
@@ -151,7 +150,6 @@ export function VersionHistoryPanel({
     setShowCommitInput(false);
   }, [policyId, commitMessage, currentYaml, currentPolicy, saveVersion]);
 
-  // Add tag
   const handleAddTag = useCallback(
     async (versionId: string) => {
       if (!tagInput || tagInput.versionId !== versionId) return;
@@ -164,7 +162,6 @@ export function VersionHistoryPanel({
     [tagInput, addTag],
   );
 
-  // Remove tag
   const handleRemoveTag = useCallback(
     async (versionId: string, tag: string) => {
       await removeTag(versionId, tag);
