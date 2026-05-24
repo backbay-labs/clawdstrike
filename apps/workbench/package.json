@@ -65,7 +65,7 @@
     "react-syntax-highlighter": "^16.1.1",
     "sucrase": "^3.35.1",
     "tailwind-merge": "^3.0.0",
-    "three": "^0.183.2",
+    "three": "^0.184.0",
     "wawa-vfx": "^1.2.10",
     "yaml": "^2.7.0",
     "zustand": "^5.0.12"
@@ -83,7 +83,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "@types/three": "^0.183.1",
+    "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^6.0.2",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
