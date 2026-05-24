@@ -13,6 +13,7 @@ import { createSessionSummary } from "./finalize-context.js";
 import { FrameworkToolBoundary } from "./framework-tool-boundary.js";
 import { allowInboundBypass, interceptInboundMessage } from "./inbound-message-interceptor.js";
 import type { ProcessedOutput } from "./interceptor.js";
+import pkg from "../package.json" with { type: "json" };
 
 export function createFrameworkAdapter(
   framework: string,
@@ -24,7 +25,7 @@ export function createFrameworkAdapter(
 
   return {
     name: framework,
-    version: "0.1.1", // TODO: derive from package.json at build time
+    version: pkg.version,
 
     async initialize(newConfig: AdapterConfig): Promise<void> {
       currentConfig = newConfig;

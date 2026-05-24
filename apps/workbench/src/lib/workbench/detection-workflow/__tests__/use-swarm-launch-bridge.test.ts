@@ -11,9 +11,9 @@ import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
 import type { Node } from "@xyflow/react";
 
 // ---------------------------------------------------------------------------
-// We import the non-hook dispatch function and the SWARM_LAUNCH_EVENT
-// constant from use-swarm-launch.ts. The dispatch function is the core
-// logic we're testing; the hook is a thin React wrapper around it.
+// We import the non-hook dispatch function from use-swarm-launch.ts. The
+// dispatch function is the core logic we're testing; the hook is a thin
+// React wrapper around it.
 // ---------------------------------------------------------------------------
 
 // Mock @xyflow/react (required by swarm-board-store transitive import)
@@ -70,8 +70,7 @@ describe("useSwarmLaunch Zustand bridge", () => {
         "addNodeDirect",
       );
 
-      // Dynamic import to get the module-level function
-      // We use a workaround: call the hook's internal logic via the module
+      // Use the testability seam _dispatchSwarmNodes (exported with leading underscore).
       const { _dispatchSwarmNodes } = await import("../use-swarm-launch");
 
       const node1 = makeFakeNode("node-1", "Rule A");
