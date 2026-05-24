@@ -456,12 +456,9 @@ swarm_run_lane_bootstrap() {
       bootstrap_args=(cargo fetch --locked --manifest-path apps/agent/src-tauri/Cargo.toml)
       ;;
     *)
-      printf 'bootstrap %s: %s\n' "$lane" "$bootstrap_preset"
-      (
-        cd "$worktree_path"
-        bash -lc "$bootstrap_preset"
-      )
-      return 0
+      printf 'bootstrap %s: unknown preset %q (allowed: cargo-fetch-locked, cargo-fetch-agent-locked, none)\n' \
+        "$lane" "$bootstrap_preset" >&2
+      return 1
       ;;
   esac
 
