@@ -104,18 +104,15 @@ export async function init(options: InitOptions = {}): Promise<void> {
     telemetryEnabled = true,
   } = options
 
-  // Initialize Beads
   const { Beads } = await import("./beads")
   await Beads.init({ path: beadsPath })
 
-  // Initialize Telemetry
   const { Telemetry } = await import("./telemetry")
   Telemetry.init({
     outputDir: telemetryDir,
     enabled: telemetryEnabled,
   })
 
-  // Initialize Hushd client
   const { Hushd } = await import("./hushd")
   Hushd.init()
 
@@ -130,27 +127,21 @@ export async function shutdown(): Promise<void> {
     return
   }
 
-  // Stop MCP server
   const { MCP } = await import("./mcp")
   await MCP.stop()
 
-  // Reset Beads
   const { Beads } = await import("./beads")
   Beads.reset()
 
-  // Reset Telemetry
   const { Telemetry } = await import("./telemetry")
   Telemetry.reset()
 
-  // Destroy all workcells
   const { Workcell } = await import("./workcell")
   await Workcell.destroyAll()
 
-  // Clear health cache
   const { Health } = await import("./health")
   Health.clearCache()
 
-  // Reset Hushd
   const { Hushd } = await import("./hushd")
   Hushd.reset()
 
