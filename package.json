@@ -26,7 +26,6 @@
     "packages/adapters/clawdstrike-hushd-engine",
     "apps/control-console",
     "apps/workbench",
-    "apps/academy",
     "packages/sdk/clawdstrike-hunt",
     "packages/sdk/plugin-sdk",
     "packages/cli/create-plugin",
