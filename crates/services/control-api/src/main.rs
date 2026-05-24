@@ -19,7 +19,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -305,9 +305,30 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let cors = {
+        let origin_layer = if config.cors_allowed_origins.is_empty() {
+            tracing::warn!(
+                "CORS allowlist empty; all cross-origin requests will be blocked. \
+                 Set CORS_ALLOWED_ORIGINS to enable cross-origin access."
+            );
+            AllowOrigin::list(std::iter::empty::<axum::http::HeaderValue>())
+        } else if config.cors_allowed_origins.iter().any(|o| o == "*") {
+            // tower-http panics if "*" is passed to AllowOrigin::list, so use Any.
+            AllowOrigin::any()
+        } else {
+            let origins: Vec<axum::http::HeaderValue> = config
+                .cors_allowed_origins
+                .iter()
+                .filter_map(|o| o.parse().ok())
+                .collect();
+            AllowOrigin::list(origins)
+        };
+        CorsLayer::new().allow_origin(origin_layer)
+    };
+
     let app = routes::router(state.clone())
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive());
+        .layer(cors);
 
     let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
     tracing::info!(addr = %config.listen_addr, "Listening");

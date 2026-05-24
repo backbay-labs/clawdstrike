@@ -2717,6 +2717,7 @@ async fn create_tenant_rolls_back_when_nats_provisioning_fails() {
     let failing_state = AppState {
         config: Config {
             listen_addr: "127.0.0.1:0".parse().expect("listen addr"),
+            cors_allowed_origins: Vec::new(),
             database_url: "postgres://unused".to_string(),
             nats_url: harness.nats_url.clone(),
             agent_nats_url: harness.nats_url.clone(),
@@ -8595,6 +8596,7 @@ async fn setup_harness() -> Harness {
 
     let config = Config {
         listen_addr: "127.0.0.1:0".parse().expect("listen addr"),
+        cors_allowed_origins: Vec::new(),
         database_url: database_url.clone(),
         nats_url: nats_url.clone(),
         agent_nats_url: nats_url.clone(),
@@ -10174,6 +10176,7 @@ async fn register_agent_rollback_clears_endpoint_hierarchy_link_on_provision_fai
     let failing_state = AppState {
         config: Config {
             listen_addr: "127.0.0.1:0".parse().expect("listen addr"),
+            cors_allowed_origins: Vec::new(),
             database_url: "postgres://unused".to_string(),
             nats_url: harness.nats_url.clone(),
             agent_nats_url: harness.nats_url.clone(),
