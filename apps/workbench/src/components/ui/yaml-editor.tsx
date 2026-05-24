@@ -428,7 +428,6 @@ export function YamlEditor({
   const themeCompartment = useMemo(() => new Compartment(), []);
   const highlightCompartment = useMemo(() => new Compartment(), []);
 
-  // Build the list of extensions (rebuilds when readOnly, fontSize, showLineNumbers, fileType, or detection gutters change)
   // IMPORTANT: accentColor is NOT in this dep array — theme updates go through Compartments below
   const extensions = useMemo<Extension[]>(() => {
     const base: Extension[] = [

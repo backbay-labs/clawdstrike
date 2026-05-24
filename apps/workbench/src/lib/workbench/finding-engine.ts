@@ -824,7 +824,6 @@ export function buildFindingTimeline(
   // Merge with existing timeline entries (from state transitions, enrichments)
   const allEntries = [...entries, ...finding.timeline];
 
-  // Sort chronologically
   allEntries.sort((a, b) => a.timestamp - b.timestamp);
 
   // Deduplicate by refId + type

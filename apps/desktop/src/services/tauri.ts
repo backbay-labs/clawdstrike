@@ -188,7 +188,6 @@ export type WorkflowAction =
 
 export async function listWorkflows(): Promise<Workflow[]> {
   if (!isTauri()) {
-    // Return mock data for browser testing
     return [];
   }
 

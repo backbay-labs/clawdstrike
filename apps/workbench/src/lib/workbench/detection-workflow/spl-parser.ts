@@ -398,7 +398,6 @@ export function matchSplConditions(
       }
     }
 
-    // Apply negation
     if (cond.negated) {
       fieldMatched = !fieldMatched;
     }

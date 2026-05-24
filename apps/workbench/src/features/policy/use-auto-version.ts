@@ -24,7 +24,6 @@ export function useAutoVersion(
   const initRef = useRef(false);
   const storeRef = useRef(getVersionStore());
 
-  // Initialize the store once
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;

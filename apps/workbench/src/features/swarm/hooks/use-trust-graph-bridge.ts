@@ -84,8 +84,6 @@ export function useTrustGraphBridge(
         },
       });
 
-      // Create a handoff edge from the first existing agentSession node
-      // to the new node, representing the trust relationship
       const existingSession = nodes.find(
         (n: Node<SwarmBoardNodeData>) =>
           n.data.nodeType === "agentSession" &&
@@ -109,7 +107,6 @@ export function useTrustGraphBridge(
     ) => {
       const { nodes, actions } = store();
 
-      // Find the node with this memberId
       const node = nodes.find(
         (n: Node<SwarmBoardNodeData>) =>
           n.data.sessionId === event.memberId,

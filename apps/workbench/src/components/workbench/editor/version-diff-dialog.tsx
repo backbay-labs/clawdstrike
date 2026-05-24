@@ -139,7 +139,6 @@ export function VersionDiffDialog({
   const fromYaml = fromId === "__current__" ? currentYaml : fromVersion?.yaml ?? "";
   const toYaml = toId === "__current__" ? currentYaml : toVersion?.yaml ?? "";
 
-  // Compute diff
   const diff = useMemo<VersionDiff | null>(() => {
     if (!fromPolicy || !toPolicy) return null;
     return diffVersions(

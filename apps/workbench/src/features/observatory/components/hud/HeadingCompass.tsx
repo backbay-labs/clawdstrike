@@ -69,10 +69,6 @@ const CARDINALS: Array<{ label: string; deg: number }> = [
 // Tick marks every 30°
 const TICKS: number[] = Array.from({ length: 12 }, (_, i) => i * 30);
 
-// ---------------------------------------------------------------------------
-// Render the inner strip contents (static — rendered once)
-// ---------------------------------------------------------------------------
-
 function CompassStripContents({ offsetX = 0 }: { offsetX?: number }) {
   return (
     <>

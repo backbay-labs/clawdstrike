@@ -107,7 +107,6 @@ pub fn sign_scan_receipt(
         violations: vec![],
     };
 
-    // Build the receipt.
     let receipt = Receipt::new(content_hash, verdict)
         .with_provenance(provenance)
         .with_metadata(serde_json::to_value(&content)?);

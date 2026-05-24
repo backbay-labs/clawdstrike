@@ -111,7 +111,6 @@ export function analyzeCoverage(
   guardConfigs: GuardConfigMap,
   scenarios: TestScenario[],
 ): CoverageReport {
-  // Build a map of guard -> scenario IDs
   const guardScenarioMap = new Map<GuardId, Set<string>>();
   for (const guardId of ALL_GUARD_IDS) {
     guardScenarioMap.set(guardId, new Set());

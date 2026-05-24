@@ -91,7 +91,6 @@ export function CommandPalette() {
     () => commandRegistry.getVersion(),
   );
 
-  // Build the result list: recent (no query) or searched
   const results = useMemo(() => {
     if (!query.trim()) {
       // Show recent commands first (if they still exist), then all commands

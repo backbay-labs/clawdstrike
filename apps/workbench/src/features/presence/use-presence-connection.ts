@@ -53,7 +53,6 @@ export function usePresenceConnection(): void {
       currentHushdUrl = null;
     }
 
-    // Create new PresenceSocket
     presenceSocket = new PresenceSocket({
       hushdUrl,
       getApiKey: () =>

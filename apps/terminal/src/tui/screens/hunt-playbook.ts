@@ -230,7 +230,6 @@ export const huntPlaybookScreen: Screen = {
       return true
     }
 
-    // Run playbook
     if (key === "r") {
       // Reset all steps to pending
       const resetSteps = pb.steps.map((s) => ({ ...s, status: "pending" as const, output: undefined, error: undefined, duration_ms: undefined }))

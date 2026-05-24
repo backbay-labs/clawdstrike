@@ -416,7 +416,6 @@ const yaralAdapter: DetectionWorkflowAdapter = {
       }
     }
 
-    // Build the rule source
     const source = [
       `rule ${ruleName} {`,
       `  meta:`,
@@ -459,7 +458,6 @@ const yaralAdapter: DetectionWorkflowAdapter = {
       datasets.positive.push(item);
     }
 
-    // Add a negative baseline
     if (seed.sourceEventIds.length > 0) {
       const baselineItem: EvidenceItem = {
         id: crypto.randomUUID(),

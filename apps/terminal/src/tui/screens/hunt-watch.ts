@@ -337,7 +337,6 @@ export const huntWatchScreen: Screen = {
       return true
     }
 
-    // Filter cycle
     if (key === "f") {
       const idx = FILTERS.indexOf(w.filter)
       const next = FILTERS[(idx + 1) % FILTERS.length]
@@ -358,7 +357,6 @@ export const huntWatchScreen: Screen = {
       return true
     }
 
-    // Clear log
     if (key === "c") {
       ctx.state.hunt.watch = { ...w, log: clearLog(w.log) }
       ctx.app.render()

@@ -90,7 +90,7 @@ export async function verifyPluginTrust(
     return { trusted: false, reason: "publisher_key_missing" };
   }
 
-  // 5. Build the manifest object that was originally signed (without the signature field)
+  // Strip the signature field before verifying — it was excluded from the signed payload.
   const manifestForVerification = structuredClone(manifest);
   delete (
     manifestForVerification.installation as Partial<InstallationMetadata>

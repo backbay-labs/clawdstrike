@@ -2201,7 +2201,6 @@ export function OriginsPage() {
       library.profiles.length > 0 &&
       !library.profiles.some((p) => p.id === selectedProfileId)
     ) {
-      // Find the index of the previously selected profile to pick a neighbor
       const prevIds = prevProfileIdsRef.current;
       const oldIdx = selectedProfileId ? prevIds.indexOf(selectedProfileId) : -1;
       const nextIdx = Math.min(
@@ -2544,7 +2543,6 @@ export function OriginsPage() {
                 )}
 
               {filteredProfiles.map((profile, idx) => {
-                // Find the real index in the full library for reordering
                 const libraryIndex = library.profiles.findIndex(
                   (p) => p.id === profile.id,
                 );

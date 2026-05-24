@@ -57,7 +57,6 @@ export function usePolicyEvalBoardBridge(
     ) => {
       const { nodes, actions } = store();
 
-      // Find the matching agent session node
       const sessionNode = nodes.find(
         (n: Node<SwarmBoardNodeData>) =>
           n.data.nodeType === "agentSession" &&

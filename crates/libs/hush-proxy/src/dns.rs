@@ -28,7 +28,6 @@ pub fn extract_domain_from_query(packet: &[u8]) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    // Parse the first question
     let mut offset = 12;
     let mut labels = Vec::new();
 

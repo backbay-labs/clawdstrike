@@ -177,7 +177,6 @@ export function findDomainUsage(
   for (const tab of tabs) {
     const matches: CrossRefMatch[] = [];
 
-    // Check egress_allowlist
     const egress = tab.policy.guards.egress_allowlist;
     if (egress) {
       if (egress.allow) {

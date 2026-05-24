@@ -693,7 +693,6 @@ function runForceSimulation(
       n.vy += (height / 2 - n.y) * centerPull * temp;
     }
 
-    // Apply velocities
     for (const n of nodes) {
       n.vx *= damping;
       n.vy *= damping;
@@ -724,7 +723,6 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
     setContainerElement(el);
   }, []);
 
-  // Compute layout
   const layout = useMemo(() => {
     const w = 800;
     const h = 600;

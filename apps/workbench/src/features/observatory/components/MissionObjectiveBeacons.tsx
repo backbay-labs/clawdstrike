@@ -45,7 +45,6 @@ export interface BeaconStation {
 export function getBeaconStations(mission: ObservatoryMissionLoopState): BeaconStation[] {
   const completedSet = new Set(mission.completedObjectiveIds);
 
-  // Find the first non-completed objective's stationId
   const firstActive = mission.objectives.find((o) => !completedSet.has(o.id));
   const activeStationId = firstActive?.stationId ?? null;
 

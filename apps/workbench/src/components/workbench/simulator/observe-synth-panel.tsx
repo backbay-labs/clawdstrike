@@ -402,7 +402,6 @@ export function ObserveSynthPanel() {
     });
   }, [synthResult, editState?.policy, activeTabId, activeTab?.fileType, toast]);
 
-  // Clear all
   const handleClear = useCallback(() => {
     setRawInput("");
     setEvents([]);

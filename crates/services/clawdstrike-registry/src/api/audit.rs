@@ -65,7 +65,6 @@ pub async fn get_audit(
     db.get_package(&name)?
         .ok_or_else(|| RegistryError::NotFound(format!("package not found: {name}")))?;
 
-    // Get all versions (includes yanked flag).
     let versions = db.list_versions(&name)?;
 
     // Build audit events from version history.

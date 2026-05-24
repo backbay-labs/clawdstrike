@@ -344,7 +344,6 @@ impl AuditLedger {
         // Enable WAL mode for better concurrent access
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
 
-        // Create tables
         conn.execute_batch(schema::CREATE_TABLES)?;
         maybe_add_metadata_enc_column(&conn)?;
 

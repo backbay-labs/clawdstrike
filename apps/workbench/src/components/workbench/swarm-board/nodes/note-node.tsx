@@ -27,7 +27,6 @@ function NoteNodeInner({ id, data, selected }: NodeProps) {
     if (d.editing && !editing) {
       setDraft(d.content ?? "");
       setEditing(true);
-      // Clear the flag so it doesn't re-trigger
       updateNode(id, { editing: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

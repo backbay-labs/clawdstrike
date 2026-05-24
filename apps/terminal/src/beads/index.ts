@@ -61,7 +61,6 @@ export namespace Beads {
     const cfg = getConfig()
     let issues = await JSONL.read(cfg.path)
 
-    // Apply filters
     if (options?.status) {
       const statuses = Array.isArray(options.status)
         ? options.status
@@ -86,7 +85,6 @@ export namespace Beads {
       issues = issues.filter((i) => i.assignee === options.assignee)
     }
 
-    // Apply pagination
     if (options?.offset) {
       issues = issues.slice(options.offset)
     }
@@ -105,7 +103,6 @@ export namespace Beads {
     const cfg = getConfig()
     const issues = await JSONL.read(cfg.path)
 
-    // Get all open issues
     const openIssues = issues.filter((i) => i.status === "open")
 
     // For now, all open issues are considered ready

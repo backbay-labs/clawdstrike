@@ -36,7 +36,6 @@ pub fn extract_sni(data: &[u8]) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    // Parse ClientHello
     parse_client_hello(handshake)
 }
 
@@ -88,7 +87,6 @@ fn parse_client_hello(data: &[u8]) -> Result<Option<String>> {
     let compression_len = hello[offset] as usize;
     offset += 1 + compression_len;
 
-    // Parse extensions
     if offset + 2 > hello.len() {
         return Ok(None); // No extensions
     }

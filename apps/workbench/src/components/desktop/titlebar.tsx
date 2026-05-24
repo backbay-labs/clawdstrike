@@ -12,7 +12,6 @@ export function Titlebar() {
   const dirty = activeTab?.dirty ?? false;
   const filePath = activeTab?.filePath ?? null;
 
-  // Update the native window title when the policy name or dirty state changes
   useEffect(() => {
     if (!isDesktop()) return;
 

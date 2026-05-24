@@ -146,7 +146,6 @@ export const MypyGate: Gate = {
         ? [...DEFAULT_CONFIG.args, "."]
         : [...DEFAULT_CONFIG.args, "--ignore-missing-imports", "."]
 
-      // Run mypy
       const proc = Bun.spawn(["mypy", ...args], {
         cwd,
         env: {

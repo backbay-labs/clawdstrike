@@ -16,7 +16,6 @@ export function useVersionHistory(policyId: string | undefined) {
   const offsetRef = useRef(0);
   const storeRef = useRef(getVersionStore());
 
-  // Initialize the store once
   useEffect(() => {
     let cancelled = false;
     storeRef.current.init().then(() => {
@@ -117,7 +116,6 @@ export function useVersionHistory(policyId: string | undefined) {
 
       await store.addTag(versionId, tag, color);
 
-      // Update the local state
       setVersions((prev) =>
         prev.map((v) =>
           v.id === versionId
@@ -136,7 +134,6 @@ export function useVersionHistory(policyId: string | undefined) {
 
       await store.removeTag(versionId, tag);
 
-      // Update the local state
       setVersions((prev) =>
         prev.map((v) =>
           v.id === versionId

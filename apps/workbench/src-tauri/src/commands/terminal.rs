@@ -418,7 +418,6 @@ pub async fn terminal_create<R: Runtime>(
     let session_alive = Arc::new(AtomicBool::new(true));
     let session_alive_for_reader = Arc::clone(&session_alive);
 
-    // Create the PTY pair
     let pty_system = native_pty_system();
     let pty_pair = pty_system
         .openpty(PtySize {
@@ -429,7 +428,6 @@ pub async fn terminal_create<R: Runtime>(
         })
         .map_err(|e| format!("Failed to open PTY: {e}"))?;
 
-    // Build the command
     let mut cmd = CommandBuilder::new(&shell_path);
     cmd.cwd(&cwd);
 

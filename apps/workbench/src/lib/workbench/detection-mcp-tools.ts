@@ -235,7 +235,6 @@ export function generateSigmaFromMcpInput(input: Record<string, unknown>): strin
     ? (input.mitre_techniques as unknown[]).map(String)
     : [];
 
-  // Build tags
   const tags: string[] = [];
   for (const t of techniques) {
     const tid = sanitizeYamlToken(String(t), "execution");

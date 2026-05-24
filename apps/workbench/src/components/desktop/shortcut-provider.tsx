@@ -168,9 +168,6 @@ export function getShortcutDefinitions(): ShortcutDefinition[] {
     });
 }
 
-// SHORTCUT_DEFINITIONS removed — was always empty at module load time
-// (registry not populated yet). Use getShortcutDefinitions() for live data.
-
 // ---- Component ----
 
 /**

@@ -1280,7 +1280,6 @@ export function HierarchyPage() {
         return next;
       });
 
-      // Find the new node and select it
       const parent = updated.nodes[parentId];
       if (parent) {
         const newId = parent.children[parent.children.length - 1];
@@ -1795,7 +1794,6 @@ export function HierarchyPage() {
         // The tree endpoint returns nodes with nested children arrays.
         const nodes: Record<string, OrgNode> = {};
 
-        // Find the root node in the array
         const rootNode = tree.nodes.find((n) => n.id === tree.root_id);
         const rootHasNestedChildren = Array.isArray(rootNode?.children)
           && rootNode.children.some((child) => typeof child === "object" && child !== null);
@@ -1893,7 +1891,6 @@ export function HierarchyPage() {
         children?: string[];
       }> = assignments.length > 0 ? assignments : scopedPolicies;
 
-      // Build the node map from remote data
       const nodes: Record<string, OrgNode> = {};
       let rootId: string | null = null;
 

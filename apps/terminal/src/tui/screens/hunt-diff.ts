@@ -102,7 +102,6 @@ function computeDiff(previous: ScanPathResult[], current: ScanPathResult[]): Sca
     }
   }
 
-  // Find removed
   for (const [name, prev] of prevServers) {
     if (!currServers.has(name)) {
       changes.push({ server_name: name, kind: "removed", old: prev })

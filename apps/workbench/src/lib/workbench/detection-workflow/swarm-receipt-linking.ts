@@ -65,7 +65,6 @@ export async function linkReceiptToPublication(
     );
   }
 
-  // Create the edge
   const edgeId = `edge-receipt-${receiptNodeId}-${publicationNodeId}`;
   const existingEdge = boardStore.state.edges.find((e) => e.id === edgeId);
   if (!existingEdge) {

@@ -112,7 +112,6 @@ export class PluginRegistry {
       );
     }
 
-    // Create the registered plugin entry
     const registered: RegisteredPlugin = {
       manifest,
       state: "installed",

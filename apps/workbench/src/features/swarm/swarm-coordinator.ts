@@ -405,7 +405,6 @@ export class InProcessEventBus implements TransportAdapter {
   }
 
   onMessage(handler: (topic: string, envelope: SwarmEnvelope) => void): void {
-    // Create a listener that fires for any subscribed topic
     const listener = (event: Event): void => {
       const ce = event as CustomEvent<SwarmEnvelope>;
       handler(ce.type, ce.detail);

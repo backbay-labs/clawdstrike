@@ -62,7 +62,6 @@ export function CommandPalette({
   );
   const fullCommands = useMemo(() => [...extraCommands, ...commands], [commands, extraCommands]);
 
-  // Filter commands
   const filteredCommands = useMemo(
     () =>
       query

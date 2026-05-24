@@ -101,7 +101,6 @@ export const PytestGate: Gate = {
     const args = DEFAULT_CONFIG.args
 
     try {
-      // Run pytest
       const proc = Bun.spawn(["pytest", ...args], {
         cwd,
         env: {

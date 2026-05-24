@@ -105,7 +105,6 @@ export function useSignalCorrelator(
     setIsRunning(true);
 
     try {
-      // Run correlation
       const clusters: SignalCluster[] = correlateSignals(unassignedSignals);
 
       if (clusters.length === 0) {
@@ -128,7 +127,6 @@ export function useSignalCorrelator(
 
         if (isDuplicate) continue;
 
-        // Create the finding through the store action (handles persistence)
         const newFinding = findingState.actions.createFromCluster(
           cluster,
           unassignedSignals,

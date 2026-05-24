@@ -78,7 +78,6 @@ export function ScenarioGraph({ scenarios, results, onUpdate, className }: Scena
   // Selection
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
-  // Compute layout
   const layout = useMemo<ScenarioGraphLayout>(
     () => layoutScenarioGraph(scenarios),
     [scenarios],

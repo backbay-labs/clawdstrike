@@ -839,7 +839,7 @@ impl OutputSanitizer {
             merged.push((span, strategy, category, data_type, finding_id));
         }
 
-        // Sort by start desc so replacements don't affect earlier spans.
+        // Apply replacements back-to-front so earlier span offsets remain valid.
         merged.sort_by(|a, b| {
             b.0.start
                 .cmp(&a.0.start)

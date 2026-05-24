@@ -234,7 +234,6 @@ export const huntRuleBuilderScreen: Screen = {
         }
         return true
       }
-      // Add condition
       if (key === "a") {
         const newCondition: RuleCondition = { source: "tetragon", verdict: "deny" }
         ctx.state.hunt.ruleBuilder = {
@@ -243,7 +242,6 @@ export const huntRuleBuilderScreen: Screen = {
         }
         return true
       }
-      // Delete condition
       if (key === "x") {
         if (rb.conditions.length > 0) {
           const idx = rb.conditionList.selected
@@ -294,7 +292,6 @@ export const huntRuleBuilderScreen: Screen = {
         return true
       }
 
-      // Save rule
       if (key === "W" || key === "w") {
         if (rb.saving) return true
         const { name } = getFormValues(rb.form)

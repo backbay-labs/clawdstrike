@@ -194,7 +194,6 @@ export class SessionStore {
   }
 
   getSessions(filter?: SessionFilter): Session[] {
-    // Create a cache key from filter
     const cacheKey = filter
       ? `${filter.appId ?? ""}_${filter.pinned ?? ""}_${filter.archived ?? ""}_${filter.status ?? ""}`
       : "__all__";

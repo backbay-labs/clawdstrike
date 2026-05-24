@@ -572,7 +572,6 @@ pub async fn delete_node(
         deleted_count += descendant_count;
     }
 
-    // Delete the node itself
     let result = sqlx::query::query("DELETE FROM hierarchy_nodes WHERE id = $1 AND tenant_id = $2")
         .bind(node_id)
         .bind(tenant_id)

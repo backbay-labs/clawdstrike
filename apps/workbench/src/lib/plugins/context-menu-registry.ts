@@ -71,7 +71,6 @@ function rebuildSnapshots(): void {
     list.push(item);
   }
 
-  // Sort each group by priority ascending (default 100)
   for (const list of grouped.values()) {
     list.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
   }

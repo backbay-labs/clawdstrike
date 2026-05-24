@@ -150,7 +150,6 @@ export class PluginRevocationStore {
     const added: string[] = [];
     const removed: string[] = [];
 
-    // Build a set of plugin IDs present in the remote snapshot (non-expired)
     const remoteIds = new Set<string>();
 
     for (const entry of remote) {

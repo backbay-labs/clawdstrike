@@ -256,7 +256,6 @@ function getCursorContext(ctx: CompletionContext): CursorContext {
   const lineText = line.text;
   const textBeforeCursor = lineText.slice(0, pos - line.from);
 
-  // Calculate indentation
   const indentMatch = lineText.match(/^(\s*)/);
   const indent = indentMatch ? indentMatch[1].length : 0;
 

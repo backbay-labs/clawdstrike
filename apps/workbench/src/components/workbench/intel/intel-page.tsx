@@ -437,7 +437,6 @@ export function IntelPage({
   // Select items based on active tab
   const tabItems = activeTab === "local" ? localIntel : swarmIntel;
 
-  // Apply filters
   const filteredIntel = useMemo(() => {
     return tabItems.filter((intel) => {
       // Type filter

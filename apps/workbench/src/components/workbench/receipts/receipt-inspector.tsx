@@ -766,7 +766,6 @@ export function ReceiptInspector() {
     return Array.from(names).sort();
   }, [receipts]);
 
-  // Apply filters
   const filteredReceipts = useMemo(() => {
     return receipts.filter((r) => {
       if (verdictFilter !== "all" && r.verdict !== verdictFilter) return false;

@@ -13,10 +13,6 @@ import { Clawdstrike, type Decision } from "@clawdstrike/sdk";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-// ---------------------------------------------------------------------------
-// Parse flags
-// ---------------------------------------------------------------------------
-
 const dryRun = process.argv.includes("--dry-run");
 
 // ---------------------------------------------------------------------------

@@ -64,7 +64,6 @@ export namespace Voter {
   export function selectFirstPass(
     candidates: CandidateResult[]
   ): CandidateResult {
-    // Return the one that completed first
     return candidates.reduce((earliest, curr) => {
       const earliestTime = earliest.result.telemetry.completedAt
       const currTime = curr.result.telemetry.completedAt
@@ -108,7 +107,6 @@ export namespace Voter {
       similarities.set(candidates[i].workcellId, totalSimilarity)
     }
 
-    // Return candidate with highest total similarity
     return candidates.reduce((best, curr) => {
       const bestSim = similarities.get(best.workcellId) ?? 0
       const currSim = similarities.get(curr.workcellId) ?? 0

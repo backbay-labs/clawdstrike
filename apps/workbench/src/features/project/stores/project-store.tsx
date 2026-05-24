@@ -243,7 +243,6 @@ export function buildFileTree(rootPath: string, paths: string[]): ProjectFile[] 
     depth: -1,
   };
 
-  // Insert each path segment-by-segment.
   for (const relPath of paths) {
     const segments = relPath.split("/").filter(Boolean);
     let current = root;
@@ -272,7 +271,6 @@ export function buildFileTree(rootPath: string, paths: string[]): ProjectFile[] 
     }
   }
 
-  // Convert the intermediate tree to ProjectFile[].
   function convert(node: TreeNode): ProjectFile[] {
     const entries = Array.from(node.children.values());
 

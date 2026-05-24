@@ -165,7 +165,6 @@ export function generateBatchReport(
   scenarios: TestScenario[],
   results: SimulationResult[],
 ): BatchTestReport {
-  // Build a lookup map for results by scenario ID
   const resultMap = new Map<string, SimulationResult>();
   for (const r of results) {
     // If there are multiple results for the same scenario, use the most recent

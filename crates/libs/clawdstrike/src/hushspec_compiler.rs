@@ -273,7 +273,6 @@ pub fn decompile(policy: &Policy) -> Result<hushspec::HushSpec> {
         });
     }
 
-    // Build extensions
     let mut extensions = hushspec::Extensions::default();
     let mut has_extensions = false;
 

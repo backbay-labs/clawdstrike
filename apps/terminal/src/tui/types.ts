@@ -531,7 +531,6 @@ export interface AppState {
   // Last dispatch result
   lastResult: DispatchResultInfo | null
 
-  // Setup wizard
   setupDetection: DetectionResult | null
   setupStep: "detecting" | "review" | "done"
   setupSandboxIndex: number

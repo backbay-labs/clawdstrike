@@ -122,10 +122,6 @@ const CATEGORY_THREAT_MAP: Record<GuardCategory, string[]> = {
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Filter pills
-// ---------------------------------------------------------------------------
-
 type CategoryFilter = "all" | GuardCategory;
 
 const FILTER_OPTIONS: { id: CategoryFilter; label: string }[] = [
@@ -138,7 +134,6 @@ const FILTER_OPTIONS: { id: CategoryFilter; label: string }[] = [
   { id: "cua", label: "CUA" },
 ];
 
-// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Category badge
 // ---------------------------------------------------------------------------
@@ -552,7 +547,6 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
 
   const activeCount = activeGuardIds.size;
 
-  // Filter guards
   const filteredGuards = useMemo(() => {
     let guards = GUARD_REGISTRY;
 

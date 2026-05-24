@@ -449,7 +449,6 @@ export function useDockDemo(options: UseDockDemoOptions = {}) {
     // Only run once when no capsules exist
     if (capsules.length > 0) return;
 
-    // Add sessions
     if (showSessions) {
       setSessions(ACTIVE_SESSIONS);
     }

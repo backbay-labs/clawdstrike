@@ -401,7 +401,6 @@ function FullExplorer({
     setHeatmapFilter(null);
   }, []);
 
-  // Apply filters
   const filteredPatterns = useMemo(() => {
     let result = patterns;
 

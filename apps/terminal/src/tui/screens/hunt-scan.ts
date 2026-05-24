@@ -405,7 +405,6 @@ export const huntScanScreen: Screen = {
       return lines.join("\n")
     }
 
-    // Build tree
     const treeNodes = buildTreeNodes(scan.results)
     const contentHeight = height - 4 // header(2) + footer(1) + spacing(1)
 

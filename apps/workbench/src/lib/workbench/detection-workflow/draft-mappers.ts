@@ -450,7 +450,6 @@ export function inferDataSourceHints(events: AgentEvent[]): string[] {
 export function inferTechniqueHints(events: AgentEvent[]): string[] {
   const techniques = new Set<string>();
   for (const event of events) {
-    // Check target
     for (const { pattern, technique } of TECHNIQUE_PATTERNS) {
       if (pattern.test(event.target)) {
         techniques.add(technique);

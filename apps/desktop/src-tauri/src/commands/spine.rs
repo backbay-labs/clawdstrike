@@ -212,7 +212,6 @@ async fn spine_event_loop<R: Runtime>(
                     break;
                 };
 
-                // Parse the envelope JSON from the message payload
                 let envelope: serde_json::Value = match serde_json::from_slice(&msg.payload) {
                     Ok(v) => v,
                     Err(e) => {

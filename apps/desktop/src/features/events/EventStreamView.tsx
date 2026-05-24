@@ -37,7 +37,6 @@ export function EventStreamView() {
       .filter((event): event is AuditEvent => event !== null);
   }, [events]);
 
-  // Apply filters
   const filteredEvents = useMemo(() => {
     return auditEvents.filter((event) => {
       if (filter.actionType && event.action_type !== filter.actionType) return false;

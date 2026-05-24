@@ -184,7 +184,6 @@ function parseCondition(expr: string): EqlCondition | null {
     }
   }
 
-  // Check negation
   let negated = false;
   if (trimmed.startsWith("not ") || trimmed.startsWith("NOT ")) {
     negated = true;
@@ -378,7 +377,6 @@ function parseSequenceQuery(cleaned: string, errors: string[]): EqlParseResult {
   const steps: EqlSequenceStep[] = [];
   let until: EqlSingleQuery | undefined;
 
-  // Find all bracket blocks
   const bracketRegex = /\[\s*([\s\S]*?)\s*\]/g;
   let bracketMatch: RegExpExecArray | null;
 

@@ -353,7 +353,6 @@ function discoverPatternGaps(patterns: HuntPattern[]): RawGap[] {
     const isPromoted = pattern.status === "promoted";
     const isConfirmed = pattern.status === "confirmed";
 
-    // Build a synthetic seed to use recommendFormats
     const confidence = isPromoted ? 0.9 : isConfirmed ? 0.8 : isHighMatchCount ? 0.7 : 0.5;
 
     if (isHighMatchCount || isConfirmed || isPromoted) {
@@ -393,7 +392,6 @@ function rawGapToCandidate(raw: RawGap, totalEvents: number): CoverageGapCandida
     else severity = "low";
   }
 
-  // Build a minimal seed to get format recommendations
   const seed: DraftSeed = {
     id: crypto.randomUUID(),
     kind: raw.sourceKind === "event" ? "hunt_event" : raw.sourceKind === "investigation" ? "investigation" : "hunt_pattern",
