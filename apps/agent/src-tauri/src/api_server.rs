@@ -23,16 +23,17 @@ use crate::telemetry_publisher::TelemetryPublisher;
 use crate::updater::{HushdUpdater, OtaStatus};
 use anyhow::{Context, Result};
 use axum::extract::DefaultBodyLimit;
-use axum::extract::{Path, Request, State};
+use axum::extract::{Path, State};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 #[cfg(test)]
 use axum::http::header::{COOKIE, LOCATION, SET_COOKIE};
 use axum::http::{HeaderMap, StatusCode};
 #[cfg(test)]
 use axum::http::Uri;
-use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{IntoResponse, Response};
+use axum::response::IntoResponse;
+#[cfg(test)]
+use axum::response::Response;
 use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 // Receipt*Input types are used only in `mod tests { use super::* }` below.
@@ -89,6 +90,7 @@ use tower_http::services::{ServeDir, ServeFile};
 mod auth;
 mod daemon_proxy;
 mod edr_paths;
+mod rate_limit;
 mod ui_bootstrap;
 
 pub(crate) use crate::edr::conversion::*;
@@ -122,6 +124,10 @@ use edr_paths::{
 };
 #[cfg(test)]
 use daemon_proxy::build_daemon_proxy_target;
+pub(crate) use rate_limit::{ApprovalSubmissionLimiter, RouteRateLimiter};
+use rate_limit::route_rate_limit;
+#[cfg(test)]
+use rate_limit::APPROVAL_RATE_LIMIT_BURST;
 pub(crate) use ui_bootstrap::UiBootstrapSession;
 #[cfg(test)]
 pub(crate) use ui_bootstrap::UiBootstrapStartResponse;
@@ -180,16 +186,6 @@ pub(crate) const EDR_FLEET_AGENT_SECRET_TOUCH_SYNC_INTERVAL: Duration = Duration
 pub(crate) const EDR_DEFAULT_PROVIDER_ACK_TIMEOUT_MS: u64 = 750;
 pub(crate) const EDR_MAX_PROVIDER_ACK_TIMEOUT_MS: u64 = 5_000;
 pub(crate) const EDR_PROVIDER_ACK_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const APPROVAL_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
-const APPROVAL_RATE_LIMIT_BURST_WINDOW: Duration = Duration::from_secs(1);
-const APPROVAL_RATE_LIMIT_PER_MINUTE: usize = 30;
-const APPROVAL_RATE_LIMIT_BURST: usize = 10;
-const ROUTE_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
-const ROUTE_RATE_LIMIT_UI_BOOTSTRAP_START: usize = 20;
-const ROUTE_RATE_LIMIT_UI_BOOTSTRAP_VERIFY: usize = 60;
-const ROUTE_RATE_LIMIT_POLICY_CHECK: usize = 1200;
-const ROUTE_RATE_LIMIT_INTEGRATION_TEST: usize = 30;
-const ROUTE_RATE_LIMIT_OPENCLAW_REQUEST: usize = 120;
 pub(crate) const UI_BOOTSTRAP_TTL: Duration = Duration::from_secs(60);
 pub(crate) const UI_BOOTSTRAP_MAX_ATTEMPTS: u8 = 5;
 pub(crate) const UI_BOOTSTRAP_MAX_SESSIONS: usize = 32;
@@ -351,97 +347,10 @@ impl PolicyVersionCache {
     }
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct ApprovalSubmissionLimiter {
-    minute_events: VecDeque<Instant>,
-    burst_events: VecDeque<Instant>,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct PreviousAuthToken {
     token: String,
     expires_at: Instant,
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct RouteRateLimiter {
-    events: VecDeque<Instant>,
-}
-
-impl ApprovalSubmissionLimiter {
-    fn allow_now(&mut self, now: Instant) -> std::result::Result<(), u64> {
-        while self
-            .minute_events
-            .front()
-            .is_some_and(|ts| now.duration_since(*ts) >= APPROVAL_RATE_LIMIT_WINDOW)
-        {
-            let _ = self.minute_events.pop_front();
-        }
-        while self
-            .burst_events
-            .front()
-            .is_some_and(|ts| now.duration_since(*ts) >= APPROVAL_RATE_LIMIT_BURST_WINDOW)
-        {
-            let _ = self.burst_events.pop_front();
-        }
-
-        if self.minute_events.len() >= APPROVAL_RATE_LIMIT_PER_MINUTE {
-            if let Some(oldest) = self.minute_events.front().copied() {
-                let retry_after = APPROVAL_RATE_LIMIT_WINDOW
-                    .saturating_sub(now.duration_since(oldest))
-                    .as_secs()
-                    .max(1);
-                return Err(retry_after);
-            }
-            return Err(1);
-        }
-
-        if self.burst_events.len() >= APPROVAL_RATE_LIMIT_BURST {
-            if let Some(oldest) = self.burst_events.front().copied() {
-                let retry_after = APPROVAL_RATE_LIMIT_BURST_WINDOW
-                    .saturating_sub(now.duration_since(oldest))
-                    .as_secs()
-                    .max(1);
-                return Err(retry_after);
-            }
-            return Err(1);
-        }
-
-        self.minute_events.push_back(now);
-        self.burst_events.push_back(now);
-        Ok(())
-    }
-}
-
-impl RouteRateLimiter {
-    fn allow_now(
-        &mut self,
-        now: Instant,
-        window: Duration,
-        limit: usize,
-    ) -> std::result::Result<(), u64> {
-        while self
-            .events
-            .front()
-            .is_some_and(|ts| now.duration_since(*ts) >= window)
-        {
-            let _ = self.events.pop_front();
-        }
-
-        if self.events.len() >= limit {
-            if let Some(oldest) = self.events.front().copied() {
-                let retry_after = window
-                    .saturating_sub(now.duration_since(oldest))
-                    .as_secs()
-                    .max(1);
-                return Err(retry_after);
-            }
-            return Err(1);
-        }
-
-        self.events.push_back(now);
-        Ok(())
-    }
 }
 
 impl AgentApiServer {
@@ -17860,70 +17769,6 @@ async fn enrollment_status(
 }
 
 
-async fn route_rate_limit(
-    State(state): State<Arc<AgentApiState>>,
-    request: Request,
-    next: Next,
-) -> Response {
-    let path = request.uri().path();
-    let method = request.method().clone();
-    let now = Instant::now();
-
-    let limited = if path == "/api/v1/ui/bootstrap/start" {
-        let mut limiter = state.ui_bootstrap_start_rate_limiter.lock().await;
-        limiter
-            .allow_now(
-                now,
-                ROUTE_RATE_LIMIT_WINDOW,
-                ROUTE_RATE_LIMIT_UI_BOOTSTRAP_START,
-            )
-            .err()
-    } else if path == "/ui/bootstrap" && method == axum::http::Method::POST {
-        let mut limiter = state.ui_bootstrap_verify_rate_limiter.lock().await;
-        limiter
-            .allow_now(
-                now,
-                ROUTE_RATE_LIMIT_WINDOW,
-                ROUTE_RATE_LIMIT_UI_BOOTSTRAP_VERIFY,
-            )
-            .err()
-    } else if path == "/api/v1/agent/policy-check" {
-        let mut limiter = state.policy_check_rate_limiter.lock().await;
-        limiter
-            .allow_now(now, ROUTE_RATE_LIMIT_WINDOW, ROUTE_RATE_LIMIT_POLICY_CHECK)
-            .err()
-    } else if path == "/api/v1/agent/integrations/test" {
-        let mut limiter = state.integration_test_rate_limiter.lock().await;
-        limiter
-            .allow_now(
-                now,
-                ROUTE_RATE_LIMIT_WINDOW,
-                ROUTE_RATE_LIMIT_INTEGRATION_TEST,
-            )
-            .err()
-    } else if path == "/api/v1/openclaw/request" {
-        let mut limiter = state.openclaw_request_rate_limiter.lock().await;
-        limiter
-            .allow_now(
-                now,
-                ROUTE_RATE_LIMIT_WINDOW,
-                ROUTE_RATE_LIMIT_OPENCLAW_REQUEST,
-            )
-            .err()
-    } else {
-        None
-    };
-
-    if let Some(retry_after) = limited {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            format!("Rate limit exceeded; retry in {}s", retry_after),
-        )
-            .into_response();
-    }
-
-    next.run(request).await
-}
 
 
 async fn control_ack_postback_retry_drain_loop(
