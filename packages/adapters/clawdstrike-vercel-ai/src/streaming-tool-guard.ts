@@ -6,6 +6,12 @@ export type StreamChunk = Record<string, unknown> & {
   toolCallId?: string;
   toolName?: string;
   toolCallType?: string;
+  /**
+   * Some Vercel AI v5 stream-part variants surface the tool name as
+   * `name` rather than `toolName` (e.g. `tool-call-start` in providers
+   * that haven't migrated to the V3 discriminant).
+   */
+  name?: string;
   args?: unknown;
   argsTextDelta?: string;
   result?: unknown;
@@ -47,7 +53,7 @@ export class StreamingToolGuard {
 
     if (type === "tool-call-start" || type === "tool-call-streaming-start") {
       const toolCallId = chunk.toolCallId;
-      const toolName = chunk.toolName ?? (chunk as any).name;
+      const toolName = chunk.toolName ?? chunk.name;
       if (typeof toolCallId === "string") {
         const name = typeof toolName === "string" ? toolName : "unknown";
         this.pendingToolCalls.set(toolCallId, { id: toolCallId, name, argsText: "" });
@@ -63,7 +69,7 @@ export class StreamingToolGuard {
       const pending =
         this.pendingToolCalls.get(toolCallId) ??
         (() => {
-          const toolName = chunk.toolName ?? (chunk as any).name;
+          const toolName = chunk.toolName ?? chunk.name;
           const name = typeof toolName === "string" ? toolName : "unknown";
           const entry = { id: toolCallId, name, argsText: "" };
           this.pendingToolCalls.set(toolCallId, entry);
@@ -77,7 +83,7 @@ export class StreamingToolGuard {
 
     if (type === "tool-call") {
       const toolCallId = chunk.toolCallId;
-      const toolName = chunk.toolName ?? (chunk as any).name;
+      const toolName = chunk.toolName ?? chunk.name;
       if (typeof toolCallId !== "string" || typeof toolName !== "string") {
         return chunk;
       }

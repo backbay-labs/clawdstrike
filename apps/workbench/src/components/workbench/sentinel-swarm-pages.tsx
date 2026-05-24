@@ -1,6 +1,4 @@
-// Barrel re-export. The page components were split into per-file modules under
-// `./sentinel-swarm/` for maintainability. This file is kept for backwards
-// compatibility with existing imports.
+// Re-exports from ./sentinel-swarm/ for legacy import paths.
 export { SentinelsPage } from "./sentinel-swarm/sentinels-page";
 export { SentinelCreatePage } from "./sentinel-swarm/sentinel-create-page";
 export { SentinelDetailPage } from "./sentinel-swarm/sentinel-detail-page";

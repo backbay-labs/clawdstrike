@@ -405,7 +405,6 @@ export class InProcessEventBus implements TransportAdapter {
   }
 
   onMessage(handler: (topic: string, envelope: SwarmEnvelope) => void): void {
-    // Create a listener that fires for any subscribed topic
     const listener = (event: Event): void => {
       const ce = event as CustomEvent<SwarmEnvelope>;
       handler(ce.type, ce.detail);
@@ -994,7 +993,7 @@ export class SwarmCoordinator {
 
       if (success) {
         this.reconnectAttempts = 0;
-        // Re-subscribe to all previously active swarm topics
+        // Reconnect: the transport drops subscriptions on disconnect, so restore them.
         for (const [swarmId, topics] of this.activeSwarms) {
           for (const topic of topics) {
             this.transport.subscribe(topic);

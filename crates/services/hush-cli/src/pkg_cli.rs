@@ -1566,7 +1566,6 @@ fn cmd_pkg_install_registry(
             stderr,
         );
         if !trust_ok {
-            // Remove the installed package since trust verification failed.
             if let Err(e) = store.remove(&installed.name, &installed.version) {
                 let backup_hint = rollback_backup.as_ref().map_or(String::new(), |backup| {
                     format!(

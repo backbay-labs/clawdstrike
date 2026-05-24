@@ -28,7 +28,6 @@ export interface UpdateCheck {
 export function analyzeDependencies(entry: CatalogEntry): DependencyInfo {
   const extendsRuleset = entry.extends ?? null;
 
-  // Check if the base exists in builtins
   const base = extendsRuleset
     ? BUILTIN_RULESETS.find((r) => r.id === extendsRuleset)
     : null;

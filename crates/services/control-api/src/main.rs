@@ -71,7 +71,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let nats = async_nats::connect(&config.nats_url).await?;
     tracing::info!(url = %config.nats_url, "Connected to NATS");
 
-    // Initialize services
     let provisioner = TenantProvisioner::new(
         pool.clone(),
         config.agent_nats_url.clone(),

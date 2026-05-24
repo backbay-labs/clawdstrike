@@ -1,7 +1,4 @@
-// Hint Settings — configurable Claude Code hint text and visibility
-// Persisted to localStorage independently of the policy store.
-//
-// Zustand + immer store (migrated from React Context + useState).
+// Hint visibility + Claude Code hint text. Persists to localStorage.
 import {
   createElement,
   createContext,

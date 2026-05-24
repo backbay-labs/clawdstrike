@@ -517,7 +517,6 @@ export class TopologyManager {
     }
 
     const nodesPerPartition = Math.ceil(this.config.maxAgents / 10);
-    // length - 1: the node was already pushed before this call
     const partitionIndex = Math.floor((this.state.nodes.length - 1) / nodesPerPartition);
 
     if (this.state.partitions.length <= partitionIndex) {

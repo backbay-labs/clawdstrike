@@ -1,4 +1,12 @@
 import type {
+  LanguageModelV2CallOptions,
+  LanguageModelV2Message,
+  LanguageModelV2Prompt,
+  LanguageModelV2StreamPart,
+  LanguageModelV2TextPart,
+  LanguageModelV2ToolCallPart,
+} from "@ai-sdk/provider";
+import type {
   AdapterConfig,
   AuditEvent,
   Decision,
@@ -29,6 +37,50 @@ import { ClawdstrikeBlockedError, ClawdstrikePromptSecurityError } from "./error
 import { StreamingToolGuard } from "./streaming-tool-guard.js";
 import type { VercelAiToolLike } from "./tools.js";
 import { secureTools } from "./tools.js";
+
+/**
+ * Local mirror of `@clawdstrike/sdk`'s `InstructionHierarchyEnforcer`
+ * conflict shape. Re-declared here (rather than imported) to avoid a
+ * runtime dep on the SDK's deeper type tree from this surface.
+ */
+interface HierarchyConflict {
+  id: string;
+  ruleId: string;
+  severity: string;
+  action: string;
+  triggers: string[];
+}
+
+/**
+ * Local mirror of `@clawdstrike/sdk`'s `SanitizationResult.findings[number]`.
+ */
+interface PromptSecurityFinding {
+  id?: string;
+  category?: string;
+  detector?: string;
+}
+
+/**
+ * Best-effort vendor tool-call shape. Matches both
+ * {@link LanguageModelV2ToolCallPart} and the looser `result.toolCalls`
+ * entries returned by some providers — they may carry `args`/`parameters`/
+ * `input` interchangeably and either `toolName` or `name`.
+ */
+interface VendorToolCall {
+  toolName?: string;
+  name?: string;
+  args?: unknown;
+  parameters?: unknown;
+  input?: unknown;
+}
+
+/**
+ * Vendor signal-shape for `JailbreakDetector.detect(...).signals[]`.
+ * The SDK exports a richer type but we only consume `.id` here.
+ */
+interface JailbreakSignal {
+  id: string;
+}
 
 export type PromptSecurityMode = "audit" | "warn" | "block";
 
@@ -114,6 +166,9 @@ export interface CreateClawdstrikeMiddlewareOptions {
   context?: SecurityContext;
   createContext?: (metadata?: Record<string, unknown>) => SecurityContext;
   aiSdk?: {
+    /** Stable name in `ai@5+`. Preferred. */
+    wrapLanguageModel?: (args: unknown) => unknown;
+    /** Legacy name removed in `ai@5+`. Kept for callers on `ai@3-4`. */
     experimental_wrapLanguageModel?: (args: unknown) => unknown;
   };
 }
@@ -205,7 +260,8 @@ export function createClawdstrikeMiddleware(
       return ctx;
     },
     wrapLanguageModel<TModel extends object>(model: TModel): TModel {
-      const wrap = options.aiSdk?.experimental_wrapLanguageModel;
+      const wrap =
+        options.aiSdk?.wrapLanguageModel ?? options.aiSdk?.experimental_wrapLanguageModel;
       if (wrap) {
         return createWrappedModel(
           model,
@@ -272,15 +328,22 @@ function createLazyWrappedModel(
     }
 
     wrappedPromise = (async () => {
+      // `experimental_wrapLanguageModel` was removed in `ai@5+` and renamed
+      // to `wrapLanguageModel`. Prefer the stable export; fall back to the
+      // legacy name for callers still on `ai@3-4`.
       const ai = (await import("ai")) as {
+        wrapLanguageModel?: (args: unknown) => unknown;
         experimental_wrapLanguageModel?: (args: unknown) => unknown;
       };
-      if (typeof ai.experimental_wrapLanguageModel !== "function") {
-        throw new Error(`ai.experimental_wrapLanguageModel is not available`);
+      const wrap = ai.wrapLanguageModel ?? ai.experimental_wrapLanguageModel;
+      if (typeof wrap !== "function") {
+        throw new Error(
+          `ai.wrapLanguageModel is not available (also tried legacy ai.experimental_wrapLanguageModel)`,
+        );
       }
       return createWrappedModel(
         model,
-        ai.experimental_wrapLanguageModel,
+        wrap,
         interceptor,
         config,
         createContext,
@@ -300,7 +363,13 @@ function createLazyWrappedModel(
       }
       return async (...args: unknown[]) => {
         const wrapped = await getWrapped();
-        const fn = (wrapped as any)[prop] as (...innerArgs: unknown[]) => unknown;
+        // Proxy forward: `prop` is a `string | symbol` indexed onto an
+        // opaque LanguageModel-shaped object whose method set varies per
+        // provider. Coerce through a permissive record shape rather than
+        // `any` so callers don't lose all type safety on the boundary.
+        const fn = (wrapped as Record<string | symbol, unknown>)[prop] as
+          | ((...innerArgs: unknown[]) => unknown)
+          | undefined;
         if (typeof fn !== "function") {
           throw new Error(`Wrapped model is missing method ${String(prop)}`);
         }
@@ -326,8 +395,12 @@ function createWrappedModel(
         doGenerate,
         params,
       }: {
-        doGenerate: () => Promise<any>;
-        params: any;
+        doGenerate: () => Promise<{
+          toolCalls?: VendorToolCall[];
+          text?: string;
+          [k: string]: unknown;
+        }>;
+        params: LanguageModelV2CallOptions;
       }) => {
         const context = createContext({ operation: "generate" });
         contexts.add(context);
@@ -348,7 +421,7 @@ function createWrappedModel(
         }
 
         const toolCalls = await Promise.all(
-          result.toolCalls.map(async (call: any) => {
+          result.toolCalls.map(async (call: VendorToolCall) => {
             const toolName = call.toolName ?? call.name;
             const args = parseJsonBestEffort(call.args ?? call.parameters ?? call.input);
 
@@ -368,7 +441,13 @@ function createWrappedModel(
         return { ...result, toolCalls };
       },
 
-      wrapStream: async ({ doStream, params }: { doStream: () => Promise<any>; params: any }) => {
+      wrapStream: async ({
+        doStream,
+        params,
+      }: {
+        doStream: () => Promise<{ stream?: unknown; [k: string]: unknown }>;
+        params: LanguageModelV2CallOptions;
+      }) => {
         const context = createContext({ operation: "stream" });
         contexts.add(context);
 
@@ -399,13 +478,13 @@ function createWrappedModel(
         }
 
         const secureStream = transformUnknownStream(stream, async (chunk) => {
-          let current = chunk as any;
+          let current = chunk as LanguageModelV2StreamPart;
           if (guard) {
-            const guarded = await guard.processChunk(current);
+            const guarded = await guard.processChunk(current as never);
             if (guarded == null) {
               return null;
             }
-            current = guarded as any;
+            current = guarded as unknown as LanguageModelV2StreamPart;
           }
 
           const out = sanitizeStreamChunkIfNeeded(
@@ -423,16 +502,30 @@ function createWrappedModel(
   }) as object;
 }
 
+/**
+ * Duck-typed adapter over the two supported runtime stream shapes:
+ *  - WHATWG `ReadableStream<T>` (browser / Node Web Streams) — exposes `pipeThrough`
+ *  - `AsyncIterable<T>` — exposes `Symbol.asyncIterator`
+ *
+ * These have no shared TypeScript supertype, so the local `StreamLike`
+ * interface unifies them at the unknown boundary.
+ */
+interface StreamLike {
+  pipeThrough?: (transform: TransformStream<unknown, unknown>) => unknown;
+  [Symbol.asyncIterator]?: () => AsyncIterator<unknown>;
+}
+
 function transformUnknownStream(
   stream: unknown,
   transform: (chunk: unknown) => Promise<unknown | unknown[]>,
 ): unknown {
+  const candidate = stream as StreamLike | null | undefined;
   if (
-    stream &&
-    typeof (stream as any).pipeThrough === "function" &&
+    candidate &&
+    typeof candidate.pipeThrough === "function" &&
     typeof TransformStream !== "undefined"
   ) {
-    return (stream as any).pipeThrough(
+    return candidate.pipeThrough(
       new TransformStream({
         async transform(chunk, controller) {
           const processed = await transform(chunk);
@@ -448,7 +541,7 @@ function transformUnknownStream(
     );
   }
 
-  if (stream && typeof (stream as any)[Symbol.asyncIterator] === "function") {
+  if (candidate && typeof candidate[Symbol.asyncIterator] === "function") {
     return (async function* () {
       for await (const chunk of stream as AsyncIterable<unknown>) {
         const processed = await transform(chunk);
@@ -644,10 +737,10 @@ function emitWasmDegradedEvents(
 async function applyPromptSecurityToParams(
   runtime: PromptSecurityRuntime,
   config: VercelAiClawdstrikeConfig,
-  params: any,
+  params: LanguageModelV2CallOptions,
   context: SecurityContext,
-): Promise<any> {
-  let out = params;
+): Promise<LanguageModelV2CallOptions> {
+  let out: LanguageModelV2CallOptions = params;
   const prompt = out?.prompt;
 
   if (runtime.enabled.jailbreakDetection && runtime.jailbreak) {
@@ -670,7 +763,7 @@ async function applyPromptSecurityToParams(
             riskScore: r.riskScore,
             severity: r.severity,
             fingerprint: r.fingerprint,
-            signals: r.signals.map((s: any) => s.id),
+            signals: r.signals.map((s: JailbreakSignal) => s.id),
             canonicalization: r.canonicalization,
             session: r.session ? { ...r.session, sessionId: undefined } : undefined,
           },
@@ -705,14 +798,10 @@ async function applyPromptSecurityToParams(
     };
   }
 
-  if (
-    runtime.enabled.watermarking &&
-    runtime.getWatermarker &&
-    Array.isArray((out as any)?.prompt)
-  ) {
+  if (runtime.enabled.watermarking && runtime.getWatermarker && Array.isArray(out?.prompt)) {
     out = {
       ...out,
-      prompt: await applyPromptWatermark(runtime, config, (out as any).prompt, context),
+      prompt: await applyPromptWatermark(runtime, config, out.prompt, context),
     };
   }
 
@@ -922,15 +1011,15 @@ function summarizeObject(value: unknown): Record<string, unknown> | undefined {
 
 function applyInstructionHierarchyToPrompt(
   enforcer: InstructionHierarchyEnforcer,
-  prompt: any[],
+  prompt: LanguageModelV2Prompt,
   context: SecurityContext,
   mode: PromptSecurityMode,
   config: VercelAiClawdstrikeConfig,
-): any[] {
+): LanguageModelV2Prompt {
   const inputs = prompt
     .map((msg, idx) => {
       if (!isPromptMessageTextful(msg)) return null;
-      const role = (msg as any).role;
+      const role = msg.role;
       const level = role === "system" ? InstructionLevel.System : InstructionLevel.User;
 
       return {
@@ -946,7 +1035,11 @@ function applyInstructionHierarchyToPrompt(
     })
     .filter(Boolean);
 
-  const result = enforcer.enforce(inputs as any);
+  // Cast `inputs` at the enforcer boundary: the hierarchy enforcer's
+  // `enforce` signature accepts an SDK-internal `InstructionInput[]`
+  // shape that is structurally identical to what we build here, but the
+  // SDK does not currently re-export it.
+  const result = enforcer.enforce(inputs as never);
 
   recordPromptSecurityAuditEvent(config, context, {
     id: createEventId("psih"),
@@ -956,7 +1049,7 @@ function applyInstructionHierarchyToPrompt(
     sessionId: context.sessionId,
     details: {
       valid: result.valid,
-      conflicts: result.conflicts.map((c: any) => ({
+      conflicts: result.conflicts.map((c: HierarchyConflict) => ({
         id: c.id,
         ruleId: c.ruleId,
         severity: c.severity,
@@ -972,7 +1065,7 @@ function applyInstructionHierarchyToPrompt(
       "instruction_hierarchy",
       "Blocked: instruction hierarchy violation detected",
       {
-        conflicts: result.conflicts.map((c: any) => ({
+        conflicts: result.conflicts.map((c: HierarchyConflict) => ({
           ruleId: c.ruleId,
           severity: c.severity,
           triggers: c.triggers,
@@ -981,7 +1074,7 @@ function applyInstructionHierarchyToPrompt(
     );
   }
 
-  const outPrompt: any[] = [];
+  const outPrompt: LanguageModelV2Message[] = [];
   let cursor = 0;
   const resolveIdx = (id: string): number | null => {
     if (!id.startsWith("p")) return null;
@@ -992,7 +1085,10 @@ function applyInstructionHierarchyToPrompt(
   for (const m of result.messages) {
     const idx = resolveIdx(m.id);
     if (idx === null || idx < 0 || idx >= prompt.length) {
-      outPrompt.push({ role: "system", content: m.content });
+      outPrompt.push({
+        role: "system",
+        content: m.content,
+      });
       continue;
     }
 
@@ -1015,9 +1111,9 @@ function applyInstructionHierarchyToPrompt(
 async function applyPromptWatermark(
   runtime: PromptSecurityRuntime,
   config: VercelAiClawdstrikeConfig,
-  prompt: any[],
+  prompt: LanguageModelV2Prompt,
   context: SecurityContext,
-): Promise<any[]> {
+): Promise<LanguageModelV2Prompt> {
   const wm = await runtime.getWatermarker!();
   const sessionId = runtime.sessionId ?? context.sessionId;
   const payload = wm.generatePayload(runtime.applicationId, sessionId);
@@ -1053,7 +1149,7 @@ function sanitizeStreamChunkIfNeeded(
   runtime: PromptSecurityRuntime | null,
   config: VercelAiClawdstrikeConfig,
   streamRef: SanitizerStreamRef | null,
-  chunk: any,
+  chunk: LanguageModelV2StreamPart,
   context: SecurityContext,
 ): unknown | unknown[] | null {
   if (!runtime?.outputSanitizer || !runtime.enabled.outputSanitization || !streamRef?.stream) {
@@ -1064,9 +1160,20 @@ function sanitizeStreamChunkIfNeeded(
     return chunk;
   }
 
-  const type = (chunk as any).type;
+  const type = chunk.type;
   if (type === "text-delta") {
-    const delta = (chunk as any).textDelta;
+    // V2 stream-part text-delta carries the delta as `delta` (Vercel AI SDK
+    // v6+) or `textDelta` (v5-era providers). Accept either field, and write
+    // the sanitized text back to every field that was present so downstream
+    // consumers see redacted output regardless of which field they read.
+    const partRecord = chunk as Record<string, unknown>;
+    const hasTextDelta = typeof partRecord.textDelta === "string";
+    const hasDelta = typeof partRecord.delta === "string";
+    const delta = hasTextDelta
+      ? (partRecord.textDelta as string)
+      : hasDelta
+        ? (partRecord.delta as string)
+        : undefined;
     if (typeof delta !== "string") {
       return chunk;
     }
@@ -1076,8 +1183,17 @@ function sanitizeStreamChunkIfNeeded(
       return null;
     }
     // Use the stream-processed chunk. This may differ from the incoming delta
-    // due to buffering and cross-boundary redaction.
-    return { ...chunk, textDelta: result.sanitized };
+    // due to buffering and cross-boundary redaction. Update whichever field(s)
+    // carried the incoming text so the structural Object spread cannot leak
+    // the unsanitized value through a sibling field.
+    const sanitizedChunk: Record<string, unknown> = { ...chunk };
+    if (hasTextDelta) {
+      sanitizedChunk.textDelta = result.sanitized;
+    }
+    if (hasDelta) {
+      sanitizedChunk.delta = result.sanitized;
+    }
+    return sanitizedChunk;
   }
 
   if (type === "finish" || type === "error") {
@@ -1092,7 +1208,7 @@ function sanitizeStreamChunkIfNeeded(
         contextId: context.id,
         sessionId: context.sessionId,
         details: {
-          findings: final.findings.map((f: any) => ({
+          findings: final.findings.map((f: PromptSecurityFinding) => ({
             id: f.id,
             category: f.category,
             detector: f.detector,
@@ -1104,27 +1220,34 @@ function sanitizeStreamChunkIfNeeded(
 
     // Always emit remaining buffered text before the finish/error event.
     // Without this, clean (non-redacted) text accumulated in the buffer
-    // since the last flush would be silently dropped.
+    // since the last flush would be silently dropped. The synthesized chunk
+    // populates both `delta` (v6+) and `textDelta` (v5-era) so consumers
+    // reading either field see the flushed text.
     if (type === "finish" && final.sanitized.length > 0) {
-      return [{ type: "text-delta", textDelta: final.sanitized }, chunk];
+      return [
+        { type: "text-delta", delta: final.sanitized, textDelta: final.sanitized },
+        chunk,
+      ];
     }
     return chunk;
   }
 
   if (type === "tool-result") {
-    const toolResult = (chunk as any).result;
+    const partRecord = chunk as Record<string, unknown>;
+    const toolResult = partRecord.result;
     if (typeof toolResult === "string") {
       const r = runtime.outputSanitizer.sanitize(toolResult);
       if (r.wasRedacted) {
+        const toolNameField = partRecord.toolName;
         recordPromptSecurityAuditEvent(config, context, {
           id: createEventId("psos"),
           type: "prompt_security_output_sanitized",
           timestamp: new Date(),
           contextId: context.id,
           sessionId: context.sessionId,
-          toolName: (chunk as any).toolName,
+          toolName: typeof toolNameField === "string" ? toolNameField : undefined,
           details: {
-            findings: r.findings.map((f: any) => ({
+            findings: r.findings.map((f: PromptSecurityFinding) => ({
               id: f.id,
               category: f.category,
               detector: f.detector,
@@ -1143,38 +1266,48 @@ function sanitizeStreamChunkIfNeeded(
 function extractLastUserText(prompt: unknown): string | null {
   if (!Array.isArray(prompt)) return null;
   let last: string | null = null;
-  for (const msg of prompt) {
-    if (!msg || typeof msg !== "object") continue;
-    if ((msg as any).role !== "user") continue;
-    const content = (msg as any).content;
+  for (const rawMsg of prompt) {
+    if (!rawMsg || typeof rawMsg !== "object") continue;
+    const msg = rawMsg as LanguageModelV2Message;
+    if (msg.role !== "user") continue;
+    const content = msg.content;
     if (!Array.isArray(content)) continue;
     const parts = content.filter(
-      (p: any) => p && typeof p === "object" && p.type === "text" && typeof p.text === "string",
+      (p): p is LanguageModelV2TextPart =>
+        !!p &&
+        typeof p === "object" &&
+        (p as { type?: unknown }).type === "text" &&
+        typeof (p as { text?: unknown }).text === "string",
     );
-    const joined = parts.map((p: any) => p.text).join("");
+    const joined = parts.map((p) => p.text).join("");
     last = joined;
   }
   return last && last.trim().length ? last : null;
 }
 
-function applyTextToPromptMessage(originalMessage: any, newText: string): any {
+function applyTextToPromptMessage(
+  originalMessage: LanguageModelV2Message,
+  newText: string,
+): LanguageModelV2Message {
   if (!originalMessage || typeof originalMessage !== "object") return originalMessage;
-  const role = (originalMessage as any).role;
-  if (role === "system" && typeof (originalMessage as any).content === "string") {
+  const role = originalMessage.role;
+  if (role === "system" && typeof originalMessage.content === "string") {
     return { ...originalMessage, content: newText };
   }
 
-  if (
-    (role === "user" || role === "assistant") &&
-    Array.isArray((originalMessage as any).content)
-  ) {
-    const parts = (originalMessage as any).content as any[];
-    const outParts: any[] = [];
+  if ((role === "user" || role === "assistant") && Array.isArray(originalMessage.content)) {
+    type Part = LanguageModelV2Message extends { content: infer C }
+      ? C extends Array<infer P>
+        ? P
+        : never
+      : never;
+    const parts = originalMessage.content as Part[];
+    const outParts: Part[] = [];
     let inserted = false;
     for (const part of parts) {
-      if (part && typeof part === "object" && part.type === "text") {
+      if (part && typeof part === "object" && (part as { type?: unknown }).type === "text") {
         if (!inserted) {
-          outParts.push({ ...part, text: newText });
+          outParts.push({ ...(part as object), text: newText } as Part);
           inserted = true;
         }
         continue;
@@ -1182,43 +1315,51 @@ function applyTextToPromptMessage(originalMessage: any, newText: string): any {
       outParts.push(part);
     }
     if (!inserted) {
-      outParts.unshift({ type: "text", text: newText });
+      outParts.unshift({ type: "text", text: newText } as unknown as Part);
     }
-    return { ...originalMessage, content: outParts };
+    // Cast back to the discriminated union — outParts is the structurally
+    // correct content-array variant for the role-narrowed branch.
+    return { ...originalMessage, content: outParts } as LanguageModelV2Message;
   }
 
   return originalMessage;
 }
 
-function isPromptMessageTextful(msg: any): boolean {
+function isPromptMessageTextful(msg: LanguageModelV2Message): boolean {
   if (!msg || typeof msg !== "object") return false;
-  const role = (msg as any).role;
-  if (role === "system") return typeof (msg as any).content === "string";
+  const role = msg.role;
+  if (role === "system") return typeof msg.content === "string";
   if (role === "user" || role === "assistant") {
-    const content = (msg as any).content;
+    const content = msg.content;
     if (!Array.isArray(content)) return false;
     return content.some(
-      (p: any) =>
-        p &&
+      (p) =>
+        !!p &&
         typeof p === "object" &&
-        p.type === "text" &&
-        typeof p.text === "string" &&
-        p.text.length > 0,
+        (p as { type?: unknown }).type === "text" &&
+        typeof (p as { text?: unknown }).text === "string" &&
+        (p as { text: string }).text.length > 0,
     );
   }
   return false;
 }
 
-function extractMessageText(msg: any): string {
+function extractMessageText(msg: LanguageModelV2Message): string {
   const role = msg?.role;
   if (role === "system" && typeof msg.content === "string") return msg.content;
   if ((role === "user" || role === "assistant") && Array.isArray(msg.content)) {
-    return msg.content
-      .filter(
-        (p: any) => p && typeof p === "object" && p.type === "text" && typeof p.text === "string",
-      )
-      .map((p: any) => p.text)
-      .join("");
+    const texts: string[] = [];
+    for (const p of msg.content) {
+      if (
+        p &&
+        typeof p === "object" &&
+        (p as { type?: unknown }).type === "text" &&
+        typeof (p as { text?: unknown }).text === "string"
+      ) {
+        texts.push((p as LanguageModelV2TextPart).text);
+      }
+    }
+    return texts.join("");
   }
   return "";
 }
@@ -1226,7 +1367,7 @@ function extractMessageText(msg: any): string {
 function maybeSanitizeGeneratedText(
   runtime: PromptSecurityRuntime | null,
   config: VercelAiClawdstrikeConfig,
-  result: any,
+  result: { text?: string; __clawdstrike_redacted?: boolean; [k: string]: unknown },
   context: SecurityContext,
 ): void {
   if (!runtime?.outputSanitizer || !runtime.enabled.outputSanitization) return;
@@ -1245,7 +1386,7 @@ function maybeSanitizeGeneratedText(
     contextId: context.id,
     sessionId: context.sessionId,
     details: {
-      findings: r.findings.map((f: any) => ({
+      findings: r.findings.map((f: PromptSecurityFinding) => ({
         id: f.id,
         category: f.category,
         detector: f.detector,

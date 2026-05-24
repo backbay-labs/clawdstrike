@@ -114,7 +114,6 @@ function extractStrings(seed: DraftSeed): YaraString[] {
     if (idx > 10) break;
   }
 
-  // If no strings were extracted, add a placeholder
   if (strings.length === 0) {
     strings.push({ name: "$s1", value: "pattern", isHex: false });
   }

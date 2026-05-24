@@ -266,7 +266,6 @@ export function usePublication(
         );
         const coverageSnapshot = extractDocumentCoverage(fileType, request.source);
 
-        // Build the full manifest
         const manifest: PublicationManifest = {
           ...buildResult.manifest,
           id: crypto.randomUUID(),

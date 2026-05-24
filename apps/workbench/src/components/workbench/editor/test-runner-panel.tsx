@@ -670,7 +670,6 @@ function TestSuiteTab() {
     return parsed.scenarios;
   }, [suiteYaml]);
 
-  // Build a results map keyed by scenario name for graph overlay
   const graphResultsMap = useMemo(() => {
     if (suiteResults.length === 0) return undefined;
     const m = new Map<string, { verdict: string; passed: boolean | null; guard: string | null }>();
@@ -905,7 +904,6 @@ function TestSuiteTab() {
       });
     }
 
-    // Compute coverage
     const testScenarios: TestScenario[] = scenarios.map((s) => ({
       id: s.id,
       name: s.name,

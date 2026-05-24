@@ -607,7 +607,6 @@ export class PluginLoader {
       }
       // If perms is undefined, both stay undefined => no enforcement (backward compat)
 
-      // Create the bridge host
       const host = new PluginBridgeHost({
         pluginId,
         targetWindow,

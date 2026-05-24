@@ -355,7 +355,6 @@ export function TrustGraph({
     [members, nodeCountExceeded],
   );
 
-  // Build a set of fingerprints in the display list for edge filtering
   const displayFingerprintSet = useMemo(() => {
     const s = new Set<string>();
     for (const m of displayMembers) s.add(m.fingerprint);

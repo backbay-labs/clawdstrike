@@ -87,7 +87,6 @@ function runLruEviction(): void {
   );
 
   while (hiddenTabs.length > MAX_KEPT_ALIVE) {
-    // Find the tab with the smallest lastActiveAt among hidden tabs
     let oldest = hiddenTabs[0];
     let oldestIdx = 0;
     for (let i = 1; i < hiddenTabs.length; i++) {
@@ -153,7 +152,6 @@ export function closePluginViewTab(viewId: string): void {
   tabMap.delete(viewId);
 
   if (activeTabId === viewId) {
-    // Find the remaining tab with the highest lastActiveAt
     let best: PluginViewTab | null = null;
     for (const tab of tabMap.values()) {
       if (!best || tab.lastActiveAt > best.lastActiveAt) {

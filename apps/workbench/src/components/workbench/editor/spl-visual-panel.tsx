@@ -311,7 +311,6 @@ export function SplVisualPanel(props: DetectionVisualPanelProps) {
   // Parse pipe chain
   const commands = useMemo(() => parseSplPipeChain(source), [source]);
 
-  // Get the comment block for reconstruction
   const commentBlock = useMemo(() => meta.rawBlock, [meta.rawBlock]);
 
   // Update comment metadata

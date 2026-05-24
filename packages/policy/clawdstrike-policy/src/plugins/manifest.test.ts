@@ -45,6 +45,33 @@ test("rejects invalid compatibility semver", () => {
   ).toThrow(/minVersion must be strict semver/i);
 });
 
+test("default capabilities and resources are not aliased across parses", () => {
+  const baseInput = {
+    version: "1.0.0",
+    guards: [{ name: "acme.deny", entrypoint: "./dist/guard.js" }],
+    trust: { level: "trusted" },
+  } as const;
+
+  const first = parsePluginManifest({ name: "p1", ...baseInput });
+  const second = parsePluginManifest({ name: "p2", ...baseInput });
+
+  // Distinct object identities so per-manifest mutation cannot leak.
+  expect(first.capabilities).not.toBe(second.capabilities);
+  expect(first.resources).not.toBe(second.resources);
+  expect(first.capabilities.filesystem).not.toBe(second.capabilities.filesystem);
+  expect(first.capabilities.secrets).not.toBe(second.capabilities.secrets);
+
+  const firstCaps = first.capabilities as Record<string, unknown>;
+  firstCaps.network = true;
+  (firstCaps.filesystem as Record<string, unknown>).write = true;
+  (first.resources as Record<string, unknown>).maxMemoryMb = 9999;
+
+  const third = parsePluginManifest({ name: "p3", ...baseInput });
+  expect(third.capabilities.network).toBe(false);
+  expect(third.capabilities.filesystem.write).toBe(false);
+  expect(third.resources.maxMemoryMb).toBe(64);
+});
+
 test("accepts extended capability structure", () => {
   const manifest = parsePluginManifest({
     version: "1.0.0",

@@ -277,7 +277,6 @@ function useCodeEditor(
   // Compartment for language extension — allows reconfiguring without destroying the view
   const languageCompartmentRef = useRef<Compartment>(new Compartment());
 
-  // Create the editor once (runs only on mount)
   useEffect(() => {
     if (!containerRef.current) return;
 

@@ -96,7 +96,7 @@ tempfile = "3"
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking", "stream"] }
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
-tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect"] }
 
 [features]
 default = []

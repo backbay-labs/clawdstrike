@@ -40,7 +40,6 @@ export interface WebhookExporterConfig extends Partial<ExporterConfig> {
   excludeGuards?: string[];
 }
 
-/** @experimental */
 export class WebhookExporter extends BaseExporter {
   readonly name = "webhooks";
   readonly schema = SchemaFormat.Native;

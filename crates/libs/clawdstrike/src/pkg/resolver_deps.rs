@@ -326,7 +326,6 @@ impl<'a> DependencyProvider for PubGrubProvider<'a> {
                     }
                 };
 
-                // Find the exact version.
                 let iv = entry.versions.iter().find(|iv| {
                     semver::Version::parse(&iv.version)
                         .map(|sv| &sv == version)

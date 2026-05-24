@@ -72,7 +72,6 @@ export function computeHierarchicalLayout(
     return { nodes: new Map(), edges: [], width: 0, height: 0 };
   }
 
-  // Build adjacency
   const children = new Map<string, string[]>();
   const parents = new Map<string, string[]>();
 
@@ -166,7 +165,6 @@ export function computeHierarchicalLayout(
   // Step 2: Assign layers via longest path from roots (BFS)
   const layers = new Map<string, number>();
 
-  // Initialize all to 0
   for (const n of graph.nodes) layers.set(n.id, 0);
 
   // Topological order via Kahn's algorithm

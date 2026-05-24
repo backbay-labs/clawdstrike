@@ -361,7 +361,6 @@ const ocsfAdapter: DetectionWorkflowAdapter = {
       datasets.positive.push(item);
     }
 
-    // Add an invalid baseline for negative testing
     if (seed.sourceEventIds.length > 0) {
       const invalidItem: EvidenceItem = {
         id: crypto.randomUUID(),

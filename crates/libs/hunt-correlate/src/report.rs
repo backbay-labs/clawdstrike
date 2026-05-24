@@ -83,7 +83,6 @@ pub fn build_report(title: &str, items: Vec<EvidenceItem>) -> Result<HuntReport>
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Build the Merkle tree.
     let tree = MerkleTree::from_leaves(&canonical_leaves)
         .map_err(|e| Error::ReportError(e.to_string()))?;
     let root = tree.root();

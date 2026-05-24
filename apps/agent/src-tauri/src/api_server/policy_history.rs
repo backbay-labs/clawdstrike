@@ -750,7 +750,6 @@ pub(crate) fn build_policy_event_history_causal_impact(
     }
 }
 
-// affected_identities_for_causal_impact and push_affected_identity moved to crate::edr::queries::causal
 pub(crate) fn affected_tools_for_causal_impact(
     graph: &CausalGraph,
 ) -> Vec<EdrPolicyEventHistoryAffectedTool> {
@@ -1399,10 +1398,6 @@ pub(crate) fn canonical_json_hash(value: &impl Serialize, label: &str) -> Result
     let canonical = canonicalize_json(&value).with_context(|| format!("canonicalize {label}"))?;
     Ok(sha256(canonical.as_bytes()).to_hex_prefixed())
 }
-
-// build_policy_event_replay_report, build_policy_event_impact_changes,
-// build_policy_event_impact_drivers, build_policy_event_impact_report
-// moved to crate::edr::policy_events
 
 pub(crate) async fn analyze_policy_event_impact_under_proposed_policy(
     state: &AgentApiState,

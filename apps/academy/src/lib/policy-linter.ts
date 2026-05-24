@@ -78,7 +78,6 @@ export function findYamlPosition(
     if (node && node.range) {
       const from = node.range[0];
       // Limit diagnostic range to a single line to avoid giant multi-line highlights.
-      // Find the end of the line containing `from`.
       const lineEnd = yamlText.indexOf('\n', from);
       const to = lineEnd > from ? lineEnd : node.range[1];
       return { from, to: Math.min(to, node.range[1]) };

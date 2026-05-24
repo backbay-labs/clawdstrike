@@ -263,7 +263,6 @@ export namespace Health {
     const checks = getIntegrations().map((def) => checkIntegration(def, timeout))
     const results = await Promise.all(checks)
 
-    // Update cache
     for (const result of results) {
       healthCache.set(result.id, result)
     }

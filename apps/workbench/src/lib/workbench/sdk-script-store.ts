@@ -436,7 +436,7 @@ const tools = secureTools(
 const result = await generateText({
   model: openai("gpt-4o"),
   tools,
-  experimental_toolCallStreaming: true,
+  toolCallStreaming: true,
   prompt: "Read the file at ~/.ssh/id_rsa",
 });
 

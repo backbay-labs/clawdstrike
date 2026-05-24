@@ -334,7 +334,6 @@ Use for high-risk tasks where reliability is critical.`,
       timeout,
     }
 
-    // Run speculation
     const result = await Speculate.run({
       task,
       config: {
@@ -346,7 +345,6 @@ Use for high-risk tasks where reliability is critical.`,
       gates,
     })
 
-    // Format results
     const allResults = result.allResults.map((r) => ({
       toolchain: r.toolchain,
       passed: r.result?.success ?? false,
@@ -447,13 +445,11 @@ Use before committing or after making changes to verify quality.`,
       useCount: 0,
     }
 
-    // Run gates
     const results = await Verifier.run(workcell, {
       gates,
       failFast,
     })
 
-    // Format results
     const formattedResults = results.results.map((r) => ({
       gate: r.gate,
       passed: r.passed,

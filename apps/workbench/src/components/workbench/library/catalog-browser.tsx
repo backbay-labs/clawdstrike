@@ -625,7 +625,6 @@ export function CatalogBrowser() {
     // Start with the local static categories
     const cats = [...CATALOG_CATEGORIES];
 
-    // Add any remote-only categories
     for (const rc of catalogCategories) {
       if (!cats.find((c) => c.id === rc.id)) {
         cats.push({ id: rc.id as CatalogCategory, label: rc.label, color: rc.color });

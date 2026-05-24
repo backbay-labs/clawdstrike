@@ -47,7 +47,6 @@ export function ThreatRadarView() {
   const [selectedThreat, setSelectedThreat] = useState<Threat | null>(null);
   const { threats, events, status } = useSpineEvents({ enabled: true });
 
-  // Find the original SDR event for a threat to get its timestamp
   const getEventTimestamp = (threatId: string): string => {
     const event = events.find((e) => e.id === threatId);
     return event?.timestamp ?? new Date().toISOString();

@@ -1371,7 +1371,6 @@ async fn main() {
 
     ui::init_color(cli.no_color);
 
-    // Initialize logging
     let log_level = match cli.verbose {
         0 => tracing::Level::WARN,
         1 => tracing::Level::INFO,
@@ -3043,7 +3042,6 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             let key_bytes: [u8; 32] = rng.random();
             let raw_key = format!("cs_{}", hex::encode(key_bytes));
 
-            // Parse scopes
             let scope_list: Vec<String> = scopes
                 .split(',')
                 .map(|s| s.trim())
@@ -3051,7 +3049,6 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
                 .map(|s| s.to_string())
                 .collect();
 
-            // Calculate expiration
             let expires_at = if expires_days > 0 {
                 Some(chrono::Utc::now() + chrono::Duration::days(expires_days as i64))
             } else {

@@ -237,7 +237,6 @@ export function generateRandomEvent(policy: WorkbenchPolicy): HushdEvent {
     payload,
   });
 
-  // Find the specific guard's result, or use overall verdict
   const guardResult = result.guardResults.find((r) => r.guardId === guardId);
   const verdict = guardResult ? guardResult.verdict : result.overallVerdict;
 

@@ -277,7 +277,6 @@ export function SpeakeasyPanel({
     return { label: "Entity", id };
   }, [room]);
 
-  // Send a chat message
   const handleSend = useCallback(async () => {
     if (!composeText.trim() || !onSendMessage || sending) return;
     const text = composeText.trim();

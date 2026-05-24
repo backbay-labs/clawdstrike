@@ -115,9 +115,8 @@ export function validatePolicyYaml(policyYaml: string) {
   try {
     const { policy, warnings: parseWarnings } = parsePolicy(policyYaml);
     const validation = validatePolicy(policy);
-    // `valid` depends solely on structural/semantic validation errors, NOT on
-    // non-fatal parse warnings (parseWarnings). Warnings are informational
-    // diagnostics (e.g. deprecated fields) and must not invalidate a policy.
+    // `valid` ignores parseWarnings (e.g. deprecated fields) — only validation errors
+    // can invalidate a policy.
     return {
       valid: validation.valid,
       parseErrors: parseWarnings,

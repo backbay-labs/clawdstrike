@@ -588,7 +588,6 @@ export function SigmaVisualPanel(props: SigmaVisualPanelProps) {
         const doc = YAML.parseDocument(yamlText);
 
         if (value === "" || value === undefined || value === null) {
-          // Remove the field if value is empty
           if (path.length === 1) {
             doc.delete(path[0]);
           } else if (path.length === 2) {

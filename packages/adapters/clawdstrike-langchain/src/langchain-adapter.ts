@@ -14,12 +14,13 @@ import {
   createSessionSummary,
 } from "@clawdstrike/adapter-core";
 
+import pkg from "../package.json" with { type: "json" };
 import { ClawdstrikeCallbackHandler } from "./callback-handler.js";
 import { wrapTool, wrapTools } from "./wrap.js";
 
 export class LangChainAdapter implements FrameworkAdapter {
   readonly name = "langchain";
-  readonly version = "0.1.1"; // TODO: derive from package.json at build time
+  readonly version = pkg.version;
 
   private readonly engine: PolicyEngineLike;
   private config: AdapterConfig = {};

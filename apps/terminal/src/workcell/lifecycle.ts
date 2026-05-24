@@ -206,7 +206,6 @@ export async function releaseWorkcell(
     }
   }
 
-  // Return to pool as warm
   const updatedWorkcell: WorkcellInfo = {
     ...workcell,
     status: "warm",
@@ -229,7 +228,6 @@ export async function destroyWorkcell(
     return // Already destroyed or doesn't exist
   }
 
-  // Update status
   workcell.status = "destroyed"
   pool.updateWorkcell(workcell)
 

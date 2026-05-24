@@ -46,7 +46,6 @@ export function initPool(
     return pool
   }
 
-  // Create new pool
   pool = {
     projectId,
     gitRoot,
@@ -67,7 +66,6 @@ export function getPoolConfig(projectId: string): PoolConfig {
     return pool.config
   }
 
-  // Return defaults
   return {
     minSize: 2,
     maxSize: 10,

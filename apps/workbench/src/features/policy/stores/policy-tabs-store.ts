@@ -434,7 +434,6 @@ function getInitialState(): Pick<
     };
   }
 
-  // Create a default tab
   const { meta, editState } = createDefaultTabAndEditState();
   usePolicyEditStore.getState().initTab(meta.id, editState);
 

@@ -215,7 +215,6 @@ pub fn diff_history(results: &[ScanPathResult], old: &ScanHistory) -> (ScanDiff,
         }
     }
 
-    // Detect removed servers
     for key in old.servers.keys() {
         if !current_keys.contains_key(key) {
             diff.removed_servers.push(key.clone());

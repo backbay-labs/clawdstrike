@@ -77,9 +77,6 @@ const LAYOUT = {
 // handles its own persistence via debounced writes.
 // ---------------------------------------------------------------------------
 
-/** @deprecated Kept for backward compatibility in existing test references. */
-const SWARM_LAUNCH_EVENT = "workbench:swarm-launch-nodes";
-
 export interface SwarmLaunchPayload {
   nodes: ReturnType<typeof createBoardNode>[];
   edges: Array<{

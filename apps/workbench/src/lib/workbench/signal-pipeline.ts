@@ -780,7 +780,6 @@ export function correlateByPatternMatch(
     for (const [sessionKey, sessionEvents] of sessionEventsMap) {
       if (!matchPatternInSession(sessionEvents, pattern)) continue;
 
-      // Find all signals from this session
       for (const signal of signals) {
         const signalSessionKey = `${signal.context.agentId}:${signal.context.sessionId}`;
         if (signalSessionKey === sessionKey) {
@@ -858,7 +857,6 @@ export function correlateByMitreTechnique(
 export function clusterSignals(clusters: SignalCluster[]): SignalCluster[] {
   if (clusters.length === 0) return [];
 
-  // Build a union-find for cluster merging
   const parent = new Map<number, number>();
 
   function find(i: number): number {

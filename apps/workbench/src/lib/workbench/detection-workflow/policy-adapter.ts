@@ -183,7 +183,6 @@ function seedToScenarios(seed: DraftSeed): TestScenario[] {
     });
   }
 
-  // Add a benign baseline scenario
   scenarios.push({
     id: crypto.randomUUID(),
     name: "Benign baseline",

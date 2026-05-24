@@ -83,7 +83,6 @@ export function generateDraft(seed: DraftSeed): DraftResult {
 
   const draft = selectedAdapter.buildDraft(seed);
 
-  // Create a document reference for the starter evidence
   const docRef: DetectionDocumentRef = {
     documentId: crypto.randomUUID(),
     fileType: draft.fileType,

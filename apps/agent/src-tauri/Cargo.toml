@@ -50,12 +50,12 @@ semver = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # Directories
-dirs = "5"
+dirs = "6"
 keyring = "3"
 hostname = "0.4"
 
 # Process utilities
-which = "6"
+which = "7"
 
 # Shared crypto/data primitives
 hush-core = { path = "../../../crates/libs/hush-core" }

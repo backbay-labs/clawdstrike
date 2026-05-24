@@ -130,7 +130,6 @@ const splAdapter: DetectionWorkflowAdapter = {
       datasets.positive.push(item);
     }
 
-    // Add a negative baseline with CIM field names
     if (seed.sourceEventIds.length > 0) {
       const baselineItem: EvidenceItem = {
         id: crypto.randomUUID(),

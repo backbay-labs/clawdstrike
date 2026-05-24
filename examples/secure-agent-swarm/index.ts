@@ -122,7 +122,6 @@ async function main(): Promise<void> {
   const coderEngine = createStrikeCell({ baseUrl: HUSHD_URL });
   const reviewerEngine = createStrikeCell({ baseUrl: HUSHD_URL });
 
-  // Create adapters
   const plannerAdapter = new ClaudeAdapter(plannerEngine);
   const coderAdapter = new VercelAIAdapter(coderEngine);
   const reviewerBoundary = new FrameworkToolBoundary('generic', { engine: reviewerEngine });

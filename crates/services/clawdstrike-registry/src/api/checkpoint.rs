@@ -54,7 +54,6 @@ pub async fn get_checkpoint(
         }
     };
 
-    // Build the canonical checkpoint message.
     let checkpoint_msg = checkpoint_signature_message(&root_hex, tree_size, &timestamp);
 
     let (sig_hex, key_hex) = {

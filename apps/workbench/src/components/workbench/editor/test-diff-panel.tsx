@@ -109,7 +109,6 @@ export function TestDiffPanel({
           (candidate?.guardResults ?? []).map((g) => [g.guard, g.verdict]),
         );
 
-        // Find the guard that likely caused the overall verdict change
         const newDenyGuard = candidate?.guard ?? null;
 
         // Guards that changed or were removed

@@ -53,7 +53,7 @@ export interface TabEditState {
   testSuiteYaml?: string;
 }
 
-// ---- Pure helpers (extracted from multi-policy-store.tsx) ----
+// ---- Pure helpers ----
 
 function emptyValidation(): ValidationResult {
   return { valid: true, errors: [], warnings: [] };

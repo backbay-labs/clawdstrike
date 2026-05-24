@@ -449,7 +449,6 @@ pub async fn update_policy(
         (yaml, hash)
     };
 
-    // Parse the new policy
     let resolver = RemotePolicyResolver::new(RemoteExtendsResolverConfig::from_config(
         &state.config.remote_extends,
     ))
@@ -461,7 +460,6 @@ pub async fn update_policy(
             V1Error::bad_request("INVALID_POLICY_YAML", format!("Invalid policy YAML: {}", e))
         })?;
 
-    // Update the engine
     let mut engine = state.engine.write().await;
     let keypair = if let Some(ref key_path) = state.config.signing_key {
         let key_hex = std::fs::read_to_string(key_path)

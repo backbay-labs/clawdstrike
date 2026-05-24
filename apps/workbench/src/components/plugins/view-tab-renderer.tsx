@@ -20,10 +20,6 @@ import {
 import type { PluginViewTab } from "@/lib/plugins/plugin-view-tab-store";
 import { NO_OP_VIEW_STORAGE, ViewErrorBoundary } from "./view-shell";
 
-// ---------------------------------------------------------------------------
-// EditorTabLoadingFallback (internal)
-// ---------------------------------------------------------------------------
-
 function EditorTabLoadingFallback() {
   return (
     <div className="flex flex-col items-center justify-center gap-2 h-full">
@@ -32,10 +28,6 @@ function EditorTabLoadingFallback() {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// PluginEditorTabBridge (internal)
-// ---------------------------------------------------------------------------
 
 function PluginEditorTabBridge({
   registration,
@@ -76,10 +68,6 @@ function PluginEditorTabBridge({
     </ViewErrorBoundary>
   );
 }
-
-// ---------------------------------------------------------------------------
-// ViewTabRenderer (exported)
-// ---------------------------------------------------------------------------
 
 /**
  * Keep-alive renderer for plugin editor tabs.

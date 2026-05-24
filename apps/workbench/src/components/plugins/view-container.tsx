@@ -10,10 +10,6 @@ import { Suspense } from "react";
 import type { ViewRegistration, ViewSlot } from "@/lib/plugins/view-registry";
 import { NO_OP_VIEW_STORAGE, ViewErrorBoundary } from "./view-shell";
 
-// ---------------------------------------------------------------------------
-// ViewLoadingFallback (internal)
-// ---------------------------------------------------------------------------
-
 function ViewLoadingFallback({ slotType }: { slotType: ViewSlot }) {
   if (slotType === "editorTab" || slotType === "activityBarPanel") {
     // Full height centered spinner with text
@@ -42,10 +38,6 @@ function ViewLoadingFallback({ slotType }: { slotType: ViewSlot }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// ViewContainer (exported)
-// ---------------------------------------------------------------------------
 
 interface ViewContainerProps {
   registration: ViewRegistration;

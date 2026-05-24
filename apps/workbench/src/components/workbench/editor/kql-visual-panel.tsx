@@ -242,7 +242,6 @@ export function KqlVisualPanel(props: DetectionVisualPanelProps) {
   const { source, onSourceChange, readOnly, accentColor } = props;
   const ACCENT = accentColor ?? DEFAULT_ACCENT;
 
-  // Parse the current KQL source into structured components
   const parsed: KqlParsedQuery = useMemo(() => parseKqlQuery(source), [source]);
 
 

@@ -113,7 +113,6 @@ function parseYaraRule(source: string): ParsedYaraRule {
     }
   }
 
-  // Find the rule body (content between the first { after rule declaration and last })
   const bodyStart = source.indexOf("{", source.search(/rule\s+\w+/));
   const bodyEnd = source.lastIndexOf("}");
   if (bodyStart === -1 || bodyEnd === -1 || bodyEnd <= bodyStart) {
@@ -135,7 +134,6 @@ function parseYaraRule(source: string): ParsedYaraRule {
         ? conditionIdx
         : body.length;
     const metaBlock = body.slice(metaIdx, metaEnd);
-    // Remove the "meta:" header line
     const metaContent = metaBlock.replace(/^\s*meta\s*:\s*/m, "");
     // Parse key = value pairs
     const metaLineRe = /^\s*(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$/gm;

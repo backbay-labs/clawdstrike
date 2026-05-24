@@ -1581,7 +1581,6 @@ impl Config {
         }
 
         for (idx, key_config) in self.auth.api_keys.iter().enumerate() {
-            // Parse scopes
             let scopes = if key_config.scopes.is_empty() {
                 // Default to check+read if no scopes specified.
                 let mut default_scopes = std::collections::HashSet::new();

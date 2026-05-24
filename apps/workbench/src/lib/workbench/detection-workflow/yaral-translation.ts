@@ -182,7 +182,6 @@ function sigmaToYaral(source: string): TranslationResult {
 
   const detection = rule.detection;
   if (detection) {
-    // Iterate over selection blocks (everything except "condition")
     for (const [blockName, blockValue] of Object.entries(detection)) {
       if (blockName === "condition") continue;
 
@@ -221,7 +220,6 @@ function sigmaToYaral(source: string): TranslationResult {
     }
   }
 
-  // Build the YARA-L rule
   const output = [
     `rule ${ruleName} {`,
     `  meta:`,

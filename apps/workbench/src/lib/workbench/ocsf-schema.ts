@@ -138,7 +138,6 @@ function getJsonPath(text: string, pos: number): { path: string[]; currentKey: s
   let isValuePos = false;
   let currentKey: string | null = null;
 
-  // Find the last unmatched colon or comma/brace
   let braceDepth = 0;
   let bracketDepth = 0;
   for (let i = before.length - 1; i >= 0; i--) {
@@ -169,7 +168,6 @@ function getJsonPath(text: string, pos: number): { path: string[]; currentKey: s
     }
   }
 
-  // Build the object path by scanning for nested `"key": {` patterns
   const path: string[] = [];
   let depth = 0;
   // Track the last key seen before each `{`

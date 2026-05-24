@@ -24,7 +24,6 @@ export interface DatadogConfig extends Partial<ExporterConfig> {
   metrics?: DatadogMetricsConfig;
 }
 
-/** @experimental */
 export class DatadogExporter extends BaseExporter {
   readonly name = "datadog";
   readonly schema = SchemaFormat.Native;

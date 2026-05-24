@@ -317,7 +317,6 @@ export class VersionStore {
       color,
     };
 
-    // Update the version's tags array
     const updatedTags = version.tags.includes(tag) ? version.tags : [...version.tags, tag];
 
     tx.objectStore(TAGS_STORE).put(tagEntry);
@@ -344,7 +343,6 @@ export class VersionStore {
   async getTaggedVersions(policyId: string): Promise<PolicyVersion[]> {
     const db = this.ensureDB();
 
-    // Get all tags for this policy
     const tx = db.transaction([TAGS_STORE, VERSIONS_STORE], "readonly");
     const tagIndex = tx.objectStore(TAGS_STORE).index("policyId");
     const tagReq = tagIndex.getAll(policyId);
@@ -433,11 +431,9 @@ export class VersionStore {
   async exportChangelog(policyId: string): Promise<string> {
     const db = this.ensureDB();
 
-    // Get all versions, newest first
     const versions = await this.getVersions(policyId, 1000, 0);
     if (versions.length === 0) return "# Changelog\n\nNo versions recorded.\n";
 
-    // Get the policy name from the latest version
     const policyName = versions[0]?.policy.name ?? "Policy";
 
     const lines: string[] = [

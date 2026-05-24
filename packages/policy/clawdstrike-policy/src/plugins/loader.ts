@@ -299,21 +299,23 @@ export function resolvePluginRoot(pluginRef: string, fromDir: string): string {
   return path.dirname(pkgJsonPath);
 }
 
-function extractFactory(mod: any): CustomGuardFactory {
-  const candidate = mod?.factory ?? mod?.default ?? mod;
+function extractFactory(mod: unknown): CustomGuardFactory {
+  const container = isRecord(mod) ? mod : undefined;
+  const candidate = container?.factory ?? container?.default ?? mod;
   if (!isFactory(candidate)) {
     throw new Error("invalid plugin guard entrypoint: expected CustomGuardFactory export");
   }
   return candidate;
 }
 
-function isFactory(value: any): value is CustomGuardFactory {
+function isFactory(value: unknown): value is CustomGuardFactory {
   return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    typeof value.id === "string" &&
-    typeof value.build === "function"
+    isRecord(value) && typeof value.id === "string" && typeof value.build === "function"
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 type BridgeInvocation = {

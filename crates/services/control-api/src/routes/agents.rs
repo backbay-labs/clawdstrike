@@ -361,7 +361,6 @@ async fn delete_agent(
         }
     }
 
-    // Delete the agent row.
     sqlx::query::query("DELETE FROM agents WHERE id = $1 AND tenant_id = $2")
         .bind(id)
         .bind(auth.tenant_id)

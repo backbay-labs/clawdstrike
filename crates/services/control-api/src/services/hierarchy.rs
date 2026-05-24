@@ -85,10 +85,6 @@ pub async fn get_node(
     HierarchyNode::from_row(row).map_err(ApiError::Database)
 }
 
-// ---------------------------------------------------------------------------
-// Create node
-// ---------------------------------------------------------------------------
-
 pub async fn create_node(
     db: &PgPool,
     params: &CreateNodeParams<'_>,
@@ -97,8 +93,7 @@ pub async fn create_node(
     let node_type = parse_node_type(params.node_type)?;
     ensure_parentless_node_allowed(node_type, params.parent_id)?;
 
-    // Resolve the stored node_type string — map legacy "agent" to "endpoint"
-    // so new rows always use the canonical type.
+    // Persist "agent" as "endpoint" so new rows use the canonical type only.
     let stored_node_type = match node_type {
         HierarchyNodeType::Agent => HierarchyNodeType::Endpoint.as_str(),
         other => other.as_str(),
@@ -156,10 +151,6 @@ pub async fn create_node(
     tx.commit().await.map_err(ApiError::Database)?;
     Ok(node)
 }
-
-// ---------------------------------------------------------------------------
-// Update node
-// ---------------------------------------------------------------------------
 
 pub async fn update_node(
     db: &PgPool,
@@ -444,10 +435,6 @@ fn map_unique_violation(err: sqlx::error::Error) -> ApiError {
     ApiError::Database(err)
 }
 
-// ---------------------------------------------------------------------------
-// Delete node
-// ---------------------------------------------------------------------------
-
 pub async fn delete_node(
     db: &PgPool,
     tenant_id: Uuid,
@@ -584,7 +571,6 @@ pub async fn delete_node(
         deleted_count += descendant_count;
     }
 
-    // Delete the node itself
     let result = sqlx::query::query("DELETE FROM hierarchy_nodes WHERE id = $1 AND tenant_id = $2")
         .bind(node_id)
         .bind(tenant_id)

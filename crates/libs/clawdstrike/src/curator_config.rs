@@ -23,9 +23,7 @@ const DEFAULT_CURATOR_KEYS_HEX: &[&str] = &[
 /// Environment variable for additional trusted curator keys (comma-separated hex).
 const ENV_VAR: &str = "CLAWDSTRIKE_TRUSTED_CURATORS";
 
-// ---------------------------------------------------------------------------
-// Original flat config types (preserved for backward compatibility)
-// ---------------------------------------------------------------------------
+// Flat `trusted_curators.toml` schema — kept for compatibility with pre-1.2 configs.
 
 /// On-disk representation of `trusted_curators.toml` (legacy flat key list).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

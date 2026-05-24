@@ -334,8 +334,7 @@ function StatRow({
 
 
 function SignalsTab({ sentinel }: { sentinel: Sentinel }) {
-  // In a real implementation this would pull from SignalProvider filtered by sentinelId.
-  // For now we show a placeholder that communicates the design intent.
+  // Placeholder: SignalProvider integration ships in a later phase.
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-3">
       <IconActivity size={28} stroke={1} className="text-[#6f7f9a]/20" />

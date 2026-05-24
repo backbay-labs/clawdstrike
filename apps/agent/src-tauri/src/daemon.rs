@@ -1938,9 +1938,8 @@ fn resolve_supported_policy_path(policy_path: &PathBuf) -> Option<PathBuf> {
         return None;
     };
 
-    // Hushd no longer accepts legacy guard keys like `fs_blocklist`.
-    // When an incompatible policy is detected, fall back to built-in ruleset
-    // so the daemon stays available instead of restart-looping.
+    // Incompatible policies (e.g. legacy `fs_blocklist` guards) must not crash-loop
+    // the daemon — fall back to the built-in ruleset and surface a warning.
     let doc: serde_yaml::Value = match serde_yaml::from_str(&raw) {
         Ok(v) => v,
         Err(err) => {

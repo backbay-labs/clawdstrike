@@ -530,7 +530,6 @@ export function validateInvitationChain(
     return { valid: true, depth: 0 };
   }
 
-  // Build a map of fingerprint -> member for fast lookup
   const memberMap = new Map<string, SwarmMember & { invitedBy?: string | null }>();
   for (const m of existingMembers) {
     memberMap.set(m.fingerprint, m);

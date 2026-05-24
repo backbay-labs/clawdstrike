@@ -106,7 +106,6 @@ function processFindings(
 
     const { nodes, actions } = useSwarmBoardStore.getState();
 
-    // Find the source agent session node by matching swarmId to huntId
     const sessionNode = nodes.find(
       (n: Node<SwarmBoardNodeData>) =>
         n.data.nodeType === "agentSession" &&
@@ -148,7 +147,6 @@ function processFindings(
     // Stamp creation time for activity pulse (3s bright glow on new edges)
     receiptEdgeTimestamps.set(receiptEdgeId, Date.now());
 
-    // Increment the session's receiptCount
     actions.updateNode(sessionNode.id, {
       receiptCount: ((sessionNode.data.receiptCount as number) ?? 0) + 1,
     });

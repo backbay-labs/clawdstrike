@@ -83,7 +83,6 @@ export function registerEditCommands(deps: EditCommandDeps): void {
       execute: () => {
         const view = getActiveEditorView();
         if (!view) return;
-        // Find the Mod-h command from searchKeymap which opens search with replace enabled
         const replaceCmd = searchKeymap.find(
           (k) => k.key === "Mod-h" || k.key === "Mod-H"
         );

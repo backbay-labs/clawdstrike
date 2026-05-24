@@ -22,22 +22,22 @@ classifiers = [
 dependencies = [
     "pynacl>=1.5.0",
     "pyyaml>=6.0",
-    "pycryptodome>=3.19.0",
-    "wcmatch>=8.5",
+    "pycryptodome>=3.21",
+    "wcmatch>=10",
 ]
 
 [project.optional-dependencies]
-attestation = ["httpx>=0.25"]
-hunt = ["nats-py>=2.0", "httpx>=0.25"]
+attestation = ["httpx>=0.28"]
+hunt = ["nats-py>=2.10", "httpx>=0.28"]
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "pytest-cov>=4.0",
-    "mypy>=1.0",
-    "ruff>=0.1",
+    "pytest>=8",
+    "pytest-asyncio>=0.25",
+    "pytest-cov>=6",
+    "mypy>=1.13",
+    "ruff>=0.8",
     "types-PyYAML>=6.0",
-    "httpx>=0.25",
-    "openai-agents>=0.0.7",
+    "httpx>=0.28",
+    "openai-agents>=0.17",
 ]
 
 [build-system]

@@ -243,7 +243,6 @@ function translateSigmaToEql(source: string): TranslationResult {
   const diagnostics: TranslationDiagnostic[] = [];
   const fieldMappings: FieldMapping[] = [];
 
-  // Step 1: Parse Sigma YAML
   const { rule, errors } = parseSigmaYaml(source);
   if (errors.length > 0) {
     for (const err of errors) {
@@ -261,10 +260,8 @@ function translateSigmaToEql(source: string): TranslationResult {
     };
   }
 
-  // Step 2: Map logsource category to EQL event category
   const eventCategory = sigmaLogsourceToEventCategory(rule.logsource.category, diagnostics);
 
-  // Step 3: Extract selection blocks from detection
   const detection = rule.detection as Record<string, unknown>;
   const selections = extractSelections(detection);
 
@@ -282,7 +279,6 @@ function translateSigmaToEql(source: string): TranslationResult {
     };
   }
 
-  // Step 4: Build EQL conditions from selection fields
   const conditions: EqlCondition[] = [];
 
   for (const selection of selections) {
@@ -379,7 +375,6 @@ function translateSigmaToEql(source: string): TranslationResult {
     };
   }
 
-  // Step 5: Build EQL AST
   // Determine logic operator from condition string
   const conditionStr = detection["condition"] as string | undefined;
   const hasOrLogic = conditionStr
@@ -393,10 +388,8 @@ function translateSigmaToEql(source: string): TranslationResult {
     logicOperator: hasOrLogic ? "or" : "and",
   };
 
-  // Step 6: Generate EQL text
   const eqlText = generateEql(ast);
 
-  // Step 7: Add comment header
   const header = [
     `// Translated from Sigma: ${rule.title}`,
     "// NOTE: Review ECS field names for your Elastic deployment",

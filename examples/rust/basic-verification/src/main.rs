@@ -17,7 +17,6 @@ fn main() {
     let receipt_path = &args[1];
     let pubkey_path = &args[2];
 
-    // Load the receipt
     let receipt_json = match fs::read_to_string(receipt_path) {
         Ok(content) => content,
         Err(e) => {

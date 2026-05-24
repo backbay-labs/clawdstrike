@@ -114,7 +114,6 @@ impl CorrelationEngine {
             });
         }
 
-        // Remove empty entries.
         self.windows.retain(|_, v| !v.is_empty());
     }
 

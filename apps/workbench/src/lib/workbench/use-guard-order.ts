@@ -99,7 +99,6 @@ export function useGuardOrder() {
       const targetIdx = prev.indexOf(targetId);
       if (sourceIdx < 0 || targetIdx < 0) return prev;
       const next = [...prev];
-      // Remove source
       next.splice(sourceIdx, 1);
       // Find target's new index after removal
       const insertIdx = next.indexOf(targetId);
