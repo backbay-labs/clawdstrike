@@ -115,5 +115,18 @@ apps/academy/public/pagefind/
 
 # Vendored dependencies (local)
 vendor/
-!infra/vendor/
-!infra/vendor/**
+
+# infra/vendor/ used to host a 1 GB `cargo vendor` mirror; that mirror is now
+# generated at CI time (see .github/workflows/ci.yml offline job). Only three
+# preserved sub-trees stay tracked:
+#  - infra/vendor/nono           (first-party fork, optional deps stripped)
+#  - infra/vendor/async-nats     (held as path-dep + [patch.crates-io])
+#  - infra/vendor/rustls-webpki  (carries security-advisory backport)
+# Everything else under infra/vendor/ is regenerated and ignored.
+infra/vendor/*
+!infra/vendor/nono
+!infra/vendor/nono/**
+!infra/vendor/async-nats
+!infra/vendor/async-nats/**
+!infra/vendor/rustls-webpki
+!infra/vendor/rustls-webpki/**
