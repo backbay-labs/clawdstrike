@@ -1937,7 +1937,6 @@ fn ipv6_is_unicast_link_local(ip: &std::net::Ipv6Addr) -> bool {
     (ip.segments()[0] & 0xffc0) == 0xfe80
 }
 
-// quarantine_file_target_path moved to crate::edr::response
 fn disable_persistence_target_path(
     plan: &EndpointResponsePlan,
     graph: &CausalGraph,
@@ -2472,8 +2471,6 @@ pub(crate) async fn revoke_local_integration_secret_grant(
     })
 }
 
-// ProcessSignalTarget, suspend_process_tree_targets moved to crate::edr::response
-// process_node_pid moved to crate::edr::response
 fn validate_process_signal_targets(targets: &[ProcessSignalTarget]) -> Result<()> {
     if targets.is_empty() {
         return Err(anyhow::anyhow!(
@@ -3643,10 +3640,6 @@ fn profile_d_script_file_name_is_safe(file_name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-// quarantine_file_effect, disable_persistence_effect, suspend_process_tree_effect,
-// process_tree_effect_pids moved to crate::edr::response
-// quarantine_destination_path, safe_filename_fragment moved to crate::edr::response
-
 fn persistence_disable_destination_path(
     quarantine_root: &FsPath,
     plan: &EndpointResponsePlan,
@@ -3682,5 +3675,3 @@ pub(crate) fn supported_edr_response_action(action: &EndpointDecisionAction) -> 
             | EndpointDecisionAction::CollectEvidence
     )
 }
-
-// endpoint_security_event_* helpers moved to crate::edr::conversion::endpoint_security

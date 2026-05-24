@@ -859,11 +859,6 @@ pub(crate) fn staged_detection_stage_entry(
         })
 }
 
-// build_edr_policy_delta_artifact, build_edr_policy_delta_patch,
-// policy_delta_stage_is_enforcing, policy_delta_enforcement_action_supported,
-// validate_policy_delta_stage_action, conventional_policy_guard_patch, merge_json_values
-// moved to crate::edr::policy_events
-
 pub(crate) fn policy_delta_artifact_hash(artifact: &EdrPolicyDeltaArtifact) -> Result<String> {
     let value = serde_json::to_value(artifact)
         .with_context(|| format!("serialize policy delta {}", artifact.policy_delta_id))?;

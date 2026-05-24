@@ -104,8 +104,6 @@ pub(crate) async fn agent_edr_finding_groups(
     }))
 }
 
-// build_finding_groups and helpers moved to crate::edr::queries::finding_groups
-
 pub(crate) async fn agent_edr_causal_graph(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -330,8 +328,6 @@ pub(crate) async fn agent_edr_graph_search(
         matches,
     }))
 }
-
-// validate_graph_search_input, build_graph_search_matches and helpers moved to crate::edr::queries::graph_search
 
 pub(crate) async fn agent_edr_graph_slice_export(
     State(state): State<Arc<AgentApiState>>,

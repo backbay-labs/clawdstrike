@@ -2295,18 +2295,12 @@ struct DiagnosticsBundleResponse {
     generated_at: String,
 }
 
-// identity_filter_matches moved to crate::edr::queries::causal
-
-// PendingFindingGroup moved to crate::edr::queries::finding_groups
-
 #[derive(Debug, Serialize)]
 struct AgentPolicyCheckResponse {
     #[serde(flatten)]
     decision: PolicyCheckOutput,
     receipt: SignedReceipt,
 }
-
-// PendingGraphSearchMatch moved to crate::edr::queries::graph_search
 
 pub(crate) async fn response_execution_record_with_attribution(
     state: &AgentApiState,
