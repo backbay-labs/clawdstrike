@@ -327,18 +327,18 @@ impl EndpointDecisionReceipt {
         let provider_kind = provider
             .map(|provider| camel_debug_to_snake(format!("{:?}", provider.provider_kind).as_str()))
             .unwrap_or_else(|| "unknown".to_string());
-        let observation_receipt_id = observation_receipt_id_from_fields(
-            input.endpoint_id,
-            input.policy.policy_hash.as_str(),
-            input.observation.observation_id.as_str(),
+        let observation_receipt_id = observation_receipt_id_from_fields(ObservationReceiptIdFields {
+            endpoint_id: input.endpoint_id,
+            policy_hash: input.policy.policy_hash.as_str(),
+            observation_id: input.observation.observation_id.as_str(),
             event_kind,
-            observation_hash.as_str(),
-            target.as_str(),
-            graph_slice_id.as_str(),
-            process_node_id.as_str(),
-            provider_id.as_str(),
-            provider_kind.as_str(),
-        );
+            observation_hash: observation_hash.as_str(),
+            target: target.as_str(),
+            graph_slice_id: graph_slice_id.as_str(),
+            process_node_id: process_node_id.as_str(),
+            provider_id: provider_id.as_str(),
+            provider_kind: provider_kind.as_str(),
+        });
 
         Self {
             schema_version: ENDPOINT_DECISION_RECEIPT_SCHEMA_VERSION.to_string(),
@@ -4603,29 +4603,31 @@ fn detection_finding_id_from_signed_fields(rule_id: &str, observation_id: &str) 
     stable_id("finding", [rule_id, observation_id])
 }
 
-fn observation_receipt_id_from_fields(
-    endpoint_id: &str,
-    policy_hash: &str,
-    observation_id: &str,
-    event_kind: &str,
-    observation_hash: &str,
-    target: &str,
-    graph_slice_id: &str,
-    process_node_id: &str,
-    provider_id: &str,
-    provider_kind: &str,
-) -> String {
-    let observation_id_hash = sha256(observation_id.as_bytes()).to_hex_prefixed();
-    let event_kind_hash = sha256(event_kind.as_bytes()).to_hex_prefixed();
-    let observation_hash_hash = sha256(observation_hash.as_bytes()).to_hex_prefixed();
-    let target_hash = sha256(target.as_bytes()).to_hex_prefixed();
-    let graph_slice_id_hash = sha256(graph_slice_id.as_bytes()).to_hex_prefixed();
-    let process_node_id_hash = sha256(process_node_id.as_bytes()).to_hex_prefixed();
-    let provider_id_hash = sha256(provider_id.as_bytes()).to_hex_prefixed();
-    let provider_kind_hash = sha256(provider_kind.as_bytes()).to_hex_prefixed();
+struct ObservationReceiptIdFields<'a> {
+    endpoint_id: &'a str,
+    policy_hash: &'a str,
+    observation_id: &'a str,
+    event_kind: &'a str,
+    observation_hash: &'a str,
+    target: &'a str,
+    graph_slice_id: &'a str,
+    process_node_id: &'a str,
+    provider_id: &'a str,
+    provider_kind: &'a str,
+}
+
+fn observation_receipt_id_from_fields(fields: ObservationReceiptIdFields<'_>) -> String {
+    let observation_id_hash = sha256(fields.observation_id.as_bytes()).to_hex_prefixed();
+    let event_kind_hash = sha256(fields.event_kind.as_bytes()).to_hex_prefixed();
+    let observation_hash_hash = sha256(fields.observation_hash.as_bytes()).to_hex_prefixed();
+    let target_hash = sha256(fields.target.as_bytes()).to_hex_prefixed();
+    let graph_slice_id_hash = sha256(fields.graph_slice_id.as_bytes()).to_hex_prefixed();
+    let process_node_id_hash = sha256(fields.process_node_id.as_bytes()).to_hex_prefixed();
+    let provider_id_hash = sha256(fields.provider_id.as_bytes()).to_hex_prefixed();
+    let provider_kind_hash = sha256(fields.provider_kind.as_bytes()).to_hex_prefixed();
     observation_receipt_id_from_evidence_hashes(
-        endpoint_id,
-        policy_hash,
+        fields.endpoint_id,
+        fields.policy_hash,
         ObservationReceiptIdEvidenceHashes {
             observation_id_hash: observation_id_hash.as_str(),
             event_kind_hash: event_kind_hash.as_str(),
