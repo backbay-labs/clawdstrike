@@ -330,7 +330,6 @@ class OpsGenieClient {
   }
 }
 
-/** @experimental */
 export class AlertingExporter extends BaseExporter {
   readonly name = "alerting";
   readonly schema = SchemaFormat.Native;
