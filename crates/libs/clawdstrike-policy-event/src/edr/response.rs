@@ -295,7 +295,7 @@ pub struct EndpointResponseExecutionEffect {
 
 impl EndpointResponseExecutionEffect {
     #[must_use]
-    pub fn quarantine_file(
+    pub(crate) fn quarantine_file(
         original_path: impl AsRef<str>,
         quarantine_path: impl AsRef<str>,
         content_hash: impl AsRef<str>,
@@ -343,7 +343,7 @@ impl EndpointResponseExecutionEffect {
     }
 
     #[must_use]
-    pub fn disable_persistence(
+    pub(crate) fn disable_persistence(
         original_path: impl AsRef<str>,
         disabled_path: impl AsRef<str>,
         content_hash: impl AsRef<str>,

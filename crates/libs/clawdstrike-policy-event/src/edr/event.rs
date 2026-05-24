@@ -127,7 +127,7 @@ pub enum EndpointEvent {
 
 impl EndpointEvent {
     #[must_use]
-    pub fn kind_name(&self) -> &'static str {
+    pub(crate) fn kind_name(&self) -> &'static str {
         match self {
             Self::ProcessExec { .. } => "process_exec",
             Self::FileAccess { .. } => "file_access",

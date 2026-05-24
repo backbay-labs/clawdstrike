@@ -54,7 +54,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub fn matches_path(&self, path: &str) -> bool {
+    pub(crate) fn matches_path(&self, path: &str) -> bool {
         let observed = normalize_path_string(path);
         let relative = normalize_path_string(&self.relative_path.display().to_string());
         observed == relative || observed.ends_with(&format!("/{relative}"))
@@ -72,7 +72,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub fn matches_network_destination(&self, host: &str, url: Option<&str>) -> bool {
+    pub(crate) fn matches_network_destination(&self, host: &str, url: Option<&str>) -> bool {
         let Some(honey_host) = self.internal_hostname() else {
             return false;
         };
@@ -89,7 +89,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub fn browser_cookie_indicators(&self) -> Vec<String> {
+    pub(crate) fn browser_cookie_indicators(&self) -> Vec<String> {
         if self.kind != HoneyArtifactKind::BrowserCookieJar {
             return Vec::new();
         }
@@ -133,7 +133,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub fn matches_browser_cookie_access(&self, name: Option<&str>) -> bool {
+    pub(crate) fn matches_browser_cookie_access(&self, name: Option<&str>) -> bool {
         let Some(name) = name else {
             return false;
         };
