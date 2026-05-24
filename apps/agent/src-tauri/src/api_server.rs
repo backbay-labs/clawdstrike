@@ -1,26 +1,29 @@
 //! Authenticated local API server for agent control and OpenClaw transport.
 
 use crate::approval::{
-    ApprovalQueue, ApprovalRequestInput, ApprovalResolveInput, ApprovalStatusResponse,
+    ApprovalRequestInput, ApprovalResolveInput, ApprovalStatusResponse,
 };
-use crate::daemon::{AuditQueue, DaemonManager, DaemonStatus};
+use crate::daemon::DaemonStatus;
+#[cfg(test)]
+use crate::daemon::DaemonManager;
 use crate::macos::status::{
     CombinedSystemExtensionStatus, ProviderAvailability, ProviderRuntimeState, ProviderStatus,
     SystemExtensionApproval, SystemExtensionInstallState,
 };
+#[cfg(test)]
 use crate::macos::MacosHostService;
 use crate::openclaw::{
     GatewayDiscoverInput, GatewayRequestInput, GatewayUpsertRequest, ImportGatewayRequest,
-    OpenClawManager,
 };
+#[cfg(test)]
+use crate::openclaw::OpenClawManager;
 use crate::policy::{evaluate_policy_check, PolicyCheckInput, PolicyCheckOutput};
 use crate::runtime_registry::{
     register_runtime_agent, resolve_effective_endpoint_agent_id, RuntimeRegistrationInput,
 };
-use crate::session::{SessionManager, SessionState};
+use crate::session::SessionState;
 use crate::settings::{IntegrationSettings, RuntimeAgentRegistration, Settings};
-use crate::telemetry_publisher::TelemetryPublisher;
-use crate::updater::{HushdUpdater, OtaStatus};
+use crate::updater::OtaStatus;
 use anyhow::{Context, Result};
 use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, State};
@@ -73,17 +76,21 @@ use futures::{Stream, StreamExt};
 use hush_core::{canonicalize_json, sha256, Keypair, SignedReceipt};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+#[cfg(test)]
+use std::collections::HashMap;
 use std::fs;
-use std::future::Future;
 use std::io::{Read as _, Seek as _, SeekFrom};
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Component, Path as FsPath, PathBuf};
-use std::pin::Pin;
-use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
+use std::sync::Arc;
+#[cfg(test)]
+use std::sync::{Mutex as StdMutex, RwLock as StdRwLock};
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::broadcast;
+#[cfg(test)]
+use tokio::sync::{Mutex, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -92,9 +99,20 @@ mod constants;
 mod daemon_proxy;
 mod edr_paths;
 mod rate_limit;
+mod state;
 mod ui_bootstrap;
 
 pub(crate) use constants::*;
+// `FleetHuntEventPublishFuture` is referenced in tests and by downstream `use
+// crate::api_server::*` glob importers; the re-export is part of the public API.
+#[allow(unused_imports)]
+pub use state::{
+    AgentApiServer, AgentApiServerDeps, ControlAckPostbackRetryRequest, ControlAckPostbackRetrySink,
+    FleetHuntEventPublishFuture, FleetHuntEventPublisher,
+};
+// `PolicyVersionCache` is referenced in tests and by background-task code paths.
+#[allow(unused_imports)]
+pub(crate) use state::{AgentApiState, PolicyVersionCache, PreviousAuthToken};
 
 pub(crate) use crate::edr::conversion::*;
 pub(crate) use crate::edr::dto::*;
@@ -115,22 +133,19 @@ use auth::{
     request_is_secure_uri,
 };
 use daemon_proxy::{proxy_daemon_events, proxy_daemon_get, proxy_daemon_mutation};
-use edr_paths::{
-    default_edr_control_ack_postback_retry_ledger, default_edr_control_archive_upload_retry_ledger,
-    default_edr_control_receipt_upload_retry_ledger, default_edr_egress_restriction_ledger,
-    default_edr_evidence_bundle_store, default_edr_fleet_hunt_event_outbox,
-    default_edr_flight_recorder, default_edr_honey_registry,
-    default_edr_network_extension_egress_policy_path, default_edr_policy_delta_store,
-    default_edr_quarantine_dir, default_edr_receipt_ledger, default_edr_receipt_signing_key_path,
-    default_edr_response_acknowledgement_ledger, default_edr_response_execution_ledger,
-    default_edr_staged_detection_ledger,
-};
+use edr_paths::default_edr_receipt_signing_key_path;
 #[cfg(test)]
 use daemon_proxy::build_daemon_proxy_target;
+// Re-exported for callers that import via `use crate::api_server::*` (e.g. tests
+// constructing rate limiters directly); not otherwise referenced in this module.
+#[allow(unused_imports)]
 pub(crate) use rate_limit::{ApprovalSubmissionLimiter, RouteRateLimiter};
 use rate_limit::route_rate_limit;
 #[cfg(test)]
 use rate_limit::APPROVAL_RATE_LIMIT_BURST;
+// Re-exported for callers that import via `use crate::api_server::*`;
+// `start_ui_bootstrap` and the page handlers are mounted on the router below.
+#[allow(unused_imports)]
 pub(crate) use ui_bootstrap::UiBootstrapSession;
 #[cfg(test)]
 pub(crate) use ui_bootstrap::UiBootstrapStartResponse;
@@ -140,240 +155,7 @@ use ui_bootstrap::{
 };
 
 
-#[derive(Clone)]
-pub struct AgentApiServer {
-    port: u16,
-    state: Arc<AgentApiState>,
-}
-
-#[derive(Clone)]
-pub struct ControlAckPostbackRetrySink {
-    state: Arc<AgentApiState>,
-}
-
-pub struct ControlAckPostbackRetryRequest {
-    pub control_api_url: String,
-    pub use_authenticated_route: bool,
-    pub response_action_id: String,
-    pub target_kind: String,
-    pub target_id: String,
-    pub ack_token: String,
-    pub status: String,
-    pub observed_at: chrono::DateTime<chrono::Utc>,
-    pub message: Option<String>,
-    pub resulting_state: Option<String>,
-    pub raw_payload: serde_json::Value,
-    pub failure_message: String,
-}
-
-#[derive(Clone)]
-pub struct AgentApiServerDeps {
-    pub settings: Arc<RwLock<Settings>>,
-    pub daemon_manager: Arc<DaemonManager>,
-    pub session_manager: Arc<SessionManager>,
-    pub approval_queue: Arc<ApprovalQueue>,
-    pub audit_queue: Arc<AuditQueue>,
-    pub macos_host: Arc<MacosHostService>,
-    pub openclaw: OpenClawManager,
-    pub updater: Arc<HushdUpdater>,
-    pub fleet_hunt_publisher: Option<Arc<dyn FleetHuntEventPublisher>>,
-    pub auth_token: String,
-}
-
-#[derive(Clone)]
-pub(crate) struct AgentApiState {
-    pub(crate) settings: Arc<RwLock<Settings>>,
-    pub(crate) daemon_manager: Arc<DaemonManager>,
-    pub(crate) session_manager: Arc<SessionManager>,
-    pub(crate) approval_queue: Arc<ApprovalQueue>,
-    pub(crate) audit_queue: Arc<AuditQueue>,
-    pub(crate) macos_host: Arc<MacosHostService>,
-    pub(crate) openclaw: OpenClawManager,
-    pub(crate) updater: Arc<HushdUpdater>,
-    pub(crate) fleet_hunt_publisher: Option<Arc<dyn FleetHuntEventPublisher>>,
-    pub(crate) auth_token: Arc<StdRwLock<String>>,
-    pub(crate) previous_auth_token: Arc<StdMutex<Option<PreviousAuthToken>>>,
-    pub(crate) token_grace_minutes: Arc<StdRwLock<u32>>,
-    pub(crate) http_client: reqwest::Client,
-    pub(crate) policy_version_cache: Arc<RwLock<PolicyVersionCache>>,
-    pub(crate) approval_rate_limiter: Arc<Mutex<ApprovalSubmissionLimiter>>,
-    pub(crate) ui_bootstrap_start_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    pub(crate) ui_bootstrap_verify_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    pub(crate) policy_check_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    pub(crate) integration_test_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    pub(crate) openclaw_request_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
-    pub(crate) ui_bootstrap_sessions: Arc<Mutex<HashMap<String, UiBootstrapSession>>>,
-    pub(crate) edr_flight_recorder: Arc<Mutex<EndpointFlightRecorder>>,
-    pub(crate) edr_receipt_ledger: Arc<Mutex<EndpointReceiptLedger>>,
-    pub(crate) edr_honey_registry: Arc<Mutex<EndpointHoneyRegistry>>,
-    pub(crate) edr_evidence_bundle_store: Arc<Mutex<EndpointEvidenceBundleStore>>,
-    pub(crate) edr_response_execution_ledger: Arc<Mutex<EndpointResponseExecutionLedger>>,
-    pub(crate) edr_response_acknowledgement_ledger: Arc<Mutex<EndpointResponseAcknowledgementLedger>>,
-    pub(crate) edr_control_ack_postback_retry_ledger: Arc<Mutex<EndpointControlAckPostbackRetryLedger>>,
-    pub(crate) edr_control_archive_upload_retry_ledger: Arc<Mutex<EndpointControlArchiveUploadRetryLedger>>,
-    pub(crate) edr_control_receipt_upload_retry_ledger: Arc<Mutex<EndpointControlReceiptUploadRetryLedger>>,
-    pub(crate) edr_fleet_hunt_event_outbox: Arc<Mutex<EndpointFleetHuntEventOutbox>>,
-    pub(crate) edr_egress_restriction_ledger: Arc<Mutex<EndpointEgressRestrictionLedger>>,
-    pub(crate) edr_staged_detection_ledger: Arc<Mutex<EndpointStagedDetectionLedger>>,
-    pub(crate) edr_policy_delta_store: Arc<Mutex<EndpointPolicyDeltaStore>>,
-    pub(crate) edr_network_extension_egress_policy_path: Arc<PathBuf>,
-    pub(crate) edr_quarantine_root: Arc<PathBuf>,
-    pub(crate) edr_recent_findings: Arc<Mutex<VecDeque<DetectionFinding>>>,
-    pub(crate) edr_auto_published_agent_secret_touch_keys: Arc<Mutex<BTreeSet<String>>>,
-}
-
-pub type FleetHuntEventPublishFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
-
-pub trait FleetHuntEventPublisher: Send + Sync {
-    fn agent_id(&self) -> &str;
-
-    fn publish_hunt_event<'a>(&'a self, event_json: &'a [u8]) -> FleetHuntEventPublishFuture<'a>;
-}
-
-impl FleetHuntEventPublisher for TelemetryPublisher {
-    fn agent_id(&self) -> &str {
-        self.agent_id()
-    }
-
-    fn publish_hunt_event<'a>(&'a self, event_json: &'a [u8]) -> FleetHuntEventPublishFuture<'a> {
-        Box::pin(async move { TelemetryPublisher::publish_hunt_event(self, event_json).await })
-    }
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct PolicyVersionCache {
-    value: Option<String>,
-    last_refresh_at: Option<std::time::Instant>,
-    refresh_in_flight: bool,
-    refresh_started_at: Option<std::time::Instant>,
-}
-
-impl PolicyVersionCache {
-    fn mark_refresh_started_if_due(&mut self, now: std::time::Instant) -> bool {
-        if self.refresh_in_flight {
-            let stuck = self
-                .refresh_started_at
-                .map(|started| {
-                    now.duration_since(started) >= POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT
-                })
-                .unwrap_or(true);
-
-            if stuck {
-                self.refresh_in_flight = false;
-                self.refresh_started_at = None;
-            }
-        }
-
-        let stale = self
-            .last_refresh_at
-            .map(|last| now.duration_since(last) >= POLICY_VERSION_CACHE_REFRESH_INTERVAL)
-            .unwrap_or(true);
-
-        if !stale || self.refresh_in_flight {
-            return false;
-        }
-
-        self.refresh_in_flight = true;
-        self.refresh_started_at = Some(now);
-        // Mark immediately to avoid concurrent /health calls all spawning refresh tasks.
-        self.last_refresh_at = Some(now);
-        true
-    }
-
-    fn finish_refresh(&mut self, fetched: Option<String>, now: std::time::Instant) {
-        if let Some(version) = fetched {
-            self.value = Some(version);
-        }
-        self.last_refresh_at = Some(now);
-        self.refresh_in_flight = false;
-        self.refresh_started_at = None;
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct PreviousAuthToken {
-    token: String,
-    expires_at: Instant,
-}
-
 impl AgentApiServer {
-    pub fn new(port: u16, deps: AgentApiServerDeps) -> Self {
-        let token_grace_minutes = deps
-            .settings
-            .try_read()
-            .map(|settings| settings.local_api_security.token_grace_minutes.max(1))
-            .unwrap_or(15);
-        Self {
-            port,
-            state: Arc::new(AgentApiState {
-                settings: deps.settings,
-                daemon_manager: deps.daemon_manager,
-                session_manager: deps.session_manager,
-                approval_queue: deps.approval_queue,
-                audit_queue: deps.audit_queue,
-                macos_host: deps.macos_host,
-                openclaw: deps.openclaw,
-                updater: deps.updater,
-                fleet_hunt_publisher: deps.fleet_hunt_publisher,
-                auth_token: Arc::new(StdRwLock::new(deps.auth_token)),
-                previous_auth_token: Arc::new(StdMutex::new(None)),
-                token_grace_minutes: Arc::new(StdRwLock::new(token_grace_minutes)),
-                http_client: reqwest::Client::new(),
-                policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
-                approval_rate_limiter: Arc::new(Mutex::new(ApprovalSubmissionLimiter::default())),
-                ui_bootstrap_start_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
-                ui_bootstrap_verify_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
-                policy_check_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
-                integration_test_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
-                openclaw_request_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
-                ui_bootstrap_sessions: Arc::new(Mutex::new(HashMap::new())),
-                edr_flight_recorder: Arc::new(Mutex::new(default_edr_flight_recorder())),
-                edr_receipt_ledger: Arc::new(Mutex::new(default_edr_receipt_ledger())),
-                edr_honey_registry: Arc::new(Mutex::new(default_edr_honey_registry())),
-                edr_evidence_bundle_store: Arc::new(
-                    Mutex::new(default_edr_evidence_bundle_store()),
-                ),
-                edr_response_execution_ledger: Arc::new(Mutex::new(
-                    default_edr_response_execution_ledger(),
-                )),
-                edr_response_acknowledgement_ledger: Arc::new(Mutex::new(
-                    default_edr_response_acknowledgement_ledger(),
-                )),
-                edr_control_ack_postback_retry_ledger: Arc::new(Mutex::new(
-                    default_edr_control_ack_postback_retry_ledger(),
-                )),
-                edr_control_archive_upload_retry_ledger: Arc::new(Mutex::new(
-                    default_edr_control_archive_upload_retry_ledger(),
-                )),
-                edr_control_receipt_upload_retry_ledger: Arc::new(Mutex::new(
-                    default_edr_control_receipt_upload_retry_ledger(),
-                )),
-                edr_fleet_hunt_event_outbox: Arc::new(Mutex::new(
-                    default_edr_fleet_hunt_event_outbox(),
-                )),
-                edr_egress_restriction_ledger: Arc::new(Mutex::new(
-                    default_edr_egress_restriction_ledger(),
-                )),
-                edr_staged_detection_ledger: Arc::new(Mutex::new(
-                    default_edr_staged_detection_ledger(),
-                )),
-                edr_policy_delta_store: Arc::new(Mutex::new(default_edr_policy_delta_store())),
-                edr_network_extension_egress_policy_path: Arc::new(
-                    default_edr_network_extension_egress_policy_path(),
-                ),
-                edr_quarantine_root: Arc::new(default_edr_quarantine_dir()),
-                edr_recent_findings: Arc::new(Mutex::new(VecDeque::new())),
-                edr_auto_published_agent_secret_touch_keys: Arc::new(Mutex::new(BTreeSet::new())),
-            }),
-        }
-    }
-
-    pub fn control_ack_postback_retry_sink(&self) -> ControlAckPostbackRetrySink {
-        ControlAckPostbackRetrySink {
-            state: self.state.clone(),
-        }
-    }
-
     pub async fn start(self, mut shutdown_rx: broadcast::Receiver<()>) -> Result<()> {
         let mut app = Router::new()
             .route("/health", get(proxy_daemon_get))
@@ -17136,14 +16918,22 @@ async fn append_recent_edr_findings(state: &AgentApiState, findings: &[Detection
     }
 }
 
+// Ledger types are referenced by `mod tests { use super::* }` below and by
+// downstream `use crate::api_server::*` glob importers; the production handler
+// code paths reach them through `AgentApiState`, not by name.
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::EndpointEvidenceBundleStore;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::EndpointStagedDetectionLedger;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::EndpointPolicyDeltaStore;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::EndpointResponseExecutionLedger;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::{
     EndpointEgressRestriction, EndpointEgressRestrictionLedger,
     NetworkExtensionEgressPolicySnapshot, write_network_extension_egress_policy_snapshot,
@@ -17152,26 +16942,31 @@ pub(crate) use crate::edr::ledger::{
 #[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::read_egress_restriction_ledger;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::EndpointResponseAcknowledgementLedger;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::{
     EndpointFleetHuntEventOutbox, EndpointFleetHuntEventOutboxEntry,
 };
 #[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::read_fleet_hunt_event_outbox;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::{
     EndpointControlAckPostbackRetry, EndpointControlAckPostbackRetryLedger,
 };
 #[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::read_control_ack_postback_retry_ledger;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::{
     EndpointControlReceiptUploadRetry, EndpointControlReceiptUploadRetryLedger,
 };
 #[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::read_control_receipt_upload_retry_ledger;
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::{
     EndpointControlArchiveUploadRetry, EndpointControlArchiveUploadRetryLedger,
 };
@@ -17179,6 +16974,7 @@ pub(crate) use crate::edr::ledger::{
 pub(crate) use crate::edr::ledger::read_control_archive_upload_retry_ledger;
 
 
+#[allow(unused_imports)]
 pub(crate) use crate::edr::ledger::EndpointHoneyRegistry;
 
 pub(crate) fn validate_deception_cleanup_plan(plan: &DeceptionPlan) -> std::result::Result<(), String> {
