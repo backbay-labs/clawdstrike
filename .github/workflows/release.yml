@@ -633,7 +633,7 @@ jobs:
 
       - name: Setup QEMU (linux aarch64 wheels)
         if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Sync Python sources for native wheel build
         shell: bash
