@@ -48,7 +48,7 @@ Lock the public concepts before implementation:
 
 | File Path | Action | Description |
 | --- | --- | --- |
-| `docs/specs/19-secret-broker-egress-tier.md` | create | formal spec |
+| `docs/specs/20-secret-broker-egress-tier.md` | create | formal spec |
 | `docs/plans/clawdstrike/secret-broker/**` | create | planning set |
 | `crates/libs/clawdstrike/src/policy.rs` | later modify | broker policy schema hooks |
 | `packages/adapters/clawdstrike-adapter-core/src/adapter.ts` | later modify | broker config surface |

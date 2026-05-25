@@ -14,7 +14,8 @@ describe("tool-preflight handler", () => {
     delete process.env.CLAWDSTRIKE_POLICY_EVENTS_URL;
     delete process.env.CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL;
     delete process.env.CLAWDSTRIKE_AGENT_URL;
-    process.env.CLAWDSTRIKE_AGENT_TOKEN_PATH = "/tmp/clawdstrike-openclaw-missing-agent-token";
+    process.env.CLAWDSTRIKE_AGENT_TOKEN_PATH =
+      "/tmp/clawdstrike-openclaw-missing-agent-token";
 
     initialize({
       policy: "clawdstrike:ai-agent-minimal",
@@ -40,7 +41,11 @@ describe("tool-preflight handler", () => {
       eventType: "command_exec",
       timestamp: new Date().toISOString(),
       sessionId: "sess-test",
-      data: { type: "command", command: "aws", args: ["sts", "get-session-token"] },
+      data: {
+        type: "command",
+        command: "aws",
+        args: ["sts", "get-session-token"],
+      },
       metadata: { toolName: "shell", preflight: true },
     } as any;
 
@@ -120,6 +125,40 @@ describe("tool-preflight handler", () => {
         toolCallId: "tool-call-package-1",
       }),
     });
+  });
+
+  it("redacts URL userinfo from package-manager preflight activity", () => {
+    const event = {
+      eventId: "preflight-package-url-1",
+      eventType: "command_exec",
+      timestamp: new Date().toISOString(),
+      sessionId: "sess-test",
+      data: {
+        type: "command",
+        command: "npm",
+        args: ["install", "https://user:MY_RAW_SECRET@git.example/repo.git"],
+      },
+      metadata: { toolName: "shell", preflight: true },
+    } as any;
+
+    const activity = buildPreflightDeveloperActivityForCommand(
+      event,
+      "shell",
+      { status: "allow", guard: "allow", severity: "info" } as any,
+      {
+        agentId: "agent:openclaw",
+        workloadId: "openclaw-tool-preflight",
+        toolCallId: "tool-call-package-url-1",
+      },
+    );
+
+    expect(activity).toMatchObject({
+      kind: "package_script",
+      package: "https://[REDACTED]@git.example/repo.git",
+      script: "npm install https://[REDACTED]@git.example/repo.git",
+    });
+    expect(JSON.stringify(activity)).not.toContain("MY_RAW_SECRET");
+    expect(JSON.stringify(activity)).not.toContain("user:MY_RAW_SECRET");
   });
 
   it("maps additional language package-manager preflight commands to package-script developer activity", () => {
@@ -298,7 +337,14 @@ describe("tool-preflight handler", () => {
       data: {
         type: "command",
         command: "aws",
-        args: ["--profile", "prod", "secretsmanager", "get-secret-value", "--secret-id", "db"],
+        args: [
+          "--profile",
+          "prod",
+          "secretsmanager",
+          "get-secret-value",
+          "--secret-id",
+          "db",
+        ],
       },
       metadata: { toolName: "shell", preflight: true },
     } as any;
@@ -306,7 +352,12 @@ describe("tool-preflight handler", () => {
     const activity = buildPreflightDeveloperActivityForCommand(
       event,
       "shell",
-      { status: "deny", guard: "cloud_guard", severity: "high", reason: "secret read" } as any,
+      {
+        status: "deny",
+        guard: "cloud_guard",
+        severity: "high",
+        reason: "secret read",
+      } as any,
       {
         agentId: "agent:openclaw",
         workloadId: "openclaw-tool-preflight",
@@ -320,7 +371,8 @@ describe("tool-preflight handler", () => {
       provider: "aws",
       operation: "secretsmanager",
       args: ["get-secret-value", "--secret-id", "db"],
-      commandLine: "aws --profile prod secretsmanager get-secret-value --secret-id db",
+      commandLine:
+        "aws --profile prod secretsmanager get-secret-value --secret-id db",
       metadata: expect.objectContaining({
         collectorKind: "openclaw_tool_preflight",
         policyAllowed: false,
@@ -339,7 +391,15 @@ describe("tool-preflight handler", () => {
       data: {
         type: "command",
         command: "gh",
-        args: ["secret", "set", "PROD_DB_URL", "--body", "redacted", "--repo", "acme/service"],
+        args: [
+          "secret",
+          "set",
+          "PROD_DB_URL",
+          "--body",
+          "redacted",
+          "--repo",
+          "acme/service",
+        ],
       },
       metadata: { toolName: "shell", preflight: true },
     } as any;
@@ -347,7 +407,12 @@ describe("tool-preflight handler", () => {
     const activity = buildPreflightDeveloperActivityForCommand(
       event,
       "shell",
-      { status: "deny", guard: "cloud_guard", severity: "high", reason: "secret write" } as any,
+      {
+        status: "deny",
+        guard: "cloud_guard",
+        severity: "high",
+        reason: "secret write",
+      } as any,
       {
         agentId: "agent:openclaw",
         workloadId: "openclaw-tool-preflight",
@@ -360,8 +425,16 @@ describe("tool-preflight handler", () => {
       agentId: "agent:openclaw",
       provider: "gh",
       operation: "secret",
-      args: ["set", "PROD_DB_URL", "--body", "redacted", "--repo", "acme/service"],
-      commandLine: "gh secret set PROD_DB_URL --body redacted --repo acme/service",
+      args: [
+        "set",
+        "PROD_DB_URL",
+        "--body",
+        "[REDACTED]",
+        "--repo",
+        "acme/service",
+      ],
+      commandLine:
+        "gh secret set PROD_DB_URL --body [REDACTED] --repo acme/service",
       metadata: expect.objectContaining({
         collectorKind: "openclaw_tool_preflight",
         policyAllowed: false,
@@ -388,7 +461,12 @@ describe("tool-preflight handler", () => {
     const activity = buildPreflightDeveloperActivityForCommand(
       event,
       "shell",
-      { status: "deny", guard: "cloud_guard", severity: "high", reason: "env pull" } as any,
+      {
+        status: "deny",
+        guard: "cloud_guard",
+        severity: "high",
+        reason: "env pull",
+      } as any,
       {
         agentId: "agent:openclaw",
         workloadId: "openclaw-tool-preflight",
@@ -429,7 +507,12 @@ describe("tool-preflight handler", () => {
     const activity = buildPreflightDeveloperActivityForCommand(
       event,
       "shell",
-      { status: "deny", guard: "cloud_guard", severity: "high", reason: "env get" } as any,
+      {
+        status: "deny",
+        guard: "cloud_guard",
+        severity: "high",
+        reason: "env get",
+      } as any,
       {
         agentId: "agent:openclaw",
         workloadId: "openclaw-tool-preflight",
@@ -470,7 +553,12 @@ describe("tool-preflight handler", () => {
     const activity = buildPreflightDeveloperActivityForCommand(
       event,
       "shell",
-      { status: "deny", guard: "cloud_guard", severity: "high", reason: "secret put" } as any,
+      {
+        status: "deny",
+        guard: "cloud_guard",
+        severity: "high",
+        reason: "secret put",
+      } as any,
       {
         agentId: "agent:openclaw",
         workloadId: "openclaw-tool-preflight",
@@ -511,7 +599,12 @@ describe("tool-preflight handler", () => {
     const activity = buildPreflightDeveloperActivityForCommand(
       event,
       "shell",
-      { status: "deny", guard: "cloud_guard", severity: "high", reason: "registry token" } as any,
+      {
+        status: "deny",
+        guard: "cloud_guard",
+        severity: "high",
+        reason: "registry token",
+      } as any,
       {
         agentId: "agent:openclaw",
         workloadId: "openclaw-tool-preflight",
@@ -544,7 +637,13 @@ describe("tool-preflight handler", () => {
       data: {
         type: "command",
         command: "fly",
-        args: ["secrets", "set", "DATABASE_URL=postgres://example", "--app", "api"],
+        args: [
+          "secrets",
+          "set",
+          "DATABASE_URL=postgres://example",
+          "--app",
+          "api",
+        ],
       },
       metadata: { toolName: "shell", preflight: true },
     } as any;
@@ -552,7 +651,12 @@ describe("tool-preflight handler", () => {
     const activity = buildPreflightDeveloperActivityForCommand(
       event,
       "shell",
-      { status: "deny", guard: "cloud_guard", severity: "high", reason: "secret set" } as any,
+      {
+        status: "deny",
+        guard: "cloud_guard",
+        severity: "high",
+        reason: "secret set",
+      } as any,
       {
         agentId: "agent:openclaw",
         workloadId: "openclaw-tool-preflight",
@@ -620,11 +724,17 @@ describe("tool-preflight handler", () => {
       },
       {
         command: "firebase",
-        args: ["functions:secrets:access", "STRIPE_WEBHOOK_SECRET", "--project", "prod-api"],
+        args: [
+          "functions:secrets:access",
+          "STRIPE_WEBHOOK_SECRET",
+          "--project",
+          "prod-api",
+        ],
         provider: "firebase",
         operation: "functions:secrets:access",
         operationArgs: ["STRIPE_WEBHOOK_SECRET", "--project", "prod-api"],
-        commandLine: "firebase functions:secrets:access STRIPE_WEBHOOK_SECRET --project prod-api",
+        commandLine:
+          "firebase functions:secrets:access STRIPE_WEBHOOK_SECRET --project prod-api",
       },
       {
         command: "railway",
@@ -660,10 +770,23 @@ describe("tool-preflight handler", () => {
       },
       {
         command: "aws",
-        args: ["eks", "update-kubeconfig", "--name", "prod", "--region", "us-east-1"],
+        args: [
+          "eks",
+          "update-kubeconfig",
+          "--name",
+          "prod",
+          "--region",
+          "us-east-1",
+        ],
         provider: "aws",
         operation: "eks",
-        operationArgs: ["update-kubeconfig", "--name", "prod", "--region", "us-east-1"],
+        operationArgs: [
+          "update-kubeconfig",
+          "--name",
+          "prod",
+          "--region",
+          "us-east-1",
+        ],
         commandLine: "aws eks update-kubeconfig --name prod --region us-east-1",
       },
       {
@@ -680,8 +803,17 @@ describe("tool-preflight handler", () => {
         ],
         provider: "aws",
         operation: "codeartifact",
-        operationArgs: ["login", "--tool", "npm", "--domain", "prod", "--repository", "private"],
-        commandLine: "aws codeartifact login --tool npm --domain prod --repository private",
+        operationArgs: [
+          "login",
+          "--tool",
+          "npm",
+          "--domain",
+          "prod",
+          "--repository",
+          "private",
+        ],
+        commandLine:
+          "aws codeartifact login --tool npm --domain prod --repository private",
       },
       {
         command: "gcloud",
@@ -693,11 +825,25 @@ describe("tool-preflight handler", () => {
       },
       {
         command: "gcloud",
-        args: ["container", "clusters", "get-credentials", "prod", "--region", "us-central1"],
+        args: [
+          "container",
+          "clusters",
+          "get-credentials",
+          "prod",
+          "--region",
+          "us-central1",
+        ],
         provider: "gcloud",
         operation: "container",
-        operationArgs: ["clusters", "get-credentials", "prod", "--region", "us-central1"],
-        commandLine: "gcloud container clusters get-credentials prod --region us-central1",
+        operationArgs: [
+          "clusters",
+          "get-credentials",
+          "prod",
+          "--region",
+          "us-central1",
+        ],
+        commandLine:
+          "gcloud container clusters get-credentials prod --region us-central1",
       },
       {
         command: "az",
@@ -717,11 +863,25 @@ describe("tool-preflight handler", () => {
       },
       {
         command: "az",
-        args: ["aks", "get-credentials", "--resource-group", "rg-prod", "--name", "prod"],
+        args: [
+          "aks",
+          "get-credentials",
+          "--resource-group",
+          "rg-prod",
+          "--name",
+          "prod",
+        ],
         provider: "az",
         operation: "aks",
-        operationArgs: ["get-credentials", "--resource-group", "rg-prod", "--name", "prod"],
-        commandLine: "az aks get-credentials --resource-group rg-prod --name prod",
+        operationArgs: [
+          "get-credentials",
+          "--resource-group",
+          "rg-prod",
+          "--name",
+          "prod",
+        ],
+        commandLine:
+          "az aks get-credentials --resource-group rg-prod --name prod",
       },
       {
         command: "kubectl",
@@ -741,19 +901,45 @@ describe("tool-preflight handler", () => {
       },
       {
         command: "circleci",
-        args: ["context", "store-secret", "github", "acme", "production", "DATABASE_URL"],
+        args: [
+          "context",
+          "store-secret",
+          "github",
+          "acme",
+          "production",
+          "DATABASE_URL",
+        ],
         provider: "circleci",
         operation: "context",
-        operationArgs: ["store-secret", "github", "acme", "production", "DATABASE_URL"],
-        commandLine: "circleci context store-secret github acme production DATABASE_URL",
+        operationArgs: [
+          "store-secret",
+          "github",
+          "acme",
+          "production",
+          "DATABASE_URL",
+        ],
+        commandLine:
+          "circleci context store-secret github acme production DATABASE_URL",
       },
       {
         command: "glab",
-        args: ["variable", "set", "DATABASE_URL", "postgres://redacted", "--masked"],
+        args: [
+          "variable",
+          "set",
+          "DATABASE_URL",
+          "postgres://redacted",
+          "--masked",
+        ],
         provider: "glab",
         operation: "variable",
-        operationArgs: ["set", "DATABASE_URL", "postgres://redacted", "--masked"],
-        commandLine: "glab variable set DATABASE_URL postgres://redacted --masked",
+        operationArgs: [
+          "set",
+          "DATABASE_URL",
+          "postgres://redacted",
+          "--masked",
+        ],
+        commandLine:
+          "glab variable set DATABASE_URL postgres://redacted --masked",
       },
       {
         command: "buildkite-agent",
@@ -806,7 +992,12 @@ describe("tool-preflight handler", () => {
       const activity = buildPreflightDeveloperActivityForCommand(
         event,
         "shell",
-        { status: "deny", guard: "cloud_guard", severity: "high", reason: "secret access" } as any,
+        {
+          status: "deny",
+          guard: "cloud_guard",
+          severity: "high",
+          reason: "secret access",
+        } as any,
         {
           agentId: "agent:openclaw",
           workloadId: "openclaw-tool-preflight",
@@ -879,7 +1070,9 @@ describe("tool-preflight handler", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:9878/api/v1/agent/edr/policy-events");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer test-token",
+    );
     const body = JSON.parse(String(init.body));
     expect(body.events).toHaveLength(1);
     expect(body.events[0]).toMatchObject({
@@ -896,6 +1089,105 @@ describe("tool-preflight handler", () => {
         preflight: true,
       }),
     });
+  });
+
+  it("scrubs raw preflight policy payloads before posting local EDR telemetry", async () => {
+    process.env.CLAWDSTRIKE_AGENT_TOKEN = "test-token";
+    process.env.CLAWDSTRIKE_POLICY_EVENTS_URL =
+      "http://127.0.0.1:9878/api/v1/agent/edr/policy-events";
+    const fetchMock = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await handler(
+      {
+        toolName: "write_file",
+        params: {
+          path: "/tmp/secret.txt",
+          content: "api key sk-abcdefghijklmnopqrstuvwxyz",
+        },
+      },
+      { sessionKey: "sess-privacy-file", toolCallId: "tool-call-privacy-file" },
+    );
+    await handler(
+      {
+        toolName: "apply_patch",
+        params: {
+          path: "/tmp/secret.txt",
+          patch: "+ token=ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+        },
+      },
+      {
+        sessionKey: "sess-privacy-patch",
+        toolCallId: "tool-call-privacy-patch",
+      },
+    );
+    await handler(
+      {
+        toolName: "custom_tool",
+        params: {
+          secretToken: "raw-token-value",
+          prompt: "use sk-zyxwvutsrqponmlkjihgfedcba",
+        },
+      },
+      { sessionKey: "sess-privacy-tool", toolCallId: "tool-call-privacy-tool" },
+    );
+    await handler(
+      {
+        toolName: "http_get",
+        params: {
+          url: "https://example.invalid/run?token=raw-token-value&query=ok",
+        },
+      },
+      {
+        sessionKey: "sess-privacy-network",
+        toolCallId: "tool-call-privacy-network",
+      },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const postedBodies = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse(String((init as RequestInit).body)),
+    );
+    const serialized = JSON.stringify(postedBodies);
+    expect(serialized).not.toContain("api key sk-abcdefghijklmnopqrstuvwxyz");
+    expect(serialized).not.toContain(
+      "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+    );
+    expect(serialized).not.toContain("raw-token-value");
+    expect(serialized).not.toContain("sk-zyxwvutsrqponmlkjihgfedcba");
+
+    const [fileEvent, patchEvent, toolEvent, networkEvent] = postedBodies.map(
+      (body) => body.events[0],
+    );
+    expect(fileEvent.data.content).toBeUndefined();
+    expect(fileEvent.data.contentHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(fileEvent.metadata).toMatchObject({
+      telemetryScrubbed: true,
+      telemetryRedaction: "hashes_and_summaries",
+    });
+    expect(fileEvent.metadata.telemetryScrubbedFields).toContain(
+      "data.content",
+    );
+
+    expect(patchEvent.data.patchContent).toBeUndefined();
+    expect(patchEvent.data.patchHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(patchEvent.metadata.telemetryScrubbedFields).toContain(
+      "data.patchContent",
+    );
+
+    expect(toolEvent.data.parameters.secretToken).toBe("[REDACTED]");
+    expect(toolEvent.data.parameters.prompt).toBe("[REDACTED]");
+    expect(toolEvent.metadata.telemetryScrubbedFields).toEqual(
+      expect.arrayContaining([
+        "data.parameters.secretToken",
+        "data.parameters.prompt",
+      ]),
+    );
+
+    expect(networkEvent.data.url).toBe(
+      "https://example.invalid/run?token=%5BREDACTED%5D&query=ok",
+    );
+    expect(networkEvent.metadata.telemetryScrubbedFields).toContain("data.url");
   });
 
   it("binds modern hook identity into posted preflight PolicyEvents", async () => {

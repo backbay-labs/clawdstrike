@@ -37,6 +37,7 @@ import type {
   CreateSentinelConfig,
   Sentinel,
 } from "@/lib/workbench/sentinel-manager";
+import { logger } from "@/lib/logger";
 
 
 const MODE_CONFIGS: {
@@ -1135,7 +1136,7 @@ export function SentinelCreate({
       onCreated(sentinel);
       navigate(`/sentinels/${sentinel.id}`);
     } catch (err) {
-      console.error("[sentinel-create] Failed to create sentinel:", err);
+      logger.error("[sentinel-create] Failed to create sentinel:", err);
     } finally {
       if (mountedRef.current) {
         setIsCreating(false);

@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * CommandRegistry — singleton registry for all workbench commands.
  *
@@ -124,11 +125,11 @@ class CommandRegistry {
   execute(id: string): void | Promise<void> {
     const cmd = this.commands.get(id);
     if (!cmd) {
-      console.warn(`[command-registry] Unknown command: ${id}`);
+      logger.warn(`[command-registry] Unknown command: ${id}`);
       return;
     }
     if (cmd.when && !cmd.when()) {
-      console.warn(`[command-registry] Command disabled: ${id}`);
+      logger.warn(`[command-registry] Command disabled: ${id}`);
       return;
     }
 
@@ -217,7 +218,7 @@ class CommandRegistry {
       try {
         fn();
       } catch (e) {
-        console.error("[command-registry] subscriber threw:", e);
+        logger.error("[command-registry] subscriber threw:", e);
       }
     }
   }
@@ -227,7 +228,7 @@ class CommandRegistry {
       try {
         fn(event);
       } catch (e) {
-        console.error("[command-registry] execution subscriber threw:", e);
+        logger.error("[command-registry] execution subscriber threw:", e);
       }
     }
   }

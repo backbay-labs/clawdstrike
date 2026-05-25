@@ -3,6 +3,7 @@ import {
   getThreatIntelSource,
   getThreatIntelSourcesForIndicator,
 } from "./threat-intel-registry";
+import { logger } from "@/lib/logger";
 
 class TokenBucket {
   private tokens: number;
@@ -200,7 +201,7 @@ export class EnrichmentOrchestrator {
       onResult?.(result);
       return result;
     } catch (err: unknown) {
-      console.error(
+      logger.error(
         `[EnrichmentOrchestrator] Source ${source.id} failed for ${indicator.type}:${indicator.value}:`,
         err instanceof Error ? err.message : String(err),
       );

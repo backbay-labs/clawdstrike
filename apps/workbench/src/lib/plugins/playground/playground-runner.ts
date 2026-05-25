@@ -37,7 +37,7 @@ export function setupConsoleProxy(): () => void {
 
   for (const level of levels) {
     proxy[level] = (...args: unknown[]) => {
-      // eslint-disable-next-line no-console
+      // biome-ignore lint/suspicious/noConsole: playground intentionally proxies console output to the UI
       console[level](...args);
       addConsoleEntry({
         level,

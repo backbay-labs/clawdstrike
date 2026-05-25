@@ -13,7 +13,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
-use clawdstrike::guards::{GuardAction, GuardContext};
+use clawdstrike::guards::{GuardAction, GuardContext, McpDefaultAction, McpToolConfig};
 use clawdstrike::{HushEngine, Policy};
 use tokio::net::TcpListener;
 
@@ -744,7 +744,15 @@ async fn spider_sense_handles_mcp_tool() {
     let db_path = write_pattern_db(&dir);
     let yaml = policy_yaml(&base, &db_path, None);
 
-    let policy = Policy::from_yaml(&yaml).unwrap();
+    let mut policy = Policy::from_yaml(&yaml).unwrap();
+    policy.guards.mcp_tool = Some(McpToolConfig {
+        enabled: true,
+        allow: vec!["database_query".to_string()],
+        block: vec![],
+        require_confirmation: vec![],
+        default_action: Some(McpDefaultAction::Block),
+        ..Default::default()
+    });
     let engine = HushEngine::with_policy(policy);
     let ctx = GuardContext::new();
 

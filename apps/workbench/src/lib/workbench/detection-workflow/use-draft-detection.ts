@@ -29,6 +29,7 @@ import {
 } from "./draft-mappers";
 import { generateDraft } from "./draft-generator";
 import { useFindingStore } from "@/features/findings/stores/finding-store";
+import { logger } from "@/lib/logger";
 
 export function buildSeedFromEvents(
   events: AgentEvent[],
@@ -219,7 +220,7 @@ export function useDraftDetection({
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         setStatusMessage(`Draft failed: ${msg}`);
-        console.error("[use-draft-detection] draftFromEvents failed:", err);
+        logger.error("[use-draft-detection] draftFromEvents failed:", err);
       } finally {
         setLoading(false);
       }
@@ -245,7 +246,7 @@ export function useDraftDetection({
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         setStatusMessage(`Draft failed: ${msg}`);
-        console.error("[use-draft-detection] draftFromInvestigation failed:", err);
+        logger.error("[use-draft-detection] draftFromInvestigation failed:", err);
       } finally {
         setLoading(false);
       }
@@ -267,7 +268,7 @@ export function useDraftDetection({
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         setStatusMessage(`Draft failed: ${msg}`);
-        console.error("[use-draft-detection] draftFromPattern failed:", err);
+        logger.error("[use-draft-detection] draftFromPattern failed:", err);
       } finally {
         setLoading(false);
       }
@@ -301,7 +302,7 @@ export function useDraftDetection({
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         setStatusMessage(`Draft failed: ${msg}`);
-        console.error("[use-draft-detection] draftFromFinding failed:", err);
+        logger.error("[use-draft-detection] draftFromFinding failed:", err);
       } finally {
         setLoading(false);
       }

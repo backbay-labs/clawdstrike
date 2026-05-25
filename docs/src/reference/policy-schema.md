@@ -18,7 +18,8 @@ When a policy file starts with `hushspec:` instead of `version:`, Clawdstrike au
 
 Notes:
 
-- `1.5.0` is the current schema version. The Rust constant `POLICY_SCHEMA_VERSION` in `crates/libs/clawdstrike/src/policy.rs:29` is the source of truth; the engine accepts the set listed above.
+- `1.5.0` is the current schema version.
+- `1.4.0` added `origins` for Origin Enclaves.
 - Some SDK validators still default to `1.2.0` when `version` is omitted; set `version` explicitly in production policies.
 
 ## Top-Level Fields
@@ -33,7 +34,6 @@ Notes:
 - `settings` (object)
 - `posture` (object, `1.2.0+`)
 - `origins` (object, `1.4.0+`) — see [Origin Enclaves](../concepts/origin-enclaves.md)
-- `broker` (object, `1.5.0+`) for the secret broker (see `docs/plans/clawdstrike/secret-broker/`)
 
 ## Remote `extends` Security
 
@@ -52,7 +52,7 @@ Integrity pinning and resolver hardening:
 ## Full Example
 
 ```yaml
-version: "1.3.0"
+version: "1.5.0"
 name: Example
 description: Example policy with core guards, posture, and Spider-Sense
 extends: clawdstrike:default
@@ -253,8 +253,6 @@ See [SpiderSenseGuard](./guards/spider-sense.md) for behavior details and operat
 - `version: "1.4.0"`
   - adds `origins` top-level field for Origin Enclaves (profiles, match rules, default behavior)
   - enclave MCP pre-check, cross-origin isolation, bridge policies
-- `version: "1.5.0"`
-  - adds `broker` top-level field for the secret broker (per-provider rules, intent previews, execution caps)
 
 ## Validation Rules (High-Level)
 

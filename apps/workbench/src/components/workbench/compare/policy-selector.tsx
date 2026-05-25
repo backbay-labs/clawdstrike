@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { usePolicyTabsStore } from "@/features/policy/stores/policy-tabs-store";
 import { usePolicyEditStore } from "@/features/policy/stores/policy-edit-store";
+import { logger } from "@/lib/logger";
 
 
 interface RulesetListEntry {
@@ -115,7 +116,7 @@ async function resolveBuiltinRuleset(
       return { policy, yaml: nativeYaml };
     }
     // If parsing the native YAML somehow fails, fall through to client data
-    console.warn(
+    logger.warn(
       `[policy-selector] Failed to parse native YAML for "${name}", using fallback`,
       errors
     );

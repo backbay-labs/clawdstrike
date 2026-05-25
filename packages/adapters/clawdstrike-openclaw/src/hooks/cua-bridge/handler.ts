@@ -34,6 +34,7 @@ import type {
 } from "../../types.js";
 import { peekApproval } from "../approval-state.js";
 import { normalizeApprovalResource } from "../approval-utils.js";
+import { markCuaBridgeEvaluated } from "../cua-bridge-evaluated.js";
 
 // ── Stable Error Codes ──────────────────────────────────────────────
 
@@ -343,7 +344,6 @@ const handler: HookHandler = async (
   const isModernBeforeToolCallEvent = (
     value: HookEvent | BeforeToolCallHookEvent,
   ): value is BeforeToolCallHookEvent => {
-    if (value && typeof value === "object" && "type" in value) return false;
     return Boolean(
       value &&
         typeof value === "object" &&
@@ -379,7 +379,7 @@ const handler: HookHandler = async (
   // handler skips it (avoids double policy evaluation).  Set this early —
   // before any fail-closed exits — because even a CUA denial here means the
   // tool was already handled and the preflight handler should not re-evaluate.
-  (event as any).__cuaBridgeEvaluated = true;
+  markCuaBridgeEvaluated(event);
 
   // Fail closed: session ID required for CUA actions
   if (!sessionId) {

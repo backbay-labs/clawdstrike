@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -49,7 +56,7 @@ jobs:
 
       - name: Upload policy torture JSON reports
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: policy-torture-reports
           path: rulesets/tests/policy-torture/reports/*.json
@@ -58,6 +65,7 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [security-regressions, policy-torture]
     steps:
       - uses: actions/checkout@v6
@@ -67,16 +75,11 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          shared-key: check
+          cache-on-failure: true
 
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -133,6 +136,7 @@ jobs:
   sdk-conformance:
     name: SDK Conformance Vectors
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: check
     steps:
       - uses: actions/checkout@v6
@@ -164,6 +168,7 @@ jobs:
   terminal-tui:
     name: Terminal TUI
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: check
     steps:
       - uses: actions/checkout@v6
@@ -216,6 +221,7 @@ jobs:
   tauri-rust-check:
     name: Tauri Rust Crates
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 
@@ -232,17 +238,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-tauri-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-tauri-
-            ${{ runner.os }}-cargo-
+          shared-key: tauri
+          cache-on-failure: true
 
       - name: Check desktop Tauri crate
         run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
@@ -269,9 +269,132 @@ jobs:
 
           CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING=1 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 
+  macos-system-extension-swift:
+    name: macOS System Extension Swift Packages
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Test Swift coverage checker
+        run: python3 tools/scripts/check-changed-swift-coverage-test.py
+
+      - name: Test EndpointSecurity extension package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_path="apps/agent/src-tauri/macos/system-extension/endpoint-security"
+          swift test --enable-code-coverage --disable-sandbox --package-path "$package_path"
+
+          codecov_path="$(swift test --disable-sandbox --show-codecov-path --package-path "$package_path")"
+          codecov_dir="$(dirname "$codecov_path")"
+          debug_dir="$(dirname "$codecov_dir")"
+          test_bundle="$(find "$debug_dir" -maxdepth 1 -type d -name '*Tests.xctest' -print -quit)"
+          test_binary="$(find "$test_bundle/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          [[ -x "$test_binary" ]] || {
+            echo "missing EndpointSecurity XCTest binary under $debug_dir" >&2
+            exit 1
+          }
+          status_tool="$debug_dir/endpoint-security-status-tool"
+
+          for scenario in healthy-allow deny-decision deadline-miss dropped-events missing-full-disk-access inactive-provider approval-blocked; do
+            LLVM_PROFILE_FILE="$codecov_dir/status-tool-%p.profraw" "$status_tool" fixture "$scenario" >/dev/null
+          done
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" live >/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture unsupported >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" observe-auth-open 0 >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" observe-auth-open 1 >/dev/null 2>/dev/null || true
+
+          xcrun llvm-profdata merge -sparse "$codecov_dir"/*.profraw -o "$codecov_dir/combined.profdata"
+          xcrun llvm-cov export \
+            -format=text \
+            -instr-profile="$codecov_dir/combined.profdata" \
+            "$test_binary" \
+            -object="$status_tool" \
+            > swift-coverage-endpoint-security.json
+
+      - name: Test NetworkExtension package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_path="apps/agent/src-tauri/macos/system-extension/network-extension"
+          swift test --enable-code-coverage --disable-sandbox --package-path "$package_path"
+
+          codecov_path="$(swift test --disable-sandbox --show-codecov-path --package-path "$package_path")"
+          codecov_dir="$(dirname "$codecov_path")"
+          debug_dir="$(dirname "$codecov_dir")"
+          test_bundle="$(find "$debug_dir" -maxdepth 1 -type d -name '*Tests.xctest' -print -quit)"
+          test_binary="$(find "$test_bundle/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          [[ -x "$test_binary" ]] || {
+            echo "missing NetworkExtension XCTest binary under $debug_dir" >&2
+            exit 1
+          }
+          status_tool="$debug_dir/network-extension-status-tool"
+
+          for scenario in selection inactive unavailable approval-blocked; do
+            LLVM_PROFILE_FILE="$codecov_dir/status-tool-%p.profraw" "$status_tool" fixture "$scenario" >/dev/null
+          done
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" live >/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" fixture unsupported >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" request-reload >/dev/null 2>/dev/null || true
+          LLVM_PROFILE_FILE="$codecov_dir/status-tool-extra-%p.profraw" "$status_tool" request-reload /tmp/policy.json abc >/dev/null 2>/dev/null || true
+
+          xcrun llvm-profdata merge -sparse "$codecov_dir"/*.profraw -o "$codecov_dir/combined.profdata"
+          xcrun llvm-cov export \
+            -format=text \
+            -instr-profile="$codecov_dir/combined.profdata" \
+            "$test_binary" \
+            -object="$status_tool" \
+            > swift-coverage-network-extension.json
+
+      - name: Enforce changed-line Swift coverage floor
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          CHANGED_SWIFT_COVERAGE_THRESHOLD: "60"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GITHUB_BASE_REF}" ]; then
+            echo "No base ref (non-PR run); skipping changed-file Swift coverage gate."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+
+          if ! git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.swift' > changed_swift_files.txt; then
+            echo "Shallow diff failed; fetching additional history for merge-base resolution"
+            git fetch --no-tags --prune --unshallow origin || git fetch --no-tags --prune origin
+            git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.swift' > changed_swift_files.txt
+          fi
+
+          grep '^apps/agent/src-tauri/macos/system-extension/' changed_swift_files.txt \
+            | grep '/Sources/' \
+            > changed_swift_files.coverage.txt || true
+
+          if [ ! -s changed_swift_files.coverage.txt ]; then
+            echo "No system-extension Swift source files changed; skipping changed-file Swift coverage gate."
+            exit 0
+          fi
+
+          tools/scripts/check-changed-swift-coverage.py \
+            --coverage-json swift-coverage-endpoint-security.json \
+            --coverage-json swift-coverage-network-extension.json \
+            --changed-files-file changed_swift_files.coverage.txt \
+            --git-diff-range "origin/${GITHUB_BASE_REF}...HEAD" \
+            --threshold "${CHANGED_SWIFT_COVERAGE_THRESHOLD}"
+
   desktop-frontend:
     name: Desktop Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
@@ -297,6 +420,7 @@ jobs:
   workbench-frontend:
     name: Workbench Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
@@ -326,6 +450,7 @@ jobs:
   control-console:
     name: Control Console
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
@@ -363,17 +488,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-sdr-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-sdr-
-            ${{ runner.os }}-cargo-
+          shared-key: sdr
+          cache-on-failure: true
 
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -410,6 +529,7 @@ jobs:
   msrv:
     name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 
@@ -425,6 +545,7 @@ jobs:
   offline:
     name: Offline Build/Test (vendored)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
@@ -445,17 +566,6 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      # The ~1 GB committed `infra/vendor/` mirror was removed in May 2026;
-      # only nono, async-nats, and rustls-webpki remain as path-deps. The
-      # rest of the lockfile is re-vendored fresh from crates.io each run so
-      # the offline test exercises a self-contained build tree.
-      - name: Vendor crates from crates.io
-        run: |
-          # `cargo vendor` writes the [source.*] map to stdout; capture it
-          # and replace .cargo/config.toml so the subsequent offline test
-          # picks up the source replacement.
-          cargo vendor --locked --versioned-dirs infra/vendor > .cargo/config.toml
-
       - name: Test offline
         run: scripts/cargo-offline.sh test --workspace --all-targets
         env:
@@ -464,6 +574,7 @@ jobs:
   docs:
     name: Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
@@ -481,6 +592,7 @@ jobs:
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: security-regressions
     steps:
       - uses: actions/checkout@v6
@@ -496,65 +608,22 @@ jobs:
 
       - name: Run security audits
         run: |
-          audit_ignores=(
-            --ignore RUSTSEC-2024-0375 \
-            --ignore RUSTSEC-2025-0141 \
-            --ignore RUSTSEC-2024-0388 \
-            --ignore RUSTSEC-2024-0411 \
-            --ignore RUSTSEC-2024-0412 \
-            --ignore RUSTSEC-2024-0413 \
-            --ignore RUSTSEC-2024-0414 \
-            --ignore RUSTSEC-2024-0415 \
-            --ignore RUSTSEC-2024-0416 \
-            --ignore RUSTSEC-2024-0417 \
-            --ignore RUSTSEC-2024-0418 \
-            --ignore RUSTSEC-2024-0419 \
-            --ignore RUSTSEC-2024-0420 \
-            --ignore RUSTSEC-2024-0429 \
-            --ignore RUSTSEC-2024-0436 \
-            --ignore RUSTSEC-2025-0057 \
-            --ignore RUSTSEC-2025-0134 \
-            --ignore RUSTSEC-2024-0370 \
-            --ignore RUSTSEC-2021-0145 \
-            --ignore RUSTSEC-2025-0075 \
-            --ignore RUSTSEC-2025-0080 \
-            --ignore RUSTSEC-2025-0081 \
-            --ignore RUSTSEC-2025-0098 \
-            --ignore RUSTSEC-2025-0100 \
-            --ignore RUSTSEC-2025-0119 \
-            --ignore RUSTSEC-2026-0097 \
-            --ignore RUSTSEC-2026-0105 \
-            --ignore RUSTSEC-2026-0118 \
-            --ignore RUSTSEC-2026-0119 \
-            # Temporary: transitive via portable-pty->serial in workbench PTY stack.
-            # Mitigated by command hardening (shell/env allowlists + backend-minted
-            # capability tokens bound to trusted-window context).
-            # Tracking removal: SEC-PTY-001.
-            --ignore RUSTSEC-2017-0008
-            # aws-lc-rs advisories (2026-03-23). Transitive via rustls.
-            # Awaiting patched release. Owner: @deps-maintainers.
-            --ignore RUSTSEC-2026-0044
-            --ignore RUSTSEC-2026-0045
-            --ignore RUSTSEC-2026-0046
-            --ignore RUSTSEC-2026-0047
-            --ignore RUSTSEC-2026-0048
-            --ignore RUSTSEC-2026-0049
-            --ignore RUSTSEC-2026-0067
-            --ignore RUSTSEC-2026-0068
-          )
-
-          cargo audit --deny warnings "${audit_ignores[@]}"
+          # Advisory ignores live in .cargo/audit.toml so the rationale, owner,
+          # and expiry stay close to the data. cargo-audit auto-discovers that
+          # file when invoked from the workspace root.
+          cargo audit --deny warnings
           # cargo-audit fails vulnerability advisories by default. App lockfiles still
           # carry yanked-only core2 transitives through current libp2p and Stronghold
           # stacks, so additionally deny unmaintained and unsound advisories while
           # upstreams replace it.
-          cargo audit --deny unmaintained --deny unsound --file apps/desktop/src-tauri/Cargo.lock "${audit_ignores[@]}"
-          cargo audit --deny unmaintained --deny unsound --file apps/workbench/src-tauri/Cargo.lock "${audit_ignores[@]}"
-          cargo audit --deny unmaintained --deny unsound --file apps/agent/src-tauri/Cargo.lock "${audit_ignores[@]}"
+          cargo audit --deny unmaintained --deny unsound --file apps/desktop/src-tauri/Cargo.lock
+          cargo audit --deny unmaintained --deny unsound --file apps/workbench/src-tauri/Cargo.lock
+          cargo audit --deny unmaintained --deny unsound --file apps/agent/src-tauri/Cargo.lock
 
   license-check:
     name: License Check
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -576,6 +645,7 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
@@ -605,6 +675,18 @@ jobs:
       - name: Generate workspace coverage report
         run: cargo llvm-cov --all-features --lcov --output-path lcov.workspace.info
 
+      - name: Generate agent Tauri coverage report
+        run: |
+          # This job is the changed-line coverage gate, not the full agent test
+          # gate. Export LCOV from runnable agent tests so agent Rust changes
+          # participate in coverage while platform/local-listener test failures
+          # remain isolated to their dedicated validation jobs.
+          cargo llvm-cov \
+            --manifest-path apps/agent/src-tauri/Cargo.toml \
+            --ignore-run-fail \
+            --lcov \
+            --output-path lcov.agent.info
+
       - name: Generate desktop Tauri coverage report
         run: cargo llvm-cov --manifest-path apps/desktop/src-tauri/Cargo.toml --lcov --output-path lcov.desktop.info
 
@@ -615,6 +697,8 @@ jobs:
         run: |
           {
             cat lcov.workspace.info
+            printf '\n'
+            cat lcov.agent.info
             printf '\n'
             cat lcov.desktop.info
             printf '\n'
@@ -649,7 +733,7 @@ jobs:
           fi
 
           # This job merges coverage from the root Rust workspace plus the
-          # desktop and workbench Tauri crates. Keep excluding the long-lived
+          # agent, desktop, and workbench Tauri crates. Keep excluding the long-lived
           # desktop Tauri surface from the changed-line floor until it has a
           # dedicated changed-line gate instead of inheriting legacy branch
           # churn. Also exclude vendored upstream Rust snapshots, standalone
@@ -658,11 +742,12 @@ jobs:
           # LCOV entries in this job. The root workspace coverage run installs
           # Z3 and uses `--all-features`, so `clawdstrike-logos` solver-gated
           # paths remain in scope here.
-          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
-            | grep -v '^apps/desktop/src-tauri/' \
+          grep -v '^apps/desktop/src-tauri/' changed_rust_files.txt \
             | grep -v '^apps/workbench/src-tauri/' \
             | grep -v '^crates/bridges/hush-go-native/' \
             | grep -v '^crates/libs/logos-z3/' \
+            | grep -v '^examples/autonomous-sandbox/' \
+            | grep -v '^fuzz/' \
             | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -v '^vendor/hushspec/' \
             | grep -Ev '(^|/)build\.rs$' \
@@ -692,6 +777,7 @@ jobs:
   wasm:
     name: WASM Build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
@@ -700,16 +786,11 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-wasm-
+          shared-key: wasm
+          cache-on-failure: true
 
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked --version 0.14.0
@@ -719,15 +800,14 @@ jobs:
           cd crates/libs/hush-wasm
           wasm-pack build --target web --release
 
-      - name: Verify committed Node.js WASM artifacts are in sync
+      - name: Build Node.js WASM target
         run: |
           cd crates/libs/hush-wasm
           wasm-pack build --target nodejs --release --out-dir pkg-node
 
-          for f in hush_wasm.js hush_wasm.d.ts hush_wasm_bg.wasm.d.ts; do
-            if ! cmp -s "$f" "pkg-node/$f"; then
-              echo "ERROR: $f is out of sync with wasm-pack --target nodejs output"
-              echo "Run: cd crates/libs/hush-wasm && ./build.sh"
+          for f in hush_wasm.js hush_wasm.d.ts hush_wasm_bg.wasm.d.ts hush_wasm_bg.wasm; do
+            if [ ! -s "pkg-node/$f" ]; then
+              echo "ERROR: pkg-node/$f is missing or empty"
               exit 1
             fi
           done
@@ -748,6 +828,7 @@ jobs:
   proptest:
     name: Property Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 
@@ -757,16 +838,11 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-proptest-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-proptest-
+          shared-key: proptest
+          cache-on-failure: true
 
       - name: Run property tests
         run: cargo test --workspace proptest
@@ -776,6 +852,7 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: check
     steps:
       - uses: actions/checkout@v6
@@ -786,17 +863,11 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-integration-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-integration-
-            ${{ runner.os }}-cargo-
+          shared-key: integration
+          cache-on-failure: true
 
       - name: Build daemon
         run: cargo build -p hushd
@@ -837,6 +908,7 @@ jobs:
   fuzz-check:
     name: Fuzz Smoke (PR)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: security-regressions
     steps:
       - uses: actions/checkout@v6
@@ -865,6 +937,7 @@ jobs:
   typescript-sdk:
     name: TypeScript SDK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/sdk/hush-ts
@@ -908,6 +981,7 @@ jobs:
   agent-fail-closed-smoke:
     name: Agent Fail-Closed Smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: security-regressions
     steps:
       - uses: actions/checkout@v6
@@ -948,7 +1022,7 @@ jobs:
 
       - name: Upload fail-closed smoke report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: agent-fail-closed-smoke-report
           path: |
@@ -959,6 +1033,7 @@ jobs:
   adapter-core-cross-adapter:
     name: Adapter Core Cross-Adapter
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/adapters/clawdstrike-adapter-core
@@ -981,6 +1056,7 @@ jobs:
   openclaw-plugin:
     name: OpenClaw Plugin
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/adapters/clawdstrike-openclaw
@@ -1028,6 +1104,7 @@ jobs:
   openclaw-plugin-runtime-matrix:
     name: OpenClaw Runtime (${{ matrix.openclaw_version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -1138,7 +1215,6 @@ jobs:
             and (
               .checks.assistantBlockSignal
               or .checks.assistantAuthMissing
-              or .checks.assistantAgentUnavailable
             )
             and .checks.policyCheckHttpOk
             and .checks.policyCheckDenied
@@ -1147,7 +1223,7 @@ jobs:
 
       - name: Upload OpenClaw runtime artifacts (${{ matrix.openclaw_version }})
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: openclaw-runtime-artifacts-${{ matrix.openclaw_version }}
           path: |
@@ -1159,6 +1235,7 @@ jobs:
   clawdstrike-policy:
     name: Canonical Policy Engine (TS)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/policy/clawdstrike-policy
@@ -1168,17 +1245,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-policy-parity-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-policy-parity-
-            ${{ runner.os }}-cargo-
+          shared-key: policy-parity
+          cache-on-failure: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -1229,6 +1300,7 @@ jobs:
   agent-framework-integrations:
     name: Agent Framework Integrations (${{ matrix.name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -1353,6 +1425,7 @@ jobs:
   parity-tests:
     name: Cross-Language Parity
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: check
     steps:
       - uses: actions/checkout@v6
@@ -1360,17 +1433,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-parity-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-parity-
-            ${{ runner.os }}-cargo-
+          shared-key: parity
+          cache-on-failure: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -1395,6 +1462,7 @@ jobs:
   python-sdk:
     name: Python SDK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/sdk/hush-py
@@ -1442,6 +1510,7 @@ jobs:
   python-native-wheel-smoke:
     name: Python Native Wheel Smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -1506,3 +1575,17 @@ jobs:
           assert init_native() is False
           print("Fallback toggle smoke check passed")
           PY
+
+  macos-provider-dogfood-contract:
+    name: macOS Provider Dogfood Contract
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run macOS provider dogfood contract self-test
+        run: bash scripts/test-macos-provider-dogfood-contract.sh

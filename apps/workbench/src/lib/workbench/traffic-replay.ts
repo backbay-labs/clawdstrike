@@ -14,6 +14,7 @@ import type {
 } from "./types";
 import type { AuditEvent } from "./fleet-client";
 import { ALL_GUARD_IDS, GUARD_DISPLAY_NAMES } from "./guard-registry";
+import { logger } from "@/lib/logger";
 
 
 export interface TrafficSummary {
@@ -82,7 +83,7 @@ function normalizeActionType(raw: string): TestActionType | null {
   };
   const result = map[raw.toLowerCase()] ?? null;
   if (result === null) {
-    console.warn(`[traffic-replay] normalizeActionType: unknown action type "${raw}"`);
+    logger.warn(`[traffic-replay] normalizeActionType: unknown action type "${raw}"`);
   }
   return result;
 }
@@ -94,7 +95,7 @@ function normalizeDecision(raw: string): Verdict {
   if (lower === "deny" || lower === "denied" || lower === "blocked" || lower === "block") return "deny";
   if (lower === "warn" || lower === "warning") return "warn";
   // Fail-closed: unknown decisions default to deny
-  console.warn(`[traffic-replay] normalizeDecision: unknown decision "${raw}", defaulting to deny`);
+  logger.warn(`[traffic-replay] normalizeDecision: unknown decision "${raw}", defaulting to deny`);
   return "deny";
 }
 
@@ -143,7 +144,7 @@ function buildPayload(
 export function auditEventsToScenarios(events: AuditEvent[]): TestScenario[] {
   const MAX_EVENTS = 10_000;
   if (events.length > MAX_EVENTS) {
-    console.warn(
+    logger.warn(
       `[traffic-replay] auditEventsToScenarios: truncating ${events.length} events to ${MAX_EVENTS}`,
     );
     events = events.slice(0, MAX_EVENTS);

@@ -17,6 +17,7 @@ import type {
   SpeakeasyRef,
 } from "@/lib/workbench/sentinel-types";
 import { generateId } from "@/lib/workbench/sentinel-types";
+import { logger } from "@/lib/logger";
 
 
 export interface SwarmState {
@@ -68,7 +69,7 @@ function persistSwarms(state: SwarmState): void {
     localStorage.setItem(STORAGE_KEY, raw);
     lastSwarmStorageSnapshot = raw;
   } catch (e) {
-    console.error("[swarm-store] persistSwarms failed:", e);
+    logger.error("[swarm-store] persistSwarms failed:", e);
   }
 }
 
@@ -78,7 +79,7 @@ function loadPersistedSwarms(): SwarmState | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.swarms)) {
-      console.warn("[swarm-store] Invalid persisted swarm data, using defaults");
+      logger.warn("[swarm-store] Invalid persisted swarm data, using defaults");
       return null;
     }
 
@@ -123,7 +124,7 @@ function loadPersistedSwarms(): SwarmState | null {
       invitationTracking,
     };
   } catch (e) {
-    console.warn("[swarm-store] loadPersistedSwarms failed:", e);
+    logger.warn("[swarm-store] loadPersistedSwarms failed:", e);
     return null;
   }
 }

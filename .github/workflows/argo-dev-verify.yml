@@ -14,6 +14,12 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  # Verify runs should not cancel each other (a main-branch deploy can race a
+  # manual rerun for the same SHA).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
@@ -28,6 +34,9 @@ jobs:
   verify:
     name: Verify Dev Deployment (Argo)
     runs-on: ubuntu-latest
+    # WAIT_TIMEOUT_SECONDS defaults to 1800; cap the job a bit higher to allow
+    # diagnostics collection on timeout.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
@@ -143,7 +152,7 @@ jobs:
 
       - name: Upload diagnostics artifact
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: argo-dev-verify-${{ github.run_id }}
           path: ${{ runner.temp }}/argo-dev-verify

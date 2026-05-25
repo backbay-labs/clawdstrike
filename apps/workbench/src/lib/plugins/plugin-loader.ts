@@ -58,6 +58,7 @@ import {
   PluginRevocationStore,
   getPluginRevocationStore,
 } from "./revocation-store";
+import { logger } from "@/lib/logger";
 
 // ---- Constants ----
 
@@ -870,7 +871,7 @@ export class PluginLoader {
     const asyncRegistrations: Promise<void>[] = [];
     const allowHostExecutableContributions = manifest.trust !== "community";
     const warnSkippedCommunityContribution = (kind: string): void => {
-      console.warn(
+      logger.warn(
         `[PluginLoader] Community plugin "${manifest.id}" declared "${kind}", but host-side executable contributions are disabled for sandboxed plugins. Skipping.`,
       );
     };
@@ -1005,7 +1006,7 @@ export class PluginLoader {
                 disposables.push(dispose);
               }
             } catch (err) {
-              console.warn(`[PluginLoader] Failed to load gutter extension "${decoId}":`, err);
+              logger.warn(`[PluginLoader] Failed to load gutter extension "${decoId}":`, err);
             }
           })());
         }
@@ -1017,7 +1018,7 @@ export class PluginLoader {
     // exposes a stable external adapter-registration API.
     if (contributions.detectionAdapters) {
       for (const adapter of contributions.detectionAdapters) {
-        console.debug(
+        logger.debug(
           `[PluginLoader] Detection adapter declared for "${(adapter as { fileType: string }).fileType}" by plugin "${manifest.id}"`,
         );
       }
@@ -1048,12 +1049,12 @@ export class PluginLoader {
                 const dispose = registerThreatIntelSource(registeredSource as any);
                 disposables.push(dispose);
               } else {
-                console.warn(
+                logger.warn(
                   `[PluginLoader] Threat intel source "${sourceId}" entrypoint does not export a valid ThreatIntelSource (missing enrich method)`,
                 );
               }
             } catch (err) {
-              console.warn(`[PluginLoader] Failed to load threat intel source "${sourceId}":`, err);
+              logger.warn(`[PluginLoader] Failed to load threat intel source "${sourceId}":`, err);
             }
           })());
         }

@@ -113,18 +113,20 @@ ensure_target_present() {
   fi
 }
 
-ensure_vendor_root_only_hushspec() {
+ensure_vendor_root_empty() {
   local tracked
   local entries
 
   tracked="$(
     git ls-files -- vendor vendor/** \
       | sed '/^$/d' \
-      | rg -v '^vendor/hushspec(/|$)' || true
+      || true
   )"
   if [[ -n "$tracked" ]]; then
     echo "[move-validation] unexpected tracked files under vendor/:"
     echo "$tracked"
+    echo "  vendor/ is reserved; the cargo offline mirror lives at infra/vendor/"
+    echo "  and out-of-tree path-deps (e.g. hushspec) live at infra/external/."
     echo
     fail=1
   fi
@@ -133,7 +135,7 @@ ensure_vendor_root_only_hushspec() {
     entries="$(
       find vendor -mindepth 1 -maxdepth 1 -print \
         | sed 's#^vendor/##' \
-        | rg -v '^hushspec$' || true
+        || true
     )"
     if [[ -n "$entries" ]]; then
       echo "[move-validation] unexpected paths under vendor/:"
@@ -153,7 +155,7 @@ for path in "${TARGET_PATHS[@]}"; do
   ensure_target_present "$path"
 done
 
-ensure_vendor_root_only_hushspec
+ensure_vendor_root_empty
 
 if [[ "$fail" -ne 0 ]]; then
   echo "[move-validation] FAIL"

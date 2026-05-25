@@ -1,5 +1,6 @@
 import type { Finding } from "./finding-engine";
 import type { Indicator } from "@clawdstrike/plugin-sdk";
+import { logger } from "@/lib/logger";
 
 export interface AutoEnrichmentConfig {
   /** Whether auto-enrichment is enabled. Default: false. */
@@ -98,7 +99,7 @@ export class AutoEnrichmentManager {
     for (const indicator of indicators) {
       // Intentionally not awaited -- results flow back via store dispatch
       this.orchestrator.enrich(indicator, enrichOptions).catch((err: unknown) => {
-        console.error(
+        logger.error(
           `[AutoEnrichment] Failed to enrich ${indicator.type}:${indicator.value}:`,
           err instanceof Error ? err.message : String(err),
         );

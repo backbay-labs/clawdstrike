@@ -53,6 +53,7 @@ import {
   type TracedPath,
 } from "@/lib/workbench/force-graph-engine";
 import { sanitizeDelegationSvgForExport } from "./svg-export";
+import { logger } from "@/lib/logger";
 
 const ALL_NODE_KINDS: NodeKind[] = [
   "Principal",
@@ -237,7 +238,7 @@ export function DelegationPage() {
         setLiveFetchError("No delegation data returned from fleet");
         return null;
       } catch (e) {
-        console.warn("[delegation-page] fetchLiveGraph failed:", e);
+        logger.warn("[delegation-page] fetchLiveGraph failed:", e);
         setLiveFetchError("Failed to fetch delegation graph from fleet");
         return null;
       }
@@ -278,7 +279,7 @@ export function DelegationPage() {
         }
       } catch (err) {
         if (cancelled) return;
-        console.warn("[delegation-page] auto-switch effect failed:", err);
+        logger.warn("[delegation-page] auto-switch effect failed:", err);
         setLiveFetchError("Failed to initialize live data");
       } finally {
         if (!cancelled) setIsLoadingGraph(false);
@@ -304,7 +305,7 @@ export function DelegationPage() {
         setGraph(liveGraph);
       }
     } catch (err) {
-      console.warn("[delegation-page] refreshLiveData failed:", err);
+      logger.warn("[delegation-page] refreshLiveData failed:", err);
       setLiveFetchError(String(err));
     } finally {
       setIsLoadingGraph(false);
@@ -327,7 +328,7 @@ export function DelegationPage() {
           setLiveFetchError("No delegation data for selected principal");
         }
       } catch (err) {
-        console.warn("[delegation-page] principal change fetch failed:", err);
+        logger.warn("[delegation-page] principal change fetch failed:", err);
         setGraph({ nodes: [], edges: [] });
         setLiveFetchError("Failed to fetch delegation graph");
       } finally {

@@ -18,6 +18,7 @@ import type { PluginLoader } from "./plugin-loader";
 import type { PluginRevocationStore, PluginRevocationEntry } from "./revocation-store";
 import type { PluginRegistry } from "./plugin-registry";
 import type { ReceiptMiddleware } from "./bridge/receipt-middleware";
+import { logger } from "@/lib/logger";
 
 // ---- Constants ----
 
@@ -99,12 +100,12 @@ export class PluginRevocationClient {
         const data = JSON.parse(event.data) as PluginRevokedEventData;
         void this.handleRevocationEvent(data);
       } catch (err) {
-        console.warn("[revocation-client] failed to parse plugin_revoked event:", err);
+        logger.warn("[revocation-client] failed to parse plugin_revoked event:", err);
       }
     });
 
     es.addEventListener("error", () => {
-      console.warn("[revocation-client] SSE connection error, scheduling reconnect");
+      logger.warn("[revocation-client] SSE connection error, scheduling reconnect");
       this.closeEventSource();
       this.scheduleReconnect();
     });
@@ -160,7 +161,7 @@ export class PluginRevocationClient {
       );
 
       if (!response.ok) {
-        console.warn(
+        logger.warn(
           "[revocation-client] failed to fetch revocations:",
           response.status,
         );
@@ -185,7 +186,7 @@ export class PluginRevocationClient {
         this.options.registry.setState(pluginId, "deactivated");
       }
     } catch (err) {
-      console.warn("[revocation-client] syncOnReconnect error:", err);
+      logger.warn("[revocation-client] syncOnReconnect error:", err);
     }
   }
 

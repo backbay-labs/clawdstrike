@@ -6,7 +6,7 @@ pub use evidence::*;
 pub use families::*;
 pub use inputs::*;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -21,20 +21,30 @@ use super::{
     actor::{
         EndpointClockState, EndpointDecisionActor, EndpointPolicySnapshot, EndpointReceiptSigner,
     },
-    detection::DetectionSeverity,
+    causal::{CausalGraph, CausalNode},
+    deception::{
+        DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan,
+        DeceptionRotationReport,
+    },
+    detection::{DetectionFinding, DetectionSeverity},
+    event::EndpointObservation,
+    privacy::EndpointTelemetryPrivacyReport,
     response::{
-        EndpointResponseControlCorrelation, EndpointResponseExecutionEffect,
-        EndpointResponseExecutionStatus,
+        EndpointResponseAcknowledgementReport, EndpointResponseControlCorrelation,
+        EndpointResponseExecutionEffect, EndpointResponseExecutionReport,
+        EndpointResponseExecutionStatus, EndpointResponsePlan, EndpointResponseRollbackReport,
     },
     sensor_state::{EndpointProviderState, EndpointSensorState},
     simulation::{
         impact_level_for_score, simulation_action_would_block, simulation_context_evidence_value,
+        EndpointPolicySimulationReport,
     },
 };
 use super::{
     endpoint_decision_actor_content_hash, endpoint_observation_content_hash,
     endpoint_policy_delta_id, endpoint_policy_event_impact_id, endpoint_policy_event_replay_id,
-    endpoint_sensor_state_content_hash, event_target_field, stable_id,
+    endpoint_sensor_state_content_hash, event_target_field, evidence_hash_for_value, finding,
+    stable_id,
 };
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
@@ -182,6 +192,10 @@ impl EndpointDecisionReceipt {
                 input.report.raw_artifact_upload_permitted.to_string(),
             ),
             EndpointReceiptEvidence::hashed(
+                "projectionContentHash",
+                input.report.projection_content_hash.as_str(),
+            ),
+            EndpointReceiptEvidence::hashed(
                 "observationCount",
                 input.report.observation_count.to_string(),
             ),
@@ -319,6 +333,7 @@ impl EndpointDecisionReceipt {
         let graph_ref = EndpointGraphReference::for_observation(input.observation, input.graph);
         let graph_slice_id = graph_ref.graph_slice_id.clone().unwrap_or_default();
         let process_node_id = graph_ref.process_node_id.clone().unwrap_or_default();
+        let graph_content_hash = graph_ref.content_hash.clone().unwrap_or_default();
         let target = event_target_field(input.observation).unwrap_or_else(|| "unknown".to_string());
         let provider = input.sensor_state.providers.first();
         let provider_id = provider
@@ -327,18 +342,20 @@ impl EndpointDecisionReceipt {
         let provider_kind = provider
             .map(|provider| camel_debug_to_snake(format!("{:?}", provider.provider_kind).as_str()))
             .unwrap_or_else(|| "unknown".to_string());
-        let observation_receipt_id = observation_receipt_id_from_fields(ObservationReceiptIdFields {
-            endpoint_id: input.endpoint_id,
-            policy_hash: input.policy.policy_hash.as_str(),
-            observation_id: input.observation.observation_id.as_str(),
-            event_kind,
-            observation_hash: observation_hash.as_str(),
-            target: target.as_str(),
-            graph_slice_id: graph_slice_id.as_str(),
-            process_node_id: process_node_id.as_str(),
-            provider_id: provider_id.as_str(),
-            provider_kind: provider_kind.as_str(),
-        });
+        let observation_receipt_id =
+            observation_receipt_id_from_fields(ObservationReceiptIdFields {
+                endpoint_id: input.endpoint_id,
+                policy_hash: input.policy.policy_hash.as_str(),
+                observation_id: input.observation.observation_id.as_str(),
+                event_kind,
+                observation_hash: observation_hash.as_str(),
+                target: target.as_str(),
+                graph_slice_id: graph_slice_id.as_str(),
+                graph_content_hash: graph_content_hash.as_str(),
+                process_node_id: process_node_id.as_str(),
+                provider_id: provider_id.as_str(),
+                provider_kind: provider_kind.as_str(),
+            });
 
         Self {
             schema_version: ENDPOINT_DECISION_RECEIPT_SCHEMA_VERSION.to_string(),
@@ -374,6 +391,7 @@ impl EndpointDecisionReceipt {
                 EndpointReceiptEvidence::hashed("observationHash", observation_hash),
                 EndpointReceiptEvidence::hashed("target", target),
                 EndpointReceiptEvidence::hashed("graphSliceId", graph_slice_id),
+                EndpointReceiptEvidence::hashed("contentHash", graph_content_hash),
                 EndpointReceiptEvidence::hashed("processNodeId", process_node_id),
                 EndpointReceiptEvidence::hashed("providerId", provider_id),
                 EndpointReceiptEvidence::hashed("providerKind", provider_kind),
@@ -385,20 +403,49 @@ impl EndpointDecisionReceipt {
     pub fn for_policy_decision(input: EndpointPolicyDecisionReceiptInput<'_>) -> Self {
         let allowed_text = input.allowed.to_string();
         let guard = input.guard.unwrap_or("none");
-        let decision_id = policy_decision_id_from_fields(
-            input.actor.endpoint_id.as_str(),
-            input.policy.policy_hash.as_str(),
-            input.action_type,
-            input.target,
-            input.allowed,
+        let actor_hash = endpoint_decision_actor_content_hash(&input.actor);
+        let actor_session_id = policy_decision_actor_session_value(&input.actor);
+        let policy_epoch = input.policy.policy_epoch.to_string();
+        let graph_ref = EndpointGraphReference::for_observation(input.observation, input.graph);
+        let decision_id = policy_decision_id_from_fields(PolicyDecisionIdFields {
+            endpoint_id: input.actor.endpoint_id.as_str(),
+            policy_hash: input.policy.policy_hash.as_str(),
+            policy_epoch: input.policy.policy_epoch,
+            actor_hash: actor_hash.as_str(),
+            actor_session_id: actor_session_id.as_str(),
+            action_type: input.action_type,
+            target: input.target,
+            allowed: input.allowed,
             guard,
-        );
+        });
         let mut evidence = vec![
             EndpointReceiptEvidence::hashed("actionType", input.action_type),
             EndpointReceiptEvidence::hashed("target", input.target),
             EndpointReceiptEvidence::hashed("allowed", allowed_text),
             EndpointReceiptEvidence::hashed("guard", guard),
+            EndpointReceiptEvidence::hashed("actorHash", actor_hash),
+            EndpointReceiptEvidence::hashed("actorSessionId", actor_session_id),
+            EndpointReceiptEvidence::hashed("policyEpoch", policy_epoch),
+            EndpointReceiptEvidence::hashed(
+                "observationId",
+                input.observation.observation_id.clone(),
+            ),
         ];
+        if let Some(graph_slice_id) = graph_ref.graph_slice_id.as_deref() {
+            evidence.push(EndpointReceiptEvidence::hashed(
+                "graphSliceId",
+                graph_slice_id,
+            ));
+        }
+        if let Some(content_hash) = graph_ref.content_hash.as_deref() {
+            evidence.push(EndpointReceiptEvidence::hashed("contentHash", content_hash));
+        }
+        if let Some(process_node_id) = graph_ref.process_node_id.as_deref() {
+            evidence.push(EndpointReceiptEvidence::hashed(
+                "processNodeId",
+                process_node_id,
+            ));
+        }
         if let Some(severity_label) = input.severity_label {
             evidence.push(EndpointReceiptEvidence::hashed("severity", severity_label));
         }
@@ -427,7 +474,7 @@ impl EndpointDecisionReceipt {
             policy: input.policy,
             sensor_state: input.sensor_state,
             decision: EndpointDecisionRecord {
-                observation_id: None,
+                observation_id: Some(input.observation.observation_id.clone()),
                 finding_id: Some(decision_id),
                 rule_id: Some(format!("endpoint.policy_decision.{}", input.action_type)),
                 title: Some(if input.allowed {
@@ -446,7 +493,7 @@ impl EndpointDecisionReceipt {
                 ttl_seconds: None,
                 rollback_ref: None,
             },
-            graph: EndpointGraphReference::default(),
+            graph: graph_ref,
             evidence,
         }
     }
@@ -530,6 +577,12 @@ impl EndpointDecisionReceipt {
             evidence.push(EndpointReceiptEvidence::hashed(
                 "detectionGraphSliceId",
                 graph_slice_id,
+            ));
+        }
+        if let Some(graph_content_hash) = graph_ref.content_hash.as_deref() {
+            evidence.push(EndpointReceiptEvidence::hashed(
+                "detectionContentHash",
+                graph_content_hash,
             ));
         }
         if let Some(process_node_id) = graph_ref.process_node_id.as_deref() {
@@ -671,6 +724,12 @@ impl EndpointDecisionReceipt {
                         }
                         EndpointResponseExecutionStatus::Partial => {
                             "Endpoint response action partially executed"
+                        }
+                        EndpointResponseExecutionStatus::RollbackPending => {
+                            "Endpoint response rollback pending"
+                        }
+                        EndpointResponseExecutionStatus::RollbackFailed => {
+                            "Endpoint response rollback failed"
                         }
                         EndpointResponseExecutionStatus::Expired => {
                             "Endpoint response action expired"
@@ -1379,6 +1438,7 @@ impl EndpointDecisionReceipt {
         let replay_id = endpoint_policy_event_replay_id(EndpointPolicyEventReplayIdInput {
             policy_hash: input.policy.policy_hash.as_str(),
             policy_epoch: input.policy.policy_epoch,
+            event_source: input.event_source,
             event_stream_hash: input.event_stream_hash,
             result_hash: input.result_hash,
             event_count: input.event_count,
@@ -1425,6 +1485,7 @@ impl EndpointDecisionReceipt {
             },
             evidence: vec![
                 EndpointReceiptEvidence::hashed("replayId", replay_id),
+                EndpointReceiptEvidence::hashed("eventSource", input.event_source),
                 EndpointReceiptEvidence::hashed("eventStreamHash", input.event_stream_hash),
                 EndpointReceiptEvidence::hashed("resultHash", input.result_hash),
                 EndpointReceiptEvidence::hashed("eventCount", input.event_count.to_string()),
@@ -1443,6 +1504,7 @@ impl EndpointDecisionReceipt {
             current_policy_epoch: input.policy.policy_epoch,
             proposed_policy_hash: input.proposed_policy_hash,
             proposed_policy_epoch: input.proposed_policy_epoch,
+            event_source: input.event_source,
             event_stream_hash: input.event_stream_hash,
             current_result_hash: input.current_result_hash,
             proposed_result_hash: input.proposed_result_hash,
@@ -1490,6 +1552,7 @@ impl EndpointDecisionReceipt {
             },
             evidence: vec![
                 EndpointReceiptEvidence::hashed("impactId", impact_id),
+                EndpointReceiptEvidence::hashed("eventSource", input.event_source),
                 EndpointReceiptEvidence::hashed("eventStreamHash", input.event_stream_hash),
                 EndpointReceiptEvidence::hashed("currentResultHash", input.current_result_hash),
                 EndpointReceiptEvidence::hashed("proposedResultHash", input.proposed_result_hash),
@@ -1525,6 +1588,10 @@ impl EndpointDecisionReceipt {
             source_affected_identity_context: input.source_affected_identity_context,
             source_affected_tool_context: input.source_affected_tool_context,
         });
+        let has_actor = input.actor.is_some();
+        let mut actor = input.actor.unwrap_or_default();
+        actor.endpoint_id = input.endpoint_id.to_string();
+        let actor_hash = endpoint_decision_actor_content_hash(&actor);
         let mut evidence = vec![
             EndpointReceiptEvidence::hashed("operation", input.operation),
             EndpointReceiptEvidence::hashed("policyDeltaId", &policy_delta_id),
@@ -1544,6 +1611,9 @@ impl EndpointDecisionReceipt {
                 input.source_affected_tool_context,
             ),
         ];
+        if has_actor {
+            evidence.push(EndpointReceiptEvidence::hashed("actorHash", actor_hash));
+        }
         if let Some(previous_policy_hash) = input.previous_policy_hash {
             evidence.push(EndpointReceiptEvidence::hashed(
                 "previousPolicyHash",
@@ -1581,10 +1651,7 @@ impl EndpointDecisionReceipt {
                 signer_identity: input.signer_identity.to_string(),
                 signer_public_key: None,
             },
-            actor: EndpointDecisionActor {
-                endpoint_id: input.endpoint_id.to_string(),
-                ..EndpointDecisionActor::default()
-            },
+            actor,
             policy: input.policy,
             sensor_state: input.sensor_state,
             decision: EndpointDecisionRecord {
@@ -1767,6 +1834,7 @@ impl EndpointDecisionReceipt {
                 &self.decision,
                 &self.actor,
                 &self.policy,
+                &self.graph,
             )?;
         }
         if self.receipt_family == EndpointDecisionReceiptFamily::PolicyDelta {
@@ -2466,6 +2534,57 @@ fn expected_live_response_rollback_ref(
     expected_response_rollback_ref(action, false, response_action_id)
 }
 
+fn telemetry_privacy_report_id_from_values(
+    privacy_mode: &str,
+    raw_artifact_upload_permitted: bool,
+    raw_artifact_approval_id: Option<&str>,
+    raw_artifact_approval_reason_hash: Option<&str>,
+    projection_content_hash: &str,
+    count_values: [&str; 7],
+) -> String {
+    let privacy_mode_hash = sha256(privacy_mode.as_bytes()).to_hex_prefixed();
+    let raw_permitted = raw_artifact_upload_permitted.to_string();
+    let raw_permitted_hash = sha256(raw_permitted.as_bytes()).to_hex_prefixed();
+    let observation_count_hash = sha256(count_values[0].as_bytes()).to_hex_prefixed();
+    let field_count_hash = sha256(count_values[1].as_bytes()).to_hex_prefixed();
+    let hash_only_count_hash = sha256(count_values[2].as_bytes()).to_hex_prefixed();
+    let metadata_only_count_hash = sha256(count_values[3].as_bytes()).to_hex_prefixed();
+    let redacted_count_hash = sha256(count_values[4].as_bytes()).to_hex_prefixed();
+    let raw_suppressed_count_hash = sha256(count_values[5].as_bytes()).to_hex_prefixed();
+    let local_only_count_hash = sha256(count_values[6].as_bytes()).to_hex_prefixed();
+    let projection_content_hash_hash = sha256(projection_content_hash.as_bytes()).to_hex_prefixed();
+    let mut evidence_hashes = vec![
+        privacy_mode_hash.as_str(),
+        raw_permitted_hash.as_str(),
+        projection_content_hash_hash.as_str(),
+        observation_count_hash.as_str(),
+        field_count_hash.as_str(),
+        hash_only_count_hash.as_str(),
+        metadata_only_count_hash.as_str(),
+        redacted_count_hash.as_str(),
+        raw_suppressed_count_hash.as_str(),
+        local_only_count_hash.as_str(),
+    ];
+    let raw_artifact_approval_id_hash =
+        raw_artifact_approval_id.map(|value| sha256(value.as_bytes()).to_hex_prefixed());
+    let raw_artifact_approval_reason_hash_hash =
+        raw_artifact_approval_reason_hash.map(|value| sha256(value.as_bytes()).to_hex_prefixed());
+    let empty_hash = sha256(b"").to_hex_prefixed();
+    if raw_artifact_upload_permitted {
+        evidence_hashes.push(
+            raw_artifact_approval_id_hash
+                .as_deref()
+                .unwrap_or(empty_hash.as_str()),
+        );
+        evidence_hashes.push(
+            raw_artifact_approval_reason_hash_hash
+                .as_deref()
+                .unwrap_or(empty_hash.as_str()),
+        );
+    }
+    telemetry_privacy_report_id_from_evidence_hashes(evidence_hashes)
+}
+
 fn telemetry_privacy_report_id_from_evidence(
     evidence: &[EndpointReceiptEvidence],
 ) -> Result<String> {
@@ -2477,6 +2596,11 @@ fn telemetry_privacy_report_id_from_evidence(
     let mut evidence_hashes = vec![
         evidence_value_hash(evidence, "privacyMode", "privacy report mode evidence")?,
         raw_artifact_upload_permitted_hash,
+        evidence_value_hash(
+            evidence,
+            "projectionContentHash",
+            "privacy report projection content hash evidence",
+        )?,
         evidence_value_hash(
             evidence,
             "observationCount",
@@ -2663,24 +2787,37 @@ fn endpoint_provider_full_disk_access_evidence_value(value: Option<bool>) -> &'s
     }
 }
 
-fn policy_decision_id_from_fields(
-    endpoint_id: &str,
-    policy_hash: &str,
-    action_type: &str,
-    target: &str,
+struct PolicyDecisionIdFields<'a> {
+    endpoint_id: &'a str,
+    policy_hash: &'a str,
+    policy_epoch: u64,
+    actor_hash: &'a str,
+    actor_session_id: &'a str,
+    action_type: &'a str,
+    target: &'a str,
     allowed: bool,
-    guard: &str,
-) -> String {
-    let target_evidence_hash = sha256(target.as_bytes()).to_hex_prefixed();
-    let guard_evidence_hash = sha256(guard.as_bytes()).to_hex_prefixed();
-    policy_decision_id_from_evidence_hashes(
-        endpoint_id,
-        policy_hash,
-        action_type,
-        target_evidence_hash.as_str(),
-        allowed,
-        guard_evidence_hash.as_str(),
-    )
+    guard: &'a str,
+}
+
+fn policy_decision_id_from_fields(fields: PolicyDecisionIdFields<'_>) -> String {
+    let policy_epoch = fields.policy_epoch.to_string();
+    let policy_epoch_evidence_hash = sha256(policy_epoch.as_bytes()).to_hex_prefixed();
+    let actor_hash_evidence_hash = sha256(fields.actor_hash.as_bytes()).to_hex_prefixed();
+    let actor_session_id_evidence_hash =
+        sha256(fields.actor_session_id.as_bytes()).to_hex_prefixed();
+    let target_evidence_hash = sha256(fields.target.as_bytes()).to_hex_prefixed();
+    let guard_evidence_hash = sha256(fields.guard.as_bytes()).to_hex_prefixed();
+    policy_decision_id_from_evidence_hashes(PolicyDecisionIdEvidenceHashes {
+        endpoint_id: fields.endpoint_id,
+        policy_hash: fields.policy_hash,
+        policy_epoch_evidence_hash: policy_epoch_evidence_hash.as_str(),
+        actor_hash_evidence_hash: actor_hash_evidence_hash.as_str(),
+        actor_session_id_evidence_hash: actor_session_id_evidence_hash.as_str(),
+        action_type: fields.action_type,
+        target_evidence_hash: target_evidence_hash.as_str(),
+        allowed: fields.allowed,
+        guard_evidence_hash: guard_evidence_hash.as_str(),
+    })
 }
 
 fn policy_decision_id_from_evidence(
@@ -2690,38 +2827,63 @@ fn policy_decision_id_from_evidence(
     action_type: &str,
     allowed: bool,
 ) -> Result<String> {
+    let policy_epoch_evidence_hash = evidence_value_hash(
+        evidence,
+        "policyEpoch",
+        "policy decision policy epoch evidence",
+    )?;
+    let actor_hash_evidence_hash =
+        evidence_value_hash(evidence, "actorHash", "policy decision actor hash evidence")?;
+    let actor_session_id_evidence_hash = evidence_value_hash(
+        evidence,
+        "actorSessionId",
+        "policy decision actor session evidence",
+    )?;
     let target_evidence_hash =
         evidence_value_hash(evidence, "target", "policy decision target evidence")?;
     let guard_evidence_hash =
         evidence_value_hash(evidence, "guard", "policy decision guard evidence")?;
     Ok(policy_decision_id_from_evidence_hashes(
-        endpoint_id,
-        policy_hash,
-        action_type,
-        target_evidence_hash,
-        allowed,
-        guard_evidence_hash,
+        PolicyDecisionIdEvidenceHashes {
+            endpoint_id,
+            policy_hash,
+            policy_epoch_evidence_hash,
+            actor_hash_evidence_hash,
+            actor_session_id_evidence_hash,
+            action_type,
+            target_evidence_hash,
+            allowed,
+            guard_evidence_hash,
+        },
     ))
 }
 
-fn policy_decision_id_from_evidence_hashes(
-    endpoint_id: &str,
-    policy_hash: &str,
-    action_type: &str,
-    target_evidence_hash: &str,
+struct PolicyDecisionIdEvidenceHashes<'a> {
+    endpoint_id: &'a str,
+    policy_hash: &'a str,
+    policy_epoch_evidence_hash: &'a str,
+    actor_hash_evidence_hash: &'a str,
+    actor_session_id_evidence_hash: &'a str,
+    action_type: &'a str,
+    target_evidence_hash: &'a str,
     allowed: bool,
-    guard_evidence_hash: &str,
-) -> String {
-    let allowed_text = allowed.to_string();
+    guard_evidence_hash: &'a str,
+}
+
+fn policy_decision_id_from_evidence_hashes(fields: PolicyDecisionIdEvidenceHashes<'_>) -> String {
+    let allowed_text = fields.allowed.to_string();
     stable_id(
         "policy_decision",
         [
-            endpoint_id,
-            policy_hash,
-            action_type,
-            target_evidence_hash,
+            fields.endpoint_id,
+            fields.policy_hash,
+            fields.policy_epoch_evidence_hash,
+            fields.actor_hash_evidence_hash,
+            fields.actor_session_id_evidence_hash,
+            fields.action_type,
+            fields.target_evidence_hash,
             allowed_text.as_str(),
-            guard_evidence_hash,
+            fields.guard_evidence_hash,
         ],
     )
 }
@@ -2741,15 +2903,14 @@ fn require_subgraph_reference(graph: &EndpointGraphReference, label: &str) -> Re
         .graph_slice_id
         .as_deref()
         .ok_or_else(|| anyhow!("{label} graph slice reference is required"))?;
-    let node_count = graph.node_ids.len().to_string();
-    let edge_count = graph.edge_ids.len().to_string();
-    let expected_graph_slice_id = stable_id(
-        "graph_slice",
-        [root_node_id, node_count.as_str(), edge_count.as_str()],
-    );
+    let graph_content_hash = graph
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| anyhow!("{label} graph content hash is required"))?;
+    let expected_graph_slice_id = stable_id("graph_slice", [root_node_id, graph_content_hash]);
     if graph_slice_id != expected_graph_slice_id {
         return Err(anyhow!(
-            "{label} graph slice reference must match root and graph counts"
+            "{label} graph slice reference must match root and graph content hash"
         ));
     }
     Ok(())
@@ -2926,6 +3087,8 @@ fn response_execution_transition_id_prefix(status: &str) -> Option<&'static str>
     match status {
         "failed" => Some("response_execution_failed"),
         "partial" => Some("response_execution_partial"),
+        "rollback_pending" => Some("response_execution_rollback_pending"),
+        "rollback_failed" => Some("response_execution_rollback_failed"),
         "expired" => Some("response_execution_expired"),
         "cancelled" => Some("response_execution_cancelled"),
         "rolled_back" => Some("response_execution_rolled_back"),
@@ -2946,6 +3109,20 @@ fn response_execution_reason_evidence_hash(evidence: &[EndpointReceiptEvidence])
 struct ResponseExecutionEffectBindingEntry {
     key: String,
     value_hash: String,
+}
+
+fn response_execution_id_from_effects(
+    response_action_id: &str,
+    evidence_bundle_id: &str,
+    effects: &[EndpointResponseExecutionEffect],
+) -> Result<String> {
+    let effect_binding_digest = response_execution_effect_binding_digest_from_effects(effects)?
+        .ok_or_else(|| anyhow!("response execution effect binding requires at least one effect"))?;
+    Ok(response_execution_id_from_effect_digest(
+        response_action_id,
+        evidence_bundle_id,
+        effect_binding_digest.as_str(),
+    ))
 }
 
 fn response_execution_id_from_effect_digest(
@@ -4394,11 +4571,21 @@ fn require_detection_evidence(
         .graph_slice_id
         .as_deref()
         .ok_or_else(|| anyhow!("detection graph slice id is required"))?;
+    let graph_content_hash = graph
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| anyhow!("detection graph content hash is required"))?;
     let process_node_id = graph
         .process_node_id
         .as_deref()
         .ok_or_else(|| anyhow!("detection process node id is required"))?;
-    require_detection_graph_reference(graph, observation_id, graph_slice_id, process_node_id)?;
+    require_detection_graph_reference(
+        graph,
+        observation_id,
+        graph_slice_id,
+        graph_content_hash,
+        process_node_id,
+    )?;
 
     require_evidence_value_hash(
         evidence,
@@ -4450,6 +4637,12 @@ fn require_detection_evidence(
     )?;
     require_evidence_value_hash(
         evidence,
+        "detectionContentHash",
+        graph_content_hash,
+        "detection graph content hash evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
         "detectionProcessNodeId",
         process_node_id,
         "detection process node evidence",
@@ -4484,11 +4677,21 @@ fn require_observation_evidence(
         .graph_slice_id
         .as_deref()
         .ok_or_else(|| anyhow!("observation graph slice id is required"))?;
+    let graph_content_hash = graph
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| anyhow!("observation graph content hash is required"))?;
     let process_node_id = graph
         .process_node_id
         .as_deref()
         .ok_or_else(|| anyhow!("observation process node id is required"))?;
-    require_detection_graph_reference(graph, observation_id, graph_slice_id, process_node_id)?;
+    require_detection_graph_reference(
+        graph,
+        observation_id,
+        graph_slice_id,
+        graph_content_hash,
+        process_node_id,
+    )?;
 
     require_evidence_value_hash(
         evidence,
@@ -4513,6 +4716,12 @@ fn require_observation_evidence(
         "graphSliceId",
         graph_slice_id,
         "observation graph slice evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "contentHash",
+        graph_content_hash,
+        "observation graph content hash evidence",
     )?;
     require_evidence_value_hash(
         evidence,
@@ -4558,6 +4767,7 @@ fn require_detection_graph_reference(
     graph: &EndpointGraphReference,
     observation_id: &str,
     graph_slice_id: &str,
+    graph_content_hash: &str,
     process_node_id: &str,
 ) -> Result<()> {
     if !graph
@@ -4570,20 +4780,13 @@ fn require_detection_graph_reference(
         ));
     }
 
-    let node_count = graph.node_ids.len().to_string();
-    let edge_count = graph.edge_ids.len().to_string();
     let expected_graph_slice_id = stable_id(
         "graph_slice",
-        [
-            observation_id,
-            process_node_id,
-            node_count.as_str(),
-            edge_count.as_str(),
-        ],
+        [observation_id, process_node_id, graph_content_hash],
     );
     if graph_slice_id != expected_graph_slice_id {
         return Err(anyhow!(
-            "detection graph slice reference must match observation, process, and graph counts"
+            "detection graph slice reference must match observation, process, and graph content hash"
         ));
     }
     Ok(())
@@ -4611,6 +4814,7 @@ struct ObservationReceiptIdFields<'a> {
     observation_hash: &'a str,
     target: &'a str,
     graph_slice_id: &'a str,
+    graph_content_hash: &'a str,
     process_node_id: &'a str,
     provider_id: &'a str,
     provider_kind: &'a str,
@@ -4622,6 +4826,7 @@ fn observation_receipt_id_from_fields(fields: ObservationReceiptIdFields<'_>) ->
     let observation_hash_hash = sha256(fields.observation_hash.as_bytes()).to_hex_prefixed();
     let target_hash = sha256(fields.target.as_bytes()).to_hex_prefixed();
     let graph_slice_id_hash = sha256(fields.graph_slice_id.as_bytes()).to_hex_prefixed();
+    let graph_content_hash_hash = sha256(fields.graph_content_hash.as_bytes()).to_hex_prefixed();
     let process_node_id_hash = sha256(fields.process_node_id.as_bytes()).to_hex_prefixed();
     let provider_id_hash = sha256(fields.provider_id.as_bytes()).to_hex_prefixed();
     let provider_kind_hash = sha256(fields.provider_kind.as_bytes()).to_hex_prefixed();
@@ -4634,6 +4839,7 @@ fn observation_receipt_id_from_fields(fields: ObservationReceiptIdFields<'_>) ->
             observation_hash_hash: observation_hash_hash.as_str(),
             target_hash: target_hash.as_str(),
             graph_slice_id_hash: graph_slice_id_hash.as_str(),
+            graph_content_hash_hash: graph_content_hash_hash.as_str(),
             process_node_id_hash: process_node_id_hash.as_str(),
             provider_id_hash: provider_id_hash.as_str(),
             provider_kind_hash: provider_kind_hash.as_str(),
@@ -4671,6 +4877,11 @@ fn observation_receipt_id_from_evidence(
                 "graphSliceId",
                 "observation graph slice evidence",
             )?,
+            graph_content_hash_hash: evidence_value_hash(
+                evidence,
+                "contentHash",
+                "observation graph content hash evidence",
+            )?,
             process_node_id_hash: evidence_value_hash(
                 evidence,
                 "processNodeId",
@@ -4692,6 +4903,7 @@ struct ObservationReceiptIdEvidenceHashes<'a> {
     observation_hash_hash: &'a str,
     target_hash: &'a str,
     graph_slice_id_hash: &'a str,
+    graph_content_hash_hash: &'a str,
     process_node_id_hash: &'a str,
     provider_id_hash: &'a str,
     provider_kind_hash: &'a str,
@@ -4712,6 +4924,7 @@ fn observation_receipt_id_from_evidence_hashes(
             evidence_hashes.observation_hash_hash,
             evidence_hashes.target_hash,
             evidence_hashes.graph_slice_id_hash,
+            evidence_hashes.graph_content_hash_hash,
             evidence_hashes.process_node_id_hash,
             evidence_hashes.provider_id_hash,
             evidence_hashes.provider_kind_hash,
@@ -4744,7 +4957,12 @@ fn require_policy_decision_evidence(
     decision: &EndpointDecisionRecord,
     actor: &EndpointDecisionActor,
     policy: &EndpointPolicySnapshot,
+    graph: &EndpointGraphReference,
 ) -> Result<()> {
+    let observation_id = decision
+        .observation_id
+        .as_deref()
+        .ok_or_else(|| anyhow!("policy decision observation id is required"))?;
     let signed_id = decision
         .finding_id
         .as_deref()
@@ -4764,6 +4982,69 @@ fn require_policy_decision_evidence(
         "policy decision action type evidence",
     )?;
     require_nonempty_hashed_evidence(evidence, "target", "policy decision target evidence")?;
+    let actor_hash = endpoint_decision_actor_content_hash(actor);
+    require_evidence_value_hash(
+        evidence,
+        "actorHash",
+        actor_hash.as_str(),
+        "policy decision actor hash evidence",
+    )?;
+    let actor_session_id = policy_decision_actor_session_value(actor);
+    require_evidence_value_hash(
+        evidence,
+        "actorSessionId",
+        actor_session_id.as_str(),
+        "policy decision actor session evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "policyEpoch",
+        policy.policy_epoch.to_string(),
+        "policy decision policy epoch evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "observationId",
+        observation_id,
+        "policy decision observation id evidence",
+    )?;
+    let graph_slice_id = graph
+        .graph_slice_id
+        .as_deref()
+        .ok_or_else(|| anyhow!("policy decision graph slice id is required"))?;
+    let graph_content_hash = graph
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| anyhow!("policy decision graph content hash is required"))?;
+    let process_node_id = graph
+        .process_node_id
+        .as_deref()
+        .ok_or_else(|| anyhow!("policy decision process node id is required"))?;
+    require_detection_graph_reference(
+        graph,
+        observation_id,
+        graph_slice_id,
+        graph_content_hash,
+        process_node_id,
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "graphSliceId",
+        graph_slice_id,
+        "policy decision graph slice evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "contentHash",
+        graph_content_hash,
+        "policy decision graph content hash evidence",
+    )?;
+    require_evidence_value_hash(
+        evidence,
+        "processNodeId",
+        process_node_id,
+        "policy decision process node evidence",
+    )?;
     require_evidence_value_hash(
         evidence,
         "allowed",
@@ -4780,7 +5061,7 @@ fn require_policy_decision_evidence(
     )?;
     if signed_id != expected_decision_id {
         return Err(anyhow!(
-            "policy decision id must match signed endpoint, policy, action, target, allowed, and guard evidence"
+            "policy decision id must match signed endpoint, policy, policy epoch, actor hash, actor session, action, target, allowed, and guard evidence"
         ));
     }
     if evidence.iter().any(|item| item.key == "severity") {
@@ -4797,6 +5078,16 @@ fn require_policy_decision_evidence(
         require_nonempty_hashed_evidence(evidence, "details", "policy decision details evidence")?;
     }
     Ok(())
+}
+
+fn policy_decision_actor_session_value(actor: &EndpointDecisionActor) -> String {
+    actor
+        .session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("none")
+        .to_string()
 }
 
 fn require_simulation_evidence(
@@ -4958,6 +5249,11 @@ fn require_policy_event_replay_evidence(
         replay_id,
         "policy event replay id evidence",
     )?;
+    require_policy_event_source_evidence(
+        evidence,
+        "eventSource",
+        "policy event replay source evidence",
+    )?;
     require_nonempty_hashed_evidence(
         evidence,
         "eventStreamHash",
@@ -5012,6 +5308,11 @@ fn require_policy_event_impact_evidence(
         "impactId",
         impact_id,
         "policy event impact id evidence",
+    )?;
+    require_policy_event_source_evidence(
+        evidence,
+        "eventSource",
+        "policy event impact source evidence",
     )?;
     require_nonempty_hashed_evidence(
         evidence,
@@ -5076,6 +5377,11 @@ fn policy_event_replay_id_from_evidence(
             policy_epoch.as_str(),
             evidence_value_hash(
                 evidence,
+                "eventSource",
+                "policy event replay source evidence",
+            )?,
+            evidence_value_hash(
+                evidence,
                 "eventStreamHash",
                 "policy event replay stream hash evidence",
             )?,
@@ -5128,6 +5434,11 @@ fn policy_event_impact_id_from_evidence(
                 evidence,
                 "proposedPolicyEpoch",
                 "policy event impact proposed-policy epoch evidence",
+            )?,
+            evidence_value_hash(
+                evidence,
+                "eventSource",
+                "policy event impact source evidence",
             )?,
             evidence_value_hash(
                 evidence,
@@ -5636,7 +5947,7 @@ fn policy_delta_operation_from_title(decision: &EndpointDecisionRecord) -> Resul
         return Err(anyhow!("policy delta operation title is invalid"));
     };
     match operation {
-        "generated" | "applied" => Ok(operation),
+        "generated" | "prepared" | "applied" => Ok(operation),
         _ => Err(anyhow!("policy delta operation title is invalid")),
     }
 }
@@ -5658,7 +5969,7 @@ fn require_policy_delta_operation_evidence(
                 ));
             }
         }
-        "applied" => {
+        "prepared" | "applied" => {
             require_nonempty_hashed_evidence(
                 evidence,
                 "previousPolicyHash",
@@ -5756,6 +6067,11 @@ fn require_privacy_report_evidence(
         evidence,
         "rawArtifactUploadPermitted",
         "privacy report raw artifact permission evidence",
+    )?;
+    require_nonempty_hashed_evidence(
+        evidence,
+        "projectionContentHash",
+        "privacy report projection content hash evidence",
     )?;
     require_nonempty_hashed_evidence(
         evidence,
@@ -5939,6 +6255,8 @@ fn response_execution_status_from_decision(
         "Endpoint response action executed" => "succeeded",
         "Endpoint response action failed" => "failed",
         "Endpoint response action partially executed" => "partial",
+        "Endpoint response rollback pending" => "rollback_pending",
+        "Endpoint response rollback failed" => "rollback_failed",
         "Endpoint response action expired" => "expired",
         "Endpoint response action cancelled" => "cancelled",
         "Endpoint response action rolled back" => "rolled_back",
@@ -6172,6 +6490,27 @@ fn require_boolean_hashed_evidence(
     Ok(())
 }
 
+fn require_policy_event_source_evidence(
+    evidence: &[EndpointReceiptEvidence],
+    key: &str,
+    field_name: &str,
+) -> Result<()> {
+    let Some(item) = evidence.iter().find(|item| item.key == key) else {
+        return Err(anyhow!("{field_name} is required"));
+    };
+    require_evidence_hash_not_empty(item, field_name)?;
+    let submitted_hash = sha256(b"submitted").to_hex_prefixed();
+    let flight_recorder_hash = sha256(b"endpoint_flight_recorder").to_hex_prefixed();
+    if !hex_strings_match(submitted_hash.as_str(), item.value_hash.as_str())
+        && !hex_strings_match(flight_recorder_hash.as_str(), item.value_hash.as_str())
+    {
+        return Err(anyhow!(
+            "{field_name} must be submitted or endpoint_flight_recorder"
+        ));
+    }
+    Ok(())
+}
+
 fn require_evidence_hash_not_empty(item: &EndpointReceiptEvidence, field_name: &str) -> Result<()> {
     let empty_value_hash = sha256(b"").to_hex_prefixed();
     if hex_strings_match(empty_value_hash.as_str(), item.value_hash.as_str()) {
@@ -6314,3 +6653,16 @@ fn camel_debug_to_snake(value: &str) -> String {
     out
 }
 
+fn reconstruct_path(from: &str, to: &str, previous: &BTreeMap<String, String>) -> Vec<String> {
+    let mut path = vec![to.to_string()];
+    let mut cursor = to;
+    while let Some(prev) = previous.get(cursor) {
+        path.push(prev.clone());
+        if prev == from {
+            break;
+        }
+        cursor = prev;
+    }
+    path.reverse();
+    path
+}

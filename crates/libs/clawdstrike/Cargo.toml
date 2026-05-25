@@ -30,7 +30,7 @@ tokio = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
 nono = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
-hushspec = { version = "0.1.1", path = "../hushspec", optional = true }
+hushspec = { version = "0.1.1", path = "../../../infra/external/hushspec", optional = true }
 toml = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
@@ -44,19 +44,19 @@ semver = { workspace = true, optional = true }
 pubgrub = { workspace = true, optional = true }
 tar = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
-wasmtime = { version = "41.0.3", optional = true, default-features = false, features = ["runtime", "cranelift", "std"] }
+wasmtime = { version = "44.0.2", optional = true, default-features = false, features = ["runtime", "cranelift", "std"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-proptest = "1.10"
+proptest = "1.11"
 tokio-test = "0.4"
-tempfile = "3.25"
+tempfile = "3.27"
 axum.workspace = true
 criterion = { version = "0.5", features = ["html_reports"] }
-wat = "1.245.1"
+wat = "1.250.0"
 
 [[bin]]
 name = "prompt_watermark"

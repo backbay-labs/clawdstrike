@@ -6,6 +6,7 @@ pub struct EndpointPolicyEventReplayReceiptInput<'a> {
     pub policy: EndpointPolicySnapshot,
     pub sensor_state: EndpointSensorState,
     pub replay_id: &'a str,
+    pub event_source: &'a str,
     pub event_stream_hash: &'a str,
     pub result_hash: &'a str,
     pub event_count: u64,
@@ -19,6 +20,7 @@ pub struct EndpointPolicyEventReplayReceiptInput<'a> {
 pub struct EndpointPolicyEventReplayIdInput<'a> {
     pub policy_hash: &'a str,
     pub policy_epoch: u64,
+    pub event_source: &'a str,
     pub event_stream_hash: &'a str,
     pub result_hash: &'a str,
     pub event_count: u64,

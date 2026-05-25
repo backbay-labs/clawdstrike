@@ -1,6 +1,14 @@
 # CI/CD Ruleset
 # Designed for automated pipeline environments
-version: "1.1.0"
+# HushSpec equivalent: https://github.com/backbay-labs/hush/blob/main/rulesets/cicd.yaml
+#
+# NOTE: Intentionally standalone (does not extend `default`).
+# cicd broadens default's egress allowlist for container registries,
+# package mirrors, and build tools; the Logos verifier treats
+# `extends: default` + child-broadens as a "weakened prohibition"
+# error. Treated as policy intent until the verifier supports
+# `weaken-permitted` annotations.
+version: "1.2.0"
 name: CI/CD
 description: Security rules for CI/CD pipeline environments
 
@@ -94,10 +102,6 @@ guards:
       - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)"
       - "(?i)rm\\s+-rf\\s+/"
       - "(?i)chmod\\s+777"
-
-  shell_command:
-    enabled: true
-    enforce_forbidden_paths: true
 
   mcp_tool:
     allow:

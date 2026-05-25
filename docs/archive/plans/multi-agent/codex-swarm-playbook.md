@@ -2,7 +2,7 @@
 
 This repo now supports two complementary Codex layers:
 
-- a project-wide swarm/orchestration layer in `.codex/` and `.agents/skills/`
+- a project-wide swarm/orchestration layer in `.codex/`
 - a TUI-specific agent pack for `apps/terminal`
 
 Use the swarm layer when the job is parallel planning, worktree coordination, lane execution, or merge sequencing across multiple sub-agents.
@@ -15,7 +15,6 @@ Use the TUI pack when the work is specifically about the operator cockpit, PTY d
 - `.codex/swarm/lanes.tsv`: lane metadata for the active initiative
 - `.codex/swarm/waves.tsv`: wave order for the active initiative
 - `scripts/codex-swarm/*`: worktree setup, launch, status, resume, review, and notification helpers
-- `.agents/skills/clawdstrike-*/SKILL.md`: reusable orchestration skills
 - `apps/terminal/docs/codex-agent-pack.md`: TUI-specific usage guide
 
 ## Roles

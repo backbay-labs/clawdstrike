@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * Document identity alias store — maps normalized file paths to stable documentIds.
  *
@@ -153,7 +154,7 @@ export class DocumentIdentityStore {
       const entries = [...this.aliases.values()];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
     } catch (e) {
-      console.warn("[document-identity-store] persist failed:", e);
+      logger.warn("[document-identity-store] persist failed:", e);
     }
   }
 

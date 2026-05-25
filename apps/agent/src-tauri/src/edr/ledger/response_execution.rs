@@ -6,14 +6,18 @@
 //! egress restriction activation check.
 
 use std::collections::VecDeque;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write as _;
 use std::path::{Path as FsPath, PathBuf};
 
 use anyhow::{Context, Result};
-use clawdstrike_policy_event::edr::{EndpointResponseExecutionReport, EndpointResponseExecutionStatus};
+use clawdstrike_policy_event::edr::{
+    EndpointResponseExecutionReport, EndpointResponseExecutionStatus,
+};
 
 use crate::api_server::EDR_MAX_STORED_FINDINGS;
+
+use super::open_private_append;
 
 pub(crate) struct EndpointResponseExecutionLedger {
     path: Option<PathBuf>,
@@ -30,6 +34,7 @@ impl EndpointResponseExecutionLedger {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient() -> Self {
         Self {
             path: None,
@@ -59,13 +64,7 @@ impl EndpointResponseExecutionLedger {
             })?;
         }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| {
-                format!("open endpoint response execution ledger {}", path.display())
-            })?;
+        let mut file = open_private_append(path, "endpoint response execution ledger")?;
         serde_json::to_writer(&mut file, execution).with_context(|| {
             format!(
                 "serialize endpoint response execution {}",
@@ -87,10 +86,7 @@ impl EndpointResponseExecutionLedger {
         Ok(())
     }
 
-    pub(crate) fn read_recent(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<EndpointResponseExecutionReport>> {
+    pub(crate) fn read_recent(&self, limit: usize) -> Result<Vec<EndpointResponseExecutionReport>> {
         if let Some(path) = &self.path {
             let executions = read_response_execution_ledger(path)?;
             return Ok(executions
@@ -179,10 +175,7 @@ impl EndpointResponseExecutionLedger {
         else {
             return Ok(None);
         };
-        if !matches!(
-            latest.status,
-            EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
-        ) {
+        if latest.status != EndpointResponseExecutionStatus::Succeeded {
             return Ok(None);
         }
         if now > latest.expires_at() {
@@ -212,7 +205,13 @@ impl EndpointResponseExecutionLedger {
         else {
             return Ok(None);
         };
-        if latest.status != EndpointResponseExecutionStatus::Succeeded {
+        if !matches!(
+            latest.status,
+            EndpointResponseExecutionStatus::Succeeded
+                | EndpointResponseExecutionStatus::Partial
+                | EndpointResponseExecutionStatus::RollbackPending
+                | EndpointResponseExecutionStatus::RollbackFailed
+        ) {
             return Ok(None);
         }
         if Self::has_terminal_transition(&current, &latest) {
@@ -249,14 +248,13 @@ impl EndpointResponseExecutionLedger {
         let current = self.all()?;
         let mut expired = Vec::new();
         for execution in &current {
-            if !matches!(
-                execution.status,
-                EndpointResponseExecutionStatus::Succeeded
-                    | EndpointResponseExecutionStatus::Partial
-            ) {
+            if !Self::is_expirable_effect_state(&execution.status) {
                 continue;
             }
             if now <= execution.expires_at() {
+                continue;
+            }
+            if Self::has_later_effect_state(&current, execution) {
                 continue;
             }
             if Self::has_terminal_transition(&current, execution) {
@@ -288,10 +286,154 @@ impl EndpointResponseExecutionLedger {
                 candidate.status,
                 EndpointResponseExecutionStatus::Expired
                     | EndpointResponseExecutionStatus::Cancelled
+                    | EndpointResponseExecutionStatus::RollbackFailed
                     | EndpointResponseExecutionStatus::RolledBack
             ) && candidate.action_id == execution.action_id
                 && candidate.rollback_ref == execution.rollback_ref
         })
+    }
+
+    fn has_later_effect_state(
+        current: &[EndpointResponseExecutionReport],
+        execution: &EndpointResponseExecutionReport,
+    ) -> bool {
+        let search_start = current
+            .iter()
+            .rposition(|candidate| candidate == execution)
+            .map_or(0, |index| index + 1);
+        current[search_start..].iter().any(|candidate| {
+            candidate.action_id == execution.action_id
+                && candidate.rollback_ref == execution.rollback_ref
+                && Self::is_expirable_effect_state(&candidate.status)
+        })
+    }
+
+    fn is_expirable_effect_state(status: &EndpointResponseExecutionStatus) -> bool {
+        matches!(
+            status,
+            EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
+        )
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::items_after_test_module,
+    clippy::unwrap_used
+)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use clawdstrike_policy_event::edr::{
+        EndpointDecisionAction, EndpointEvidenceBundleReference, EndpointResponseExecutionReport,
+        EndpointResponseExecutionStatus,
+    };
+
+    fn execution(
+        execution_id: &str,
+        status: EndpointResponseExecutionStatus,
+    ) -> EndpointResponseExecutionReport {
+        let now = Utc::now();
+        EndpointResponseExecutionReport {
+            execution_id: execution_id.to_string(),
+            action_id: "response-action-1".to_string(),
+            action: EndpointDecisionAction::QuarantineFile,
+            status,
+            dry_run: false,
+            root_node_id: "node-1".to_string(),
+            graph_slice_id: "graph-slice-1".to_string(),
+            ttl_seconds: 60,
+            rollback_ref: "rollback:response-action-1".to_string(),
+            reason: "test response execution".to_string(),
+            started_at: now,
+            completed_at: now,
+            evidence_bundle: EndpointEvidenceBundleReference {
+                bundle_id: format!("bundle-{execution_id}"),
+                graph_slice_id: "graph-slice-1".to_string(),
+                content_hash: "0xabc".to_string(),
+                node_count: 1,
+                edge_count: 0,
+                created_at: now,
+            },
+            actor: None,
+            effects: Vec::new(),
+            summary: "test response execution".to_string(),
+        }
+    }
+
+    #[test]
+    fn failed_execution_does_not_terminate_prior_partial_intent() {
+        let partial = execution(
+            "response_execution_partial:1",
+            EndpointResponseExecutionStatus::Partial,
+        );
+        let failed = execution(
+            "response_execution_failed:1",
+            EndpointResponseExecutionStatus::Failed,
+        );
+
+        assert!(!EndpointResponseExecutionLedger::has_terminal_transition(
+            &[partial.clone(), failed],
+            &partial,
+        ));
+    }
+
+    #[test]
+    fn succeeded_execution_supersedes_prior_partial_intent_for_expiration() {
+        let partial = execution(
+            "response_execution_partial:ttl",
+            EndpointResponseExecutionStatus::Partial,
+        );
+        let mut succeeded = partial.clone();
+        succeeded.execution_id = "response_execution_succeeded:ttl".to_string();
+        succeeded.status = EndpointResponseExecutionStatus::Succeeded;
+        succeeded.completed_at = partial.completed_at + chrono::Duration::seconds(1);
+        let now = partial.completed_at
+            + chrono::Duration::seconds(i64::try_from(partial.ttl_seconds + 1).unwrap());
+        let mut ledger = EndpointResponseExecutionLedger::transient();
+        ledger.append(&partial).unwrap();
+        ledger.append(&succeeded).unwrap();
+
+        let pending = ledger.pending_expiring_executions(now).unwrap();
+
+        assert_eq!(pending, vec![succeeded]);
+    }
+
+    #[test]
+    fn partial_execution_is_pending_when_ttl_expires() {
+        let partial = execution(
+            "response_execution_partial:ttl",
+            EndpointResponseExecutionStatus::Partial,
+        );
+        let now = partial.completed_at
+            + chrono::Duration::seconds(i64::try_from(partial.ttl_seconds + 1).unwrap());
+        let mut ledger = EndpointResponseExecutionLedger::transient();
+        ledger.append(&partial).unwrap();
+
+        let pending = ledger.pending_expiring_executions(now).unwrap();
+
+        assert_eq!(pending, vec![partial]);
+    }
+
+    #[test]
+    fn partial_execution_can_roll_back_to_terminal_transition() {
+        let partial = execution(
+            "response_execution_partial:rollback",
+            EndpointResponseExecutionStatus::Partial,
+        );
+        let mut ledger = EndpointResponseExecutionLedger::transient();
+        ledger.append(&partial).unwrap();
+
+        let rolled_back = ledger
+            .roll_back(&partial, "partial rollback", partial.completed_at)
+            .unwrap()
+            .expect("partial rollback transition");
+
+        assert_eq!(
+            rolled_back.status,
+            EndpointResponseExecutionStatus::RolledBack
+        );
     }
 }
 

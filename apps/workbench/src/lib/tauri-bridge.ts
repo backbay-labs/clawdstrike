@@ -13,6 +13,7 @@ import {
   type FileType,
 } from "@/lib/workbench/file-type-registry";
 import { getWorkbenchE2EBridge } from "@/lib/workbench/e2e-bridge";
+import { logger } from "@/lib/logger";
 
 const TAURI_FS_SPECIFIER = "@tauri-apps/plugin-fs";
 const TAURI_OPENER_SPECIFIER = "@tauri-apps/plugin-opener";
@@ -146,7 +147,7 @@ export async function readDetectionFileByPath(filePath: string): Promise<OpenFil
       fileType: result.file_type as FileType,
     };
   } catch (err) {
-    console.error("[tauri-bridge] Failed to read file:", filePath, err);
+    logger.error("[tauri-bridge] Failed to read file:", filePath, err);
     return null;
   }
 }
@@ -289,7 +290,7 @@ export async function createDetectionFile(
     const defaultContent = FILE_TYPE_REGISTRY[fileType].defaultContent;
     return await saveDetectionFile(defaultContent, fileType, fullPath);
   } catch (err) {
-    console.error("[tauri-bridge] Failed to create file:", err);
+    logger.error("[tauri-bridge] Failed to create file:", err);
     return null;
   }
 }
@@ -317,7 +318,7 @@ export async function renameDetectionFile(
     await rename(oldPath, newPath);
     return true;
   } catch (err) {
-    console.error("[tauri-bridge] Failed to rename file:", oldPath, "->", newPath, err);
+    logger.error("[tauri-bridge] Failed to rename file:", oldPath, "->", newPath, err);
     return false;
   }
 }
@@ -343,7 +344,7 @@ export async function deleteDetectionFile(
     await remove(filePath);
     return true;
   } catch (err) {
-    console.error("[tauri-bridge] Failed to delete file:", filePath, err);
+    logger.error("[tauri-bridge] Failed to delete file:", filePath, err);
     return false;
   }
 }
@@ -366,7 +367,7 @@ export async function revealInFinder(path: string): Promise<void> {
     const { revealItemInDir } = await importTauriOpener();
     await revealItemInDir(path);
   } catch (err) {
-    console.error("[tauri-bridge] Failed to reveal in Finder:", path, err);
+    logger.error("[tauri-bridge] Failed to reveal in Finder:", path, err);
   }
 }
 
@@ -381,7 +382,7 @@ export async function createDirectory(dirPath: string): Promise<boolean> {
     await mkdir(dirPath, { recursive: true });
     return true;
   } catch (err) {
-    console.error("[tauri-bridge] Failed to create directory:", dirPath, err);
+    logger.error("[tauri-bridge] Failed to create directory:", dirPath, err);
     return false;
   }
 }
@@ -411,7 +412,7 @@ export async function readSwarmBundle(bundlePath: string): Promise<{
       : null;
     return { manifest, board };
   } catch (err) {
-    console.error("[tauri-bridge] readSwarmBundle failed:", bundlePath, err);
+    logger.error("[tauri-bridge] readSwarmBundle failed:", bundlePath, err);
     return null;
   }
 }
@@ -433,7 +434,7 @@ export async function writeSwarmBoardJson(
     );
     return true;
   } catch (err) {
-    console.error("[tauri-bridge] writeSwarmBoardJson failed:", bundlePath, err);
+    logger.error("[tauri-bridge] writeSwarmBoardJson failed:", bundlePath, err);
     return false;
   }
 }
@@ -528,7 +529,7 @@ export async function createSwarmBundleFromPolicy(
 
     return bundlePath;
   } catch (err) {
-    console.error("[tauri-bridge] createSwarmBundleFromPolicy failed:", err);
+    logger.error("[tauri-bridge] createSwarmBundleFromPolicy failed:", err);
     return null;
   }
 }
@@ -574,7 +575,7 @@ export async function createSwarmBundle(
 
     return bundlePath;
   } catch (err) {
-    console.error("[tauri-bridge] createSwarmBundle failed:", err);
+    logger.error("[tauri-bridge] createSwarmBundle failed:", err);
     return null;
   }
 }

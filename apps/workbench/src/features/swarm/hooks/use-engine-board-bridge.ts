@@ -1,7 +1,7 @@
 /** Bridges SwarmOrchestrator events to the Zustand board store. */
 
 import { useEffect, useRef } from "react";
-import type { SwarmOrchestrator } from "@clawdstrike/swarm-engine";
+import type { SwarmOrchestrator } from "@/features/swarm/engine";
 import {
   createBoardNode,
   useSwarmBoardStore,
@@ -296,7 +296,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     seedBoardFromEngineSnapshot(engine);
 
     unsubs.push(
-      events.on("agent.spawned", (event: any) => {
+      events.on("agent.spawned", (event) => {
         const { nodes, actions } = store();
         if (nodes.some((n: Node<SwarmBoardNodeData>) => n.data.agentId === event.agent.id)) return;
 
@@ -323,7 +323,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     );
 
     unsubs.push(
-      events.on("agent.status_changed", (event: any) => {
+      events.on("agent.status_changed", (event) => {
         const { nodes, actions } = store();
 
         const node = nodes.find(
@@ -341,7 +341,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
 
     // Engine-managed nodes lack sessionId, so use updateNode (not setSessionMetadata).
     unsubs.push(
-      events.on("agent.heartbeat", (event: any) => {
+      events.on("agent.heartbeat", (event) => {
         const { nodes, actions } = store();
 
         const node = nodes.find(
@@ -357,7 +357,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     );
 
     unsubs.push(
-      events.on("agent.terminated", (event: any) => {
+      events.on("agent.terminated", (event) => {
         const { nodes, actions } = store();
 
         const node = nodes.find(
@@ -374,7 +374,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     );
 
     unsubs.push(
-      events.on("task.created", (event: any) => {
+      events.on("task.created", (event) => {
         const { nodes, actions } = store();
         if (nodes.some((n: Node<SwarmBoardNodeData>) => n.data.taskId === event.task.id)) return;
 
@@ -398,7 +398,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
               title: event.task.type ?? event.task.name ?? "Task",
               status: mapEngineStatus(event.task.status),
               taskId: event.task.id,
-              agentId: event.task.assignedTo,
+              agentId: event.task.assignedTo ?? undefined,
               engineManaged: true,
               taskPrompt: event.task.taskPrompt ?? event.task.description,
             },
@@ -420,7 +420,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     );
 
     unsubs.push(
-      events.on("task.status_changed", (event: any) => {
+      events.on("task.status_changed", (event) => {
         const { nodes, actions } = store();
 
         const taskNode = nodes.find(
@@ -435,7 +435,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     );
 
     unsubs.push(
-      events.on("task.assigned", (event: any) => {
+      events.on("task.assigned", (event) => {
         const { nodes, edges, actions } = store();
 
         const taskNode = nodes.find(
@@ -491,7 +491,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     );
 
     unsubs.push(
-      events.on("task.completed", (event: any) => {
+      events.on("task.completed", (event) => {
         const { nodes, actions } = store();
 
         const taskNode = nodes.find(
@@ -504,7 +504,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     );
 
     unsubs.push(
-      events.on("task.failed", (event: any) => {
+      events.on("task.failed", (event) => {
         const { nodes, actions } = store();
 
         const taskNode = nodes.find(
@@ -517,7 +517,7 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     );
 
     unsubs.push(
-      events.on("guard.evaluated", (event: any) => {
+      events.on("guard.evaluated", (event) => {
         const { nodes, actions } = store();
         const agentNode = nodes.find(
           (n: Node<SwarmBoardNodeData>) =>
@@ -562,10 +562,10 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
           actions.guardEvaluate(
             nodeId,
             event.result?.verdict ?? "deny",
-            (event.result?.guardResults ?? []).map((g: any) => ({
+            (event.result?.guardResults ?? []).map((g) => ({
               guard: g.guard ?? g.guardId ?? "unknown",
               allowed: g.verdict !== "deny",
-              duration_ms: g.duration_ms ?? g.durationMs,
+              duration_ms: g.duration_ms,
             })),
             event.result?.receipt?.signature,
             event.result?.receipt?.publicKey,
@@ -595,13 +595,13 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
     }
 
     unsubs.push(
-      events.on("topology.updated", (event: any) => {
+      events.on("topology.updated", (event) => {
         handleTopologyEvent(event.newTopology);
       }),
     );
 
     unsubs.push(
-      events.on("topology.rebalanced", (event: any) => {
+      events.on("topology.rebalanced", (event) => {
         handleTopologyEvent(event.topology);
       }),
     );

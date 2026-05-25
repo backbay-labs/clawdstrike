@@ -43,10 +43,11 @@
     "vite": ">=5.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
+    "@types/node": "^25.9.1",
     "tsup": "^8.5.1",
-    "vitest": "^4.0.18",
-    "vite": "^6.0.0"
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vitest": "^4.1.7"
   },
   "engines": {
     "node": ">=20.19.0"

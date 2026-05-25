@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -19,6 +17,8 @@ use hush_core::SignedReceipt;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
+#[allow(unused_imports)]
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::sync::Arc;
 
@@ -197,7 +197,6 @@ pub(crate) async fn agent_edr_response_action(
     }))
 }
 
-
 pub(crate) async fn agent_edr_response_executions(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -224,7 +223,6 @@ pub(crate) async fn agent_edr_response_executions(
         executions,
     }))
 }
-
 
 pub(crate) async fn agent_edr_response_execution(
     State(state): State<Arc<AgentApiState>>,
@@ -259,7 +257,6 @@ pub(crate) async fn agent_edr_response_execution(
     Ok(Json(EdrResponseExecutionResponse { path, execution }))
 }
 
-
 pub(crate) async fn agent_edr_response_execution_proof(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -274,7 +271,7 @@ pub(crate) async fn agent_edr_response_execution_proof(
         ));
     }
 
-    let (execution_path, execution) = {
+    let (execution_path, execution, has_terminal_transition) = {
         let ledger = state.edr_response_execution_ledger.lock().await;
         let path = ledger.path().map(|path| path.display().to_string());
         let execution = ledger
@@ -286,8 +283,17 @@ pub(crate) async fn agent_edr_response_execution_proof(
                     format!("response execution not found: {execution_id}"),
                 )
             })?;
-        (path, execution)
+        let has_terminal_transition = ledger
+            .has_terminal_transition_for(&execution)
+            .map_err(internal_error)?;
+        (path, execution, has_terminal_transition)
     };
+    ensure_response_execution_proof_ttl_state(
+        execution.execution_id.as_str(),
+        execution.expires_at(),
+        has_terminal_transition,
+        chrono::Utc::now(),
+    )?;
 
     let (
         receipt_path,
@@ -405,12 +411,35 @@ pub(crate) async fn agent_edr_response_execution_proof(
     }))
 }
 
+fn ensure_response_execution_proof_ttl_state(
+    execution_id: &str,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    has_terminal_transition: bool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), (StatusCode, String)> {
+    if now > expires_at && !has_terminal_transition {
+        return Err((
+            StatusCode::CONFLICT,
+            format!(
+                "response execution {execution_id} TTL expired without terminal expiry or rollback receipt"
+            ),
+        ));
+    }
+    Ok(())
+}
 
 pub(crate) async fn agent_edr_response_execution_expire(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
 ) -> Result<Json<EdrResponseExecutionExpireResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
+    let response = expire_edr_response_executions(&state).await?;
+    Ok(Json(response))
+}
+
+pub(crate) async fn expire_edr_response_executions(
+    state: &Arc<AgentApiState>,
+) -> Result<EdrResponseExecutionExpireResponse, (StatusCode, String)> {
     let now = chrono::Utc::now();
     let (path, pending) = {
         let ledger = state.edr_response_execution_ledger.lock().await;
@@ -444,6 +473,8 @@ pub(crate) async fn agent_edr_response_execution_expire(
 
     let mut rollbacks = Vec::new();
     let mut rollback_receipts = Vec::new();
+    let mut rollback_transitions = Vec::new();
+    let mut rollback_transition_receipts = Vec::new();
     for execution in pending
         .iter()
         .filter(|execution| response_execution_expires_with_rollback(&execution.action))
@@ -459,29 +490,85 @@ pub(crate) async fn agent_edr_response_execution_expire(
                     ),
                 )
             })?;
-        let rollback = execute_response_expiration_rollback(&state, execution)
-            .await
-            .map_err(|(status, err)| {
-                (
+        let reason = format!("response execution {} TTL expired", execution.execution_id);
+        let (_rollback_intent, _rollback_intent_receipt) =
+            record_edr_response_rollback_intent(state, execution, &reason, graph).await?;
+        let rollback = match execute_response_expiration_rollback(state, execution).await {
+            Ok(rollback) => rollback,
+            Err((status, err)) => {
+                let record_message = sanitize_response_execution_failure(&err);
+                let record_result = record_edr_response_rollback_failure(
+                    state,
+                    execution,
+                    &reason,
+                    record_message.as_str(),
+                    graph,
+                )
+                .await;
+                let suffix = match record_result {
+                    Ok((failed, receipt)) => {
+                        let receipt = receipt
+                            .receipt
+                            .receipt_id
+                            .unwrap_or_else(|| "unknown".to_string());
+                        format!(
+                            "; rollback failure recorded as {} with receipt {}",
+                            failed.execution_id, receipt
+                        )
+                    }
+                    Err((_, record_err)) => {
+                        format!("; rollback failure recording also failed: {record_err}")
+                    }
+                };
+                return Err((
                     status,
                     format!(
-                        "failed to roll back expired response execution {}: {err}",
+                        "failed to roll back expired response execution {}: {err}{suffix}",
                         execution.execution_id
                     ),
-                )
-            })?;
-        let receipt = emit_edr_response_rollback_receipt(&state, &rollback, graph)
+                ));
+            }
+        };
+        let receipt = emit_edr_response_rollback_receipt(state, &rollback, graph)
             .await
             .map_err(internal_error)?;
+        let rollback_transition = {
+            let mut ledger = state.edr_response_execution_ledger.lock().await;
+            ledger
+                .roll_back(execution, &reason, rollback.completed_at)
+                .map_err(internal_error)?
+                .ok_or_else(|| {
+                    (
+                        StatusCode::CONFLICT,
+                        format!(
+                            "response execution {} already has a terminal transition",
+                            execution.execution_id
+                        ),
+                    )
+                })?
+        };
+        let transition_receipt = emit_edr_response_execution_receipt(
+            state,
+            &rollback_transition,
+            graph,
+            rollback_transition.actor.clone(),
+            &[],
+        )
+        .await
+        .map_err(internal_error)?;
         rollbacks.push(rollback);
         rollback_receipts.push(receipt);
+        rollback_transitions.push(EdrResponseExecutionRecord::from_execution(
+            rollback_transition,
+        ));
+        rollback_transition_receipts.push(transition_receipt);
     }
 
     let expired = {
         let mut ledger = state.edr_response_execution_ledger.lock().await;
         ledger.expire_due(now).map_err(internal_error)?
     };
-    deactivate_expired_egress_restrictions(&state, &expired, now).await?;
+    deactivate_expired_egress_restrictions(state, &expired, now).await?;
 
     let mut records = Vec::with_capacity(expired.len());
     let mut receipts = Vec::with_capacity(expired.len());
@@ -498,7 +585,7 @@ pub(crate) async fn agent_edr_response_execution_expire(
                 )
             })?;
         let receipt = emit_edr_response_execution_receipt(
-            &state,
+            state,
             &execution,
             graph,
             execution.actor.clone(),
@@ -510,7 +597,7 @@ pub(crate) async fn agent_edr_response_execution_expire(
         records.push(EdrResponseExecutionRecord::from_execution(execution));
     }
 
-    Ok(Json(EdrResponseExecutionExpireResponse {
+    Ok(EdrResponseExecutionExpireResponse {
         path,
         expired_count: records.len(),
         executions: records,
@@ -518,9 +605,10 @@ pub(crate) async fn agent_edr_response_execution_expire(
         rollback_count: rollbacks.len(),
         rollbacks,
         rollback_receipts,
-    }))
+        rollback_transitions,
+        rollback_transition_receipts,
+    })
 }
-
 
 pub(crate) async fn agent_edr_response_execution_cancel(
     State(state): State<Arc<AgentApiState>>,
@@ -570,7 +658,10 @@ pub(crate) async fn agent_edr_response_execution_cancel(
     }
     if !matches!(
         execution.status,
-        EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
+        EndpointResponseExecutionStatus::Succeeded
+            | EndpointResponseExecutionStatus::Partial
+            | EndpointResponseExecutionStatus::RollbackPending
+            | EndpointResponseExecutionStatus::RollbackFailed
     ) {
         return Err((
             StatusCode::CONFLICT,
@@ -636,7 +727,6 @@ pub(crate) async fn agent_edr_response_execution_cancel(
     }))
 }
 
-
 pub(crate) async fn agent_edr_response_execution_rollback(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -685,7 +775,10 @@ pub(crate) async fn agent_edr_response_execution_rollback(
             ),
         ));
     }
-    if execution.status != EndpointResponseExecutionStatus::Succeeded {
+    if !matches!(
+        execution.status,
+        EndpointResponseExecutionStatus::Succeeded | EndpointResponseExecutionStatus::Partial
+    ) {
         return Err((
             StatusCode::CONFLICT,
             format!(
@@ -724,7 +817,10 @@ pub(crate) async fn agent_edr_response_execution_rollback(
             .graph
     };
 
-    let rollback = match execution.action {
+    let (_rollback_intent, _rollback_intent_receipt) =
+        record_edr_response_rollback_intent(&state, &execution, &reason, &graph).await?;
+
+    let rollback_result = match execution.action {
         EndpointDecisionAction::RestrictEgress => {
             execute_restrict_egress_rollback(&state, &execution, &reason).await
         }
@@ -738,13 +834,40 @@ pub(crate) async fn agent_edr_response_execution_rollback(
             execute_suspend_process_tree_rollback(&execution, &reason)
         }
         _ => unreachable!("rollback-capable action was validated above"),
-    }
-    .map_err(|(status, err)| {
-        (
-            status,
-            format!("failed to roll back response execution {execution_id}: {err}"),
-        )
-    })?;
+    };
+    let rollback = match rollback_result {
+        Ok(rollback) => rollback,
+        Err((status, err)) => {
+            let record_message = sanitize_response_execution_failure(&err);
+            let record_result = record_edr_response_rollback_failure(
+                &state,
+                &execution,
+                &reason,
+                record_message.as_str(),
+                &graph,
+            )
+            .await;
+            let suffix = match record_result {
+                Ok((failed, receipt)) => {
+                    let receipt = receipt
+                        .receipt
+                        .receipt_id
+                        .unwrap_or_else(|| "unknown".to_string());
+                    format!(
+                        "; rollback failure recorded as {} with receipt {}",
+                        failed.execution_id, receipt
+                    )
+                }
+                Err((_, record_err)) => {
+                    format!("; rollback failure recording also failed: {record_err}")
+                }
+            };
+            return Err((
+                status,
+                format!("failed to roll back response execution {execution_id}: {err}{suffix}"),
+            ));
+        }
+    };
     let receipt = emit_edr_response_rollback_receipt(&state, &rollback, &graph)
         .await
         .map_err(internal_error)?;
@@ -779,7 +902,6 @@ pub(crate) async fn agent_edr_response_execution_rollback(
         transition_receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_response_execution_acknowledge(
     State(state): State<Arc<AgentApiState>>,
@@ -878,7 +1000,6 @@ pub(crate) async fn agent_edr_response_execution_acknowledge(
     }))
 }
 
-
 pub(crate) async fn agent_edr_response_acknowledgements(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -901,3 +1022,39 @@ pub(crate) async fn agent_edr_response_acknowledgements(
     }))
 }
 
+#[cfg(test)]
+mod response_proof_ttl_tests {
+    use super::*;
+
+    fn utc(seconds: u64) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::<chrono::Utc>::from(
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds),
+        )
+    }
+
+    #[test]
+    fn response_execution_proof_rejects_expired_execution_without_terminal_transition() {
+        let err = match ensure_response_execution_proof_ttl_state(
+            "exec-expired",
+            utc(100),
+            false,
+            utc(101),
+        ) {
+            Ok(()) => panic!("expired unswept execution proof unexpectedly succeeded"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.0, StatusCode::CONFLICT);
+        assert!(err
+            .1
+            .contains("TTL expired without terminal expiry or rollback receipt"));
+    }
+
+    #[test]
+    fn response_execution_proof_allows_unexpired_or_terminal_executions() {
+        ensure_response_execution_proof_ttl_state("exec-active", utc(100), false, utc(100))
+            .unwrap_or_else(|err| panic!("unexpired proof should be accepted: {err:?}"));
+        ensure_response_execution_proof_ttl_state("exec-terminal", utc(100), true, utc(101))
+            .unwrap_or_else(|err| panic!("terminal proof should be accepted: {err:?}"));
+    }
+}

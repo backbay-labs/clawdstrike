@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -19,6 +23,7 @@ jobs:
   build-macos:
     name: Build macOS Desktop (Unsigned)
     runs-on: macos-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -84,7 +89,7 @@ jobs:
           ls -lh "$ARTIFACT_DIR"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-macos-unsigned-${{ github.run_number }}
           path: artifacts/desktop-macos-unsigned/*

@@ -13,6 +13,7 @@ export interface LocalEdrConfig {
   includeAllowed?: boolean;
   includeResults?: boolean;
   includeDeveloperActivity?: boolean;
+  packageLifecycleEnforcement?: PackageLifecycleEnforcementMode;
 }
 
 type LocalEdrEndpoint = {
@@ -43,11 +44,13 @@ const PACKAGE_MANAGER_LIFECYCLE_MANAGERS = [
   "swift",
   "mix",
 ] as const;
-type PackageManagerLifecycleManager = (typeof PACKAGE_MANAGER_LIFECYCLE_MANAGERS)[number];
+type PackageManagerLifecycleManager =
+  (typeof PACKAGE_MANAGER_LIFECYCLE_MANAGERS)[number];
 type PackageManagerLifecycleHookInput = {
   env?: Record<string, string | undefined>;
   now?: Date;
 };
+export type PackageLifecycleEnforcementMode = "observe" | "block";
 type PackageManagerLifecycleEvent = {
   eventId: string;
   observedAt: string;
@@ -66,7 +69,11 @@ type PackageManagerLifecycleEvent = {
   script: string;
   workingDirectory?: string;
 };
-type CredentialActivityKind = "repo_secret" | "ci_token" | "local_api_key" | "browser_cookie";
+type CredentialActivityKind =
+  | "repo_secret"
+  | "ci_token"
+  | "local_api_key"
+  | "browser_cookie";
 type CredentialActivityCredentialKind =
   | "api_token"
   | "browser_cookie"
@@ -84,7 +91,10 @@ type CredentialActivityTarget = {
   deceptionArtifactKind?: string;
   detectionRuleId?: string;
 };
-type BrowserRuntimeActivityKind = "browser_automation" | "browser_download" | "browser_extension";
+type BrowserRuntimeActivityKind =
+  | "browser_automation"
+  | "browser_download"
+  | "browser_extension";
 export interface LocalEdrBrowserRuntimeActivity {
   kind?: BrowserRuntimeActivityKind;
   runtime?: string;
@@ -143,7 +153,8 @@ const DEFAULT_TIMEOUT_MS = 250;
 const REDACTED = "[REDACTED]";
 const SENSITIVE_KEY =
   /(?:secret|token|password|passwd|credential|api[_-]?key|authorization|cookie|session|private[_-]?key|access[_-]?key|refresh[_-]?token|id[_-]?token|client[_-]?secret)/i;
-const CONTENT_KEY = /(?:content|body|payload|patch|diff|result|output|prompt|input|message|raw)/i;
+const CONTENT_KEY =
+  /(?:content|body|payload|patch|diff|result|output|prompt|input|message|raw)/i;
 const SECRET_LIKE_VALUE =
   /(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
 
@@ -178,7 +189,8 @@ export function buildAdapterCoreDecisionPolicyEventForEdr(
       policyStatus: decision.status,
       policyGuard: sanitizeDecisionText(decision.guard),
       policySeverity: decision.severity,
-      policyReasonCode: "reason_code" in decision ? decision.reason_code : undefined,
+      policyReasonCode:
+        "reason_code" in decision ? decision.reason_code : undefined,
       policyReason: sanitizeDecisionText(decision.reason),
       policyMessage: sanitizeDecisionText(decision.message),
     },
@@ -231,7 +243,10 @@ export function buildAdapterCoreDeveloperActivityForEdr(
   context: SecurityContext,
 ): EdrDeveloperActivity | null {
   const metadata = {
-    ...developerActivityCorrelationMetadata(context.metadata, policyEvent.metadata),
+    ...developerActivityCorrelationMetadata(
+      context.metadata,
+      policyEvent.metadata,
+    ),
     collectorKind: "adapter_core_tool_interceptor",
     policyAllowed: decision.status !== "deny",
     policyStatus: decision.status,
@@ -268,8 +283,14 @@ export function buildAdapterCoreDeveloperActivityForEdr(
       "endpoint_agent_id",
     ]),
     workloadId:
-      metadataStringFromSources(identitySources, ["workloadId", "workload_id"]) ?? "adapter-core",
-    approvalId: metadataStringFromSources(identitySources, ["approvalId", "approval_id"]),
+      metadataStringFromSources(identitySources, [
+        "workloadId",
+        "workload_id",
+      ]) ?? "adapter-core",
+    approvalId: metadataStringFromSources(identitySources, [
+      "approvalId",
+      "approval_id",
+    ]),
     process: developerActivityProcessFromMetadata(identitySources),
   };
 
@@ -364,14 +385,22 @@ export function buildAdapterCoreDeveloperActivityForEdr(
   }
 
   const browserRuntimeActivity = buildBrowserRuntimeActivityForLocalEdr({
-    ...browserRuntimeActivityFromCuaPolicyEvent(policyEvent, toolName, metadata, identitySources),
+    ...browserRuntimeActivityFromCuaPolicyEvent(
+      policyEvent,
+      toolName,
+      metadata,
+      identitySources,
+    ),
     hostId: common.hostId,
     userId: common.userId,
     sessionId: common.sessionId,
     agentId: common.agentId,
     workloadId: common.workloadId,
     approvalId: common.approvalId,
-    toolCallId: metadataStringFromSources(identitySources, ["toolCallId", "tool_call_id"]),
+    toolCallId: metadataStringFromSources(identitySources, [
+      "toolCallId",
+      "tool_call_id",
+    ]),
     process: common.process,
   });
   if (browserRuntimeActivity) {
@@ -421,7 +450,8 @@ export function buildAdapterCoreDeveloperActivityForEdr(
     };
   }
 
-  const packageRegistryTokenCommand = classifyPackageRegistryTokenCommand(command);
+  const packageRegistryTokenCommand =
+    classifyPackageRegistryTokenCommand(command);
   if (packageRegistryTokenCommand) {
     return {
       ...common,
@@ -432,9 +462,13 @@ export function buildAdapterCoreDeveloperActivityForEdr(
       image: sanitizedCommand[0],
       commandLine,
       args: scrubCommandArgs(command.slice(1)),
-      metadata: credentialActivityMetadata(metadata, packageRegistryTokenCommand, {
-        shellClassifier: packageRegistryTokenCommand.classifier,
-      }),
+      metadata: credentialActivityMetadata(
+        metadata,
+        packageRegistryTokenCommand,
+        {
+          shellClassifier: packageRegistryTokenCommand.classifier,
+        },
+      ),
     };
   }
 
@@ -582,7 +616,9 @@ export function buildBrowserRuntimeActivityForLocalEdr(
 
   const path = trimmedString(activity.path);
   const explicitBrowser = trimmedString(activity.browser);
-  const inferredBrowser = explicitBrowser ? undefined : browserNameFromPath(path);
+  const inferredBrowser = explicitBrowser
+    ? undefined
+    : browserNameFromPath(path);
   const browser = explicitBrowser ?? inferredBrowser;
   const metadata = {
     ...sanitizeMetadata(activity.metadata),
@@ -615,7 +651,10 @@ export function buildBrowserRuntimeActivityForLocalEdr(
       action,
       target: trimmedString(activity.target),
       toolName: trimmedString(activity.toolName) ?? `browser.${action}`,
-      parameters: asRecord(sanitizeGenericValue(activity.parameters ?? {}, "parameters")) ?? {},
+      parameters:
+        asRecord(
+          sanitizeGenericValue(activity.parameters ?? {}, "parameters"),
+        ) ?? {},
     };
   }
 
@@ -626,7 +665,8 @@ export function buildBrowserRuntimeActivityForLocalEdr(
       kind,
       browser,
       path,
-      sourceUrl: redactUrl(trimmedString(activity.sourceUrl) ?? "") || undefined,
+      sourceUrl:
+        redactUrl(trimmedString(activity.sourceUrl) ?? "") || undefined,
       contentHash: browserRuntimeContentHash(activity),
       metadata: {
         ...metadata,
@@ -669,7 +709,9 @@ export function buildRepoScannerCredentialActivityForLocalEdr(
     classified?.credentialKind ??
     credentialKindFromPath(path.toLowerCase());
   const name =
-    trimmedString(finding.name) ?? classified?.name ?? credentialNameFromPath(path, kind);
+    trimmedString(finding.name) ??
+    classified?.name ??
+    credentialNameFromPath(path, kind);
 
   return {
     hostId: trimmedString(finding.hostId),
@@ -689,7 +731,8 @@ export function buildRepoScannerCredentialActivityForLocalEdr(
       scannerId: trimmedString(finding.scannerId),
       ruleId: trimmedString(finding.ruleId),
       confidence:
-        typeof finding.confidence === "number" && Number.isFinite(finding.confidence)
+        typeof finding.confidence === "number" &&
+        Number.isFinite(finding.confidence)
           ? finding.confidence
           : undefined,
       repositoryPath: trimmedString(finding.repositoryPath),
@@ -750,9 +793,16 @@ export function buildPackageManagerLifecycleEventFromEnvironmentForLocalEdr(
   });
 
   return {
-    eventId: packageLifecycleEventId(manager, phase, packageName, workingDirectory, now),
+    eventId: packageLifecycleEventId(
+      manager,
+      phase,
+      packageName,
+      workingDirectory,
+      now,
+    ),
     observedAt: now.toISOString(),
-    hostId: trimmedString(env.CLAWDSTRIKE_HOST_ID) ?? trimmedString(env.HOSTNAME),
+    hostId:
+      trimmedString(env.CLAWDSTRIKE_HOST_ID) ?? trimmedString(env.HOSTNAME),
     userId:
       trimmedString(env.CLAWDSTRIKE_USER_ID) ??
       trimmedString(env.USER) ??
@@ -776,11 +826,30 @@ export async function publishPackageManagerLifecycleEventToLocalEdr(
   input: PackageManagerLifecycleHookInput = {},
   config?: LocalEdrConfig,
 ): Promise<void> {
-  const event = buildPackageManagerLifecycleEventFromEnvironmentForLocalEdr(input);
-  if (!event) return;
+  const env = input.env ?? processEnv();
+  const enforcementMode = packageLifecycleEnforcementMode(config, env);
+  const event = buildPackageManagerLifecycleEventFromEnvironmentForLocalEdr({
+    ...input,
+    env,
+  });
+  if (!event) {
+    if (enforcementMode === "block") {
+      throw new Error(
+        "Clawdstrike package-manager lifecycle enforcement is enabled, but the hook could not infer a package-manager lifecycle event from the environment",
+      );
+    }
+    return;
+  }
 
   const endpoint = resolveLocalEdrEndpoint(config, "package_manager_events");
-  if (!endpoint) return;
+  if (!endpoint) {
+    if (enforcementMode === "block") {
+      throw new Error(
+        "Clawdstrike package-manager lifecycle enforcement is enabled, but local EDR is unavailable",
+      );
+    }
+    return;
+  }
 
   try {
     const response = await fetch(endpoint.url, {
@@ -793,20 +862,94 @@ export async function publishPackageManagerLifecycleEventToLocalEdr(
       body: JSON.stringify({ events: [event] }),
     });
     if (!response.ok) {
+      if (enforcementMode === "block") {
+        throw new Error(
+          `Clawdstrike package-manager lifecycle enforcement rejected unavailable local EDR response: HTTP ${response.status}`,
+        );
+      }
       return;
     }
-  } catch {
+    if (enforcementMode === "block") {
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(
+          "Clawdstrike package-manager lifecycle enforcement rejected malformed local EDR response",
+        );
+      }
+      if (!packageLifecycleResponseHasRecognizedVerdict(payload)) {
+        throw new Error(
+          "Clawdstrike package-manager lifecycle enforcement rejected unrecognized local EDR response",
+        );
+      }
+      if (packageLifecycleResponseHasFindings(payload)) {
+        throw new Error(
+          "Clawdstrike package-manager lifecycle enforcement blocked package script findings",
+        );
+      }
+    }
+  } catch (error) {
+    if (enforcementMode === "block") {
+      throw error;
+    }
     // Package-manager lifecycle capture must never break dependency installation.
   }
 }
 
-function resolvePolicyEventsEndpoint(config?: LocalEdrConfig): LocalEdrEndpoint | null {
+function packageLifecycleEnforcementMode(
+  config: LocalEdrConfig | undefined,
+  env: Record<string, string | undefined>,
+): PackageLifecycleEnforcementMode {
+  const configured = config?.packageLifecycleEnforcement?.trim().toLowerCase();
+  const fromEnv =
+    env.CLAWDSTRIKE_PACKAGE_LIFECYCLE_ENFORCEMENT?.trim().toLowerCase();
+  const value = configured ?? fromEnv;
+  return value === "block" || value === "enforce" || value === "fail_closed"
+    ? "block"
+    : "observe";
+}
+
+function packageLifecycleResponseHasRecognizedVerdict(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  return (
+    typeof numericRecordValue(record, "findingCount") === "number" ||
+    typeof numericRecordValue(record, "finding_count") === "number" ||
+    Array.isArray(record.findings)
+  );
+}
+
+function packageLifecycleResponseHasFindings(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  const findingCount =
+    numericRecordValue(record, "findingCount") ??
+    numericRecordValue(record, "finding_count");
+  if (typeof findingCount === "number" && findingCount > 0) return true;
+  return Array.isArray(record.findings) && record.findings.length > 0;
+}
+
+function numericRecordValue(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function resolvePolicyEventsEndpoint(
+  config?: LocalEdrConfig,
+): LocalEdrEndpoint | null {
   return resolveLocalEdrEndpoint(config, "policy_events");
 }
 
 function resolveLocalEdrEndpoint(
   config: LocalEdrConfig | undefined,
-  endpointKind: "policy_events" | "developer_activity" | "package_manager_events",
+  endpointKind:
+    | "policy_events"
+    | "developer_activity"
+    | "package_manager_events",
 ): LocalEdrEndpoint | null {
   if (!localEdrEnabled(config)) return null;
   if (typeof fetch !== "function") return null;
@@ -823,7 +966,10 @@ function resolveLocalEdrEndpoint(
   const timeoutMs =
     boundedTimeout(config?.timeoutMs) ??
     boundedTimeout(
-      Number.parseInt(envValue("CLAWDSTRIKE_ADAPTER_CORE_EDR_TIMEOUT_MS") ?? "", 10),
+      Number.parseInt(
+        envValue("CLAWDSTRIKE_ADAPTER_CORE_EDR_TIMEOUT_MS") ?? "",
+        10,
+      ),
     ) ??
     DEFAULT_TIMEOUT_MS;
 
@@ -838,23 +984,35 @@ function resolveLocalEdrEndpoint(
 
 function explicitLocalEdrUrl(
   config: LocalEdrConfig | undefined,
-  endpointKind: "policy_events" | "developer_activity" | "package_manager_events",
+  endpointKind:
+    | "policy_events"
+    | "developer_activity"
+    | "package_manager_events",
 ): string | undefined {
   switch (endpointKind) {
     case "developer_activity":
-      return config?.developerActivityUrl?.trim() ?? envValue("CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL");
+      return (
+        config?.developerActivityUrl?.trim() ??
+        envValue("CLAWDSTRIKE_DEVELOPER_ACTIVITY_URL")
+      );
     case "package_manager_events":
       return (
         config?.packageManagerEventsUrl?.trim() ??
         envValue("CLAWDSTRIKE_PACKAGE_MANAGER_EVENTS_URL")
       );
     case "policy_events":
-      return config?.policyEventsUrl?.trim() ?? envValue("CLAWDSTRIKE_POLICY_EVENTS_URL");
+      return (
+        config?.policyEventsUrl?.trim() ??
+        envValue("CLAWDSTRIKE_POLICY_EVENTS_URL")
+      );
   }
 }
 
 function endpointPath(
-  endpointKind: "policy_events" | "developer_activity" | "package_manager_events",
+  endpointKind:
+    | "policy_events"
+    | "developer_activity"
+    | "package_manager_events",
 ): string {
   switch (endpointKind) {
     case "developer_activity":
@@ -923,7 +1081,8 @@ function browserRuntimeActivityFromCuaPolicyEvent(
   if (!data || data.type !== "cua") return {};
 
   const action =
-    stringRecordField(data, ["cuaAction", "cua_action", "action"]) ?? policyEvent.eventType;
+    stringRecordField(data, ["cuaAction", "cua_action", "action"]) ??
+    policyEvent.eventType;
   const direction = stringRecordField(data, ["direction"]);
   const path = stringRecordField(data, [
     "path",
@@ -934,11 +1093,19 @@ function browserRuntimeActivityFromCuaPolicyEvent(
     "localPath",
     "local_path",
   ]);
-  const sourceUrl = stringRecordField(data, ["sourceUrl", "source_url", "url", "href"]);
+  const sourceUrl = stringRecordField(data, [
+    "sourceUrl",
+    "source_url",
+    "url",
+    "href",
+  ]);
   const extensionId = stringRecordField(data, ["extensionId", "extension_id"]);
   const browser =
-    metadataStringFromSources(identitySources, ["browser", "browserName", "browser_name"]) ??
-    stringRecordField(data, ["browser", "browserName", "browser_name"]);
+    metadataStringFromSources(identitySources, [
+      "browser",
+      "browserName",
+      "browser_name",
+    ]) ?? stringRecordField(data, ["browser", "browserName", "browser_name"]);
 
   const kind: BrowserRuntimeActivityKind =
     extensionId || browserExtensionPath(path)
@@ -950,11 +1117,21 @@ function browserRuntimeActivityFromCuaPolicyEvent(
   return {
     kind,
     runtime:
-      metadataStringFromSources(identitySources, ["framework", "runtime", "provider"]) ??
-      "adapter-core",
+      metadataStringFromSources(identitySources, [
+        "framework",
+        "runtime",
+        "provider",
+      ]) ?? "adapter-core",
     browser,
     action,
-    target: stringRecordField(data, ["target", "selector", "element", "host", "url", "href"]),
+    target: stringRecordField(data, [
+      "target",
+      "selector",
+      "element",
+      "host",
+      "url",
+      "href",
+    ]),
     toolName,
     path,
     sourceUrl,
@@ -976,7 +1153,13 @@ function browserRuntimeActivityFromCuaPolicyEvent(
       "transfer_size",
     ]),
     extensionId,
-    source: stringRecordField(data, ["source", "sourceUrl", "source_url", "url", "href"]),
+    source: stringRecordField(data, [
+      "source",
+      "sourceUrl",
+      "source_url",
+      "url",
+      "href",
+    ]),
     parameters: browserRuntimeParametersFromCuaData(data),
     metadata: {
       ...metadata,
@@ -998,7 +1181,10 @@ function browserRuntimeParametersFromCuaData(
   return parameters;
 }
 
-function stringRecordField(record: Record<string, unknown>, keys: string[]): string | undefined {
+function stringRecordField(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value !== "string") continue;
@@ -1008,10 +1194,14 @@ function stringRecordField(record: Record<string, unknown>, keys: string[]): str
   return undefined;
 }
 
-function numberRecordField(record: Record<string, unknown>, keys: string[]): number | undefined {
+function numberRecordField(
+  record: Record<string, unknown>,
+  keys: string[],
+): number | undefined {
   for (const key of keys) {
     const value = record[key];
-    if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0)
+      return value;
     if (typeof value !== "string") continue;
     const trimmed = value.trim();
     if (!/^\d+$/.test(trimmed)) continue;
@@ -1030,7 +1220,8 @@ function browserNameFromPath(path: string | undefined): string | undefined {
   if (!lower) return undefined;
   if (lower.includes("/application support/google/chrome/")) return "chrome";
   if (lower.includes("/application support/chromium/")) return "chromium";
-  if (lower.includes("/application support/brave software/brave-browser/")) return "brave";
+  if (lower.includes("/application support/brave software/brave-browser/"))
+    return "brave";
   if (lower.includes("/application support/microsoft edge/")) return "edge";
   if (lower.includes("/application support/firefox/")) return "firefox";
   if (lower.includes("/safari/extensions/")) return "safari";
@@ -1060,13 +1251,17 @@ function browserRuntimeByteCount(
     activity.fileSize,
     activity.transferSize,
   ]) {
-    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+      return value;
   }
   return undefined;
 }
 
-function observedAtString(value: string | Date | undefined): string | undefined {
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+function observedAtString(
+  value: string | Date | undefined,
+): string | undefined {
+  if (value instanceof Date)
+    return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
   return trimmedString(value);
 }
 
@@ -1080,7 +1275,9 @@ function sanitizedBrowserProcess(
 function packageLifecycleManagerFromEnvironment(
   env: Record<string, string | undefined>,
 ): PackageManagerLifecycleManager | null {
-  const explicitManager = trimmedString(env.CLAWDSTRIKE_PACKAGE_MANAGER)?.toLowerCase();
+  const explicitManager = trimmedString(
+    env.CLAWDSTRIKE_PACKAGE_MANAGER,
+  )?.toLowerCase();
   if (isPackageLifecycleManager(explicitManager)) return explicitManager;
 
   const userAgentManager = trimmedString(env.npm_config_user_agent)
@@ -1102,7 +1299,11 @@ function packageLifecycleManagerFromEnvironment(
   ] as const) {
     if (execPath.includes(manager)) return manager;
   }
-  if (trimmedString(env.CARGO_MANIFEST_DIR) || trimmedString(env.CARGO_PKG_NAME)) return "cargo";
+  if (
+    trimmedString(env.CARGO_MANIFEST_DIR) ||
+    trimmedString(env.CARGO_PKG_NAME)
+  )
+    return "cargo";
   return null;
 }
 
@@ -1113,7 +1314,8 @@ function packageLifecyclePhaseFromEnvironment(
   return (
     trimmedString(env.CLAWDSTRIKE_PACKAGE_PHASE) ??
     trimmedString(env.npm_lifecycle_event) ??
-    (manager === "cargo" && (trimmedString(env.CARGO_MANIFEST_DIR) || trimmedString(env.OUT_DIR))
+    (manager === "cargo" &&
+    (trimmedString(env.CARGO_MANIFEST_DIR) || trimmedString(env.OUT_DIR))
       ? "build.rs"
       : undefined)
   );
@@ -1123,7 +1325,8 @@ function isPackageLifecycleManager(
   value: string | undefined,
 ): value is PackageManagerLifecycleManager {
   return Boolean(
-    value && (PACKAGE_MANAGER_LIFECYCLE_MANAGERS as readonly string[]).includes(value),
+    value &&
+    (PACKAGE_MANAGER_LIFECYCLE_MANAGERS as readonly string[]).includes(value),
   );
 }
 
@@ -1215,7 +1418,8 @@ function scrubPolicyEventData(data: PolicyEvent["data"]): PolicyEvent["data"] {
         type: "file",
         path: stringValue(record.path),
         operation: record.operation === "write" ? "write" : "read",
-        contentHash: stringValue(record.contentHash ?? record.content_hash) || undefined,
+        contentHash:
+          stringValue(record.contentHash ?? record.content_hash) || undefined,
       };
     case "network":
       return {
@@ -1230,25 +1434,30 @@ function scrubPolicyEventData(data: PolicyEvent["data"]): PolicyEvent["data"] {
         type: "command",
         command: redactCommandPart(stringValue(record.command)),
         args: scrubCommandArgs(Array.isArray(record.args) ? record.args : []),
-        workingDir: stringValue(record.workingDir ?? record.working_dir) || undefined,
+        workingDir:
+          stringValue(record.workingDir ?? record.working_dir) || undefined,
       };
     case "patch":
       return {
         type: "patch",
         filePath: stringValue(record.filePath ?? record.file_path),
         patchContent: "",
-        patchHash: stringValue(record.patchHash ?? record.patch_hash) || undefined,
+        patchHash:
+          stringValue(record.patchHash ?? record.patch_hash) || undefined,
       };
     case "tool":
       return {
         type: "tool",
         toolName: stringValue(record.toolName ?? record.tool_name),
-        parameters: asRecord(sanitizeGenericValue(record.parameters, "parameters")) ?? {},
+        parameters:
+          asRecord(sanitizeGenericValue(record.parameters, "parameters")) ?? {},
       };
     case "secret":
       return {
         type: "secret",
-        secretName: redactSensitiveString(stringValue(record.secretName ?? record.secret_name)),
+        secretName: redactSensitiveString(
+          stringValue(record.secretName ?? record.secret_name),
+        ),
         scope: redactSensitiveString(stringValue(record.scope)),
       };
     case "custom":
@@ -1268,8 +1477,16 @@ function sanitizeGenericValue(value: unknown, key = "", depth = 0): unknown {
   if (value === null || value === undefined) return value;
 
   if (typeof value === "string") {
-    if (SENSITIVE_KEY.test(key) || CONTENT_KEY.test(key) || SECRET_LIKE_VALUE.test(value)) {
-      return { omitted: true, reason: omissionReason(key, value), length: value.length };
+    if (
+      SENSITIVE_KEY.test(key) ||
+      CONTENT_KEY.test(key) ||
+      SECRET_LIKE_VALUE.test(value)
+    ) {
+      return {
+        omitted: true,
+        reason: omissionReason(key, value),
+        length: value.length,
+      };
     }
     if (value.length > 256) {
       return { omitted: true, reason: "large_string", length: value.length };
@@ -1282,11 +1499,15 @@ function sanitizeGenericValue(value: unknown, key = "", depth = 0): unknown {
   if (depth >= 4) return { omitted: true, reason: "max_depth" };
 
   if (Array.isArray(value)) {
-    return value.slice(0, 25).map((item) => sanitizeGenericValue(item, key, depth + 1));
+    return value
+      .slice(0, 25)
+      .map((item) => sanitizeGenericValue(item, key, depth + 1));
   }
 
   const sanitized: Record<string, unknown> = {};
-  for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
+  for (const [entryKey, entryValue] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     sanitized[entryKey] = sanitizeGenericValue(entryValue, entryKey, depth + 1);
   }
   return sanitized;
@@ -1295,7 +1516,8 @@ function sanitizeGenericValue(value: unknown, key = "", depth = 0): unknown {
 function summarizeValue(value: unknown): Record<string, unknown> {
   if (value === null) return { valueType: "null" };
   if (value === undefined) return { valueType: "undefined" };
-  if (typeof value === "string") return { valueType: "string", length: value.length };
+  if (typeof value === "string")
+    return { valueType: "string", length: value.length };
   if (typeof value === "number" || typeof value === "boolean") {
     return { valueType: typeof value };
   }
@@ -1304,13 +1526,18 @@ function summarizeValue(value: unknown): Record<string, unknown> {
   }
   if (typeof value === "object") {
     const keys = Object.keys(value as Record<string, unknown>);
-    return { valueType: "object", keyCount: keys.length, keys: keys.slice(0, 25) };
+    return {
+      valueType: "object",
+      keyCount: keys.length,
+      keys: keys.slice(0, 25),
+    };
   }
   return { valueType: typeof value };
 }
 
 function omissionReason(key: string, value: string): string {
-  if (SENSITIVE_KEY.test(key) || SECRET_LIKE_VALUE.test(value)) return "sensitive";
+  if (SENSITIVE_KEY.test(key) || SECRET_LIKE_VALUE.test(value))
+    return "sensitive";
   return "content";
 }
 
@@ -1324,9 +1551,14 @@ function scrubCommandArgs(args: unknown[]): string[] {
     }
     const lower = text.toLowerCase();
     if (isSensitiveFlag(lower)) {
-      if (text.includes("=")) return `${text.slice(0, text.indexOf("="))}=${REDACTED}`;
+      if (text.includes("="))
+        return `${text.slice(0, text.indexOf("="))}=${REDACTED}`;
       redactNext = true;
       return text;
+    }
+    if (isSensitivePositionalKey(lower)) {
+      redactNext = true;
+      return redactCommandPart(text);
     }
     return redactCommandPart(text);
   });
@@ -1335,20 +1567,34 @@ function scrubCommandArgs(args: unknown[]): string[] {
 function isSensitiveFlag(value: string): boolean {
   return (
     value === "-p" ||
-    /^(?:--|-)(?:password|passwd|token|secret|api-key|apikey|client-secret|cookie)(?:=|$)/.test(
+    /^(?:--|-)(?:password|passwd|token|secret|api-key|apikey|client-secret|cookie|body|value|data|from-literal|data-file)(?:=|$)/.test(
       value,
     )
   );
 }
 
+function isSensitivePositionalKey(value: string): boolean {
+  return /(?:[:./-]_?|^_)(?:auth[_-]?token|api[_-]?key|client[_-]?secret|access[_-]?key|refresh[_-]?token|id[_-]?token)$/.test(
+    value,
+  );
+}
+
 function redactCommandPart(value: string): string {
-  const redacted = value.replace(
+  const withoutUrlUserinfo = redactUrlUserinfo(value);
+  const redacted = withoutUrlUserinfo.replace(
     /((?:token|secret|password|passwd|api[_-]?key|authorization|cookie)=)[^\s&]+/gi,
     `$1${REDACTED}`,
   );
   if (redacted !== value) return redacted;
-  if (SECRET_LIKE_VALUE.test(value)) return REDACTED;
-  return value;
+  if (SECRET_LIKE_VALUE.test(withoutUrlUserinfo)) return REDACTED;
+  return withoutUrlUserinfo;
+}
+
+function redactUrlUserinfo(value: string): string {
+  return value.replace(
+    /\b([a-z][a-z0-9+.-]*:\/\/)([^/\s@]+)@/gi,
+    `$1${REDACTED}@`,
+  );
 }
 
 function redactCommandLine(value: string): string {
@@ -1385,7 +1631,8 @@ function redactUrl(value: string): string {
 }
 
 function coercePort(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === "number" && Number.isFinite(value))
+    return Math.trunc(value);
   if (typeof value === "string" && /^[0-9]+$/.test(value)) {
     return Number.parseInt(value, 10);
   }
@@ -1401,7 +1648,8 @@ function stringValue(value: unknown): string {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value as Record<string, unknown>;
 }
 
@@ -1416,7 +1664,10 @@ function commandTokensFromPolicyEvent(policyEvent: PolicyEvent): string[] {
     return [];
   }
   const args = Array.isArray(data.args)
-    ? data.args.filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    ? data.args.filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim() !== "",
+      )
     : [];
   return [data.command.trim(), ...args.map((value) => value.trim())];
 }
@@ -1424,7 +1675,9 @@ function commandTokensFromPolicyEvent(policyEvent: PolicyEvent): string[] {
 function commandWorkingDirectory(policyEvent: PolicyEvent): string | undefined {
   const data = asRecord(policyEvent.data);
   const workingDir = data?.workingDir ?? data?.working_dir;
-  return typeof workingDir === "string" && workingDir.trim() ? workingDir.trim() : undefined;
+  return typeof workingDir === "string" && workingDir.trim()
+    ? workingDir.trim()
+    : undefined;
 }
 
 function developerToolCallFromPolicyEvent(
@@ -1435,12 +1688,14 @@ function developerToolCallFromPolicyEvent(
   const data = asRecord(policyEvent.data);
   if (!data || data.type !== "tool") return null;
 
-  const toolName = stringValue(data.toolName ?? data.tool_name) || fallbackToolName;
+  const toolName =
+    stringValue(data.toolName ?? data.tool_name) || fallbackToolName;
   if (!toolName) return null;
 
   return {
     toolName,
-    parameters: asRecord(sanitizeGenericValue(data.parameters, "parameters")) ?? {},
+    parameters:
+      asRecord(sanitizeGenericValue(data.parameters, "parameters")) ?? {},
   };
 }
 
@@ -1458,7 +1713,9 @@ function credentialActivityMetadata(
   };
 }
 
-function classifyCredentialPolicyEvent(policyEvent: PolicyEvent): CredentialActivityTarget | null {
+function classifyCredentialPolicyEvent(
+  policyEvent: PolicyEvent,
+): CredentialActivityTarget | null {
   const data = asRecord(policyEvent.data);
   if (!data) return null;
 
@@ -1545,11 +1802,17 @@ function classifyPackageCommand(command: string[]): {
   return {
     manager,
     phase,
-    packageName: packageNameFromPackageCommand(manager, commandName, afterCommand),
+    packageName: packageNameFromPackageCommand(
+      manager,
+      commandName,
+      afterCommand,
+    ),
   };
 }
 
-function classifyPackageRegistryTokenCommand(command: string[]): CredentialActivityTarget | null {
+function classifyPackageRegistryTokenCommand(
+  command: string[],
+): CredentialActivityTarget | null {
   const normalizedCommand = normalizePackageRegistryCommand(command);
   const [image, ...args] = normalizedCommand;
   const manager = packageRegistryManager(image ?? "");
@@ -1560,7 +1823,10 @@ function classifyPackageRegistryTokenCommand(command: string[]): CredentialActiv
   const commandName = args[commandIndex]?.toLowerCase();
   if (!commandName) return null;
   const commandArgs = args.slice(commandIndex + 1);
-  if (!packageRegistryTokenCommandIsSensitive(manager, commandName, commandArgs)) return null;
+  if (
+    !packageRegistryTokenCommandIsSensitive(manager, commandName, commandArgs)
+  )
+    return null;
 
   return {
     kind: "repo_secret",
@@ -1677,31 +1943,42 @@ function classifyDnsLookupCommand(command: string[]): {
     return null;
   }
 
-  const query = args.map(hostnameFromNetworkTarget).find((host): host is string => Boolean(host));
+  const query = args
+    .map(hostnameFromNetworkTarget)
+    .find((host): host is string => Boolean(host));
   if (!query) return null;
 
   return {
     query,
     recordType: dnsRecordTypeFromCommand(executable, args),
-    detectionHint: standardHoneyHostname(query) ? "deception.honey_artifact_touched" : undefined,
+    detectionHint: standardHoneyHostname(query)
+      ? "deception.honey_artifact_touched"
+      : undefined,
   };
 }
 
 function hostnameFromNetworkTarget(value: string): string | null {
   const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
-  if (!trimmed || trimmed.startsWith("-") || shellAssignment(trimmed)) return null;
+  if (!trimmed || trimmed.startsWith("-") || shellAssignment(trimmed))
+    return null;
 
   const urlHost = hostnameFromUrlLike(trimmed);
   if (urlHost) return urlHost;
 
-  const withoutUser = trimmed.includes("@") ? trimmed.split("@").pop() : trimmed;
-  const hostPortOrPath = withoutUser?.split(/[/?#]/, 1)[0]?.replace(/:\d+$/, "");
+  const withoutUser = trimmed.includes("@")
+    ? trimmed.split("@").pop()
+    : trimmed;
+  const hostPortOrPath = withoutUser
+    ?.split(/[/?#]/, 1)[0]
+    ?.replace(/:\d+$/, "");
   const host = normalizedDnsHostname(hostPortOrPath ?? "");
   return dnsHostnameIsUseful(host) ? host : null;
 }
 
 function hostnameFromUrlLike(value: string): string | null {
-  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`;
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
+    ? value
+    : `https://${value}`;
   try {
     return normalizedDnsHostname(new URL(candidate).hostname);
   } catch {
@@ -1718,18 +1995,23 @@ function normalizedDnsHostname(value: string): string | null {
 function dnsHostnameIsUseful(value: string | null): value is string {
   return Boolean(
     value &&
-      value.length <= 253 &&
-      /^[a-z0-9.-]+$/.test(value) &&
-      (value.includes(".") || value === "localhost") &&
-      !/^[0-9.]+$/.test(value),
+    value.length <= 253 &&
+    /^[a-z0-9.-]+$/.test(value) &&
+    (value.includes(".") || value === "localhost") &&
+    !/^[0-9.]+$/.test(value),
   );
 }
 
-function dnsRecordTypeFromCommand(executable: string, args: string[]): string | undefined {
+function dnsRecordTypeFromCommand(
+  executable: string,
+  args: string[],
+): string | undefined {
   if (!["dig", "host", "nslookup"].includes(executable)) return undefined;
   return args
     .map((arg) => arg.trim().toUpperCase())
-    .find((arg) => ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SRV"].includes(arg));
+    .find((arg) =>
+      ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SRV"].includes(arg),
+    );
 }
 
 function standardHoneyHostname(host: string): boolean {
@@ -1766,7 +2048,9 @@ function networkEgressCommandLine(network: {
   port: number;
 }): string {
   const target = network.url ?? `${network.host}:${network.port}`;
-  return network.method ? `network_egress ${network.method} ${target}` : `network_egress ${target}`;
+  return network.method
+    ? `network_egress ${network.method} ${target}`
+    : `network_egress ${target}`;
 }
 
 function classifyFileAccessPolicyEvent(policyEvent: PolicyEvent): {
@@ -1846,7 +2130,8 @@ function classifyPersistenceCommand(command: string[]): {
   const operationIndex = firstNonOptionArgIndex(args);
   if (operationIndex === null) return null;
   const operation = args[operationIndex]?.toLowerCase();
-  if (!operation || !launchctlOperationChangesPersistence(operation)) return null;
+  if (!operation || !launchctlOperationChangesPersistence(operation))
+    return null;
 
   const operationArgs = args.slice(operationIndex + 1);
   const target = lastNonOptionArg(operationArgs);
@@ -1865,16 +2150,21 @@ function classifySystemctlPersistenceCommand(args: string[]): {
   const operationIndex = firstNonOptionArgIndex(args);
   if (operationIndex === null) return null;
   const operation = args[operationIndex]?.toLowerCase();
-  if (!operation || !systemctlOperationChangesPersistence(operation)) return null;
+  if (!operation || !systemctlOperationChangesPersistence(operation))
+    return null;
   return {
-    mechanism: args.includes("--user") ? "systemd_user_service" : "systemd_service",
+    mechanism: args.includes("--user")
+      ? "systemd_user_service"
+      : "systemd_service",
     operation,
     target: lastNonOptionArg(args.slice(operationIndex + 1)),
   };
 }
 
 function systemctlOperationChangesPersistence(operation: string): boolean {
-  return ["enable", "disable", "link", "preset", "mask", "unmask"].includes(operation);
+  return ["enable", "disable", "link", "preset", "mask", "unmask"].includes(
+    operation,
+  );
 }
 
 function classifyCrontabPersistenceCommand(args: string[]): {
@@ -1915,7 +2205,9 @@ function launchctlOperationChangesPersistence(operation: string): boolean {
   ].includes(operation);
 }
 
-function persistenceMechanismFromTarget(target: string | undefined): string | undefined {
+function persistenceMechanismFromTarget(
+  target: string | undefined,
+): string | undefined {
   const lower = target?.toLowerCase();
   if (!lower) return undefined;
   if (lower.includes("launchagents")) return "launch_agent";
@@ -1931,10 +2223,14 @@ function persistenceMechanismFromTarget(target: string | undefined): string | un
 }
 
 function lastNonOptionArg(args: string[]): string | undefined {
-  return [...args].reverse().find((arg) => arg && !arg.startsWith("-") && !shellAssignment(arg));
+  return [...args]
+    .reverse()
+    .find((arg) => arg && !arg.startsWith("-") && !shellAssignment(arg));
 }
 
-function classifyCredentialCommand(command: string[]): CredentialActivityTarget | null {
+function classifyCredentialCommand(
+  command: string[],
+): CredentialActivityTarget | null {
   const executable = executableName(command[0] ?? "");
   if (executable === "security") {
     return classifyMacosKeychainCommand(command.slice(1));
@@ -1998,7 +2294,9 @@ function classifyDockerCredentialCommand(
   };
 }
 
-function classifyGitCredentialCommand(args: string[]): CredentialActivityTarget | null {
+function classifyGitCredentialCommand(
+  args: string[],
+): CredentialActivityTarget | null {
   const commandIndex = firstNonOptionArgIndex(args);
   if (commandIndex === null) return null;
   if (args[commandIndex]?.toLowerCase() !== "credential") return null;
@@ -2015,7 +2313,9 @@ function classifyGitCredentialCommand(args: string[]): CredentialActivityTarget 
   };
 }
 
-function classifySshAgentCommand(args: string[]): CredentialActivityTarget | null {
+function classifySshAgentCommand(
+  args: string[],
+): CredentialActivityTarget | null {
   if (!args.some((arg) => arg === "-L" || arg === "-l")) return null;
   return {
     kind: "local_api_key",
@@ -2026,13 +2326,17 @@ function classifySshAgentCommand(args: string[]): CredentialActivityTarget | nul
   };
 }
 
-function classifyPasswordStoreCommand(args: string[]): CredentialActivityTarget | null {
+function classifyPasswordStoreCommand(
+  args: string[],
+): CredentialActivityTarget | null {
   const commandIndex = firstNonOptionArgIndex(args);
   if (commandIndex === null) return null;
   const operation = args[commandIndex]?.toLowerCase();
   if (operation !== "show") return null;
 
-  const itemName = args.slice(commandIndex + 1).find((arg) => arg && !arg.startsWith("-"));
+  const itemName = args
+    .slice(commandIndex + 1)
+    .find((arg) => arg && !arg.startsWith("-"));
   if (!itemName) return null;
 
   return {
@@ -2044,11 +2348,18 @@ function classifyPasswordStoreCommand(args: string[]): CredentialActivityTarget 
   };
 }
 
-function classifyMacosKeychainCommand(args: string[]): CredentialActivityTarget | null {
+function classifyMacosKeychainCommand(
+  args: string[],
+): CredentialActivityTarget | null {
   const commandIndex = firstNonOptionArgIndex(args);
   if (commandIndex === null) return null;
   const operation = args[commandIndex]?.toLowerCase();
-  if (!["find-generic-password", "find-internet-password"].includes(operation ?? "")) return null;
+  if (
+    !["find-generic-password", "find-internet-password"].includes(
+      operation ?? "",
+    )
+  )
+    return null;
 
   const operationArgs = args.slice(commandIndex + 1);
   if (!operationArgs.some((arg) => arg === "-w" || arg === "-g")) return null;
@@ -2068,7 +2379,11 @@ function classifyMacosKeychainCommand(args: string[]): CredentialActivityTarget 
   };
 }
 
-function optionValue(args: string[], shortFlag: string, longFlag: string): string | undefined {
+function optionValue(
+  args: string[],
+  shortFlag: string,
+  longFlag: string,
+): string | undefined {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (!arg) continue;
@@ -2082,13 +2397,18 @@ function optionValue(args: string[], shortFlag: string, longFlag: string): strin
   return undefined;
 }
 
-function classifyCredentialPath(value: string): CredentialActivityTarget | null {
+function classifyCredentialPath(
+  value: string,
+): CredentialActivityTarget | null {
   const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
   if (!trimmed || trimmed.startsWith("-")) return null;
   const lower = trimmed.toLowerCase();
   const honeyTarget = classifyStandardHoneyArtifactPath(trimmed, lower);
   if (honeyTarget) return honeyTarget;
-  const developerCliCredentialTarget = classifyDeveloperCliCredentialPath(trimmed, lower);
+  const developerCliCredentialTarget = classifyDeveloperCliCredentialPath(
+    trimmed,
+    lower,
+  );
   if (developerCliCredentialTarget) return developerCliCredentialTarget;
   const cloudCredentialStoreTarget = classifyCloudCredentialStorePath(trimmed);
   if (cloudCredentialStoreTarget) return cloudCredentialStoreTarget;
@@ -2124,8 +2444,12 @@ function classifyCredentialPath(value: string): CredentialActivityTarget | null 
 
   if (
     /(?:^|[\\/])\.github[\\/]/i.test(trimmed) ||
-    /[\\/](github-actions|gitlab-ci|circleci|buildkite|jenkins)[\\/]/i.test(lower) ||
-    (/(?:\bci\b|ci[_-]?token|github[_-]?token|gh[_-]?token|actions)/i.test(lower) &&
+    /[\\/](github-actions|gitlab-ci|circleci|buildkite|jenkins)[\\/]/i.test(
+      lower,
+    ) ||
+    (/(?:\bci\b|ci[_-]?token|github[_-]?token|gh[_-]?token|actions)/i.test(
+      lower,
+    ) &&
       /(token|secret|credential)/i.test(lower))
   ) {
     return {
@@ -2156,7 +2480,9 @@ function classifyCredentialPath(value: string): CredentialActivityTarget | null 
 
   if (
     /(?:^|[\\/])\.env(?:\.|$)/i.test(trimmed) ||
-    /(secret|credential|private[_-]?key|api[_-]?key|token|id_rsa|id_ed25519)/i.test(lower)
+    /(secret|credential|private[_-]?key|api[_-]?key|token|id_rsa|id_ed25519)/i.test(
+      lower,
+    )
   ) {
     return {
       kind: "repo_secret",
@@ -2170,7 +2496,9 @@ function classifyCredentialPath(value: string): CredentialActivityTarget | null 
   return null;
 }
 
-function classifyCloudCredentialStorePath(trimmed: string): CredentialActivityTarget | null {
+function classifyCloudCredentialStorePath(
+  trimmed: string,
+): CredentialActivityTarget | null {
   const matchesCloudCredentialStore =
     /(?:^|[\\/])\.kube[\\/]config$/i.test(trimmed) ||
     /(?:^|[\\/])\.terraform\.d[\\/]credentials\.tfrc\.json$/i.test(trimmed) ||
@@ -2189,11 +2517,16 @@ function classifyCloudCredentialStorePath(trimmed: string): CredentialActivityTa
   };
 }
 
-function classifySigningKeyPath(trimmed: string, lower: string): CredentialActivityTarget | null {
+function classifySigningKeyPath(
+  trimmed: string,
+  lower: string,
+): CredentialActivityTarget | null {
   const matchesSigningKeyStore =
     /(?:^|[\\/])\.config[\\/]sops[\\/]age[\\/]keys\.txt$/i.test(trimmed) ||
     /(?:^|[\\/])\.age[\\/]key\.txt$/i.test(trimmed) ||
-    /(?:^|[\\/])\.gnupg[\\/]private-keys-v1\.d[\\/][^\\/]+\.key$/i.test(trimmed) ||
+    /(?:^|[\\/])\.gnupg[\\/]private-keys-v1\.d[\\/][^\\/]+\.key$/i.test(
+      trimmed,
+    ) ||
     /(?:^|[\\/])\.gnupg[\\/]secring\.gpg$/i.test(trimmed);
 
   if (!matchesSigningKeyStore) return null;
@@ -2201,7 +2534,10 @@ function classifySigningKeyPath(trimmed: string, lower: string): CredentialActiv
   return {
     kind: "local_api_key",
     path: trimmed,
-    name: credentialNameFromPath(trimmed, lower.includes("gnupg") ? "gpg-private-key" : "age-key"),
+    name: credentialNameFromPath(
+      trimmed,
+      lower.includes("gnupg") ? "gpg-private-key" : "age-key",
+    ),
     credentialKind: "signing_key",
     classifier: "signing_key_path",
   };
@@ -2213,7 +2549,9 @@ function classifyDeveloperCliCredentialPath(
 ): CredentialActivityTarget | null {
   const matchesDeveloperCliCredentialStore =
     /(?:^|[\\/])\.config[\\/]gh[\\/](?:hosts|config)\.ya?ml$/i.test(trimmed) ||
-    /(?:^|[\\/])\.config[\\/]glab-cli[\\/](?:config|hosts)\.ya?ml$/i.test(trimmed) ||
+    /(?:^|[\\/])\.config[\\/]glab-cli[\\/](?:config|hosts)\.ya?ml$/i.test(
+      trimmed,
+    ) ||
     /(?:^|[\\/])\.config[\\/]hub(?:$|[\\/])/i.test(trimmed) ||
     /(?:^|[\\/])\.config[\\/]git-credential(?:$|[\\/])/i.test(trimmed);
 
@@ -2222,7 +2560,10 @@ function classifyDeveloperCliCredentialPath(
   return {
     kind: "local_api_key",
     path: trimmed,
-    name: credentialNameFromPath(trimmed, lower.includes("glab-cli") ? "gitlab-cli" : "github-cli"),
+    name: credentialNameFromPath(
+      trimmed,
+      lower.includes("glab-cli") ? "gitlab-cli" : "github-cli",
+    ),
     credentialKind: "api_token",
     classifier: "developer_cli_credential_path",
   };
@@ -2237,7 +2578,8 @@ function classifyStandardHoneyArtifactPath(
   return {
     kind: standardHoney.kind,
     path: trimmed,
-    name: standardHoney.name ?? credentialNameFromPath(trimmed, "honey_artifact"),
+    name:
+      standardHoney.name ?? credentialNameFromPath(trimmed, "honey_artifact"),
     credentialKind: standardHoney.credentialKind,
     classifier: "honey_artifact_path",
     deceptionSignal: true,
@@ -2252,7 +2594,12 @@ function standardHoneyArtifactKindFromPath(lowerPath: string): {
   deceptionArtifactKind: string;
   name?: string;
 } | null {
-  if (pathEndsWithNormalizedSuffix(lowerPath, ".config/clawdstrike/internal-hosts.txt")) {
+  if (
+    pathEndsWithNormalizedSuffix(
+      lowerPath,
+      ".config/clawdstrike/internal-hosts.txt",
+    )
+  ) {
     return {
       kind: "repo_secret",
       credentialKind: "api_token",
@@ -2260,7 +2607,12 @@ function standardHoneyArtifactKindFromPath(lowerPath: string): {
       name: "internal-hosts.txt",
     };
   }
-  if (pathEndsWithNormalizedSuffix(lowerPath, ".config/clawdstrike/tokens/prod-api-token.txt")) {
+  if (
+    pathEndsWithNormalizedSuffix(
+      lowerPath,
+      ".config/clawdstrike/tokens/prod-api-token.txt",
+    )
+  ) {
     return {
       kind: "repo_secret",
       credentialKind: "api_token",
@@ -2287,10 +2639,16 @@ function standardHoneyArtifactKindFromPath(lowerPath: string): {
 function pathEndsWithNormalizedSuffix(path: string, suffix: string): boolean {
   const normalized = path.replace(/\\/g, "/").replace(/\/+/g, "/");
   const normalizedSuffix = suffix.replace(/\\/g, "/").replace(/\/+/g, "/");
-  return normalized === normalizedSuffix || normalized.endsWith(`/${normalizedSuffix}`);
+  return (
+    normalized === normalizedSuffix ||
+    normalized.endsWith(`/${normalizedSuffix}`)
+  );
 }
 
-function classifyCredentialTarget(value: string, fallbackName: string): CredentialActivityTarget {
+function classifyCredentialTarget(
+  value: string,
+  fallbackName: string,
+): CredentialActivityTarget {
   const lower = value.toLowerCase();
   if (lower.includes("cookie")) {
     return {
@@ -2315,7 +2673,11 @@ function classifyCredentialTarget(value: string, fallbackName: string): Credenti
       classifier: "ci_token_secret",
     };
   }
-  if (lower.includes(".npmrc") || lower.includes(".pypirc") || lower.includes("registry")) {
+  if (
+    lower.includes(".npmrc") ||
+    lower.includes(".pypirc") ||
+    lower.includes("registry")
+  ) {
     return {
       kind: "repo_secret",
       path: value,
@@ -2324,7 +2686,11 @@ function classifyCredentialTarget(value: string, fallbackName: string): Credenti
       classifier: "repo_secret_secret",
     };
   }
-  if (lower.includes("aws") || lower.includes("gcloud") || lower.includes("azure")) {
+  if (
+    lower.includes("aws") ||
+    lower.includes("gcloud") ||
+    lower.includes("azure")
+  ) {
     return {
       kind: "repo_secret",
       path: value,
@@ -2333,7 +2699,11 @@ function classifyCredentialTarget(value: string, fallbackName: string): Credenti
       classifier: "repo_secret_secret",
     };
   }
-  if (lower.includes("ssh") || lower.includes("id_rsa") || lower.includes("id_ed25519")) {
+  if (
+    lower.includes("ssh") ||
+    lower.includes("id_rsa") ||
+    lower.includes("id_ed25519")
+  ) {
     return {
       kind: "repo_secret",
       path: value,
@@ -2363,7 +2733,8 @@ function classifyCredentialTarget(value: string, fallbackName: string): Credenti
 function credentialKindFromPath(
   lowerPath: string,
 ): Exclude<CredentialActivityCredentialKind, "browser_cookie"> {
-  if (pathLooksLikePackageRegistryCredentialStore(lowerPath)) return "package_registry_token";
+  if (pathLooksLikePackageRegistryCredentialStore(lowerPath))
+    return "package_registry_token";
   if (
     lowerPath.includes(".kube/config") ||
     lowerPath.includes(".terraform.d/credentials.tfrc.json") ||
@@ -2379,15 +2750,23 @@ function credentialKindFromPath(
     lowerPath.includes(".gnupg/secring.gpg")
   )
     return "signing_key";
-  if (lowerPath.includes(".aws") || lowerPath.includes("gcloud") || lowerPath.includes("azure")) {
+  if (
+    lowerPath.includes(".aws") ||
+    lowerPath.includes("gcloud") ||
+    lowerPath.includes("azure")
+  ) {
     return "cloud_credential";
   }
-  if (lowerPath.includes("id_rsa") || lowerPath.includes("id_ed25519")) return "ssh_key";
-  if (lowerPath.includes("signing") || lowerPath.includes("codesign")) return "signing_key";
+  if (lowerPath.includes("id_rsa") || lowerPath.includes("id_ed25519"))
+    return "ssh_key";
+  if (lowerPath.includes("signing") || lowerPath.includes("codesign"))
+    return "signing_key";
   return "api_token";
 }
 
-function pathLooksLikePackageRegistryCredentialStore(lowerPath: string): boolean {
+function pathLooksLikePackageRegistryCredentialStore(
+  lowerPath: string,
+): boolean {
   return [
     ".npmrc",
     ".pypirc",
@@ -2410,7 +2789,16 @@ function pathLooksLikePackageRegistryCredentialStore(lowerPath: string): boolean
 
 function packageRegistryManager(image: string): string | null {
   const executable = executableName(image);
-  return ["npm", "pnpm", "yarn", "docker", "pip", "pip3", "cargo", "gem"].includes(executable)
+  return [
+    "npm",
+    "pnpm",
+    "yarn",
+    "docker",
+    "pip",
+    "pip3",
+    "cargo",
+    "gem",
+  ].includes(executable)
     ? executable === "pip3"
       ? "pip"
       : executable
@@ -2436,7 +2824,9 @@ function packageRegistryTokenCommandIsSensitive(
   }
   const joined = args.join(" ").toLowerCase();
   if (commandName === "token") {
-    return ["list", "create", "revoke", "delete"].includes(args[0]?.toLowerCase() ?? "");
+    return ["list", "create", "revoke", "delete"].includes(
+      args[0]?.toLowerCase() ?? "",
+    );
   }
   if (commandName === "config") {
     const subcommand = args[0]?.toLowerCase();
@@ -2448,7 +2838,10 @@ function packageRegistryTokenCommandIsSensitive(
   return false;
 }
 
-function rubyGemsRegistryCommandIsSensitive(commandName: string, args: string[]): boolean {
+function rubyGemsRegistryCommandIsSensitive(
+  commandName: string,
+  args: string[],
+): boolean {
   if (["signin", "signout"].includes(commandName)) return true;
   if (["owner", "push", "yank"].includes(commandName)) {
     return args.some((arg) => arg.toLowerCase().startsWith("--key"));
@@ -2456,7 +2849,10 @@ function rubyGemsRegistryCommandIsSensitive(commandName: string, args: string[])
   return false;
 }
 
-function cargoRegistryCommandIsSensitive(commandName: string, args: string[]): boolean {
+function cargoRegistryCommandIsSensitive(
+  commandName: string,
+  args: string[],
+): boolean {
   if (["login", "logout"].includes(commandName)) return true;
   if (["owner", "publish"].includes(commandName)) {
     return args.some((arg) => arg.toLowerCase().startsWith("--token"));
@@ -2486,11 +2882,16 @@ function packageRegistryAuthConfigReference(value: string): boolean {
   );
 }
 
-function packagePhase(manager: string, commandName: string, args: string[]): string | null {
+function packagePhase(
+  manager: string,
+  commandName: string,
+  args: string[],
+): string | null {
   switch (manager) {
     case "npm":
     case "pnpm":
-      if (["install", "i", "ci", "add", "rebuild"].includes(commandName)) return "install";
+      if (["install", "i", "ci", "add", "rebuild"].includes(commandName))
+        return "install";
       if (["run", "run-script", "exec", "dlx"].includes(commandName)) {
         return packageScriptName(args) ?? commandName;
       }
@@ -2501,36 +2902,53 @@ function packagePhase(manager: string, commandName: string, args: string[]): str
       return packageLifecyclePhase(commandName) ? commandName : null;
     case "bun":
       if (["install", "add", "update"].includes(commandName)) return "install";
-      if (["run", "x"].includes(commandName)) return packageScriptName(args) ?? commandName;
+      if (["run", "x"].includes(commandName))
+        return packageScriptName(args) ?? commandName;
       return packageLifecyclePhase(commandName) ? commandName : null;
     case "pip":
       if (commandName === "install") return "install";
       if (commandName === "wheel") return "build";
       return null;
     case "cargo":
-      return ["install", "build", "run", "test"].includes(commandName) ? commandName : null;
+      return ["install", "build", "run", "test"].includes(commandName)
+        ? commandName
+        : null;
     case "brew":
-      return ["install", "reinstall", "upgrade", "bundle"].includes(commandName) ? "install" : null;
+      return ["install", "reinstall", "upgrade", "bundle"].includes(commandName)
+        ? "install"
+        : null;
     case "go":
       if (["install", "get"].includes(commandName)) return "install";
-      return ["run", "build", "test"].includes(commandName) ? commandName : null;
+      return ["run", "build", "test"].includes(commandName)
+        ? commandName
+        : null;
     case "gem":
       return ["install", "build"].includes(commandName) ? commandName : null;
     case "composer":
-      if (["install", "update", "require", "create-project"].includes(commandName)) {
+      if (
+        ["install", "update", "require", "create-project"].includes(commandName)
+      ) {
         return "install";
       }
       if (["run-script", "exec"].includes(commandName))
         return packageScriptName(args) ?? commandName;
       return packageLifecyclePhase(commandName) ? commandName : null;
     case "maven":
-      return ["validate", "compile", "test", "package", "verify", "install", "deploy"].includes(
-        commandName,
-      )
+      return [
+        "validate",
+        "compile",
+        "test",
+        "package",
+        "verify",
+        "install",
+        "deploy",
+      ].includes(commandName)
         ? commandName
         : null;
     case "gradle":
-      return ["build", "test", "check", "assemble", "publish", "run"].includes(commandName)
+      return ["build", "test", "check", "assemble", "publish", "run"].includes(
+        commandName,
+      )
         ? commandName
         : null;
     case "uv":
@@ -2558,8 +2976,11 @@ function packagePhase(manager: string, commandName: string, args: string[]): str
       return null;
     case "dotnet":
       if (commandName === "restore") return "install";
-      if (commandName === "add" && args[0]?.toLowerCase() === "package") return "install";
-      return ["build", "test", "pack", "publish", "run"].includes(commandName) ? commandName : null;
+      if (commandName === "add" && args[0]?.toLowerCase() === "package")
+        return "install";
+      return ["build", "test", "pack", "publish", "run"].includes(commandName)
+        ? commandName
+        : null;
     case "nuget":
       if (["install", "restore"].includes(commandName)) return "install";
       if (commandName === "pack") return "build";
@@ -2568,13 +2989,19 @@ function packagePhase(manager: string, commandName: string, args: string[]): str
     case "swift":
       if (commandName === "package") {
         const packageCommand = args[0]?.toLowerCase();
-        if (["resolve", "update"].includes(packageCommand ?? "")) return "install";
+        if (["resolve", "update"].includes(packageCommand ?? ""))
+          return "install";
         return null;
       }
-      return ["build", "test", "run"].includes(commandName) ? commandName : null;
+      return ["build", "test", "run"].includes(commandName)
+        ? commandName
+        : null;
     case "mix":
       if (["deps.get", "deps.update"].includes(commandName)) return "install";
-      if (commandName === "deps" && ["get", "update"].includes(args[0]?.toLowerCase() ?? "")) {
+      if (
+        commandName === "deps" &&
+        ["get", "update"].includes(args[0]?.toLowerCase() ?? "")
+      ) {
         return "install";
       }
       if (commandName === "compile") return "build";
@@ -2608,7 +3035,8 @@ function packageNameFromPackageCommand(
 ): string | undefined {
   switch (manager) {
     case "uv":
-      if (["pip", "tool"].includes(commandName)) return packageNameFromArgs(args.slice(1));
+      if (["pip", "tool"].includes(commandName))
+        return packageNameFromArgs(args.slice(1));
       return packageNameFromArgs(args);
     case "dotnet":
       if (commandName === "add" && args[0]?.toLowerCase() === "package") {
@@ -2629,7 +3057,7 @@ function packageNameFromPackageCommand(
 }
 
 function packageNameFromArgs(args: string[]): string | undefined {
-  return args.find((arg) => {
+  const packageArg = args.find((arg) => {
     const lower = arg.toLowerCase();
     return (
       !arg.startsWith("-") &&
@@ -2639,6 +3067,7 @@ function packageNameFromArgs(args: string[]): string | undefined {
       !packageLifecyclePhase(lower)
     );
   });
+  return packageArg ? redactCommandPart(packageArg) : undefined;
 }
 
 function cloudCliArgsAreSensitive(provider: string, args: string[]): boolean {
@@ -2754,7 +3183,11 @@ function cloudCliArgsAreSensitive(provider: string, args: string[]): boolean {
   );
 }
 
-function terraformCliArgsAreSensitive(provider: string, args: string[], joined: string): boolean {
+function terraformCliArgsAreSensitive(
+  provider: string,
+  args: string[],
+  joined: string,
+): boolean {
   if (!["terraform", "terragrunt", "opentofu"].includes(provider)) return false;
   return (
     [
@@ -2850,7 +3283,10 @@ function metadataString(metadata: unknown, keys: string[]): string | undefined {
   return undefined;
 }
 
-function metadataStringFromSources(sources: unknown[], keys: string[]): string | undefined {
+function metadataStringFromSources(
+  sources: unknown[],
+  keys: string[],
+): string | undefined {
   for (const source of sources) {
     const value = metadataString(source, keys);
     if (value) return value;
@@ -2878,13 +3314,17 @@ function metadataScalarFromSources(
   return undefined;
 }
 
-function metadataIntegerFromSources(sources: unknown[], keys: string[]): number | undefined {
+function metadataIntegerFromSources(
+  sources: unknown[],
+  keys: string[],
+): number | undefined {
   for (const source of sources) {
     const record = asRecord(source);
     if (!record) continue;
     for (const key of keys) {
       const value = record[key];
-      if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+      if (typeof value === "number" && Number.isInteger(value) && value >= 0)
+        return value;
       if (typeof value === "string") {
         const trimmed = trimmedString(value);
         if (!trimmed || !/^\d+$/.test(trimmed)) continue;
@@ -2919,7 +3359,11 @@ function developerActivityProcessFromMetadata(
   ]);
   if (parentProcessGuid) process.parentProcessGuid = parentProcessGuid;
 
-  const pid = metadataIntegerFromSources(sources, ["pid", "processPid", "process_pid"]);
+  const pid = metadataIntegerFromSources(sources, [
+    "pid",
+    "processPid",
+    "process_pid",
+  ]);
   if (pid !== undefined) process.pid = pid;
 
   const ppid = metadataIntegerFromSources(sources, [
@@ -2957,10 +3401,14 @@ function developerActivityProcessFromMetadata(
   ]);
   if (cwd) process.cwd = cwd;
 
-  return Object.keys(process).length > 0 ? sanitizedBrowserProcess(process) : undefined;
+  return Object.keys(process).length > 0
+    ? sanitizedBrowserProcess(process)
+    : undefined;
 }
 
-function developerActivityCorrelationMetadata(...sources: unknown[]): Record<string, unknown> {
+function developerActivityCorrelationMetadata(
+  ...sources: unknown[]
+): Record<string, unknown> {
   const metadata: Record<string, unknown> = {};
   const policyEpoch = metadataScalarFromSources(sources, [
     "policyEpoch",
@@ -2970,13 +3418,22 @@ function developerActivityCorrelationMetadata(...sources: unknown[]): Record<str
   ]);
   if (policyEpoch !== undefined) metadata.policyEpoch = policyEpoch;
 
-  const policyVersion = metadataStringFromSources(sources, ["policyVersion", "policy_version"]);
+  const policyVersion = metadataStringFromSources(sources, [
+    "policyVersion",
+    "policy_version",
+  ]);
   if (policyVersion) metadata.policyVersion = policyVersion;
 
-  const policyHash = metadataStringFromSources(sources, ["policyHash", "policy_hash"]);
+  const policyHash = metadataStringFromSources(sources, [
+    "policyHash",
+    "policy_hash",
+  ]);
   if (policyHash) metadata.policyHash = policyHash;
 
-  const toolCallId = metadataStringFromSources(sources, ["toolCallId", "tool_call_id"]);
+  const toolCallId = metadataStringFromSources(sources, [
+    "toolCallId",
+    "tool_call_id",
+  ]);
   if (toolCallId) metadata.toolCallId = toolCallId;
 
   return metadata;

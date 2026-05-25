@@ -1,16 +1,20 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use hush_core::{canonicalize_json, sha256};
+use hush_core::sha256;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::action::EndpointDecisionAction;
 use super::actor::EndpointDecisionActor;
-use super::causal::CausalGraph;
+use super::causal::{CausalGraph, CausalNode};
 use super::receipt::evidence::{EndpointEvidenceBundleReference, EndpointGraphReference};
 use super::receipt::{
     response_acknowledgement_id_from_report_fields,
-    response_acknowledgement_id_from_report_fields_with_control, response_rollback_id_from_effects,
+    response_acknowledgement_id_from_report_fields_with_control,
+    response_execution_effect_binding_digest_from_effects, response_rollback_id_from_effects,
 };
 use super::{
     response_execution_id_from_effects, response_execution_transition_id_from_reason_hash,
@@ -168,6 +172,26 @@ impl EndpointResponsePlan {
         )
     }
 
+    #[must_use]
+    #[deprecated(
+        note = "terminate_process_tree is dry-run/modeling only; use EndpointResponsePlan::dry_run or suspend_process_tree_execution for live response plans"
+    )]
+    pub fn terminate_process_tree_execution(
+        root_node_id: impl Into<String>,
+        graph: &CausalGraph,
+        ttl_seconds: u64,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            EndpointDecisionAction::TerminateProcessTree,
+            false,
+            root_node_id,
+            graph,
+            ttl_seconds,
+            reason,
+        )
+    }
+
     fn new(
         action: EndpointDecisionAction,
         dry_run: bool,
@@ -233,6 +257,8 @@ impl EndpointResponsePlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::edr::{CausalGraph, EndpointEvidenceBundleReference};
+    use chrono::Utc;
 
     #[test]
     fn response_plan_action_ids_do_not_collapse_repeated_actions() {
@@ -254,6 +280,84 @@ mod tests {
         assert_ne!(first.action_id, second.action_id);
         assert_ne!(first.rollback_ref, second.rollback_ref);
     }
+
+    fn rollbackable_execution(
+        action: EndpointDecisionAction,
+        status: EndpointResponseExecutionStatus,
+        effect: EndpointResponseExecutionEffect,
+    ) -> EndpointResponseExecutionReport {
+        let now = Utc::now();
+        EndpointResponseExecutionReport {
+            execution_id: "response-execution-partial".to_string(),
+            action_id: "response-action-partial".to_string(),
+            action,
+            status,
+            dry_run: false,
+            root_node_id: "process-node".to_string(),
+            graph_slice_id: "graph-slice".to_string(),
+            ttl_seconds: 600,
+            rollback_ref: "rollback:response-action-partial".to_string(),
+            reason: "partial execution needs rollback".to_string(),
+            started_at: now,
+            completed_at: now,
+            evidence_bundle: EndpointEvidenceBundleReference {
+                bundle_id: "bundle-partial".to_string(),
+                graph_slice_id: "graph-slice".to_string(),
+                content_hash: "0xabc".to_string(),
+                node_count: 1,
+                edge_count: 0,
+                created_at: now,
+            },
+            actor: None,
+            effects: vec![effect],
+            summary: "partial execution".to_string(),
+        }
+    }
+
+    #[test]
+    fn partial_quarantine_execution_can_build_rollback_report() {
+        let execution = rollbackable_execution(
+            EndpointDecisionAction::QuarantineFile,
+            EndpointResponseExecutionStatus::Partial,
+            EndpointResponseExecutionEffect::quarantine_file(
+                "/tmp/source.txt",
+                "/tmp/quarantine/source.txt",
+                "0xabc",
+                3,
+            ),
+        );
+
+        let rollback = match EndpointResponseRollbackReport::quarantine_file(
+            &execution,
+            "ttl rollback",
+            Utc::now(),
+        ) {
+            Ok(report) => report,
+            Err(error) => panic!("partial quarantine rollback report: {error}"),
+        };
+
+        assert_eq!(rollback.effects[0].effect_type, "restore_quarantine_file");
+    }
+
+    #[test]
+    fn partial_suspend_execution_can_build_rollback_report() {
+        let execution = rollbackable_execution(
+            EndpointDecisionAction::SuspendProcessTree,
+            EndpointResponseExecutionStatus::Partial,
+            EndpointResponseExecutionEffect::suspend_process_tree(42, &[42, 43]),
+        );
+
+        let rollback = match EndpointResponseRollbackReport::suspend_process_tree(
+            &execution,
+            "ttl rollback",
+            Utc::now(),
+        ) {
+            Ok(report) => report,
+            Err(error) => panic!("partial suspend rollback report: {error}"),
+        };
+
+        assert_eq!(rollback.effects[0].effect_type, "resume_process_tree");
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -263,6 +367,8 @@ pub enum EndpointResponseExecutionStatus {
     Succeeded,
     Failed,
     Partial,
+    RollbackPending,
+    RollbackFailed,
     Expired,
     Cancelled,
     RolledBack,
@@ -275,6 +381,8 @@ impl EndpointResponseExecutionStatus {
             Self::Succeeded => "succeeded",
             Self::Failed => "failed",
             Self::Partial => "partial",
+            Self::RollbackPending => "rollback_pending",
+            Self::RollbackFailed => "rollback_failed",
             Self::Expired => "expired",
             Self::Cancelled => "cancelled",
             Self::RolledBack => "rolled_back",
@@ -293,9 +401,15 @@ pub struct EndpointResponseExecutionEffect {
     pub byte_count: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EndpointResponseProcessIdentityBinding {
+    pub pid: u32,
+    pub process_identity_key: String,
+}
+
 impl EndpointResponseExecutionEffect {
     #[must_use]
-    pub(crate) fn quarantine_file(
+    pub fn quarantine_file(
         original_path: impl AsRef<str>,
         quarantine_path: impl AsRef<str>,
         content_hash: impl AsRef<str>,
@@ -343,7 +457,7 @@ impl EndpointResponseExecutionEffect {
     }
 
     #[must_use]
-    pub(crate) fn disable_persistence(
+    pub fn disable_persistence(
         original_path: impl AsRef<str>,
         disabled_path: impl AsRef<str>,
         content_hash: impl AsRef<str>,
@@ -478,6 +592,27 @@ impl EndpointResponseExecutionEffect {
     }
 
     #[must_use]
+    pub fn suspend_process_tree_with_identities(
+        root_pid: u32,
+        bindings: &[EndpointResponseProcessIdentityBinding],
+    ) -> Self {
+        let (artifact, content_hash, count) = process_identity_binding_artifact(bindings);
+        let target = format!("pid:{root_pid}");
+        let effect_id = stable_id(
+            "response_effect_suspend_process_tree",
+            [target.as_str(), content_hash.as_str()],
+        );
+        Self {
+            effect_id,
+            effect_type: "suspend_process_tree".to_string(),
+            target,
+            artifact: Some(artifact),
+            content_hash: Some(content_hash),
+            byte_count: Some(count),
+        }
+    }
+
+    #[must_use]
     pub fn resume_process_tree(root_pid: u32, pids: &[u32]) -> Self {
         let mut pids = pids.to_vec();
         pids.sort_unstable();
@@ -503,6 +638,55 @@ impl EndpointResponseExecutionEffect {
         }
     }
 
+    #[must_use]
+    pub fn resume_process_tree_from_artifact(root_pid: u32, artifact: impl AsRef<str>) -> Self {
+        let artifact = canonical_process_tree_artifact(artifact.as_ref())
+            .unwrap_or_else(|_| artifact.as_ref().trim().to_string());
+        let count = artifact
+            .split(',')
+            .filter(|item| !item.trim().is_empty())
+            .count() as u64;
+        let content_hash = sha256(artifact.as_bytes()).to_hex_prefixed();
+        let target = format!("pid:{root_pid}");
+        let effect_id = stable_id(
+            "response_effect_resume_process_tree",
+            [target.as_str(), content_hash.as_str()],
+        );
+        Self {
+            effect_id,
+            effect_type: "resume_process_tree".to_string(),
+            target,
+            artifact: Some(artifact),
+            content_hash: Some(content_hash),
+            byte_count: Some(count),
+        }
+    }
+
+    #[must_use]
+    pub fn terminate_process_tree(root_pid: u32, pids: &[u32]) -> Self {
+        let mut pids = pids.to_vec();
+        pids.sort_unstable();
+        pids.dedup();
+        let pid_list = pids
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let content_hash = sha256(pid_list.as_bytes()).to_hex_prefixed();
+        let target = format!("pid:{root_pid}");
+        let effect_id = stable_id(
+            "response_effect_terminate_process_tree",
+            [target.as_str(), content_hash.as_str()],
+        );
+        Self {
+            effect_id,
+            effect_type: "terminate_process_tree".to_string(),
+            target,
+            artifact: Some(pid_list),
+            content_hash: Some(content_hash),
+            byte_count: Some(pids.len() as u64),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -565,10 +749,7 @@ impl EndpointResponseExecutionReport {
             ));
         }
 
-        let graph_value = serde_json::to_value(graph).context("serialize evidence graph slice")?;
-        let canonical_graph =
-            canonicalize_json(&graph_value).context("canonicalize evidence graph slice")?;
-        let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
             [
@@ -635,10 +816,7 @@ impl EndpointResponseExecutionReport {
             return Err(anyhow!("failed execution report requires a failure reason"));
         }
 
-        let graph_value = serde_json::to_value(graph).context("serialize failed response graph")?;
-        let canonical_graph =
-            canonicalize_json(&graph_value).context("canonicalize failed response graph")?;
-        let content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let reason = format!("{}; failure: {failure}", plan.reason);
         let reason_hash = sha256(reason.as_bytes()).to_hex_prefixed();
         let evidence_bundle_id = stable_id(
@@ -709,11 +887,7 @@ impl EndpointResponseExecutionReport {
             .first()
             .ok_or_else(|| anyhow!("restrict egress execution report requires a target"))?;
 
-        let graph_value =
-            serde_json::to_value(graph).context("serialize egress restriction graph slice")?;
-        let canonical_graph = canonicalize_json(&graph_value)
-            .context("canonicalize egress restriction graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let effect = EndpointResponseExecutionEffect::restrict_egress(primary_target, targets);
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
@@ -785,11 +959,7 @@ impl EndpointResponseExecutionReport {
         let original_path = original_path.as_ref();
         let quarantine_path = quarantine_path.as_ref();
         let content_hash = content_hash.as_ref();
-        let graph_value =
-            serde_json::to_value(graph).context("serialize quarantine evidence graph slice")?;
-        let canonical_graph = canonicalize_json(&graph_value)
-            .context("canonicalize quarantine evidence graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
             [
@@ -865,11 +1035,7 @@ impl EndpointResponseExecutionReport {
         let original_path = original_path.as_ref();
         let disabled_path = disabled_path.as_ref();
         let content_hash = content_hash.as_ref();
-        let graph_value =
-            serde_json::to_value(graph).context("serialize persistence evidence graph slice")?;
-        let canonical_graph = canonicalize_json(&graph_value)
-            .context("canonicalize persistence evidence graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
             [
@@ -942,11 +1108,7 @@ impl EndpointResponseExecutionReport {
 
         let grant_target = grant_target.as_ref();
         let revoked_grant_hash = revoked_grant_hash.as_ref();
-        let graph_value =
-            serde_json::to_value(graph).context("serialize revoke grant evidence graph slice")?;
-        let canonical_graph =
-            canonicalize_json(&graph_value).context("canonicalize revoke grant graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
             [
@@ -1019,11 +1181,7 @@ impl EndpointResponseExecutionReport {
             ));
         }
 
-        let graph_value =
-            serde_json::to_value(graph).context("serialize process containment graph slice")?;
-        let canonical_graph = canonicalize_json(&graph_value)
-            .context("canonicalize process containment graph slice")?;
-        let graph_content_hash = sha256(canonical_graph.as_bytes()).to_hex_prefixed();
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
         let effect = EndpointResponseExecutionEffect::suspend_process_tree(root_pid, pids);
         let evidence_bundle_id = stable_id(
             "evidence_bundle",
@@ -1069,6 +1227,90 @@ impl EndpointResponseExecutionReport {
             effects: vec![effect],
             summary,
         })
+    }
+
+    pub fn suspend_process_tree_with_identity_bindings(
+        plan: &EndpointResponsePlan,
+        graph: &CausalGraph,
+        root_pid: u32,
+        bindings: &[EndpointResponseProcessIdentityBinding],
+    ) -> Result<Self> {
+        if plan.action != EndpointDecisionAction::SuspendProcessTree {
+            return Err(anyhow!(
+                "suspend process tree execution report requires suspend_process_tree action"
+            ));
+        }
+        if plan.dry_run {
+            return Err(anyhow!(
+                "suspend process tree execution report requires a non-dry-run plan"
+            ));
+        }
+        if bindings.is_empty() {
+            return Err(anyhow!(
+                "suspend process tree execution report requires at least one identity-bound pid"
+            ));
+        }
+
+        let graph_content_hash = response_graph_content_hash(&plan.root_node_id, graph)?;
+        let effect = EndpointResponseExecutionEffect::suspend_process_tree_with_identities(
+            root_pid, bindings,
+        );
+        let evidence_bundle_id = stable_id(
+            "evidence_bundle",
+            [
+                plan.action_id.as_str(),
+                plan.graph_slice_id.as_str(),
+                graph_content_hash.as_str(),
+            ],
+        );
+        let execution_id = response_execution_id_from_effects(
+            plan.action_id.as_str(),
+            evidence_bundle_id.as_str(),
+            std::slice::from_ref(&effect),
+        )?;
+        let completed_at = Utc::now();
+        let evidence_bundle = EndpointEvidenceBundleReference {
+            bundle_id: evidence_bundle_id,
+            graph_slice_id: plan.graph_slice_id.clone(),
+            content_hash: graph_content_hash,
+            node_count: graph.nodes.len(),
+            edge_count: graph.edges.len(),
+            created_at: completed_at,
+        };
+        let pid_count = effect.byte_count.unwrap_or(0);
+        let summary = format!(
+            "Suspended process tree rooted at pid {root_pid} with {pid_count} identity-bound processes."
+        );
+
+        Ok(Self {
+            execution_id,
+            action_id: plan.action_id.clone(),
+            action: plan.action.clone(),
+            status: EndpointResponseExecutionStatus::Succeeded,
+            dry_run: false,
+            root_node_id: plan.root_node_id.clone(),
+            graph_slice_id: plan.graph_slice_id.clone(),
+            ttl_seconds: plan.ttl_seconds,
+            rollback_ref: plan.rollback_ref.clone(),
+            reason: plan.reason.clone(),
+            started_at: completed_at,
+            completed_at,
+            evidence_bundle,
+            actor: None,
+            effects: vec![effect],
+            summary,
+        })
+    }
+
+    pub fn terminate_process_tree(
+        _plan: &EndpointResponsePlan,
+        _graph: &CausalGraph,
+        _root_pid: u32,
+        _pids: &[u32],
+    ) -> Result<Self> {
+        Err(anyhow!(
+            "terminate_process_tree execution reports are disabled because the action is not rollback-capable; use dry-run modeling or suspend_process_tree"
+        ))
     }
 
     #[must_use]
@@ -1185,6 +1427,90 @@ impl EndpointResponseExecutionReport {
             ),
         }
     }
+
+    #[must_use]
+    pub fn rollback_pending_from(
+        execution: &Self,
+        reason: impl Into<String>,
+        completed_at: DateTime<Utc>,
+    ) -> Self {
+        let reason = reason.into();
+        let reason_hash = sha256(reason.as_bytes()).to_hex_prefixed();
+        let execution_id = response_execution_transition_id_from_reason_hash(
+            "response_execution_rollback_pending",
+            execution.action_id.as_str(),
+            execution.evidence_bundle.bundle_id.as_str(),
+            execution.rollback_ref.as_str(),
+            reason_hash.as_str(),
+        );
+        Self {
+            execution_id,
+            action_id: execution.action_id.clone(),
+            action: execution.action.clone(),
+            status: EndpointResponseExecutionStatus::RollbackPending,
+            dry_run: execution.dry_run,
+            root_node_id: execution.root_node_id.clone(),
+            graph_slice_id: execution.graph_slice_id.clone(),
+            ttl_seconds: execution.ttl_seconds,
+            rollback_ref: execution.rollback_ref.clone(),
+            reason,
+            started_at: execution.started_at,
+            completed_at,
+            evidence_bundle: execution.evidence_bundle.clone(),
+            actor: execution.actor.clone(),
+            effects: execution.effects.clone(),
+            summary: format!(
+                "Response execution {} rollback was durably requested before local rollback side effects; rollback ref {}.",
+                execution.execution_id, execution.rollback_ref
+            ),
+        }
+    }
+
+    #[must_use]
+    pub fn rollback_failed_from(
+        execution: &Self,
+        reason: impl Into<String>,
+        failure: impl AsRef<str>,
+        completed_at: DateTime<Utc>,
+    ) -> Self {
+        let failure = failure.as_ref().trim();
+        let reason = format!("{}; rollback failure: {failure}", reason.into());
+        let reason_hash = sha256(reason.as_bytes()).to_hex_prefixed();
+        let execution_id = response_execution_transition_id_from_reason_hash(
+            "response_execution_rollback_failed",
+            execution.action_id.as_str(),
+            execution.evidence_bundle.bundle_id.as_str(),
+            execution.rollback_ref.as_str(),
+            reason_hash.as_str(),
+        );
+        Self {
+            execution_id,
+            action_id: execution.action_id.clone(),
+            action: execution.action.clone(),
+            status: EndpointResponseExecutionStatus::RollbackFailed,
+            dry_run: execution.dry_run,
+            root_node_id: execution.root_node_id.clone(),
+            graph_slice_id: execution.graph_slice_id.clone(),
+            ttl_seconds: execution.ttl_seconds,
+            rollback_ref: execution.rollback_ref.clone(),
+            reason,
+            started_at: execution.started_at,
+            completed_at,
+            evidence_bundle: execution.evidence_bundle.clone(),
+            actor: execution.actor.clone(),
+            effects: execution.effects.clone(),
+            summary: format!(
+                "Response execution {} rollback failed after durable rollback intent; rollback ref {}.",
+                execution.execution_id, execution.rollback_ref
+            ),
+        }
+    }
+}
+
+fn response_graph_content_hash(root_node_id: &str, graph: &CausalGraph) -> Result<String> {
+    EndpointGraphReference::for_subgraph(root_node_id, graph)
+        .content_hash
+        .ok_or_else(|| anyhow!("response graph content hash is required"))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1240,9 +1566,9 @@ impl EndpointResponseRollbackReport {
                 "egress rollback report requires restrict_egress execution"
             ));
         }
-        if execution.status != EndpointResponseExecutionStatus::Succeeded {
+        if !execution_status_has_rollback_effects(&execution.status) {
             return Err(anyhow!(
-                "egress rollback report requires succeeded execution"
+                "egress rollback report requires succeeded or partial execution"
             ));
         }
         let effect = execution
@@ -1313,9 +1639,9 @@ impl EndpointResponseRollbackReport {
                 "quarantine rollback report requires quarantine_file execution"
             ));
         }
-        if execution.status != EndpointResponseExecutionStatus::Succeeded {
+        if !execution_status_has_rollback_effects(&execution.status) {
             return Err(anyhow!(
-                "quarantine rollback report requires succeeded execution"
+                "quarantine rollback report requires succeeded or partial execution"
             ));
         }
         let effect = execution
@@ -1377,9 +1703,9 @@ impl EndpointResponseRollbackReport {
                 "persistence rollback report requires disable_persistence execution"
             ));
         }
-        if execution.status != EndpointResponseExecutionStatus::Succeeded {
+        if !execution_status_has_rollback_effects(&execution.status) {
             return Err(anyhow!(
-                "persistence rollback report requires succeeded execution"
+                "persistence rollback report requires succeeded or partial execution"
             ));
         }
         let effect = execution
@@ -1443,9 +1769,9 @@ impl EndpointResponseRollbackReport {
                 "process tree rollback report requires suspend_process_tree execution"
             ));
         }
-        if execution.status != EndpointResponseExecutionStatus::Succeeded {
+        if !execution_status_has_rollback_effects(&execution.status) {
             return Err(anyhow!(
-                "process tree rollback report requires succeeded execution"
+                "process tree rollback report requires succeeded or partial execution"
             ));
         }
         let effect = execution
@@ -1472,8 +1798,8 @@ impl EndpointResponseRollbackReport {
             .ok_or_else(|| anyhow!("process tree rollback target must be pid-prefixed"))?
             .parse::<u32>()
             .context("parse process tree rollback root pid")?;
-        let pids = parse_pid_artifact(artifact)?;
-        let resume_effect = EndpointResponseExecutionEffect::resume_process_tree(root_pid, &pids);
+        let resume_effect =
+            EndpointResponseExecutionEffect::resume_process_tree_from_artifact(root_pid, artifact);
         if resume_effect.content_hash.as_deref() != Some(content_hash)
             || resume_effect.byte_count != Some(byte_count)
         {
@@ -1510,6 +1836,77 @@ impl EndpointResponseRollbackReport {
     }
 }
 
+fn execution_status_has_rollback_effects(status: &EndpointResponseExecutionStatus) -> bool {
+    matches!(
+        status,
+        EndpointResponseExecutionStatus::Succeeded
+            | EndpointResponseExecutionStatus::Partial
+            | EndpointResponseExecutionStatus::RollbackPending
+            | EndpointResponseExecutionStatus::RollbackFailed
+    )
+}
+
+fn process_identity_binding_artifact(
+    bindings: &[EndpointResponseProcessIdentityBinding],
+) -> (String, String, u64) {
+    let mut items = bindings
+        .iter()
+        .map(|binding| (binding.pid, binding.process_identity_key.trim().to_string()))
+        .filter(|(_, identity)| !identity.is_empty())
+        .collect::<Vec<_>>();
+    items.sort();
+    items.dedup();
+    let artifact = items
+        .iter()
+        .map(|(pid, identity)| format!("{pid}={identity}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let content_hash = sha256(artifact.as_bytes()).to_hex_prefixed();
+    (artifact, content_hash, items.len() as u64)
+}
+
+fn canonical_process_tree_artifact(artifact: &str) -> Result<String> {
+    let mut entries = Vec::new();
+    for item in artifact.split(',') {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        let (pid, identity) = match item.split_once('=') {
+            Some((pid, identity)) => (
+                pid.trim()
+                    .parse::<u32>()
+                    .with_context(|| format!("parse process tree effect pid {pid}"))?,
+                Some(identity.trim().to_string()),
+            ),
+            None => (
+                item.parse::<u32>()
+                    .with_context(|| format!("parse process tree effect pid {item}"))?,
+                None,
+            ),
+        };
+        if identity.as_deref().is_some_and(str::is_empty) {
+            return Err(anyhow!(
+                "process tree effect identity binding for pid {pid} is empty"
+            ));
+        }
+        entries.push((pid, identity));
+    }
+    if entries.is_empty() {
+        return Err(anyhow!("process tree effect contains no pids"));
+    }
+    entries.sort();
+    entries.dedup();
+    Ok(entries
+        .into_iter()
+        .map(|(pid, identity)| match identity {
+            Some(identity) => format!("{pid}={identity}"),
+            None => pid.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(","))
+}
+
 fn parse_pid_artifact(artifact: &str) -> Result<Vec<u32>> {
     let mut pids = Vec::new();
     for item in artifact.split(',') {
@@ -1517,6 +1914,9 @@ fn parse_pid_artifact(artifact: &str) -> Result<Vec<u32>> {
         if item.is_empty() {
             continue;
         }
+        let item = item
+            .split_once('=')
+            .map_or(item, |(pid, _identity)| pid.trim());
         pids.push(
             item.parse::<u32>()
                 .with_context(|| format!("parse pid artifact item {item}"))?,

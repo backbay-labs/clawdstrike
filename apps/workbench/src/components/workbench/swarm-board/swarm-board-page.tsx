@@ -38,6 +38,7 @@ import { SwarmBoardLeftRail } from "./swarm-board-left-rail";
 import { SwarmBoardInspector } from "./swarm-board-inspector";
 import type { SwarmBoardNodeData, SwarmNodeType } from "@/features/swarm/swarm-board-types";
 import { useTerminalSessionsFromBoard } from "@/lib/workbench/use-terminal-sessions";
+import { logger } from "@/lib/logger";
 
 const RF_STYLE: React.CSSProperties = {
   backgroundColor: "#05060a",
@@ -738,7 +739,7 @@ class SwarmBoardErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    console.error("[SwarmBoardErrorBoundary] Render error:", error, info.componentStack);
+    logger.error("[SwarmBoardErrorBoundary] Render error:", error, info.componentStack);
   }
 
   render() {

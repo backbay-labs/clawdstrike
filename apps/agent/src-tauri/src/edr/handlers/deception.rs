@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -19,6 +17,8 @@ use hush_core::SignedReceipt;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
+#[allow(unused_imports)]
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::sync::Arc;
 
@@ -50,7 +50,6 @@ pub(crate) async fn agent_edr_deception_plan(
     }))
 }
 
-
 pub(crate) async fn agent_edr_materialize_deception_plan(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -72,7 +71,7 @@ pub(crate) async fn agent_edr_materialize_deception_plan(
     let report = tokio::task::spawn_blocking(move || materialize_plan.materialize())
         .await
         .map_err(|err| internal_error(err.into()))?
-        .map_err(internal_error)?;
+        .map_err(map_deception_materialization_error)?;
     let mut registry = state.edr_honey_registry.lock().await;
     let registered_artifact_count = registry.register(&artifacts).map_err(internal_error)?;
     let registry_path = registry.path().map(|path| path.display().to_string());
@@ -93,7 +92,6 @@ pub(crate) async fn agent_edr_materialize_deception_plan(
         receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_cleanup_deception_plan(
     State(state): State<Arc<AgentApiState>>,
@@ -164,7 +162,6 @@ pub(crate) async fn agent_edr_cleanup_deception_plan(
         receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_rotate_deception_plan(
     State(state): State<Arc<AgentApiState>>,
@@ -293,7 +290,7 @@ pub(crate) async fn agent_edr_rotate_deception_plan(
         tokio::task::spawn_blocking(move || materialize_plan.materialize())
             .await
             .map_err(|err| internal_error(err.into()))?
-            .map_err(internal_error)?;
+            .map_err(map_deception_materialization_error)?;
     let mut registry = state.edr_honey_registry.lock().await;
     let registered_artifact_count = registry
         .register(&new_plan.artifacts)
@@ -334,3 +331,10 @@ pub(crate) async fn agent_edr_rotate_deception_plan(
     }))
 }
 
+fn map_deception_materialization_error(err: anyhow::Error) -> (StatusCode, String) {
+    let message = err.to_string();
+    if message.contains("pre-existing non-honey") {
+        return (StatusCode::CONFLICT, message);
+    }
+    internal_error(err)
+}

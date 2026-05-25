@@ -207,6 +207,7 @@ mod tests {
             id: id.to_string(),
             status: ApprovalStatus::Pending,
             resolution: Some(ApprovalResolution::AllowOnce),
+            resolved_by_trusted_authority: false,
             tool: "shell.exec".to_string(),
             resource: "/tmp/file".to_string(),
             guard: "ForbiddenPathGuard".to_string(),

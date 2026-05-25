@@ -25,6 +25,7 @@ import {
   IconSchema,
   IconHexagons,
 } from "@tabler/icons-react";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -342,7 +343,7 @@ export function EditorHomeTab({
       pushRecentFile(result.path);
       onNavigateToTab();
     } catch (err) {
-      console.error("[editor-home-tab] Failed to open file:", err);
+      logger.error("[editor-home-tab] Failed to open file:", err);
     }
   }, [onNavigateToTab]);
 
@@ -359,7 +360,7 @@ export function EditorHomeTab({
         pushRecentFile(result.path);
         onNavigateToTab();
       } catch (err) {
-        console.error("[editor-home-tab] Failed to open file by path:", err);
+        logger.error("[editor-home-tab] Failed to open file by path:", err);
       }
     },
     [onNavigateToTab],

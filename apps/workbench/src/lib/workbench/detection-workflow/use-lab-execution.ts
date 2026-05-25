@@ -17,6 +17,7 @@ import type {
 } from "./execution-types";
 import { getAdapter, hasAdapter } from "./adapters";
 import { getLabRunStore } from "./lab-run-store";
+import { logger } from "@/lib/logger";
 
 export interface UseLabExecutionReturn {
   /** Whether an adapter exists for the current file type. */
@@ -66,7 +67,7 @@ export function useLabExecution(
           setLastRun(runs[0]);
         }
       } catch (err) {
-        console.warn("[use-lab-execution] Failed to load run history:", err);
+        logger.warn("[use-lab-execution] Failed to load run history:", err);
       }
     };
 
@@ -136,7 +137,7 @@ export function useLabExecution(
           }
           await store.saveRun(result.run);
         } catch (err) {
-          console.warn("[use-lab-execution] Failed to save run:", err);
+          logger.warn("[use-lab-execution] Failed to save run:", err);
         }
 
         setLastRun(result.run);
@@ -144,7 +145,7 @@ export function useLabExecution(
 
         return result;
       } catch (err) {
-        console.error("[use-lab-execution] Adapter execution failed:", err);
+        logger.error("[use-lab-execution] Adapter execution failed:", err);
         return null;
       } finally {
         setIsRunning(false);
@@ -174,7 +175,7 @@ export function useLabExecution(
           return remaining;
         });
       } catch (err) {
-        console.warn("[use-lab-execution] Failed to delete run:", err);
+        logger.warn("[use-lab-execution] Failed to delete run:", err);
       }
     },
     [],

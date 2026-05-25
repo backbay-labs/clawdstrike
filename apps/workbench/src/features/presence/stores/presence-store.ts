@@ -14,6 +14,7 @@ import type {
   ServerMessageRaw,
 } from "../types";
 import { parseAnalystInfo } from "../types";
+import { logger } from "@/lib/logger";
 
 // CRITICAL: Must be called before any store creation so immer can draft
 // Map and Set instances. Without this, mutations silently produce broken state.
@@ -203,7 +204,7 @@ const usePresenceStoreBase = create<PresenceStoreState>()(
 
             case "error": {
               state.connectionError = msg.message;
-              console.warn("[presence-store] Server error:", msg.message);
+              logger.warn("[presence-store] Server error:", msg.message);
               break;
             }
           }

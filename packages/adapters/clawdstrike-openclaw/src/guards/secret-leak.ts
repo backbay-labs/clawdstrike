@@ -28,21 +28,9 @@ const SECRET_PATTERNS: SecretPattern[] = [
   // GitHub Tokens
   {
     name: "github_pat",
-    pattern: /ghp_[A-Za-z0-9]{36}/g,
+    pattern: /gh[pousr]_[A-Za-z0-9_]{20,}/g,
     severity: "critical",
-    description: "GitHub Personal Access Token",
-  },
-  {
-    name: "github_oauth",
-    pattern: /gho_[A-Za-z0-9]{36}/g,
-    severity: "critical",
-    description: "GitHub OAuth Token",
-  },
-  {
-    name: "github_app_token",
-    pattern: /ghu_[A-Za-z0-9]{36}/g,
-    severity: "critical",
-    description: "GitHub App User Token",
+    description: "GitHub Token",
   },
   {
     name: "github_fine_grained",
@@ -54,13 +42,13 @@ const SECRET_PATTERNS: SecretPattern[] = [
   // OpenAI Keys
   {
     name: "openai_api_key",
-    pattern: /sk-[A-Za-z0-9]{48}/g,
+    pattern: /sk-[A-Za-z0-9_-]{20,}/g,
     severity: "critical",
     description: "OpenAI API Key",
   },
   {
     name: "openai_project_key",
-    pattern: /sk-proj-[A-Za-z0-9]{48}/g,
+    pattern: /sk-proj-[A-Za-z0-9_-]{20,}/g,
     severity: "critical",
     description: "OpenAI Project API Key",
   },
@@ -193,7 +181,7 @@ export class SecretLeakGuard extends BaseGuard {
   }
 
   handles(): EventType[] {
-    return ["patch_apply", "tool_call"];
+    return ["patch_apply", "tool_call", "file_write"];
   }
 
   async check(event: PolicyEvent, policy: Policy): Promise<GuardResult> {
@@ -207,6 +195,8 @@ export class SecretLeakGuard extends BaseGuard {
     // Get content to check based on event type
     if (data.type === "patch") {
       contentToCheck = data.patchContent;
+    } else if (data.type === "file" && event.eventType === "file_write") {
+      contentToCheck = fileWriteContent(data as unknown as Record<string, unknown>);
     } else if (data.type === "tool") {
       // Check tool result for secrets
       contentToCheck =
@@ -291,5 +281,25 @@ export class SecretLeakGuard extends BaseGuard {
     }
 
     return highest;
+  }
+}
+
+function fileWriteContent(data: Record<string, unknown>): string | undefined {
+  for (const key of ["content", "text"]) {
+    const value = data[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+
+  const encoded = data.contentBase64 ?? data.content_base64;
+  if (typeof encoded !== "string" || encoded.trim().length === 0) {
+    return undefined;
+  }
+
+  try {
+    return Buffer.from(encoded.trim(), "base64").toString("utf8");
+  } catch {
+    return undefined;
   }
 }

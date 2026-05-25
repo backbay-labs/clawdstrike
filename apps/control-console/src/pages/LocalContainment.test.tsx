@@ -428,6 +428,9 @@ describe("LocalContainment", () => {
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: "contain egress for 10 minutes" },
     });
+    fireEvent.change(screen.getByLabelText("Approval ID"), {
+      target: { value: "approval-contain-live-1" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Execute Live" }));
 
     await waitFor(() => {
@@ -437,7 +440,7 @@ describe("LocalContainment", () => {
         ttlSeconds: 600,
         dryRun: false,
         reason: "contain egress for 10 minutes",
-        actor: { userId: "local-operator" },
+        actor: { userId: "local-operator", approvalId: "approval-contain-live-1" },
       });
     });
 

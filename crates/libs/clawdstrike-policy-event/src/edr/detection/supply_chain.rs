@@ -1,17 +1,24 @@
+use std::collections::BTreeMap;
+
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::super::deception::HoneyArtifact;
-use super::super::event::{EndpointEvent, EndpointObservation};
+use super::super::deception::{DeceptionPlan, HoneyArtifact, HoneyArtifactKind};
+use super::super::event::{
+    CredentialKind, EndpointEvent, EndpointObservation, FileOperation, PackageManager,
+};
+use super::super::process::EndpointProcess;
 use super::super::{
     cloud_cli_name, cloud_credential_env_keys, command_looks_like_package_manager,
-    credential_kind_is_developer_secret, ev, finding, honey_artifact_match_evidence,
-    is_install_phase, opt_ev, package_registry_cli_name, package_registry_credential_env_keys,
+    credential_kind_is_developer_secret, ev, finding, honey_artifact,
+    honey_artifact_match_evidence, is_install_phase, normalize_hostname, normalize_path_string,
+    opt_ev, package_registry_cli_name, package_registry_credential_env_keys,
     path_is_launch_persistence, path_is_user_writable_or_download,
-    path_looks_like_browser_extension, path_looks_like_developer_secret,
-    suspicious_cloud_cli_reason, suspicious_package_registry_cli_reason, suspicious_script_reason,
-    FindingRule,
+    path_looks_like_browser_extension, path_looks_like_developer_secret, stable_id,
+    string_field_nested, suspicious_cloud_cli_reason, suspicious_package_registry_cli_reason,
+    suspicious_script_reason, FindingRule,
 };
-use super::finding::{DetectionFinding, DetectionSeverity};
+use super::finding::{DetectionEvidence, DetectionFinding, DetectionSeverity};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
@@ -259,29 +266,28 @@ impl SupplyChainRuntimeGuard {
                 path,
                 label,
                 operation,
-            } => {
-                if path_is_launch_persistence(path) {
-                    let mut evidence =
-                        vec![ev("path", path), ev("operation", format!("{operation:?}"))];
-                    if let Some(evidence_item) = opt_ev("label", label.as_deref()) {
-                        evidence.push(evidence_item);
-                    }
-                    findings.push(finding(
-                        observation,
-                        evidence,
-                        FindingRule {
-                            rule_id: "supply_chain.launch_persistence",
-                            title: "LaunchAgent or LaunchDaemon persistence changed",
-                            severity: DetectionSeverity::High,
-                            confidence: 0.84,
-                            description: "A launch persistence location was created or modified during endpoint activity.",
-                            mitre_attack: vec!["T1543.001"],
-                            tags: vec!["persistence", "supply_chain"],
-                            remediation: "Disable the launch item, preserve the plist, and trace the writing process back to its package or tool origin.",
-                        },
-                    ));
+            } if path_is_launch_persistence(path) => {
+                let mut evidence =
+                    vec![ev("path", path), ev("operation", format!("{operation:?}"))];
+                if let Some(evidence_item) = opt_ev("label", label.as_deref()) {
+                    evidence.push(evidence_item);
                 }
+                findings.push(finding(
+                    observation,
+                    evidence,
+                    FindingRule {
+                        rule_id: "supply_chain.launch_persistence",
+                        title: "LaunchAgent or LaunchDaemon persistence changed",
+                        severity: DetectionSeverity::High,
+                        confidence: 0.84,
+                        description: "A launch persistence location was created or modified during endpoint activity.",
+                        mitre_attack: vec!["T1543.001"],
+                        tags: vec!["persistence", "supply_chain"],
+                        remediation: "Disable the launch item, preserve the plist, and trace the writing process back to its package or tool origin.",
+                    },
+                ));
             }
+            EndpointEvent::LaunchPersistence { .. } => {}
             EndpointEvent::BrowserExtensionInstall {
                 browser,
                 extension_id,

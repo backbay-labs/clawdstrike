@@ -17,17 +17,6 @@ import {
 } from "../api/client";
 import { GlassButton, Plate } from "../components/ui";
 import { downloadBlob } from "../utils/exportData";
-import {
-  EmptyState,
-  Metric,
-  PanelTitle,
-  SmallFact,
-  StatusBanner,
-  StatusPill,
-  TextField,
-} from "./FleetCases/display";
-import { ArtifactRow, CaseRow, TimelineRow } from "./FleetCases/rows";
-import { byteText, formatDateTime, numberText } from "./FleetCases/utils";
 
 type LoadingKey =
   | "cases"
@@ -531,4 +520,290 @@ export function FleetCases(_props: { windowId?: string }) {
       </div>
     </div>
   );
+}
+
+function CaseRow({
+  fleetCase,
+  selected,
+  selectedForBulk,
+  onToggleBulk,
+  onSelect,
+  loading,
+}: {
+  fleetCase: FleetCase;
+  selected: boolean;
+  selectedForBulk: boolean;
+  onToggleBulk: () => void;
+  onSelect: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div
+      className="w-full rounded-md p-3 text-left"
+      style={{
+        border: selected ? "1px solid rgba(214,177,90,0.42)" : "1px solid rgba(27,34,48,0.78)",
+        background: selected ? "rgba(214,177,90,0.08)" : "rgba(0,0,0,0.18)",
+        color: "var(--text)",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          aria-label={`Select case ${fleetCase.title}`}
+          checked={selectedForBulk}
+          onChange={onToggleBulk}
+          className="mt-1 h-4 w-4"
+        />
+        <button
+          type="button"
+          onClick={onSelect}
+          disabled={loading && selected}
+          className="min-w-0 flex-1 text-left"
+          style={{
+            color: "var(--text)",
+            cursor: loading && selected ? "wait" : "pointer",
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-display truncate" style={{ fontSize: "0.98rem", fontWeight: 700 }}>
+                {fleetCase.title}
+              </p>
+              <p
+                className="font-mono mt-1 break-all"
+                style={{ color: "rgba(154,167,181,0.62)", fontSize: "0.66rem" }}
+              >
+                {fleetCase.id}
+              </p>
+            </div>
+            <StatusPill value={fleetCase.severity} />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <SmallFact label="Status" value={fleetCase.status} />
+            <SmallFact label="Updated" value={formatDateTime(fleetCase.updatedAt)} />
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ArtifactRow({ artifact }: { artifact: FleetCaseDetail["artifacts"][number] }) {
+  return (
+    <div
+      className="rounded-md p-3"
+      style={{ border: "1px solid rgba(27,34,48,0.78)", background: "rgba(0,0,0,0.18)" }}
+    >
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <p className="font-mono break-all" style={{ color: "var(--text)", fontSize: "0.78rem" }}>
+            {artifact.artifactKind}
+          </p>
+          <p
+            className="font-mono mt-1 break-all"
+            style={{ color: "rgba(154,167,181,0.62)", fontSize: "0.66rem" }}
+          >
+            {artifact.artifactId}
+          </p>
+        </div>
+        <StatusPill value={artifact.addedBy} />
+      </div>
+      {artifact.summary && (
+        <p className="mt-3 text-sm" style={{ color: "rgba(229,231,235,0.7)" }}>
+          {artifact.summary}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TimelineRow({ event }: { event: CaseTimelineEvent }) {
+  return (
+    <div
+      className="rounded-md p-3"
+      style={{ border: "1px solid rgba(27,34,48,0.78)", background: "rgba(0,0,0,0.18)" }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono" style={{ color: "var(--text)", fontSize: "0.78rem" }}>
+            {event.eventKind}
+          </p>
+          <p
+            className="font-mono mt-1"
+            style={{ color: "rgba(154,167,181,0.62)", fontSize: "0.66rem" }}
+          >
+            {event.actorId}
+          </p>
+        </div>
+        <StatusPill value={formatDateTime(event.createdAt)} />
+      </div>
+    </div>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="font-mono uppercase tracking-[0.12em] text-[0.65rem] text-[rgba(154,167,181,0.62)]">
+        {label}
+      </span>
+      <input
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="glass-input font-mono rounded-md px-3 py-2 text-sm outline-none"
+        style={{ color: "var(--text)", minWidth: 0 }}
+      />
+    </label>
+  );
+}
+
+function PanelTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <p
+        className="font-mono"
+        style={{
+          color: "rgba(214,177,90,0.66)",
+          fontSize: "0.62rem",
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+        }}
+      >
+        {eyebrow}
+      </p>
+      <h2
+        className="font-display mt-1"
+        style={{ color: "var(--text)", fontSize: "1.05rem", fontWeight: 700 }}
+      >
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <Plate className="p-4">
+      <p
+        className="font-mono"
+        style={{
+          position: "relative",
+          color: "rgba(154,167,181,0.58)",
+          fontSize: "0.62rem",
+          letterSpacing: "0.13em",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        className="font-display mt-2 truncate"
+        style={{ position: "relative", color: "var(--text)", fontSize: "1.08rem", fontWeight: 700 }}
+      >
+        {value}
+      </p>
+    </Plate>
+  );
+}
+
+function SmallFact({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p
+        className="font-mono"
+        style={{
+          color: "rgba(154,167,181,0.54)",
+          fontSize: "0.62rem",
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        className={mono ? "font-mono mt-1 break-all" : "font-body mt-1 truncate"}
+        style={{ color: "var(--text)", fontSize: mono ? "0.72rem" : "0.88rem" }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function StatusPill({ value }: { value: string }) {
+  return (
+    <span
+      className="font-mono rounded-md px-3 py-1"
+      style={{
+        border: "1px solid rgba(214,177,90,0.36)",
+        background: "rgba(214,177,90,0.08)",
+        color: "var(--gold)",
+        fontSize: "0.72rem",
+        alignSelf: "flex-start",
+      }}
+    >
+      {value}
+    </span>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div
+      className="rounded-md px-3 py-5 text-center font-mono"
+      style={{
+        border: "1px dashed rgba(154,167,181,0.24)",
+        color: "rgba(154,167,181,0.48)",
+        fontSize: "0.72rem",
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+function StatusBanner({ message }: { message: string }) {
+  return (
+    <div
+      className="glass-panel"
+      style={{
+        background: "rgba(194,59,59,0.08)",
+        border: "1px solid rgba(194,59,59,0.3)",
+        color: "rgba(255,220,220,0.9)",
+        padding: "10px 12px",
+        fontSize: "0.8rem",
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+function numberText(value: number | undefined): string {
+  return value == null ? "-" : String(value);
+}
+
+function byteText(value: number | null | undefined): string {
+  return value == null ? "-" : `${value} bytes`;
+}
+
+function formatDateTime(value: string | undefined): string {
+  return value ? new Date(value).toLocaleString() : "-";
 }

@@ -8,7 +8,7 @@
 import { parseEnvelope } from "./timeline.js";
 import { CorrelationEngine } from "./correlate/engine.js";
 import { WatchError } from "./errors.js";
-import { buildNatsConnectOptions } from "./nats.js";
+import { buildNatsConnectOptions, type NatsModuleLike } from "./nats.js";
 import type {
   Alert,
   TimelineEvent,
@@ -40,10 +40,9 @@ export async function runWatch(
   // Dynamic import — gives a clear error if nats is not installed.
   // Use a variable to prevent TypeScript from resolving the module at compile time.
   const natsModuleName = "nats";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let natsModule: any;
+  let natsModule: NatsModuleLike;
   try {
-    natsModule = await import(natsModuleName);
+    natsModule = (await import(natsModuleName)) as NatsModuleLike;
   } catch {
     throw new WatchError(
       "The 'nats' package is required for watch mode. Install it with: npm install nats",

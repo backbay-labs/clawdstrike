@@ -1111,7 +1111,7 @@ pub async fn graph_path_snapshot(
     let mut edges = load_edges_by_ids(db, tenant_id, &edge_ids).await?;
     let mut nodes = nodes;
     nodes.sort_by(|left, right| left.id.cmp(&right.id));
-    edges.sort_by(|left, right| left.id.cmp(&right.id));
+    edges.sort_by_key(|edge| edge.id);
 
     Ok(DelegationGraphSnapshot {
         root_node_id: Some(from.to_string()),
@@ -1477,7 +1477,7 @@ fn snapshot_for_grant_ids(
         .cloned()
         .collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.id.cmp(&right.id));
-    included_edges.sort_by(|left, right| left.id.cmp(&right.id));
+    included_edges.sort_by_key(|edge| edge.id);
 
     DelegationGraphSnapshot {
         root_node_id,

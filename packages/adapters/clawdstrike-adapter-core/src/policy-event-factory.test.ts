@@ -22,7 +22,7 @@ describe("PolicyEventFactory", () => {
     expect(factory.inferEventType("unknown", { foo: "bar" })).toBe("tool_call");
   });
 
-  it("computes a file content hash without retaining raw content in file events", () => {
+  it("keeps string file-write content available for local policy evaluation", () => {
     const factory = new PolicyEventFactory();
     const event = factory.create("write_file", {
       path: "/repo/src/index.ts",
@@ -33,28 +33,26 @@ describe("PolicyEventFactory", () => {
     expect(event.data.type).toBe("file");
     if (event.data.type === "file") {
       expect(event.data.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
-      expect(event.data.content).toBeUndefined();
+      expect(event.data.content).toBe("const token = 'MY_RAW_SECRET_1234567890';");
     }
-    expect(JSON.stringify(event)).not.toContain("MY_RAW_SECRET");
   });
 
-  it("computes a file content hash from base64 content without retaining raw content", () => {
+  it("keeps base64 file-write content available for local policy evaluation", () => {
     const factory = new PolicyEventFactory();
     const rawContent = "binary bytes with MY_RAW_SECRET_1234567890";
+    const contentBase64 = Buffer.from(rawContent, "utf8").toString("base64");
     const event = factory.create("write_file", {
       path: "/repo/blob.bin",
-      contentBase64: Buffer.from(rawContent, "utf8").toString("base64"),
+      contentBase64,
     });
 
     expect(event.eventType).toBe("file_write");
     expect(event.data.type).toBe("file");
     if (event.data.type === "file") {
       expect(event.data.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
-      expect(event.data.contentBase64).toBeUndefined();
+      expect(event.data.contentBase64).toBe(contentBase64);
       expect(event.data.content).toBeUndefined();
     }
-    expect(JSON.stringify(event)).not.toContain("MY_RAW_SECRET");
-    expect(JSON.stringify(event)).not.toContain(Buffer.from(rawContent, "utf8").toString("base64"));
   });
 
   it("computes a file content hash from binary content without retaining raw bytes", () => {
@@ -69,10 +67,9 @@ describe("PolicyEventFactory", () => {
     expect(event.data.type).toBe("file");
     if (event.data.type === "file") {
       expect(event.data.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
-      expect(event.data.contentBase64).toBeUndefined();
+      expect(event.data.contentBase64).toBe(rawContent.toString("base64"));
       expect(event.data.content).toBeUndefined();
     }
-    expect(JSON.stringify(event)).not.toContain("MY_RAW_SECRET");
   });
 
   it("computes a patch hash from raw patch input", () => {

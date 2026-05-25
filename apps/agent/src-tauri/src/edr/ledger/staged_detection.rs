@@ -5,13 +5,15 @@
 //! can replay the staged history under a proposed constitution.
 
 use std::collections::VecDeque;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write as _;
 use std::path::{Path as FsPath, PathBuf};
 
 use anyhow::{Context, Result};
 
 use crate::api_server::{EdrStagedDetectionRecord, EDR_MAX_STORED_FINDINGS};
+
+use super::open_private_append;
 
 pub(crate) struct EndpointStagedDetectionLedger {
     path: Option<PathBuf>,
@@ -28,6 +30,7 @@ impl EndpointStagedDetectionLedger {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient() -> Self {
         Self {
             path: None,
@@ -57,11 +60,7 @@ impl EndpointStagedDetectionLedger {
             })?;
         }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .with_context(|| format!("open endpoint staged detection ledger {}", path.display()))?;
+        let mut file = open_private_append(path, "endpoint staged detection ledger")?;
         serde_json::to_writer(&mut file, record).with_context(|| {
             format!(
                 "serialize endpoint staged detection {}",
@@ -106,9 +105,7 @@ impl EndpointStagedDetectionLedger {
     }
 }
 
-pub(crate) fn read_staged_detection_ledger(
-    path: &FsPath,
-) -> Result<Vec<EdrStagedDetectionRecord>> {
+pub(crate) fn read_staged_detection_ledger(path: &FsPath) -> Result<Vec<EdrStagedDetectionRecord>> {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),

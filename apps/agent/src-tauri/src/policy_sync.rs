@@ -204,8 +204,7 @@ fn write_policy_with_manifest(policy_path: &Path, data: &[u8]) -> Result<()> {
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)
         .with_context(|| "Failed to serialize policy sync manifest")?;
 
-    atomic_write_policy(policy_path, data)?;
-    atomic_write_policy(&manifest_path, &manifest_bytes)?;
+    write_policy_generation_with_manifest(policy_path, data, &manifest_path, &manifest_bytes)?;
 
     Ok(())
 }
@@ -328,6 +327,47 @@ fn atomic_write_policy(path: &Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn write_policy_generation_with_manifest(
+    policy_path: &Path,
+    policy_bytes: &[u8],
+    manifest_path: &Path,
+    manifest_bytes: &[u8],
+) -> Result<()> {
+    let previous_policy = std::fs::read(policy_path).ok();
+    atomic_write_policy(policy_path, policy_bytes)?;
+
+    if let Err(error) = atomic_write_policy(manifest_path, manifest_bytes) {
+        if let Err(rollback_error) = rollback_policy_file(policy_path, previous_policy.as_deref()) {
+            anyhow::bail!(
+                "policy sync manifest write failed after policy file write: {error}; rollback failed: {rollback_error}"
+            );
+        }
+        return Err(error).with_context(|| {
+            format!(
+                "Failed to commit policy sync manifest {:?}; rolled back policy file {:?}",
+                manifest_path, policy_path
+            )
+        });
+    }
+
+    Ok(())
+}
+
+fn rollback_policy_file(policy_path: &Path, previous_policy: Option<&[u8]>) -> Result<()> {
+    if let Some(previous_policy) = previous_policy {
+        atomic_write_policy(policy_path, previous_policy)
+            .with_context(|| format!("Failed to roll back policy file {:?}", policy_path))?;
+    } else if policy_path.exists() {
+        std::fs::remove_file(policy_path).with_context(|| {
+            format!(
+                "Failed to remove partially written policy file {:?}",
+                policy_path
+            )
+        })?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -444,6 +484,38 @@ mod tests {
             .expect_err("fleet policy sync must require explicit policy epoch");
         assert!(err.to_string().contains("without explicit policy epoch"));
         assert!(!path.exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn write_policy_generation_rolls_back_policy_file_when_manifest_commit_fails() {
+        let base = std::env::temp_dir().join(format!(
+            "policy-sync-rollback-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("policy.yaml");
+        let manifest_path = base.join("policy.yaml.manifest.json");
+        let original = b"version: fleet-v20\npolicy_epoch: 20\nrules: []\n";
+        let candidate = b"version: fleet-v21\npolicy_epoch: 21\nrules: []\n";
+        let original_manifest = br#"{"schemaVersion":1}"#;
+
+        write_policy_generation_with_manifest(&path, original, &manifest_path, original_manifest)
+            .unwrap();
+        std::fs::remove_file(&manifest_path).unwrap();
+        std::fs::create_dir(&manifest_path).unwrap();
+
+        let error = write_policy_generation_with_manifest(
+            &path,
+            candidate,
+            &manifest_path,
+            br#"{"schemaVersion":1,"policyEpoch":21}"#,
+        )
+        .expect_err("manifest path collision should fail");
+
+        assert!(error.to_string().contains("rolled back policy file"));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
 
         let _ = std::fs::remove_dir_all(base);
     }

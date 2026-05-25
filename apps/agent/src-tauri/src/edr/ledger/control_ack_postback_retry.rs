@@ -69,6 +69,7 @@ impl EndpointControlAckPostbackRetryLedger {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient() -> Self {
         Self {
             path: None,

@@ -220,7 +220,7 @@ final class ProviderStateTests: XCTestCase {
                   "actionId": "action_test",
                   "target": "egress.example.invalid:443",
                   "active": true,
-                  "expiresAt": "2026-05-15T15:10:00Z"
+                  "expiresAt": "2099-05-15T15:10:00Z"
                 }
               ]
             }
@@ -323,6 +323,56 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertEqual(snapshot.lastReloadObservation?.generation, 88)
     }
 
+    func testLiveSnapshotRejectsStaleProviderAuthoredRuntimeSnapshot() throws {
+        let policyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-stale-policy-\(UUID().uuidString).json")
+        let runtimeURL = NetworkExtensionStatusTool.runtimeSnapshotURL(for: policyURL)
+        defer {
+            try? FileManager.default.removeItem(at: policyURL)
+            try? FileManager.default.removeItem(at: runtimeURL)
+        }
+        try writePolicySnapshot(
+            to: policyURL,
+            target: "egress.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
+        )
+        let providerSnapshot = NetworkExtensionStateProjector.snapshot(
+            from: NetworkExtensionProviderInputs(
+                installState: .installed,
+                approval: .approved,
+                providerKind: .contentFilter,
+                backendHint: nil,
+                filterRunning: true,
+                policySynced: true,
+                enforcementReady: true,
+                counters: NetworkExtensionCounters(flowsObserved: 9)
+            )
+        )
+        try FileNetworkExtensionProviderRuntimeSnapshotStore(snapshotURL: runtimeURL)
+            .saveSnapshot(providerSnapshot)
+        try FileManager.default.setAttributes(
+            [
+                .modificationDate: Date(
+                    timeIntervalSinceNow: -(NetworkExtensionStatusTool.runtimeSnapshotMaxAgeSeconds + 60)
+                )
+            ],
+            ofItemAtPath: runtimeURL.path
+        )
+
+        let snapshot = NetworkExtensionStatusTool.liveSnapshot(
+            runtimeSnapshotURL: runtimeURL,
+            fallbackPolicySnapshotURL: policyURL
+        )
+
+        XCTAssertEqual(snapshot.hostStatus.runtime, .unknown)
+        XCTAssertEqual(snapshot.attestationState.active, false)
+        XCTAssertEqual(snapshot.attestationState.healthy, false)
+        XCTAssertEqual(snapshot.attestationState.availability, .unavailable)
+        XCTAssertEqual(snapshot.lastError, "provider_runtime_snapshot_stale")
+        XCTAssertEqual(snapshot.attestationState.degradedReasons, ["provider_runtime_snapshot_stale"])
+    }
+
     func testContentFilterRuntimePersistsProviderRuntimeSnapshot() throws {
         let policyURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("clawdstrike-ne-provider-runtime-policy-\(UUID().uuidString).json")
@@ -370,7 +420,8 @@ final class ProviderStateTests: XCTestCase {
             installState: .installed,
             approval: .approved,
             backendHint: nil,
-            filterRunning: true
+            filterRunning: true,
+            now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
         ))
 
         let snapshot = try store.loadSnapshot()
@@ -465,7 +516,8 @@ final class ProviderStateTests: XCTestCase {
             installState: .installed,
             approval: .approved,
             backendHint: nil,
-            filterRunning: true
+            filterRunning: true,
+            now: evaluationTime
         )
         XCTAssertEqual(snapshot.counters.remediationRequests, 2)
         XCTAssertTrue(snapshot.policySynced)
@@ -492,6 +544,207 @@ final class ProviderStateTests: XCTestCase {
         )
     }
 
+    func testContentFilterRuntimeFlowVerdictDoesNotSynchronouslyReloadWatchedPolicy() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-hot-path-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+        }
+        try writePolicySnapshot(
+            to: url,
+            target: "first.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
+        let evaluationTime = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        XCTAssertTrue(runtime.requestPolicyReloadFromHostApp())
+
+        Thread.sleep(forTimeInterval: 0.01)
+        try writePolicySnapshot(
+            to: url,
+            target: "second.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:01Z"
+        )
+
+        XCTAssertEqual(
+            runtime.recordFlow(
+                target: NetworkExtensionFlowTarget(host: "second.example.invalid", port: 443),
+                now: evaluationTime
+            ),
+            .allow
+        )
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true,
+            now: evaluationTime
+        )
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.remediationRequests, 1)
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertTrue(snapshot.enforcementReady)
+    }
+
+    func testContentFilterRuntimeFailsClosedWithoutPolicy() throws {
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(host: "missing-policy.example.invalid", port: 443),
+            now: now
+        )
+
+        guard case .block(let restriction) = decision else {
+            return XCTFail("missing policy must block")
+        }
+        XCTAssertEqual(restriction.target, "missing-policy.example.invalid:443")
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true,
+            now: now
+        )
+        XCTAssertFalse(snapshot.policySynced)
+        XCTAssertFalse(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
+        XCTAssertEqual(snapshot.lastError, "policy_not_enforcing")
+    }
+
+    func testContentFilterRuntimeAllowsWithSyncedEmptyPolicy() throws {
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        runtime.updatePolicy(NetworkExtensionEgressPolicy(restrictions: []))
+
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(host: "allowed-empty-policy.example.invalid", port: 443),
+            now: now
+        )
+
+        guard case .allow = decision else {
+            return XCTFail("synced empty policy must allow because no containment is active")
+        }
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true,
+            now: now
+        )
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertFalse(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 0)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 0)
+        XCTAssertNil(snapshot.lastError)
+    }
+
+    func testContentFilterRuntimeAllowsAfterAllRestrictionsExpire() throws {
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        runtime.updatePolicy(NetworkExtensionEgressPolicy(restrictions: [
+            NetworkExtensionEgressRestriction(
+                restrictionID: "restriction-expired",
+                actionID: "action-expired",
+                executionID: "execution-expired",
+                target: "expired.example.invalid:443",
+                expiresAt: now.addingTimeInterval(-1)
+            ),
+        ]))
+
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(host: "expired.example.invalid", port: 443),
+            now: now
+        )
+
+        guard case .allow = decision else {
+            return XCTFail("expired-only policy must allow because rollback/TTL removed containment")
+        }
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true,
+            now: now
+        )
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertFalse(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 0)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 0)
+        XCTAssertNil(snapshot.lastError)
+    }
+
+    func testContentFilterRuntimeFailsClosedForUnresolvedTarget() throws {
+        let runtime = NetworkExtensionContentFilterRuntime()
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+        runtime.updatePolicy(NetworkExtensionEgressPolicy(restrictions: [
+            NetworkExtensionEgressRestriction(
+                restrictionID: "restriction-active",
+                actionID: "action-active",
+                executionID: "execution-active",
+                target: "configured.example.invalid:443",
+                expiresAt: now.addingTimeInterval(60)
+            ),
+        ]))
+
+        let decision = runtime.recordFlow(target: nil, now: now)
+
+        guard case .block(let restriction) = decision else {
+            return XCTFail("unresolved flow target must block")
+        }
+        XCTAssertEqual(restriction.target, "unresolved-flow-target")
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true,
+            now: now
+        )
+        XCTAssertTrue(snapshot.policySynced)
+        XCTAssertTrue(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.flowsObserved, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
+        XCTAssertEqual(snapshot.lastError, "flow_target_unresolved")
+    }
+
+    func testContentFilterRuntimeFailsClosedAfterReloadFailure() throws {
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-missing-\(UUID().uuidString).json")
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: missingURL)
+        let now = ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+
+        XCTAssertFalse(runtime.requestPolicyReloadFromHostApp(
+            requestID: "reload-missing-policy",
+            policySnapshotPath: missingURL.path,
+            generation: 7
+        ))
+        let decision = runtime.recordFlow(
+            target: NetworkExtensionFlowTarget(host: "reload-failed.example.invalid", port: 443),
+            now: now
+        )
+
+        guard case .block(let restriction) = decision else {
+            return XCTFail("reload failure must block")
+        }
+        XCTAssertEqual(restriction.target, "reload-failed.example.invalid:443")
+        let snapshot = runtime.snapshot(
+            installState: .installed,
+            approval: .approved,
+            backendHint: nil,
+            filterRunning: true
+        )
+        XCTAssertFalse(snapshot.policySynced)
+        XCTAssertFalse(snapshot.enforcementReady)
+        XCTAssertEqual(snapshot.counters.remediationRequests, 1)
+        XCTAssertEqual(snapshot.counters.flowsBlocked, 1)
+        XCTAssertEqual(snapshot.counters.droppedVerdicts, 1)
+    }
+
     func testProviderCommandReloadPolicyRefreshesWatchedSnapshotAndReturnsCounters() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("clawdstrike-ne-provider-command-\(UUID().uuidString).json")
@@ -501,9 +754,10 @@ final class ProviderStateTests: XCTestCase {
         try writePolicySnapshot(
             to: url,
             target: "first.example.invalid:443",
-            generatedAt: "2026-05-15T15:00:00Z"
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
         )
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -546,7 +800,7 @@ final class ProviderStateTests: XCTestCase {
                 actionID: "action_test",
                 executionID: "execution_test",
                 target: "first.example.invalid:443",
-                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+                expiresAt: ISO8601DateFormatter().date(from: "2099-05-15T15:10:00Z")!
             ))
         )
 
@@ -554,7 +808,8 @@ final class ProviderStateTests: XCTestCase {
         try writePolicySnapshot(
             to: url,
             target: "second.example.invalid:443",
-            generatedAt: "2026-05-15T15:00:01Z"
+            generatedAt: "2026-05-15T15:00:01Z",
+            expiresAt: "2099-05-15T15:10:00Z"
         )
 
         let secondResponseData = try NetworkExtensionProviderCommand.handle(
@@ -590,8 +845,81 @@ final class ProviderStateTests: XCTestCase {
                 actionID: "action_test",
                 executionID: "execution_test",
                 target: "second.example.invalid:443",
-                expiresAt: ISO8601DateFormatter().date(from: "2026-05-15T15:10:00Z")!
+                expiresAt: ISO8601DateFormatter().date(from: "2099-05-15T15:10:00Z")!
             ))
+        )
+    }
+
+    func testProviderCommandDoesNotRedirectWatchedSnapshotPath() throws {
+        let trustedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-trusted-\(UUID().uuidString).json")
+        let untrustedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawdstrike-ne-provider-untrusted-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: trustedURL)
+            try? FileManager.default.removeItem(at: untrustedURL)
+        }
+        try writePolicySnapshot(
+            to: trustedURL,
+            target: "trusted.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
+        )
+        try writePolicySnapshot(
+            to: untrustedURL,
+            target: "untrusted.example.invalid:443",
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
+        )
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: trustedURL)
+        let context = NetworkExtensionProviderCommandContext(
+            installState: .installed,
+            approval: .approved,
+            backendHint: .legacyProxyOnlyRuntime,
+            filterRunning: true
+        )
+
+        let responseData = try NetworkExtensionProviderCommand.handle(
+            Data(
+                """
+                {
+                  "command": "reload_policy",
+                  "requestId": "reload-untrusted-path",
+                  "policySnapshotPath": "\(untrustedURL.path)",
+                  "generation": 4242
+                }
+                """.utf8
+            ),
+            runtime: runtime,
+            context: context
+        )
+        let response = try JSONDecoder().decode(
+            NetworkExtensionProviderCommandResponse.self,
+            from: responseData
+        )
+
+        XCTAssertTrue(response.accepted)
+        XCTAssertTrue(response.reloaded)
+        XCTAssertEqual(response.snapshot?.lastReloadObservation?.policySnapshotPath, untrustedURL.path)
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "trusted.example.invalid", port: 443),
+                now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+            ),
+            .block(NetworkExtensionEgressRestriction(
+                restrictionID: "egress_restriction_test",
+                actionID: "action_test",
+                executionID: "execution_test",
+                target: "trusted.example.invalid:443",
+                expiresAt: ISO8601DateFormatter().date(from: "2099-05-15T15:10:00Z")!
+            ))
+        )
+        XCTAssertEqual(
+            runtime.evaluate(
+                target: NetworkExtensionFlowTarget(host: "untrusted.example.invalid", port: 443),
+                now: ISO8601DateFormatter().date(from: "2026-05-15T15:01:00Z")!
+            ),
+            .allow
         )
     }
 
@@ -644,7 +972,7 @@ final class ProviderStateTests: XCTestCase {
             target: "vendor-handler.example.invalid:443",
             generatedAt: "2026-05-15T15:00:00Z"
         )
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -711,7 +1039,7 @@ final class ProviderStateTests: XCTestCase {
             target: "reload-observed.example.invalid:443",
             generatedAt: "2026-05-15T15:00:00Z"
         )
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -747,7 +1075,7 @@ final class ProviderStateTests: XCTestCase {
         XCTAssertEqual(observation["reloaded"] as? Bool, true)
     }
 
-    func testProviderCommandPersistsRuntimeSnapshotForLatePolicySource() throws {
+    func testProviderCommandPersistsRuntimeSnapshotForWatchedPolicySource() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("clawdstrike-ne-provider-late-source-\(UUID().uuidString).json")
         let runtimeURL = NetworkExtensionStatusTool.runtimeSnapshotURL(for: url)
@@ -758,9 +1086,10 @@ final class ProviderStateTests: XCTestCase {
         try writePolicySnapshot(
             to: url,
             target: "late-source.example.invalid:443",
-            generatedAt: "2026-05-15T15:00:00Z"
+            generatedAt: "2026-05-15T15:00:00Z",
+            expiresAt: "2099-05-15T15:10:00Z"
         )
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -801,7 +1130,7 @@ final class ProviderStateTests: XCTestCase {
         defer {
             try? FileManager.default.removeItem(at: url)
         }
-        let runtime = NetworkExtensionContentFilterRuntime()
+        let runtime = NetworkExtensionContentFilterRuntime(policySnapshotURL: url)
         let context = NetworkExtensionProviderCommandContext(
             installState: .installed,
             approval: .approved,
@@ -988,7 +1317,12 @@ final class ProviderStateTests: XCTestCase {
         }
     }
 
-    private func writePolicySnapshot(to url: URL, target: String, generatedAt: String) throws {
+    private func writePolicySnapshot(
+        to url: URL,
+        target: String,
+        generatedAt: String,
+        expiresAt: String = "2026-05-15T15:10:00Z"
+    ) throws {
         let data = Data(
             """
             {
@@ -1001,7 +1335,7 @@ final class ProviderStateTests: XCTestCase {
                   "actionId": "action_test",
                   "target": "\(target)",
                   "active": true,
-                  "expiresAt": "2026-05-15T15:10:00Z"
+                  "expiresAt": "\(expiresAt)"
                 }
               ]
             }

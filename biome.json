@@ -10,6 +10,7 @@
       "apps/desktop/src/**/*.{ts,tsx}",
       "apps/desktop/*.{ts,js,json}",
       "apps/control-console/src/**/*.{ts,tsx}",
+      "apps/workbench/src/**/*.{ts,tsx}",
       "packages/sdk/hush-ts/src/**/*.ts",
       "packages/sdk/clawdstrike/**/*.ts",
       "packages/policy/clawdstrike-policy/src/**/*.ts",
@@ -23,8 +24,27 @@
     "lineWidth": 100
   },
   "linter": {
-    "enabled": false
+    "enabled": true,
+    "rules": {
+      "recommended": false
+    }
   },
+  "overrides": [
+    {
+      "includes": ["apps/workbench/src/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "warn",
+            "noExplicitAny": "warn"
+          },
+          "correctness": {
+            "noUnusedVariables": "warn"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",

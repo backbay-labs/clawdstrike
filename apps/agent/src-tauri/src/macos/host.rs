@@ -12,6 +12,7 @@ pub(crate) type MacosNetworkExtensionReloadReply =
 pub(crate) struct MacosNetworkExtensionReloadRequest {
     pub policy_snapshot_path: PathBuf,
     pub generation: u64,
+    pub timeout_duration: Duration,
     pub reply_tx: MacosNetworkExtensionReloadReply,
 }
 
@@ -26,10 +27,15 @@ pub struct MacosNetworkExtensionReloadResult {
 
 #[derive(Debug, Default)]
 pub struct MacosHostService {
-    status: RwLock<CombinedSystemExtensionStatus>,
-    previous_status: RwLock<Option<CombinedSystemExtensionStatus>>,
+    status: RwLock<MacosHostStatusState>,
     refresh_tx: RwLock<Option<mpsc::Sender<MacosHostRefreshRequest>>>,
     network_extension_reload_tx: RwLock<Option<mpsc::Sender<MacosNetworkExtensionReloadRequest>>>,
+}
+
+#[derive(Debug, Default)]
+struct MacosHostStatusState {
+    current: CombinedSystemExtensionStatus,
+    previous: Option<CombinedSystemExtensionStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,21 +96,21 @@ impl std::fmt::Display for MacosNetworkExtensionReloadError {
 impl MacosHostService {
     pub fn new() -> Self {
         Self {
-            status: RwLock::new(CombinedSystemExtensionStatus::default()),
-            previous_status: RwLock::new(None),
+            status: RwLock::new(MacosHostStatusState::default()),
             refresh_tx: RwLock::new(None),
             network_extension_reload_tx: RwLock::new(None),
         }
     }
 
     pub async fn snapshot(&self) -> CombinedSystemExtensionStatus {
-        self.status.read().await.clone()
+        self.status.read().await.current.clone()
     }
 
     pub async fn snapshot_transition(&self) -> MacosHostStatusTransition {
+        let state = self.status.read().await;
         MacosHostStatusTransition {
-            previous: self.previous_status.read().await.clone(),
-            current: self.status.read().await.clone(),
+            previous: state.previous.clone(),
+            current: state.current.clone(),
         }
     }
 
@@ -118,10 +124,9 @@ impl MacosHostService {
     }
 
     pub(crate) async fn replace_status(&self, status: CombinedSystemExtensionStatus) {
-        let mut previous = self.previous_status.write().await;
-        let mut current = self.status.write().await;
-        *previous = Some(current.clone());
-        *current = status;
+        let mut state = self.status.write().await;
+        state.previous = Some(state.current.clone());
+        state.current = status;
     }
 
     pub(crate) async fn install_refresh_channel(&self, tx: mpsc::Sender<MacosHostRefreshRequest>) {
@@ -172,6 +177,7 @@ impl MacosHostService {
         tx.send(MacosNetworkExtensionReloadRequest {
             policy_snapshot_path,
             generation,
+            timeout_duration,
             reply_tx,
         })
         .await
@@ -207,23 +213,22 @@ mod tests {
         let service = MacosHostService::new();
         service.bootstrap_placeholder_state().await;
 
-        service
-            .replace_status(CombinedSystemExtensionStatus {
-                install_state: SystemExtensionInstallState::Installed,
-                approval: SystemExtensionApproval::ApprovalBlocked,
-                endpoint_security: ProviderStatus {
-                    runtime: ProviderRuntimeState::Degraded {
-                        reason: "missing full disk access".to_string(),
-                    },
-                    ..ProviderStatus::unknown()
+        let installed_status = CombinedSystemExtensionStatus {
+            install_state: SystemExtensionInstallState::Installed,
+            approval: SystemExtensionApproval::ApprovalBlocked,
+            endpoint_security: ProviderStatus {
+                runtime: ProviderRuntimeState::Degraded {
+                    reason: "missing full disk access".to_string(),
                 },
-                network_extension: ProviderStatus {
-                    runtime: ProviderRuntimeState::Active,
-                    ..ProviderStatus::unknown()
-                },
-                ..CombinedSystemExtensionStatus::default()
-            })
-            .await;
+                ..ProviderStatus::unknown()
+            },
+            network_extension: ProviderStatus {
+                runtime: ProviderRuntimeState::Active,
+                ..ProviderStatus::unknown()
+            },
+            ..CombinedSystemExtensionStatus::default()
+        };
+        service.replace_status(installed_status.clone()).await;
 
         let snapshot = service.snapshot().await;
         assert_eq!(
@@ -248,6 +253,13 @@ mod tests {
             }
         );
         assert!(snapshot.is_degraded());
+
+        let transition = service.snapshot_transition().await;
+        assert_eq!(
+            transition.previous,
+            Some(CombinedSystemExtensionStatus::default())
+        );
+        assert_eq!(transition.current, installed_status);
     }
 
     #[tokio::test]

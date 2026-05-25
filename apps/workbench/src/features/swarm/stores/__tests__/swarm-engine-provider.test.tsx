@@ -6,7 +6,7 @@ const mockInitialize = vi.fn();
 const mockShutdown = vi.fn();
 const mockTaskGraphConfig = vi.fn();
 
-vi.mock("@clawdstrike/swarm-engine", () => {
+vi.mock("@/features/swarm/engine", () => {
   class MockSwarmOrchestrator {
     initialize = mockInitialize;
     shutdown = mockShutdown;

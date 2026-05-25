@@ -20,6 +20,7 @@ import type {
   PluginTrustTier,
   RegisteredPlugin,
 } from "@/lib/plugins/types";
+import { logger } from "@/lib/logger";
 
 // ---- Helpers ----
 
@@ -231,7 +232,7 @@ export function PluginsBrowser() {
 
         await installPlugin(manifest);
       } catch (err) {
-        console.error(`Failed to install plugin ${stub.name}:`, err);
+        logger.error(`Failed to install plugin ${stub.name}:`, err);
       }
     },
     [],
@@ -241,7 +242,7 @@ export function PluginsBrowser() {
     try {
       await uninstallPlugin(pluginId);
     } catch (err) {
-      console.error(`Failed to uninstall plugin ${pluginId}:`, err);
+      logger.error(`Failed to uninstall plugin ${pluginId}:`, err);
     }
   }, []);
 

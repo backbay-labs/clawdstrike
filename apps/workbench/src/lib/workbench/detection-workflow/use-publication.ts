@@ -15,6 +15,7 @@ import { getTranslatableTargets } from "./translations";
 import { getPublicationStore } from "./publication-store";
 import { extractDocumentCoverage } from "./coverage-projection";
 import { signPublicationOutput } from "./publication-provenance";
+import { logger } from "@/lib/logger";
 
 // ---- SHA-256 ----
 
@@ -135,7 +136,7 @@ export function usePublication(
         const loaded = await store.getManifestsForDocument(documentId);
         setManifests(loaded);
       } catch (err) {
-        console.warn("[use-publication] Failed to load manifests:", err);
+        logger.warn("[use-publication] Failed to load manifests:", err);
       } finally {
         setLoading(false);
       }

@@ -63,6 +63,9 @@ pub fn router() -> Router<AppState> {
 pub struct DeployPolicyRequest {
     pub policy_yaml: String,
     pub description: Option<String>,
+    #[serde(default)]
+    pub break_glass: bool,
+    pub break_glass_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -275,39 +278,94 @@ struct PolicyDeploymentOutcome {
     kv_write_failures: i64,
 }
 
+struct PreparedPolicyDeployment {
+    deployment_id: Uuid,
+    nats_subject: String,
+    agent_count: i64,
+    effective_policies: Vec<policy_distribution::EffectiveAgentPolicy>,
+    distribution_policy_yaml: String,
+}
+
 async fn deploy_policy(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
     Json(req): Json<DeployPolicyRequest>,
 ) -> Result<Json<DeployPolicyResponse>, ApiError> {
-    if auth.role == "viewer" || auth.role == "member" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_policy_deployer(&auth)?;
+    let break_glass_reason = require_direct_policy_deploy_break_glass(&req)?;
 
     // Validate the policy YAML before it becomes tenant distribution state.
     policy_distribution::validate_policy_document(&req.policy_yaml)
         .map_err(ApiError::BadRequest)?;
 
-    // Persist tenant-level active policy so enroll/recovery paths can converge later.
-    let active_policy = policy_distribution::upsert_active_policy(
-        &state.db,
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let current_active =
+        policy_distribution::fetch_active_policy_by_tenant_id_for_update_with_executor(
+            &mut *tx,
+            auth.tenant_id,
+        )
+        .await
+        .map_err(ApiError::Database)?;
+    let base_policy_version = current_active
+        .as_ref()
+        .map(|policy| policy.version)
+        .unwrap_or(0);
+    let candidate_policy = active_policy_candidate_from_base(
+        auth.tenant_id,
+        &auth.slug,
+        &req.policy_yaml,
+        req.description.as_deref(),
+        base_policy_version,
+    )?;
+    let deployment_id = Uuid::new_v4();
+    let deployment_plan = prepare_active_policy_deployment(
+        &state,
+        auth.tenant_id,
+        &auth.slug,
+        &candidate_policy,
+        deployment_id,
+    )
+    .await?;
+    let active_policy = policy_distribution::upsert_active_policy_after_version_with_executor(
+        &mut *tx,
         auth.tenant_id,
         &req.policy_yaml,
         req.description.as_deref(),
+        base_policy_version,
     )
     .await
-    .map_err(ApiError::Database)?;
-    let deployment =
-        distribute_active_policy_to_fleet(&state, auth.tenant_id, &auth.slug, &active_policy)
-            .await?;
+    .map_err(ApiError::Database)?
+    .ok_or_else(|| {
+        ApiError::Conflict(format!(
+            "policy deployment {deployment_id} was based on active policy version {base_policy_version}, but the active policy changed before deployment could be recorded; retry the deployment"
+        ))
+    })?;
+    if active_policy.version != candidate_policy.version {
+        return Err(ApiError::Conflict(format!(
+            "policy deployment {deployment_id} expected active policy version {}, but recorded version {}; retry the deployment",
+            candidate_policy.version, active_policy.version
+        )));
+    }
+    tx.commit().await.map_err(ApiError::Database)?;
+    let deployment = distribute_prepared_policy_to_fleet(&state, &auth.slug, deployment_plan).await;
+    if deployment.kv_write_failures > 0 {
+        tracing::warn!(
+            deployment_id = %deployment.deployment_id,
+            tenant = %auth.slug,
+            kv_write_failures = deployment.kv_write_failures,
+            "Policy deployment committed with fleet KV retry debt"
+        );
+    }
 
     tracing::info!(
         deployment_id = %deployment.deployment_id,
         tenant = %auth.slug,
+        actor = %auth.actor_id(),
+        break_glass_reason = %break_glass_reason,
         policy_version = active_policy.version,
         agents = deployment.agent_count,
         kv_write_failures = deployment.kv_write_failures,
-        "Policy deployed to tenant fleet"
+        "Break-glass policy deployed to tenant fleet"
     );
 
     Ok(Json(DeployPolicyResponse {
@@ -475,7 +533,14 @@ async fn attach_policy_proposal_impact(
 ) -> Result<Json<PolicyProposalResponse>, ApiError> {
     ensure_policy_author(&auth)?;
 
+    let proposal = fetch_policy_proposal_row(&state, auth.tenant_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if proposal.status != "pending" {
+        return Err(ApiError::NotFound);
+    }
     let impact = validate_policy_proposal_impact(req)?;
+    validate_policy_proposal_impact_matches_proposal(&proposal, &impact)?;
     let attached_by = auth.actor_id();
     let row = sqlx::query::query(
         r#"UPDATE policy_proposals
@@ -508,19 +573,21 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
 ) -> Result<Json<DispatchPolicyProposalFleetRuleDiffResponse>, ApiError> {
     ensure_policy_deployer(&auth)?;
 
-    let proposal = fetch_policy_proposal_row(&state, auth.tenant_id, id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if proposal.status != "pending" {
-        return Err(ApiError::NotFound);
-    }
-
     let endpoint_filter = req
         .endpoint_agent_ids
         .into_iter()
         .map(|value| require_non_empty_policy_impact_field("endpoint_agent_ids", value))
         .collect::<Result<BTreeSet<_>, _>>()?;
-    let validation_plan = proposal
+
+    let mut reservation_tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let locked_proposal =
+        fetch_policy_proposal_row_for_update(&mut reservation_tx, auth.tenant_id, id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    if locked_proposal.status != "pending" {
+        return Err(ApiError::NotFound);
+    }
+    let validation_plan = locked_proposal
         .preview
         .get("fleetRuleDiffValidation")
         .ok_or_else(|| {
@@ -547,9 +614,33 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
         .unwrap_or_else(|| {
             format!(
                 "collect signed fleet rule-diff validation receipts for policy proposal {}",
-                proposal.id
+                locked_proposal.id
             )
         });
+
+    let reservation_preview = reserve_policy_rule_diff_dispatch(
+        locked_proposal.preview.clone(),
+        validation_plan_sha256.as_deref(),
+        &endpoint_requests,
+    )?;
+    let reserved_row = sqlx::query::query(
+        r#"UPDATE policy_proposals
+           SET preview = $3,
+               updated_at = now()
+           WHERE tenant_id = $1
+             AND id = $2
+             AND status = 'pending'
+           RETURNING *"#,
+    )
+    .bind(auth.tenant_id)
+    .bind(id)
+    .bind(&reservation_preview)
+    .fetch_optional(&mut *reservation_tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+    reservation_tx.commit().await.map_err(ApiError::Database)?;
+    let mut proposal = policy_proposal_from_row(reserved_row).map_err(ApiError::Database)?;
 
     let mut dispatches = Vec::with_capacity(endpoint_requests.len());
     for endpoint_request in &endpoint_requests {
@@ -599,7 +690,7 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
         )
         .await?;
         let delivery = action.deliveries.first();
-        dispatches.push(serde_json::json!({
+        let dispatch = serde_json::json!({
             "responseActionId": action.action.id,
             "endpointAgentId": endpoint_agent_id,
             "actionStatus": action.action.status,
@@ -607,33 +698,39 @@ async fn dispatch_policy_proposal_fleet_rule_diff_validation(
             "deliverySubject": delivery.and_then(|delivery| delivery.delivery_subject.as_deref()),
             "publishedAt": delivery.and_then(|delivery| delivery.published_at),
             "dispatchedAt": Utc::now(),
-        }));
+        });
+        let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+        let latest_proposal = fetch_policy_proposal_row_for_update(&mut tx, auth.tenant_id, id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        let preview = append_policy_rule_diff_dispatches(
+            latest_proposal.preview,
+            validation_plan_sha256.as_deref(),
+            std::slice::from_ref(&dispatch),
+        )?;
+        let row = sqlx::query::query(
+            r#"UPDATE policy_proposals
+               SET preview = $3,
+                   updated_at = now()
+               WHERE tenant_id = $1
+                 AND id = $2
+                 AND status = 'pending'
+               RETURNING *"#,
+        )
+        .bind(auth.tenant_id)
+        .bind(id)
+        .bind(&preview)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::NotFound)?;
+        tx.commit().await.map_err(ApiError::Database)?;
+        proposal = policy_proposal_from_row(row).map_err(ApiError::Database)?;
+        dispatches.push(dispatch);
     }
 
-    let preview = append_policy_rule_diff_dispatches(
-        proposal.preview.clone(),
-        validation_plan_sha256.as_deref(),
-        &dispatches,
-    )?;
-    let row = sqlx::query::query(
-        r#"UPDATE policy_proposals
-           SET preview = $3,
-               updated_at = now()
-           WHERE tenant_id = $1
-             AND id = $2
-             AND status = 'pending'
-           RETURNING *"#,
-    )
-    .bind(auth.tenant_id)
-    .bind(id)
-    .bind(&preview)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(ApiError::Database)?
-    .ok_or(ApiError::NotFound)?;
-
     Ok(Json(DispatchPolicyProposalFleetRuleDiffResponse {
-        proposal: proposal_response_from_row(row, &auth.slug)?,
+        proposal: proposal.into_response(&auth.slug),
         validation_plan_sha256,
         requested_endpoint_count: endpoint_requests.len(),
         dispatched_action_count: dispatches.len(),
@@ -661,9 +758,22 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
         .pointer("/fleetRuleDiffValidation/planSha256")
         .and_then(serde_json::Value::as_str)
         .map(str::to_string);
+    let latest_response_action_ids =
+        policy_rule_diff_dispatch_response_action_ids(&proposal.preview)?;
     let response_action_ids = if req.response_action_ids.is_empty() {
-        policy_rule_diff_dispatch_response_action_ids(&proposal.preview)?
+        latest_response_action_ids
     } else {
+        let latest_response_action_ids = latest_response_action_ids
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        for response_action_id in &req.response_action_ids {
+            if !latest_response_action_ids.contains(response_action_id) {
+                return Err(ApiError::BadRequest(
+                    "responseActionIds must reference the latest fleet rule-diff dispatch for each endpoint"
+                        .to_string(),
+                ));
+            }
+        }
         req.response_action_ids
     };
     if response_action_ids.is_empty() {
@@ -671,12 +781,16 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
             "no fleet rule-diff validation response actions are available to collect".to_string(),
         ));
     }
+    let (expected_proposed_policy_sha256, expected_proposed_policy_epoch) =
+        policy_rule_diff_expected_proposed_policy(&proposal.preview)?;
 
     let collected = collect_policy_rule_diff_ack_receipts(
         &state.db,
         auth.tenant_id,
         proposal.id,
         validation_plan_sha256.as_deref(),
+        &expected_proposed_policy_sha256,
+        expected_proposed_policy_epoch,
         &response_action_ids,
     )
     .await?;
@@ -690,7 +804,7 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
     let impact_request = build_collected_policy_rule_diff_impact_request(
         &collected,
         validation_plan_sha256.as_deref(),
-    );
+    )?;
     let mut impact = validate_policy_proposal_impact(impact_request)?;
     impact["fleetRuleDiffCollection"] = serde_json::json!({
         "schemaVersion": 1,
@@ -716,12 +830,19 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
             .collect::<Vec<_>>(),
     });
 
+    let attached_by = auth.actor_id();
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let latest_proposal = fetch_policy_proposal_row_for_update(&mut tx, auth.tenant_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if latest_proposal.status != "pending" {
+        return Err(ApiError::NotFound);
+    }
     let preview = append_policy_rule_diff_collection(
-        proposal.preview.clone(),
+        latest_proposal.preview,
         validation_plan_sha256.as_deref(),
         &impact["fleetRuleDiffCollection"],
     )?;
-    let attached_by = auth.actor_id();
     let row = sqlx::query::query(
         r#"UPDATE policy_proposals
            SET impact = $3,
@@ -739,10 +860,11 @@ async fn collect_policy_proposal_fleet_rule_diff_validation(
     .bind(&impact)
     .bind(&attached_by)
     .bind(&preview)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
+    tx.commit().await.map_err(ApiError::Database)?;
 
     let collected_endpoint_count = collected
         .iter()
@@ -786,6 +908,51 @@ fn selected_policy_rule_diff_endpoint_requests(
         }
     }
     Ok(selected)
+}
+
+fn reserve_policy_rule_diff_dispatch(
+    mut preview: serde_json::Value,
+    validation_plan_sha256: Option<&str>,
+    endpoint_requests: &[serde_json::Value],
+) -> Result<serde_json::Value, ApiError> {
+    let requested_endpoint_ids = endpoint_requests
+        .iter()
+        .map(|request| {
+            request
+                .get("endpointAgentId")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    ApiError::BadRequest(
+                        "fleet rule-diff endpoint request is missing endpointAgentId".to_string(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let validation = preview
+        .get_mut("fleetRuleDiffValidation")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "proposal preview does not include fleetRuleDiffValidation".to_string(),
+            )
+        })?;
+    validation.insert(
+        "dispatchReservation".to_string(),
+        serde_json::json!({
+            "schemaVersion": 1,
+            "validationPlanSha256": validation_plan_sha256,
+            "reservedAt": Utc::now(),
+            "requestedEndpointCount": requested_endpoint_ids.len(),
+            "requestedEndpointIds": requested_endpoint_ids,
+        }),
+    );
+    validation.insert(
+        "status".to_string(),
+        serde_json::Value::String("dispatching".to_string()),
+    );
+    Ok(preview)
 }
 
 fn append_policy_rule_diff_dispatches(
@@ -859,24 +1026,64 @@ fn policy_rule_diff_dispatch_response_action_ids(
     else {
         return Ok(Vec::new());
     };
-    dispatches
-        .iter()
-        .filter_map(|dispatch| dispatch.get("responseActionId"))
-        .map(|value| {
-            let id = value.as_str().ok_or_else(|| {
+    let mut latest_by_endpoint = BTreeMap::<String, Uuid>::new();
+    for dispatch in dispatches {
+        let endpoint_agent_id = dispatch
+            .get("endpointAgentId")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
                 ApiError::BadRequest(
-                    "fleetRuleDiffValidation.dispatches responseActionId must be a string"
+                    "fleetRuleDiffValidation.dispatches endpointAgentId must be a string"
                         .to_string(),
                 )
             })?;
-            Uuid::parse_str(id).map_err(|_| {
-                ApiError::BadRequest(
-                    "fleetRuleDiffValidation.dispatches responseActionId must be a UUID"
-                        .to_string(),
-                )
-            })
-        })
-        .collect()
+        let response_action_id = dispatch.get("responseActionId").ok_or_else(|| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation.dispatches must include responseActionId".to_string(),
+            )
+        })?;
+        let response_action_id = response_action_id.as_str().ok_or_else(|| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation.dispatches responseActionId must be a string".to_string(),
+            )
+        })?;
+        let response_action_id = Uuid::parse_str(response_action_id).map_err(|_| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation.dispatches responseActionId must be a UUID".to_string(),
+            )
+        })?;
+        latest_by_endpoint.insert(endpoint_agent_id.to_string(), response_action_id);
+    }
+    Ok(latest_by_endpoint.into_values().collect())
+}
+
+fn policy_rule_diff_expected_proposed_policy(
+    preview: &serde_json::Value,
+) -> Result<(String, u64), ApiError> {
+    let validation = preview.get("fleetRuleDiffValidation").ok_or_else(|| {
+        ApiError::BadRequest(
+            "proposal preview does not include fleetRuleDiffValidation".to_string(),
+        )
+    })?;
+    let proposed_policy_sha256 = validation
+        .get("proposedPolicySha256")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation must include proposedPolicySha256".to_string(),
+            )
+        })?;
+    let proposed_policy_version = validation
+        .get("proposedPolicyVersion")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "fleetRuleDiffValidation must include proposedPolicyVersion".to_string(),
+            )
+        })?;
+    Ok((proposed_policy_sha256.to_string(), proposed_policy_version))
 }
 
 struct CollectedPolicyRuleDiffReceipt {
@@ -888,11 +1095,44 @@ struct CollectedPolicyRuleDiffReceipt {
     public_key: String,
 }
 
+fn latest_policy_rule_diff_receipts_by_endpoint(
+    receipts: Vec<CollectedPolicyRuleDiffReceipt>,
+) -> Vec<CollectedPolicyRuleDiffReceipt> {
+    let mut latest_by_endpoint = BTreeMap::<String, CollectedPolicyRuleDiffReceipt>::new();
+    for receipt in receipts {
+        match latest_by_endpoint.entry(receipt.endpoint_agent_id.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(receipt);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let current = entry.get();
+                if receipt.observed_at > current.observed_at
+                    || (receipt.observed_at == current.observed_at
+                        && receipt.response_action_id > current.response_action_id)
+                {
+                    entry.insert(receipt);
+                }
+            }
+        }
+    }
+
+    let mut receipts = latest_by_endpoint.into_values().collect::<Vec<_>>();
+    receipts.sort_by(|left, right| {
+        left.observed_at
+            .cmp(&right.observed_at)
+            .then_with(|| left.endpoint_agent_id.cmp(&right.endpoint_agent_id))
+            .then_with(|| left.response_action_id.cmp(&right.response_action_id))
+    });
+    receipts
+}
+
 async fn collect_policy_rule_diff_ack_receipts(
     db: &PgPool,
     tenant_id: Uuid,
     proposal_id: Uuid,
     validation_plan_sha256: Option<&str>,
+    expected_proposed_policy_sha256: &str,
+    expected_proposed_policy_epoch: u64,
     response_action_ids: &[Uuid],
 ) -> Result<Vec<CollectedPolicyRuleDiffReceipt>, ApiError> {
     let rows = sqlx::query::query(
@@ -947,15 +1187,23 @@ async fn collect_policy_rule_diff_ack_receipts(
         })?;
         let verified =
             validate_policy_proposal_simulation_receipt_value(receipt.clone(), public_key.clone())?;
-        if let Some(receipt_endpoint_id) = verified.endpoint_id.as_deref() {
-            if receipt_endpoint_id != endpoint_agent_id {
-                return Err(ApiError::BadRequest(
-                    "policyRuleDiffValidation receipt endpointId must match the response-action target"
-                        .to_string(),
-                ));
-            }
+        let receipt_endpoint_id = verified.endpoint_id.as_deref().ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation receipt must include endpointId".to_string(),
+            )
+        })?;
+        if receipt_endpoint_id != endpoint_agent_id {
+            return Err(ApiError::BadRequest(
+                "policyRuleDiffValidation receipt endpointId must match the response-action target"
+                    .to_string(),
+            ));
         }
-        validate_policy_rule_diff_impact_against_receipt(&impact, &verified)?;
+        validate_policy_rule_diff_impact_against_receipt(
+            &impact,
+            &verified,
+            expected_proposed_policy_sha256,
+            expected_proposed_policy_epoch,
+        )?;
         collected.push(CollectedPolicyRuleDiffReceipt {
             response_action_id,
             endpoint_agent_id,
@@ -965,7 +1213,7 @@ async fn collect_policy_rule_diff_ack_receipts(
             public_key,
         });
     }
-    Ok(collected)
+    Ok(latest_policy_rule_diff_receipts_by_endpoint(collected))
 }
 
 fn policy_rule_diff_payload(
@@ -1037,6 +1285,8 @@ fn validate_policy_rule_diff_payload_correlation(
 fn validate_policy_rule_diff_impact_against_receipt(
     impact: &serde_json::Value,
     verified: &VerifiedPolicyProposalSimulationReceipt,
+    expected_proposed_policy_sha256: &str,
+    expected_proposed_policy_epoch: u64,
 ) -> Result<(), ApiError> {
     if let (Some(receipt_impact_id), Some(impact_id)) = (
         verified.impact_id.as_deref(),
@@ -1075,6 +1325,42 @@ fn validate_policy_rule_diff_impact_against_receipt(
                 "policyRuleDiffValidation impact {key} does not match signed receipt evidence"
             )));
         }
+    }
+    let proposed_policy_hash = impact
+        .pointer("/proposedPolicy/policyHash")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include proposedPolicy.policyHash"
+                    .to_string(),
+            )
+        })?;
+    let proposed_policy_hash =
+        normalize_policy_impact_sha256("proposedPolicy.policyHash", proposed_policy_hash)?;
+    let expected_proposed_policy_sha256 = normalize_policy_impact_sha256(
+        "policy proposal proposedPolicy.policyHash",
+        expected_proposed_policy_sha256,
+    )?;
+    if proposed_policy_hash != expected_proposed_policy_sha256 {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation proposedPolicy.policyHash does not match the policy proposal"
+                .to_string(),
+        ));
+    }
+    let proposed_policy_epoch = impact
+        .pointer("/proposedPolicy/policyEpoch")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "policyRuleDiffValidation impact must include proposedPolicy.policyEpoch"
+                    .to_string(),
+            )
+        })?;
+    if proposed_policy_epoch != expected_proposed_policy_epoch {
+        return Err(ApiError::BadRequest(
+            "policyRuleDiffValidation proposedPolicy.policyEpoch does not match the policy proposal"
+                .to_string(),
+        ));
     }
     Ok(())
 }
@@ -1115,19 +1401,25 @@ fn policy_rule_diff_impact_evidence_value(
 fn build_collected_policy_rule_diff_impact_request(
     collected: &[CollectedPolicyRuleDiffReceipt],
     validation_plan_sha256: Option<&str>,
-) -> AttachPolicyProposalImpactRequest {
-    let event_count = collected
-        .iter()
-        .map(|receipt| impact_u64(&receipt.impact, "eventCount"))
-        .sum::<u64>();
-    let changed_count = collected
-        .iter()
-        .map(|receipt| impact_u64(&receipt.impact, "changedCount"))
-        .sum::<u64>();
-    let allow_to_block_count = collected
-        .iter()
-        .map(|receipt| impact_u64(&receipt.impact, "allowToBlockCount"))
-        .sum::<u64>();
+) -> Result<AttachPolicyProposalImpactRequest, ApiError> {
+    let event_count = collected.iter().try_fold(0u64, |total, receipt| {
+        Ok::<_, ApiError>(total.saturating_add(required_policy_rule_diff_impact_u64(
+            &receipt.impact,
+            "eventCount",
+        )?))
+    })?;
+    let changed_count = collected.iter().try_fold(0u64, |total, receipt| {
+        Ok::<_, ApiError>(total.saturating_add(required_policy_rule_diff_impact_u64(
+            &receipt.impact,
+            "changedCount",
+        )?))
+    })?;
+    let allow_to_block_count = collected.iter().try_fold(0u64, |total, receipt| {
+        Ok::<_, ApiError>(total.saturating_add(required_policy_rule_diff_impact_u64(
+            &receipt.impact,
+            "allowToBlockCount",
+        )?))
+    })?;
     let endpoint_count = collected
         .iter()
         .map(|receipt| receipt.endpoint_agent_id.as_str())
@@ -1172,7 +1464,7 @@ fn build_collected_policy_rule_diff_impact_request(
         .collect::<Vec<_>>();
     attachments.sort_by(|left, right| left.receipt_id.as_deref().cmp(&right.receipt_id.as_deref()));
 
-    AttachPolicyProposalImpactRequest {
+    Ok(AttachPolicyProposalImpactRequest {
         source: "fleet_history".to_string(),
         summary,
         simulation_receipt_id: None,
@@ -1187,14 +1479,139 @@ fn build_collected_policy_rule_diff_impact_request(
         affected_tool_count: collected.len().min(i64::MAX as usize) as i64,
         recommendation: recommendation.to_string(),
         proof_hashes,
-    }
+    })
 }
 
-fn impact_u64(impact: &serde_json::Value, field: &str) -> u64 {
+fn required_policy_rule_diff_impact_u64(
+    impact: &serde_json::Value,
+    field: &str,
+) -> Result<u64, ApiError> {
     impact
         .get(field)
         .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0)
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "policyRuleDiffValidation impact must include numeric {field}"
+            ))
+        })
+}
+
+fn ensure_policy_proposal_deployable_impact(proposal: &PolicyProposalRow) -> Result<(), ApiError> {
+    let Some(impact) = proposal.impact.as_ref() else {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} requires verified simulation impact before deployment",
+            proposal.id
+        )));
+    };
+    let verified_receipt_count = impact
+        .get("simulationReceiptsVerifiedCount")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    if verified_receipt_count == 0 {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} requires at least one verified simulation receipt before deployment",
+            proposal.id
+        )));
+    }
+    let recommendation = impact
+        .get("recommendation")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if matches!(recommendation, "revise" | "reject") {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} cannot deploy while verified simulation impact recommends {recommendation}",
+            proposal.id
+        )));
+    }
+    let blocking_change_count = impact
+        .get("blockingChangeCount")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    if blocking_change_count > 0 {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} cannot deploy with {blocking_change_count} verified blocking simulation change(s)",
+            proposal.id
+        )));
+    }
+    Ok(())
+}
+
+fn validate_policy_proposal_impact_matches_proposal(
+    proposal: &PolicyProposalRow,
+    impact: &serde_json::Value,
+) -> Result<(), ApiError> {
+    let Some(receipts) = impact
+        .get("simulationReceipts")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Ok(());
+    };
+    if receipts.is_empty() {
+        return Ok(());
+    }
+
+    let expected_policy_hash = sha256(proposal.checksum_sha256.as_bytes()).to_hex_prefixed();
+    let expected_policy_epoch =
+        sha256(proposal.proposed_policy_version.to_string().as_bytes()).to_hex_prefixed();
+
+    for receipt in receipts {
+        let proposed_policy_hash =
+            policy_proposal_receipt_evidence_hash(receipt, "proposedPolicyHash").ok_or_else(
+                || {
+                    ApiError::BadRequest(
+                        "simulation_receipt evidence must include proposedPolicyHash".to_string(),
+                    )
+                },
+            )?;
+        if !proposed_policy_hash.eq_ignore_ascii_case(&expected_policy_hash) {
+            return Err(ApiError::BadRequest(
+                "simulation_receipt proposedPolicyHash must match the policy proposal".to_string(),
+            ));
+        }
+
+        let proposed_policy_epoch =
+            policy_proposal_receipt_evidence_hash(receipt, "proposedPolicyEpoch").ok_or_else(
+                || {
+                    ApiError::BadRequest(
+                        "simulation_receipt evidence must include proposedPolicyEpoch".to_string(),
+                    )
+                },
+            )?;
+        if !proposed_policy_epoch.eq_ignore_ascii_case(&expected_policy_epoch) {
+            return Err(ApiError::BadRequest(
+                "simulation_receipt proposedPolicyEpoch must match the policy proposal".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn policy_proposal_receipt_evidence_hash<'a>(
+    receipt: &'a serde_json::Value,
+    key: &str,
+) -> Option<&'a str> {
+    if let Some(hash) = receipt
+        .get("evidenceValueHashes")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|hashes| hashes.get(key))
+        .and_then(serde_json::Value::as_str)
+    {
+        return Some(hash);
+    }
+
+    let evidence = receipt
+        .pointer("/signedReceipt/receipt/metadata/endpointDecision/evidence")
+        .or_else(|| receipt.pointer("/receipt/metadata/endpointDecision/evidence"))?
+        .as_array()?;
+    evidence.iter().find_map(|item| {
+        let item_key = item.get("key").and_then(serde_json::Value::as_str)?;
+        if item_key == key {
+            item.get("valueHash").and_then(serde_json::Value::as_str)
+        } else {
+            None
+        }
+    })
 }
 
 async fn reject_policy_proposal(
@@ -1238,7 +1655,8 @@ async fn approve_policy_proposal(
 ) -> Result<Json<ApprovePolicyProposalResponse>, ApiError> {
     ensure_policy_deployer(&auth)?;
 
-    let proposal = fetch_policy_proposal_row(&state, auth.tenant_id, id)
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let proposal = fetch_policy_proposal_row_for_update(&mut tx, auth.tenant_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     if proposal.status != "pending" {
@@ -1246,9 +1664,12 @@ async fn approve_policy_proposal(
     }
 
     let current_active =
-        policy_distribution::fetch_active_policy_by_tenant_id(&state.db, auth.tenant_id)
-            .await
-            .map_err(ApiError::Database)?;
+        policy_distribution::fetch_active_policy_by_tenant_id_for_update_with_executor(
+            &mut *tx,
+            auth.tenant_id,
+        )
+        .await
+        .map_err(ApiError::Database)?;
     let current_version = current_active
         .as_ref()
         .map(|policy| policy.version)
@@ -1301,7 +1722,7 @@ async fn approve_policy_proposal(
         .bind(id)
         .bind(&approved_by)
         .bind(&approval_notes)
-        .fetch_optional(&state.db)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(ApiError::Database)?
         .ok_or_else(|| {
@@ -1310,6 +1731,7 @@ async fn approve_policy_proposal(
                 proposal.id
             ))
         })?;
+        tx.commit().await.map_err(ApiError::Database)?;
 
         return Ok(Json(ApprovePolicyProposalResponse {
             proposal: proposal_response_from_row(row, &auth.slug)?,
@@ -1318,17 +1740,56 @@ async fn approve_policy_proposal(
         }));
     }
 
-    let active_policy = policy_distribution::upsert_active_policy(
-        &state.db,
+    ensure_policy_proposal_deployable_impact(&proposal)?;
+
+    let deployment_id = Uuid::new_v4();
+    let candidate_policy = active_policy_candidate_from_base(
+        auth.tenant_id,
+        &auth.slug,
+        &proposal.policy_yaml,
+        proposal.description.as_deref(),
+        proposal.base_active_policy_version,
+    )?;
+    let deployment_plan = prepare_active_policy_deployment(
+        &state,
+        auth.tenant_id,
+        &auth.slug,
+        &candidate_policy,
+        deployment_id,
+    )
+    .await
+    .map_err(|err| {
+        tracing::warn!(
+            error = %err,
+            deployment_id = %deployment_id,
+            tenant = %auth.slug,
+            policy_version = candidate_policy.version,
+            "Policy proposal deployment preparation failed before deployed state was committed"
+        );
+        err
+    })?;
+
+    let active_policy = policy_distribution::upsert_active_policy_after_version_with_executor(
+        &mut *tx,
         auth.tenant_id,
         &proposal.policy_yaml,
         proposal.description.as_deref(),
+        proposal.base_active_policy_version,
     )
     .await
-    .map_err(ApiError::Database)?;
-    let deployment =
-        distribute_active_policy_to_fleet(&state, auth.tenant_id, &auth.slug, &active_policy)
-            .await?;
+    .map_err(ApiError::Database)?
+    .ok_or_else(|| {
+        ApiError::Conflict(format!(
+            "policy proposal {} was based on active policy version {}, but the active policy changed before deployment could be recorded; resubmit the proposal",
+            proposal.id, proposal.base_active_policy_version
+        ))
+    })?;
+    if active_policy.version != candidate_policy.version {
+        return Err(ApiError::Conflict(format!(
+            "policy proposal {} expected deployed policy version {}, but recorded version {}; retry the proposal deployment",
+            proposal.id, candidate_policy.version, active_policy.version
+        )));
+    }
 
     let row = sqlx::query::query(
         r#"UPDATE policy_proposals
@@ -1352,10 +1813,10 @@ async fn approve_policy_proposal(
     .bind(&reviewed_by)
     .bind(req.note.as_deref())
     .bind(active_policy.version)
-    .bind(deployment.deployment_id)
+    .bind(deployment_id)
     .bind(&approved_by)
     .bind(&approval_notes)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or_else(|| {
@@ -1364,18 +1825,54 @@ async fn approve_policy_proposal(
             proposal.id
         ))
     })?;
+    tx.commit().await.map_err(ApiError::Database)?;
+    let deployment_outcome =
+        distribute_prepared_policy_to_fleet(&state, &auth.slug, deployment_plan).await;
+    if deployment_outcome.kv_write_failures > 0 {
+        tracing::warn!(
+            deployment_id = %deployment_outcome.deployment_id,
+            tenant = %auth.slug,
+            kv_write_failures = deployment_outcome.kv_write_failures,
+            proposal_id = %proposal.id,
+            "Approved policy proposal committed with fleet KV retry debt"
+        );
+    }
+    let deployment = Some(DeployPolicyResponse {
+        deployment_id: deployment_outcome.deployment_id,
+        tenant_slug: auth.slug.clone(),
+        nats_subject: deployment_outcome.nats_subject,
+        agent_count: deployment_outcome.agent_count,
+        kv_write_failures: deployment_outcome.kv_write_failures,
+    });
 
     Ok(Json(ApprovePolicyProposalResponse {
         proposal: proposal_response_from_row(row, &auth.slug)?,
-        deployment: Some(DeployPolicyResponse {
-            deployment_id: deployment.deployment_id,
-            tenant_slug: auth.slug,
-            nats_subject: deployment.nats_subject,
-            agent_count: deployment.agent_count,
-            kv_write_failures: deployment.kv_write_failures,
-        }),
+        deployment,
         approvals_remaining: 0,
     }))
+}
+
+fn active_policy_candidate_from_base(
+    tenant_id: Uuid,
+    tenant_slug: &str,
+    policy_yaml: &str,
+    description: Option<&str>,
+    base_policy_version: i64,
+) -> Result<policy_distribution::ActiveTenantPolicy, ApiError> {
+    let version = base_policy_version.checked_add(1).ok_or_else(|| {
+        ApiError::Internal(format!(
+            "active policy version {base_policy_version} cannot be incremented"
+        ))
+    })?;
+    Ok(policy_distribution::ActiveTenantPolicy {
+        tenant_id,
+        tenant_slug: tenant_slug.to_string(),
+        policy_yaml: policy_yaml.to_string(),
+        checksum_sha256: policy_distribution::policy_yaml_checksum_sha256(policy_yaml),
+        description: description.map(str::to_string),
+        version,
+        updated_at: Utc::now(),
+    })
 }
 
 async fn get_active_policy(
@@ -1404,12 +1901,13 @@ async fn get_active_policy(
     })))
 }
 
-async fn distribute_active_policy_to_fleet(
+async fn prepare_active_policy_deployment(
     state: &AppState,
     tenant_id: Uuid,
     tenant_slug: &str,
     active_policy: &policy_distribution::ActiveTenantPolicy,
-) -> Result<PolicyDeploymentOutcome, ApiError> {
+    deployment_id: Uuid,
+) -> Result<PreparedPolicyDeployment, ApiError> {
     // Enumerate all non-revoked agents (active + inactive lifecycle states).
     // This avoids only targeting currently-active agents during deploy.
     let agent_rows = sqlx::query::query(
@@ -1431,52 +1929,91 @@ async fn distribute_active_policy_to_fleet(
         .map_err(ApiError::Database)?;
     let agent_count = agent_ids.len() as i64;
 
-    // Write policy into each agent-scoped KV bucket used by PolicySync.
-    let mut kv_write_failures = 0_i64;
+    // Prepare the exact effective policies before committing the DB row, but
+    // do not publish them yet. KV is a side effect and must not get ahead of
+    // the committed active-policy source of truth.
+    let mut effective_policies = Vec::new();
     for agent_id in &agent_ids {
-        if let Err(err) = policy_distribution::reconcile_effective_policy_for_agent(
+        let effective_policy = policy_distribution::preview_effective_policy_candidate_for_agent(
             &state.db,
-            &state.nats,
             tenant_id,
             agent_id,
+            active_policy,
         )
         .await
+        .map_err(|err| {
+            ApiError::Conflict(format!(
+                "policy deployment {deployment_id} failed to build effective policy for agent {agent_id}: {err}"
+            ))
+        })?;
+        if let Some(effective_policy) = effective_policy {
+            effective_policies.push(effective_policy);
+        }
+    }
+
+    let subject = policy_distribution::policy_update_subject(tenant_slug);
+    let distribution_policy_yaml =
+        policy_distribution::distribution_policy_yaml(active_policy).map_err(ApiError::Internal)?;
+    Ok(PreparedPolicyDeployment {
+        deployment_id,
+        nats_subject: subject,
+        agent_count,
+        effective_policies,
+        distribution_policy_yaml,
+    })
+}
+
+async fn distribute_prepared_policy_to_fleet(
+    state: &AppState,
+    tenant_slug: &str,
+    prepared: PreparedPolicyDeployment,
+) -> PolicyDeploymentOutcome {
+    let PreparedPolicyDeployment {
+        deployment_id,
+        nats_subject,
+        agent_count,
+        effective_policies,
+        distribution_policy_yaml,
+    } = prepared;
+    let mut kv_write_failures = 0_i64;
+    for effective_policy in &effective_policies {
+        if let Err(err) =
+            policy_distribution::put_effective_policy_for_agent(&state.nats, effective_policy).await
         {
             kv_write_failures += 1;
             tracing::warn!(
                 error = %err,
                 tenant = %tenant_slug,
-                agent_id = %agent_id,
-                "Failed to push deployed policy to agent KV bucket"
+                agent_id = %effective_policy.agent_id,
+                policy_version = effective_policy.policy_epoch,
+                deployment_id = %deployment_id,
+                "Failed to push committed policy to agent KV bucket; heartbeat reconciliation will retry from the active-policy database"
             );
         }
     }
 
     // Best-effort compatibility broadcast for legacy subscribers.
-    let subject = policy_distribution::policy_update_subject(tenant_slug);
-    let distribution_policy_yaml =
-        policy_distribution::distribution_policy_yaml(active_policy).map_err(ApiError::Internal)?;
     if let Err(err) = state
         .nats
         .publish(
-            subject.clone(),
+            nats_subject.clone(),
             distribution_policy_yaml.into_bytes().into(),
         )
         .await
     {
         tracing::warn!(
             error = %err,
-            subject = %subject,
-            "Legacy policy update publish failed (KV writes succeeded)"
+            subject = %nats_subject,
+            "Legacy policy update publish failed after committed policy deployment"
         );
     }
 
-    Ok(PolicyDeploymentOutcome {
-        deployment_id: Uuid::new_v4(),
-        nats_subject: subject,
+    PolicyDeploymentOutcome {
+        deployment_id,
+        nats_subject,
         agent_count,
         kv_write_failures,
-    })
+    }
 }
 
 async fn fetch_policy_proposal_row(
@@ -1493,6 +2030,29 @@ async fn fetch_policy_proposal_row(
     .bind(tenant_id)
     .bind(id)
     .fetch_optional(&state.db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    row.map(policy_proposal_from_row)
+        .transpose()
+        .map_err(ApiError::Database)
+}
+
+async fn fetch_policy_proposal_row_for_update(
+    tx: &mut sqlx::transaction::Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    id: Uuid,
+) -> Result<Option<PolicyProposalRow>, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT *
+           FROM policy_proposals
+           WHERE tenant_id = $1
+             AND id = $2
+           FOR UPDATE"#,
+    )
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(ApiError::Database)?;
 
@@ -1591,6 +2151,24 @@ fn ensure_policy_deployer(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
     Err(ApiError::Forbidden)
 }
 
+fn require_direct_policy_deploy_break_glass(req: &DeployPolicyRequest) -> Result<&str, ApiError> {
+    if !req.break_glass {
+        return Err(ApiError::Conflict(
+            "direct policy deployment bypasses proposal simulation receipts; use /api/v1/policies/proposals or set break_glass=true with break_glass_reason for emergency recovery"
+                .to_string(),
+        ));
+    }
+    req.break_glass_reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty())
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "break_glass_reason is required for direct policy deployment".to_string(),
+            )
+        })
+}
+
 fn append_policy_proposal_approval_note(
     existing: &serde_json::Value,
     actor_id: &str,
@@ -1633,6 +2211,7 @@ impl VerifiedPolicyProposalSimulationReceipt {
             "impactId": self.impact_id,
             "graphSliceId": self.graph_slice_id,
             "evidenceKeys": self.evidence_keys,
+            "evidenceValueHashes": self.evidence_value_hashes.clone(),
             "signedReceipt": self.signed_receipt,
         })
     }
@@ -2344,17 +2923,6 @@ async fn build_policy_proposal_fleet_history_impact(
     Ok(impact)
 }
 
-struct PolicyProposalRuleDiffObservation<'a> {
-    event_id: String,
-    timestamp: DateTime<Utc>,
-    verdict: &'a str,
-    action_type: Option<String>,
-    runtime_agent_id: Option<String>,
-    principal_id: Option<String>,
-    session_id: Option<String>,
-    detection_ids: Vec<String>,
-}
-
 struct PolicyProposalFleetRuleDiffEndpointSelection {
     endpoint_agent_id: String,
     event_count: i64,
@@ -2368,6 +2936,17 @@ struct PolicyProposalFleetRuleDiffEndpointSelection {
     principal_ids: BTreeSet<String>,
     runtime_agent_ids: BTreeSet<String>,
     session_ids: BTreeSet<String>,
+}
+
+struct PolicyProposalFleetRuleDiffObservation {
+    event_id: String,
+    timestamp: DateTime<Utc>,
+    verdict: String,
+    action_type: Option<String>,
+    runtime_agent_id: Option<String>,
+    principal_id: Option<String>,
+    session_id: Option<String>,
+    detection_ids: Vec<String>,
 }
 
 impl PolicyProposalFleetRuleDiffEndpointSelection {
@@ -2388,47 +2967,50 @@ impl PolicyProposalFleetRuleDiffEndpointSelection {
         }
     }
 
-    fn observe(&mut self, observation: PolicyProposalRuleDiffObservation<'_>) {
-        let PolicyProposalRuleDiffObservation {
-            event_id,
-            timestamp,
-            verdict,
-            action_type,
-            runtime_agent_id,
-            principal_id,
-            session_id,
-            detection_ids,
-        } = observation;
+    fn observe(&mut self, observation: PolicyProposalFleetRuleDiffObservation) {
         self.event_count += 1;
-        if timestamp < self.first_seen {
-            self.first_seen = timestamp;
+        if observation.timestamp < self.first_seen {
+            self.first_seen = observation.timestamp;
         }
-        if timestamp > self.last_seen {
-            self.last_seen = timestamp;
+        if observation.timestamp > self.last_seen {
+            self.last_seen = observation.timestamp;
         }
         if self.event_ids.len() < POLICY_PROPOSAL_FLEET_VALIDATION_EVENT_ID_LIMIT {
-            self.event_ids.push(event_id);
+            self.event_ids.push(observation.event_id);
         }
 
-        match normalize_policy_proposal_history_verdict(verdict) {
+        match normalize_policy_proposal_history_verdict(&observation.verdict) {
             "allow" | "warn" => self.candidate_breakage_count += 1,
             "block" => self.blocking_event_count += 1,
             _ => {}
         }
 
-        if let Some(action_type) = action_type.filter(|value| !value.trim().is_empty()) {
+        if let Some(action_type) = observation
+            .action_type
+            .filter(|value| !value.trim().is_empty())
+        {
             *self.action_type_counts.entry(action_type).or_insert(0) += 1;
         }
-        if let Some(runtime_agent_id) = runtime_agent_id.filter(|value| !value.trim().is_empty()) {
+        if let Some(runtime_agent_id) = observation
+            .runtime_agent_id
+            .filter(|value| !value.trim().is_empty())
+        {
             self.runtime_agent_ids.insert(runtime_agent_id);
         }
-        if let Some(principal_id) = principal_id.filter(|value| !value.trim().is_empty()) {
+        if let Some(principal_id) = observation
+            .principal_id
+            .filter(|value| !value.trim().is_empty())
+        {
             self.principal_ids.insert(principal_id);
         }
-        if let Some(session_id) = session_id.filter(|value| !value.trim().is_empty()) {
+        if let Some(session_id) = observation
+            .session_id
+            .filter(|value| !value.trim().is_empty())
+        {
             self.session_ids.insert(session_id);
         }
-        for detection_id in detection_ids
+        for detection_id in observation
+            .detection_ids
             .into_iter()
             .filter(|value| !value.trim().is_empty())
         {
@@ -2502,10 +3084,10 @@ async fn build_policy_proposal_fleet_rule_diff_validation_plan(
                     timestamp,
                 )
             })
-            .observe(PolicyProposalRuleDiffObservation {
+            .observe(PolicyProposalFleetRuleDiffObservation {
                 event_id,
                 timestamp,
-                verdict: &verdict,
+                verdict,
                 action_type,
                 runtime_agent_id,
                 principal_id,
@@ -2557,6 +3139,8 @@ async fn build_policy_proposal_fleet_rule_diff_validation_plan(
                     "receiptFamily": POLICY_PROPOSAL_SIMULATION_RECEIPT_FAMILY,
                     "ruleId": POLICY_PROPOSAL_SIMULATION_RULE_ID,
                     "graphProcessNodeId": POLICY_PROPOSAL_SIMULATION_PROCESS_NODE_ID,
+                    "proposedPolicyHash": candidate.checksum_sha256,
+                    "proposedPolicyEpoch": candidate.version,
                     "requiredEvidenceKeys": [
                         "impactId",
                         "eventStreamHash",
@@ -2770,5 +3354,243 @@ mod tests {
     #[test]
     fn policy_sync_key_is_stable() {
         assert_eq!(policy_distribution::POLICY_SYNC_KEY, "policy.yaml");
+    }
+
+    fn direct_deploy_request(break_glass: bool, reason: Option<&str>) -> DeployPolicyRequest {
+        DeployPolicyRequest {
+            policy_yaml: "version: \"1.0.0\"\nrules: []\n".to_string(),
+            description: None,
+            break_glass,
+            break_glass_reason: reason.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_requires_break_glass_flag() {
+        let req = direct_deploy_request(false, Some("emergency recovery"));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Err(ApiError::Conflict(message)) => {
+                assert!(message.contains("proposal simulation receipts"));
+            }
+            Ok(_) => panic!("direct deploy without break_glass unexpectedly succeeded"),
+            Err(err) => panic!("unexpected direct deploy error: {err}"),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_requires_break_glass_reason() {
+        let req = direct_deploy_request(true, Some("   "));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Err(ApiError::BadRequest(message)) => {
+                assert!(message.contains("break_glass_reason"));
+            }
+            Ok(_) => panic!("direct deploy without reason unexpectedly succeeded"),
+            Err(err) => panic!("unexpected direct deploy error: {err}"),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_accepts_explicit_break_glass_reason() {
+        let req = direct_deploy_request(true, Some("  emergency recovery  "));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Ok(reason) => assert_eq!(reason, "emergency recovery"),
+            Err(err) => panic!("direct deploy break-glass rejected valid reason: {err}"),
+        }
+    }
+
+    fn proposal_row_with_impact(impact: serde_json::Value) -> PolicyProposalRow {
+        let now = Utc::now();
+        PolicyProposalRow {
+            id: Uuid::from_u128(1),
+            tenant_id: Uuid::from_u128(2),
+            policy_yaml: "policy:\n  mode: test\n".to_string(),
+            checksum_sha256: "0".repeat(64),
+            description: None,
+            status: "pending".to_string(),
+            base_active_policy_version: 1,
+            proposed_policy_version: 2,
+            preview: serde_json::json!({}),
+            required_approvals: 1,
+            approved_by: Vec::new(),
+            approval_notes: serde_json::json!([]),
+            impact: Some(impact),
+            impact_attached_by: Some("test".to_string()),
+            impact_attached_at: Some(now),
+            deployed_policy_version: None,
+            deployment_id: None,
+            submitted_by: "test".to_string(),
+            reviewed_by: None,
+            review_note: None,
+            created_at: now,
+            updated_at: now,
+            reviewed_at: None,
+            deployed_at: None,
+        }
+    }
+
+    #[test]
+    fn deployable_impact_rejects_revise_recommendation() {
+        let proposal = proposal_row_with_impact(serde_json::json!({
+            "simulationReceiptsVerifiedCount": 1,
+            "blockingChangeCount": 0,
+            "recommendation": "revise"
+        }));
+
+        assert!(matches!(
+            ensure_policy_proposal_deployable_impact(&proposal),
+            Err(ApiError::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn deployable_impact_rejects_verified_blocking_changes() {
+        let proposal = proposal_row_with_impact(serde_json::json!({
+            "simulationReceiptsVerifiedCount": 1,
+            "blockingChangeCount": 1,
+            "recommendation": "observe_only"
+        }));
+
+        assert!(matches!(
+            ensure_policy_proposal_deployable_impact(&proposal),
+            Err(ApiError::Conflict(_))
+        ));
+    }
+
+    fn receipt_bound_impact(
+        proposed_policy_hash: &str,
+        proposed_policy_epoch: i64,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "simulationReceiptsVerifiedCount": 1,
+            "blockingChangeCount": 0,
+            "recommendation": "observe_only",
+            "simulationReceipts": [
+                {
+                    "evidenceValueHashes": {
+                        "proposedPolicyHash": sha256(proposed_policy_hash.as_bytes()).to_hex_prefixed(),
+                        "proposedPolicyEpoch": sha256(proposed_policy_epoch.to_string().as_bytes()).to_hex_prefixed()
+                    }
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn proposal_impact_receipts_must_match_proposal_policy_identity() {
+        let proposal = proposal_row_with_impact(receipt_bound_impact(&"0".repeat(64), 2));
+        let impact = receipt_bound_impact(&"1".repeat(64), 2);
+
+        assert!(matches!(
+            validate_policy_proposal_impact_matches_proposal(&proposal, &impact),
+            Err(ApiError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn proposal_impact_receipts_accept_matching_policy_identity() {
+        let proposal = proposal_row_with_impact(receipt_bound_impact(&"0".repeat(64), 2));
+        let impact = receipt_bound_impact(&"0".repeat(64), 2);
+
+        validate_policy_proposal_impact_matches_proposal(&proposal, &impact)
+            .expect("matching proposal receipt binding");
+    }
+
+    #[test]
+    fn fleet_rule_diff_dispatch_reservation_marks_intent_before_publish() {
+        let preview = serde_json::json!({
+            "fleetRuleDiffValidation": {
+                "status": "ready_for_endpoint_receipt_collection",
+                "planSha256": "abc123"
+            }
+        });
+        let reserved = reserve_policy_rule_diff_dispatch(
+            preview,
+            Some("abc123"),
+            &[
+                serde_json::json!({ "endpointAgentId": "endpoint-a" }),
+                serde_json::json!({ "endpointAgentId": "endpoint-b" }),
+            ],
+        )
+        .expect("dispatch reservation");
+
+        assert_eq!(reserved["fleetRuleDiffValidation"]["status"], "dispatching");
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["validationPlanSha256"],
+            "abc123"
+        );
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["requestedEndpointCount"],
+            2
+        );
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["requestedEndpointIds"],
+            serde_json::json!(["endpoint-a", "endpoint-b"])
+        );
+    }
+
+    #[test]
+    fn fleet_rule_diff_default_collection_keeps_latest_dispatch_per_endpoint() {
+        let old_endpoint_a = Uuid::from_u128(1);
+        let endpoint_b = Uuid::from_u128(2);
+        let latest_endpoint_a = Uuid::from_u128(3);
+        let preview = serde_json::json!({
+            "fleetRuleDiffValidation": {
+                "dispatches": [
+                    {
+                        "endpointAgentId": "endpoint-a",
+                        "responseActionId": old_endpoint_a
+                    },
+                    {
+                        "endpointAgentId": "endpoint-b",
+                        "responseActionId": endpoint_b
+                    },
+                    {
+                        "endpointAgentId": "endpoint-a",
+                        "responseActionId": latest_endpoint_a
+                    }
+                ]
+            }
+        });
+
+        let ids = policy_rule_diff_dispatch_response_action_ids(&preview)
+            .expect("dispatch response action ids");
+
+        assert_eq!(ids, vec![latest_endpoint_a, endpoint_b]);
+    }
+
+    #[test]
+    fn fleet_rule_diff_collection_aggregates_latest_receipt_per_endpoint() {
+        let observed = |seconds| {
+            DateTime::parse_from_rfc3339(&format!("2026-05-20T00:00:{seconds:02}Z"))
+                .expect("timestamp")
+                .with_timezone(&Utc)
+        };
+        let receipt_for =
+            |response_action_id: Uuid, endpoint_agent_id: &str, observed_at: DateTime<Utc>| {
+                CollectedPolicyRuleDiffReceipt {
+                    response_action_id,
+                    endpoint_agent_id: endpoint_agent_id.to_string(),
+                    observed_at,
+                    impact: serde_json::json!({}),
+                    receipt: serde_json::json!({}),
+                    public_key: "public-key".to_string(),
+                }
+            };
+
+        let endpoint_a_old = Uuid::from_u128(10);
+        let endpoint_a_latest = Uuid::from_u128(11);
+        let endpoint_b = Uuid::from_u128(12);
+        let receipts = latest_policy_rule_diff_receipts_by_endpoint(vec![
+            receipt_for(endpoint_a_old, "endpoint-a", observed(1)),
+            receipt_for(endpoint_b, "endpoint-b", observed(2)),
+            receipt_for(endpoint_a_latest, "endpoint-a", observed(3)),
+        ]);
+
+        assert_eq!(receipts.len(), 2);
+        assert_eq!(receipts[0].response_action_id, endpoint_b);
+        assert_eq!(receipts[1].response_action_id, endpoint_a_latest);
     }
 }

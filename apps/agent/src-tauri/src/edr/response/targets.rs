@@ -11,6 +11,7 @@ use std::path::{Path as FsPath, PathBuf};
 #[derive(Debug, Clone)]
 pub(crate) struct ProcessSignalTarget {
     pub(crate) pid: u32,
+    pub(crate) process_identity_key: String,
     pub(crate) label: String,
     depth: usize,
 }
@@ -59,8 +60,10 @@ pub(crate) fn suspend_process_tree_targets(
 
     let root_pid = process_node_pid(root)
         .ok_or_else(|| anyhow::anyhow!("root process node is missing pid attribute"))?;
+    let root_identity = process_node_live_identity_key(root)?;
     let mut targets = vec![ProcessSignalTarget {
         pid: root_pid,
+        process_identity_key: root_identity,
         label: root.label.clone(),
         depth: 0,
     }];
@@ -97,8 +100,10 @@ pub(crate) fn suspend_process_tree_targets(
                     child.node_id
                 )
             })?;
+            let process_identity_key = process_node_live_identity_key(child)?;
             targets.push(ProcessSignalTarget {
                 pid,
+                process_identity_key,
                 label: child.label.clone(),
                 depth: depth + 1,
             });
@@ -117,7 +122,13 @@ pub(crate) fn suspend_process_tree_targets(
             ));
         }
     }
-    targets.sort_by_key(|target| (target.depth, target.pid));
+    targets.sort_by(|left, right| {
+        (left.depth, left.pid, left.process_identity_key.as_str()).cmp(&(
+            right.depth,
+            right.pid,
+            right.process_identity_key.as_str(),
+        ))
+    });
     Ok(targets)
 }
 
@@ -126,6 +137,36 @@ pub(crate) fn process_node_pid(node: &clawdstrike_policy_event::edr::CausalNode)
         .get("pid")
         .and_then(Value::as_u64)
         .and_then(|pid| u32::try_from(pid).ok())
+}
+
+fn process_node_live_identity_key(
+    node: &clawdstrike_policy_event::edr::CausalNode,
+) -> Result<String> {
+    let identity_strength = node
+        .attributes
+        .get("processIdentityStrength")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let identity_key = node
+        .attributes
+        .get("processIdentityKey")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "process node {} is missing durable process identity key",
+                node.node_id
+            )
+        })?;
+    if identity_strength != "durable" || !identity_key.starts_with("guid:") {
+        return Err(anyhow::anyhow!(
+            "process node {} has non-durable identity {}; refusing PID-only live signal target",
+            node.node_id,
+            identity_strength
+        ));
+    }
+    Ok(identity_key.to_string())
 }
 
 pub(crate) fn quarantine_destination_path(
@@ -172,6 +213,8 @@ pub(crate) fn safe_filename_fragment(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
     use chrono::Utc;
     use clawdstrike_policy_event::edr::{CausalEdge, CausalNode};
@@ -181,6 +224,11 @@ mod tests {
         let mut attributes = BTreeMap::new();
         if let Some(pid) = pid {
             attributes.insert("pid".to_string(), json!(pid));
+            attributes.insert("processIdentityStrength".to_string(), json!("durable"));
+            attributes.insert(
+                "processIdentityKey".to_string(),
+                json!(format!("guid:{node_id}")),
+            );
         }
         CausalNode {
             node_id: node_id.to_string(),
@@ -227,9 +275,10 @@ mod tests {
     #[test]
     fn suspend_process_tree_targets_follow_only_spawned_descendants() {
         let mut graph = CausalGraph::default();
-        graph
-            .nodes
-            .insert("root".to_string(), process_node("root", "/bin/root", Some(10)));
+        graph.nodes.insert(
+            "root".to_string(),
+            process_node("root", "/bin/root", Some(10)),
+        );
         graph.nodes.insert(
             "child".to_string(),
             process_node("child", "/bin/child", Some(11)),
@@ -262,12 +311,14 @@ mod tests {
     #[test]
     fn suspend_process_tree_targets_reject_missing_child_pid() {
         let mut graph = CausalGraph::default();
-        graph
-            .nodes
-            .insert("root".to_string(), process_node("root", "/bin/root", Some(10)));
-        graph
-            .nodes
-            .insert("child".to_string(), process_node("child", "/bin/child", None));
+        graph.nodes.insert(
+            "root".to_string(),
+            process_node("root", "/bin/root", Some(10)),
+        );
+        graph.nodes.insert(
+            "child".to_string(),
+            process_node("child", "/bin/child", None),
+        );
         graph
             .edges
             .push(edge("e1", "root", "child", CausalEdgeKind::Spawned));
@@ -279,11 +330,33 @@ mod tests {
     }
 
     #[test]
+    fn suspend_process_tree_targets_reject_pid_only_identity() {
+        let mut graph = CausalGraph::default();
+        let mut weak_root = process_node("root", "/bin/root", Some(10));
+        weak_root.attributes.insert(
+            "processIdentityStrength".to_string(),
+            json!("weak_observation_scoped"),
+        );
+        weak_root.attributes.insert(
+            "processIdentityKey".to_string(),
+            json!("pid:10:observation:obs-1"),
+        );
+        graph.nodes.insert("root".to_string(), weak_root);
+        let plan = suspend_plan("root", &graph);
+
+        let err =
+            suspend_process_tree_targets(&plan, &graph).expect_err("pid-only identity must fail");
+
+        assert!(err.to_string().contains("non-durable identity"));
+    }
+
+    #[test]
     fn suspend_process_tree_targets_reject_spawned_non_process_child() {
         let mut graph = CausalGraph::default();
-        graph
-            .nodes
-            .insert("root".to_string(), process_node("root", "/bin/root", Some(10)));
+        graph.nodes.insert(
+            "root".to_string(),
+            process_node("root", "/bin/root", Some(10)),
+        );
         graph
             .nodes
             .insert("file".to_string(), file_node("file", "/tmp/not-a-process"));

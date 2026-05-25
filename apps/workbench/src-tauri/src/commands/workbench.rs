@@ -1779,8 +1779,7 @@ pub async fn search_in_project(
         if is_search_cancelled(cancellation_flag.as_deref()) {
             return Err("Search canceled".into());
         }
-        let compiled_regex =
-            build_search_regex(&query, case_sensitive, whole_word, use_regex)?;
+        let compiled_regex = build_search_regex(&query, case_sensitive, whole_word, use_regex)?;
 
         // Collect eligible files.
         let mut file_paths = Vec::new();

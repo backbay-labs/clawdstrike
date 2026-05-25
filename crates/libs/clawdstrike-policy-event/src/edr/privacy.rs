@@ -1,3 +1,4 @@
+use hush_core::{canonicalize_json, sha256};
 use serde::{Deserialize, Serialize};
 
 use super::event::EndpointObservation;
@@ -85,6 +86,7 @@ pub struct EndpointTelemetryPrivacyReport {
     pub redacted_count: usize,
     pub raw_suppressed_count: usize,
     pub local_only_count: usize,
+    pub projection_content_hash: String,
     pub observations: Vec<EndpointTelemetryObservationProjection>,
 }
 
@@ -140,6 +142,8 @@ impl EndpointTelemetryPrivacyReport {
             &projected_observations,
             EndpointEvidenceRedactionClass::Redacted,
         );
+        let projection_content_hash =
+            telemetry_privacy_projection_content_hash(&projected_observations);
         let mode = privacy_mode.as_str();
         let observation_count_text = observations.len().to_string();
         let field_count_text = field_count.to_string();
@@ -153,6 +157,7 @@ impl EndpointTelemetryPrivacyReport {
             raw_artifact_upload_permitted,
             raw_artifact_approval_id.as_deref(),
             raw_artifact_approval_reason_hash.as_deref(),
+            projection_content_hash.as_str(),
             [
                 observation_count_text.as_str(),
                 field_count_text.as_str(),
@@ -177,7 +182,16 @@ impl EndpointTelemetryPrivacyReport {
             redacted_count,
             raw_suppressed_count,
             local_only_count,
+            projection_content_hash,
             observations: projected_observations,
         }
     }
+}
+
+fn telemetry_privacy_projection_content_hash(
+    observations: &[EndpointTelemetryObservationProjection],
+) -> String {
+    let value = serde_json::to_value(observations).unwrap_or(serde_json::Value::Null);
+    let canonical = canonicalize_json(&value).unwrap_or_else(|_| "null".to_string());
+    sha256(canonical.as_bytes()).to_hex_prefixed()
 }

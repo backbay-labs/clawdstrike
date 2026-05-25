@@ -1,0 +1,23 @@
+#![allow(
+    clippy::bool_assert_comparison,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::useless_vec
+)]
+
+include!("core/part_1.rs");
+include!("core/part_2.rs");
+include!("core/part_3.rs");
+include!("core/part_4.rs");
+include!("policy_events/part_1.rs");
+include!("policy_events/part_2.rs");
+include!("policy_events/part_3.rs");
+include!("policy_events/part_4.rs");
+include!("evidence_and_control/part_1.rs");
+include!("evidence_and_control/part_2.rs");
+include!("evidence_and_control/part_3.rs");
+include!("evidence_and_control/part_4.rs");
+include!("response_and_settings/part_1.rs");
+include!("response_and_settings/part_2.rs");
+include!("response_and_settings/part_3.rs");
+include!("response_and_settings/part_4.rs");

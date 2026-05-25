@@ -131,6 +131,27 @@ guards:
     expect(egressDecision.guard).toBe("egress_allowlist");
   });
 
+  it("fromPolicy fails closed for MCP tools when the policy omits mcp_tool config", async () => {
+    const policy = `
+version: "1.2.0"
+name: "implicit mcp fail closed"
+guards:
+  egress_allowlist:
+    allow:
+      - "*"
+    default_action: allow
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const decision = await cs.check("mcp_tool", {
+      tool: "mcp__blender__execute_blender_code",
+      args: { code: "print(1)" },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("mcp_tool");
+  });
+
   it("fromPolicy wires secret_leak config into SecretLeakGuard", async () => {
     const policy = `
 version: "1.2.0"
@@ -442,6 +463,32 @@ guards:
     expect(details.redaction_requested).toBe(true);
     expect(details.match_length).toBeGreaterThan(0);
     expect(JSON.stringify(details)).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
+  });
+
+  it("checks string file-write content for secret leaks in local sessions", async () => {
+    const policy = `
+version: "1.2.0"
+name: "file write string secret policy"
+mode: monitor
+guards:
+  secret_leak:
+    enabled: true
+    patterns:
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{48}"
+        severity: error
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const session = cs.session();
+
+    const decision = await session.check("file_write", {
+      path: "/tmp/config.ts",
+      content: "OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("secret_leak");
   });
 
   it("skips prompt_injection guard when WASM is unavailable instead of fail-closing checks", async () => {

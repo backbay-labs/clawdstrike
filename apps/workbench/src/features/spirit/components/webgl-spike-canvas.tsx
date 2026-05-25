@@ -5,14 +5,15 @@
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useRef, Suspense, useEffect } from "react";
 import * as THREE from "three";
+import { logger } from "@/lib/logger";
 
 function SpinningCube() {
   const meshRef = useRef<THREE.Mesh>(null);
 
   useEffect(() => {
-    console.log("[WebGLSpike] SpinningCube mounted — WebGL context created");
+    logger.info("[WebGLSpike] SpinningCube mounted — WebGL context created");
     return () => {
-      console.log("[WebGLSpike] SpinningCube unmounted — WebGL context should dispose");
+      logger.info("[WebGLSpike] SpinningCube unmounted — WebGL context should dispose");
     };
   }, []);
 
@@ -43,7 +44,7 @@ export function WebGLSpikeCanvas() {
           gl={{ antialias: true, powerPreference: "high-performance" }}
           camera={{ position: [0, 0, 3], fov: 45 }}
           onCreated={() => {
-            console.log("[WebGLSpike] Canvas onCreated — context acquired");
+            logger.info("[WebGLSpike] Canvas onCreated — context acquired");
           }}
         >
           <Suspense fallback={null}>

@@ -99,6 +99,10 @@ const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
         name: "022_policy_rule_diff_response_actions.sql",
         sql: include_str!("../migrations/022_policy_rule_diff_response_actions.sql"),
     },
+    EmbeddedMigration {
+        name: "023_response_action_rollback_ack_status.sql",
+        sql: include_str!("../migrations/023_response_action_rollback_ack_status.sql"),
+    },
 ];
 
 const MIGRATION_LOCK_KEY: i64 = 0x4353_4D49_4752;

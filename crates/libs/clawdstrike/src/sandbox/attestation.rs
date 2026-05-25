@@ -358,10 +358,10 @@ impl SandboxRuntimeState {
             applied: false,
             supervised_requested: true,
             supervised_active: false,
-            contract: supervised_contract_name().to_string(),
-            authorization_model: supervised_authorization_model().to_string(),
-            fd_injection_equivalent: cfg!(target_os = "linux"),
-            fail_open_possible: cfg!(target_os = "macos"),
+            contract: unavailable_supervised_contract_name().to_string(),
+            authorization_model: "none".to_string(),
+            fd_injection_equivalent: false,
+            fail_open_possible: false,
             deadline_miss_count: 0,
             dropped_event_count: 0,
             degraded_reasons: vec![
@@ -643,6 +643,10 @@ fn supervised_contract_name() -> &'static str {
     } else {
         "supervised_contract_unavailable"
     }
+}
+
+fn unavailable_supervised_contract_name() -> &'static str {
+    "supervised_contract_unavailable"
 }
 
 fn supervised_unavailable_reason() -> &'static str {
@@ -927,6 +931,10 @@ mod tests {
     fn test_supervised_preflight_uses_platform_specific_unavailable_reason() {
         let runtime = SandboxRuntimeState::supervised_preflight_refused("provider unavailable");
 
+        assert_eq!(runtime.contract, "supervised_contract_unavailable");
+        assert_eq!(runtime.authorization_model, "none");
+        assert!(!runtime.fd_injection_equivalent);
+        assert!(!runtime.fail_open_possible);
         assert!(runtime
             .degraded_reasons
             .iter()

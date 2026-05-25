@@ -8,7 +8,7 @@
 import { parseEnvelope } from './timeline.js';
 import { CorrelationEngine } from './correlate/engine.js';
 import { WatchError } from './errors.js';
-import { buildNatsConnectOptions } from './nats.js';
+import { buildNatsConnectOptions, type NatsModuleLike } from './nats.js';
 import type { Alert, TimelineEvent, WatchConfig } from './types.js';
 
 const NATS_SUBJECT = 'clawdstrike.sdr.fact.>';
@@ -28,10 +28,9 @@ export async function* stream(
   options: StreamOptions,
 ): AsyncGenerator<Alert, void, undefined> {
   const natsModuleName = 'nats';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let natsModule: any;
+  let natsModule: NatsModuleLike;
   try {
-    natsModule = await import(natsModuleName);
+    natsModule = (await import(natsModuleName)) as NatsModuleLike;
   } catch {
     throw new WatchError(
       "The 'nats' package is required for streaming. Install it with: npm install nats",
@@ -86,10 +85,9 @@ export async function* streamAll(
   options: StreamOptions,
 ): AsyncGenerator<StreamItem, void, undefined> {
   const natsModuleName = 'nats';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let natsModule: any;
+  let natsModule: NatsModuleLike;
   try {
-    natsModule = await import(natsModuleName);
+    natsModule = (await import(natsModuleName)) as NatsModuleLike;
   } catch {
     throw new WatchError(
       "The 'nats' package is required for streaming. Install it with: npm install nats",

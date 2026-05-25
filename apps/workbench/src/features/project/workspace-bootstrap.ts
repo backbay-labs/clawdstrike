@@ -11,6 +11,7 @@
 
 import { isDesktop } from "@/lib/tauri-bridge";
 import { BUILTIN_RULESETS } from "@/features/policy/builtin-rulesets";
+import { logger } from "@/lib/logger";
 
 const TAURI_FS_SPECIFIER = "@tauri-apps/plugin-fs";
 
@@ -207,7 +208,7 @@ export async function bootstrapDefaultWorkspace(): Promise<string | null> {
 
     return workspacePath;
   } catch (err) {
-    console.error("[workspace-bootstrap] Failed to bootstrap workspace:", err);
+    logger.error("[workspace-bootstrap] Failed to bootstrap workspace:", err);
     return null;
   }
 }

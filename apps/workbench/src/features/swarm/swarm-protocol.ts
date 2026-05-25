@@ -394,8 +394,11 @@ export async function hashProtocolPayload(
   const hashable = normalizeHashablePayload(payload);
   const canonical = canonicalizeNormalizedJson(hashable);
   const encoded = new TextEncoder().encode(canonical);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Bun/@types mismatch
-  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded as any);
+  // Copy into a fresh ArrayBuffer-backed Uint8Array so SubtleCrypto accepts
+  // it as a BufferSource (avoids SharedArrayBuffer-typed inputs).
+  const copy = new Uint8Array(encoded.byteLength);
+  copy.set(encoded);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", copy);
   const digest = Array.from(new Uint8Array(hashBuffer))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");

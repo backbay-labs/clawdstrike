@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use hush_core::{canonicalize_json, sha256};
 use serde::{Deserialize, Serialize};
 
-use super::super::causal::CausalGraph;
+use super::super::causal::{CausalEdge, CausalGraph};
 use super::super::event::EndpointObservation;
 use super::super::stable_id;
 
@@ -67,7 +67,9 @@ pub struct EndpointGraphReference {
 impl EndpointGraphReference {
     #[must_use]
     pub fn for_observation(observation: &EndpointObservation, graph: &CausalGraph) -> Self {
-        let process_stable_key = observation.process.stable_key();
+        let process_stable_key = observation
+            .process
+            .stable_key_for_observation(&observation.observation_id);
         let process_node_id = stable_id("node", [process_stable_key.as_str()]);
         let mut node_ids = BTreeSet::new();
         if graph.nodes.contains_key(&process_node_id) {
@@ -85,15 +87,14 @@ impl EndpointGraphReference {
             node_ids.insert(edge.to.clone());
         }
 
-        let node_count = node_ids.len().to_string();
-        let edge_count = edge_ids.len().to_string();
+        let content_hash = canonical_graph_reference_content_hash(graph, &node_ids, &edge_ids);
+        let content_hash_for_id = content_hash.as_deref().unwrap_or("missing");
         let graph_slice_id = stable_id(
             "graph_slice",
             [
                 observation.observation_id.as_str(),
                 process_node_id.as_str(),
-                node_count.as_str(),
-                edge_count.as_str(),
+                content_hash_for_id,
             ],
         );
 
@@ -102,7 +103,7 @@ impl EndpointGraphReference {
             process_stable_key: Some(process_stable_key),
             process_node_id: Some(process_node_id),
             parent_process_guid: observation.process.parent_process_guid.clone(),
-            content_hash: None,
+            content_hash,
             node_ids: node_ids.into_iter().collect(),
             edge_ids,
         }
@@ -118,23 +119,16 @@ impl EndpointGraphReference {
             .iter()
             .map(|edge| edge.edge_id.clone())
             .collect();
-        let node_count = node_ids.len().to_string();
-        let edge_count = edge_ids.len().to_string();
-        let graph_slice_id = stable_id(
-            "graph_slice",
-            [
-                root_node_id.as_str(),
-                node_count.as_str(),
-                edge_count.as_str(),
-            ],
-        );
+        let content_hash = canonical_graph_content_hash(graph);
+        let content_hash_for_id = content_hash.as_deref().unwrap_or("missing");
+        let graph_slice_id = stable_id("graph_slice", [root_node_id.as_str(), content_hash_for_id]);
 
         Self {
             graph_slice_id: Some(graph_slice_id),
             process_stable_key: None,
             process_node_id: Some(root_node_id),
             parent_process_guid: None,
-            content_hash: canonical_graph_content_hash(graph),
+            content_hash,
             node_ids,
             edge_ids,
         }
@@ -142,6 +136,36 @@ impl EndpointGraphReference {
 }
 
 fn canonical_graph_content_hash(graph: &CausalGraph) -> Option<String> {
+    let mut canonical_graph = graph.clone();
+    canonical_graph
+        .edges
+        .sort_by(|left, right| left.edge_id.cmp(&right.edge_id));
+    canonical_graph_content_hash_for_value(&canonical_graph)
+}
+
+fn canonical_graph_reference_content_hash(
+    graph: &CausalGraph,
+    node_ids: &BTreeSet<String>,
+    edge_ids: &[String],
+) -> Option<String> {
+    let edge_id_set = edge_ids.iter().cloned().collect::<BTreeSet<_>>();
+    let nodes = graph
+        .nodes
+        .iter()
+        .filter(|(node_id, _)| node_ids.contains(node_id.as_str()))
+        .map(|(node_id, node)| (node_id.clone(), node.clone()))
+        .collect();
+    let mut edges = graph
+        .edges
+        .iter()
+        .filter(|edge| edge_id_set.contains(edge.edge_id.as_str()))
+        .cloned()
+        .collect::<Vec<CausalEdge>>();
+    edges.sort_by(|left, right| left.edge_id.cmp(&right.edge_id));
+    canonical_graph_content_hash_for_value(&CausalGraph { nodes, edges })
+}
+
+fn canonical_graph_content_hash_for_value(graph: &CausalGraph) -> Option<String> {
     serde_json::to_value(graph)
         .ok()
         .and_then(|value| canonicalize_json(&value).ok())

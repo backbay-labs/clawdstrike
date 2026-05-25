@@ -22,14 +22,23 @@ describe("BaseToolInterceptor", () => {
       audit: { logParameters: true },
     });
 
-    const context = createSecurityContext({ contextId: "ctx-1", sessionId: "sess-1" });
-    const result = await interceptor.beforeExecute("bash", { cmd: "rm -rf /" }, context);
+    const context = createSecurityContext({
+      contextId: "ctx-1",
+      sessionId: "sess-1",
+    });
+    const result = await interceptor.beforeExecute(
+      "bash",
+      { cmd: "rm -rf /" },
+      context,
+    );
 
     expect(result.proceed).toBe(false);
     expect(context.checkCount).toBe(1);
     expect(context.violationCount).toBe(1);
     expect(Array.from(context.blockedTools)).toContain("bash");
-    expect(context.auditEvents.some((e) => e.type === "tool_call_blocked")).toBe(true);
+    expect(
+      context.auditEvents.some((e) => e.type === "tool_call_blocked"),
+    ).toBe(true);
   });
 
   it("propagates security context metadata into policy events for attribution", async () => {
@@ -67,15 +76,25 @@ describe("BaseToolInterceptor", () => {
       audit: { logOutputs: true },
     });
 
-    const context = createSecurityContext({ contextId: "ctx-2", sessionId: "sess-2" });
+    const context = createSecurityContext({
+      contextId: "ctx-2",
+      sessionId: "sess-2",
+    });
 
     await interceptor.beforeExecute("tool_call", {}, context);
-    const processed = await interceptor.afterExecute("tool_call", {}, "SECRET", context);
+    const processed = await interceptor.afterExecute(
+      "tool_call",
+      {},
+      "SECRET",
+      context,
+    );
 
     expect(processed.output).toBe("[REDACTED]");
     expect(processed.modified).toBe(true);
     expect(processed.redactions?.[0]?.type).toBe("secret");
-    expect(context.auditEvents.some((e) => e.type === "tool_call_end")).toBe(true);
+    expect(context.auditEvents.some((e) => e.type === "tool_call_end")).toBe(
+      true,
+    );
   });
 
   it("does not mark output as modified when no redactor is available", async () => {
@@ -84,11 +103,19 @@ describe("BaseToolInterceptor", () => {
     };
 
     const interceptor = new BaseToolInterceptor(engine, {});
-    const context = createSecurityContext({ contextId: "ctx-3", sessionId: "sess-3" });
+    const context = createSecurityContext({
+      contextId: "ctx-3",
+      sessionId: "sess-3",
+    });
 
     await interceptor.beforeExecute("tool_call", {}, context);
     const output = { ok: true };
-    const processed = await interceptor.afterExecute("tool_call", {}, output, context);
+    const processed = await interceptor.afterExecute(
+      "tool_call",
+      {},
+      output,
+      context,
+    );
 
     expect(processed.output).toBe(output);
     expect(processed.modified).toBe(false);
@@ -129,7 +156,11 @@ describe("BaseToolInterceptor", () => {
       contextId: "ctx-translate-1",
       sessionId: "sess-translate-1",
     });
-    const result = await interceptor.beforeExecute("computer_use", { action: "click" }, context);
+    const result = await interceptor.beforeExecute(
+      "computer_use",
+      { action: "click" },
+      context,
+    );
 
     expect(result.proceed).toBe(true);
     expect(seenEventType).toBe("input.inject");
@@ -152,7 +183,11 @@ describe("BaseToolInterceptor", () => {
       contextId: "ctx-translate-err",
       sessionId: "sess-translate-err",
     });
-    const result = await interceptor.beforeExecute("computer_use", { action: "click" }, context);
+    const result = await interceptor.beforeExecute(
+      "computer_use",
+      { action: "click" },
+      context,
+    );
 
     expect(result.proceed).toBe(false);
     expect(result.decision.status).toBe("deny");
@@ -160,13 +195,16 @@ describe("BaseToolInterceptor", () => {
   });
 
   it("enforces sanitize decisions by returning modifiedParameters", async () => {
+    const rawSecret = "sk-1234567890abcdef1234567890abcdef";
     const engine: PolicyEngineLike = {
       evaluate: () => ({
         status: "sanitize",
         reason_code: "ADC_POLICY_SANITIZE",
+        original: `leaked ${rawSecret}`,
         sanitized: "Please summarize the quarterly report",
         message: "sanitized input",
       }),
+      redactSecrets: (value) => value.replaceAll(rawSecret, "[REDACTED]"),
     };
 
     const interceptor = new BaseToolInterceptor(engine, {
@@ -191,13 +229,16 @@ describe("BaseToolInterceptor", () => {
     });
     expect(result.replacementResult).toBeUndefined();
 
-    const sanitizeEvent = context.auditEvents.find((e) => e.type === "output_sanitized");
+    const sanitizeEvent = context.auditEvents.find(
+      (e) => e.type === "output_sanitized",
+    );
     expect(sanitizeEvent).toBeDefined();
     expect(sanitizeEvent?.details).toMatchObject({
       execution: {
         mode: "enforced",
       },
     });
+    expect(JSON.stringify(sanitizeEvent)).not.toContain(rawSecret);
   });
 
   it("supports sanitize replacement_result execution override", async () => {
@@ -217,7 +258,11 @@ describe("BaseToolInterceptor", () => {
       contextId: "ctx-sanitize-2",
       sessionId: "sess-sanitize-2",
     });
-    const result = await interceptor.beforeExecute("tool_call", { text: "danger" }, context);
+    const result = await interceptor.beforeExecute(
+      "tool_call",
+      { text: "danger" },
+      context,
+    );
 
     expect(result.proceed).toBe(true);
     expect(result.decision.status).toBe("sanitize");
@@ -249,7 +294,10 @@ describe("BaseToolInterceptor", () => {
 
     expect(result.proceed).toBe(true);
     expect(result.decision.status).toBe("sanitize");
-    expect(result.modifiedParameters).toEqual({ prompt: "safe prompt", mode: "strict" });
+    expect(result.modifiedParameters).toEqual({
+      prompt: "safe prompt",
+      mode: "strict",
+    });
     expect(result.replacementResult).toBeUndefined();
   });
 
@@ -267,7 +315,11 @@ describe("BaseToolInterceptor", () => {
       contextId: "ctx-sanitize-4",
       sessionId: "sess-sanitize-4",
     });
-    const result = await interceptor.beforeExecute("tool_call", "drop database", context);
+    const result = await interceptor.beforeExecute(
+      "tool_call",
+      "drop database",
+      context,
+    );
 
     expect(result.proceed).toBe(true);
     expect(result.decision.status).toBe("sanitize");
@@ -299,7 +351,9 @@ describe("BaseToolInterceptor", () => {
     expect(result.modifiedParameters).toBeUndefined();
     expect(result.replacementResult).toBeUndefined();
 
-    const sanitizeEvent = context.auditEvents.find((e) => e.type === "output_sanitized");
+    const sanitizeEvent = context.auditEvents.find(
+      (e) => e.type === "output_sanitized",
+    );
     expect(sanitizeEvent?.details).toMatchObject({
       execution: {
         mode: "advisory",
@@ -474,7 +528,8 @@ describe("BaseToolInterceptor", () => {
       edr: {
         enabled: true,
         token: "local-token",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
         includeAllowed: false,
       },
     });
@@ -495,7 +550,11 @@ describe("BaseToolInterceptor", () => {
       },
     });
 
-    await interceptor.beforeExecute("computer_use", { action: "click" }, context);
+    await interceptor.beforeExecute(
+      "computer_use",
+      { action: "click" },
+      context,
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -558,8 +617,10 @@ describe("BaseToolInterceptor", () => {
           direction: "download",
           browser: "chromium",
           downloadPath: "/Users/alice/Downloads/payload.zip",
-          sourceUrl: "https://downloads.example.invalid/payload.zip?token=MY_RAW_SECRET_1234567890",
-          sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          sourceUrl:
+            "https://downloads.example.invalid/payload.zip?token=MY_RAW_SECRET_1234567890",
+          sha256:
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           transfer_size: 4096,
         },
         metadata: {
@@ -570,7 +631,8 @@ describe("BaseToolInterceptor", () => {
       edr: {
         enabled: true,
         token: "local-token",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
         includeAllowed: false,
       },
     });
@@ -583,7 +645,11 @@ describe("BaseToolInterceptor", () => {
       },
     });
 
-    await interceptor.beforeExecute("computer_use", { action: "file_download" }, context);
+    await interceptor.beforeExecute(
+      "computer_use",
+      { action: "file_download" },
+      context,
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
@@ -597,7 +663,8 @@ describe("BaseToolInterceptor", () => {
       browser: "chromium",
       path: "/Users/alice/Downloads/payload.zip",
       sourceUrl: "https://downloads.example.invalid/payload.zip",
-      contentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      contentHash:
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       metadata: {
         collectorKind: "browser_runtime",
         runtime: "openai",
@@ -624,7 +691,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -640,7 +708,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -663,6 +732,55 @@ describe("BaseToolInterceptor", () => {
     expect(JSON.stringify(payload)).not.toContain("MY_RAW_SECRET");
   });
 
+  it("redacts URL userinfo from package-manager command telemetry", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: "allow" }),
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {
+      edr: {
+        enabled: true,
+        token: "local-token",
+        policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
+      },
+    });
+    const context = createSecurityContext({
+      contextId: "ctx-edr-package-url-1",
+      sessionId: "sess-edr-package-url-1",
+      metadata: { framework: "claude", agentId: "agent-package-url-1" },
+    });
+
+    await interceptor.beforeExecute(
+      "bash",
+      {
+        cmd: "npm install https://user:MY_RAW_SECRET@git.example/repo.git",
+      },
+      context,
+    );
+
+    const developerActivityCall = fetchMock.mock.calls.find(
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
+    );
+    expect(developerActivityCall).toBeDefined();
+
+    const payload = JSON.parse(String(developerActivityCall?.[1]?.body)) as {
+      activities: any[];
+    };
+    expect(payload.activities[0]).toMatchObject({
+      kind: "package_script",
+      package: "https://[REDACTED]@git.example/repo.git",
+      commandLine: "npm install https://[REDACTED]@git.example/repo.git",
+    });
+    expect(JSON.stringify(payload)).not.toContain("MY_RAW_SECRET");
+    expect(JSON.stringify(payload)).not.toContain("user:MY_RAW_SECRET");
+  });
+
   it("publishes additional language package-manager commands to local EDR", async () => {
     const fetchMock = vi.fn(async () => ({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
@@ -676,7 +794,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const cases = [
@@ -747,12 +866,20 @@ describe("BaseToolInterceptor", () => {
         metadata: { framework: "claude", agentId: "agent-package-1" },
       });
 
-      await interceptor.beforeExecute("bash", { cmd: testCase.command }, context);
+      await interceptor.beforeExecute(
+        "bash",
+        { cmd: testCase.command },
+        context,
+      );
 
       const developerActivityCall = fetchMock.mock.calls.find(
-        ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+        ([url]) =>
+          url === "http://agent.test/api/v1/agent/edr/developer-activity",
       );
-      expect(developerActivityCall, `missing activity for ${testCase.manager}`).toBeDefined();
+      expect(
+        developerActivityCall,
+        `missing activity for ${testCase.manager}`,
+      ).toBeDefined();
 
       const payload = JSON.parse(String(developerActivityCall?.[1]?.body)) as {
         activities: any[];
@@ -785,7 +912,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -808,7 +936,8 @@ describe("BaseToolInterceptor", () => {
     await interceptor.beforeExecute("bash", { cmd: "npm run build" }, context);
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -849,7 +978,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -878,7 +1008,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -915,7 +1046,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
 
@@ -930,7 +1062,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -965,7 +1098,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
 
@@ -980,7 +1114,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1015,7 +1150,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
 
@@ -1030,7 +1166,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1065,7 +1202,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
 
@@ -1075,12 +1213,16 @@ describe("BaseToolInterceptor", () => {
       createSecurityContext({
         contextId: "ctx-edr-python-pip-index-url-1",
         sessionId: "sess-edr-python-pip-index-url-1",
-        metadata: { framework: "opencode", agentId: "agent-python-pip-index-url-1" },
+        metadata: {
+          framework: "opencode",
+          agentId: "agent-python-pip-index-url-1",
+        },
       }),
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1115,7 +1257,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
 
@@ -1130,7 +1273,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1165,7 +1309,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
 
@@ -1180,7 +1325,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1215,7 +1361,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1235,7 +1382,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1264,7 +1412,9 @@ describe("BaseToolInterceptor", () => {
       },
     });
     expect(JSON.stringify(payload)).not.toContain("MY_RAW_SECRET");
-    expect(JSON.stringify(payload)).not.toContain("ghp_123456789012345678901234567890123456");
+    expect(JSON.stringify(payload)).not.toContain(
+      "ghp_123456789012345678901234567890123456",
+    );
   });
 
   it("publishes sensitive cloud CLI command developer activity to local EDR", async () => {
@@ -1280,7 +1430,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1296,7 +1447,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1329,7 +1481,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1340,12 +1493,16 @@ describe("BaseToolInterceptor", () => {
 
     await interceptor.beforeExecute(
       "shell",
-      { command: "gh secret set PROD_DB_URL --body redacted --repo acme/service" },
+      {
+        command:
+          "gh secret set PROD_DB_URL --body MY_RAW_SECRET --repo acme/service",
+      },
       context,
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1356,7 +1513,14 @@ describe("BaseToolInterceptor", () => {
       kind: "cloud_cli",
       provider: "gh",
       operation: "secret",
-      args: ["set", "PROD_DB_URL", "--body", "redacted", "--repo", "acme/service"],
+      args: [
+        "set",
+        "PROD_DB_URL",
+        "--body",
+        "[REDACTED]",
+        "--repo",
+        "acme/service",
+      ],
       sessionId: "sess-edr-gh-1",
       workloadId: "agent-workload-1",
       metadata: {
@@ -1364,6 +1528,7 @@ describe("BaseToolInterceptor", () => {
         shellClassifier: "cloud_cli",
       },
     });
+    expect(JSON.stringify(payload)).not.toContain("MY_RAW_SECRET");
   });
 
   it("publishes Vercel env pull commands as cloud CLI developer activity", async () => {
@@ -1379,7 +1544,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1395,7 +1561,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1429,7 +1596,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1445,7 +1613,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1479,7 +1648,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1495,7 +1665,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1529,7 +1700,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1545,7 +1717,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1579,7 +1752,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1595,7 +1769,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1629,7 +1804,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const cases = [
@@ -1664,7 +1840,8 @@ describe("BaseToolInterceptor", () => {
         args: ["list", "--project-ref", "prodref"],
       },
       {
-        command: "firebase functions:secrets:access STRIPE_WEBHOOK_SECRET --project prod-api",
+        command:
+          "firebase functions:secrets:access STRIPE_WEBHOOK_SECRET --project prod-api",
         provider: "firebase",
         operation: "functions:secrets:access",
         args: ["STRIPE_WEBHOOK_SECRET", "--project", "prod-api"],
@@ -1682,13 +1859,15 @@ describe("BaseToolInterceptor", () => {
         args: ["--api-key", "[REDACTED]"],
       },
       {
-        command: "stripe listen --print-secret --forward-to localhost:4242/webhook",
+        command:
+          "stripe listen --print-secret --forward-to localhost:4242/webhook",
         provider: "stripe",
         operation: "listen",
         args: ["--print-secret", "--forward-to", "localhost:4242/webhook"],
       },
       {
-        command: "sentry-cli login --auth-token=sk-SENTRYTOKEN_1234567890abcdef",
+        command:
+          "sentry-cli login --auth-token=sk-SENTRYTOKEN_1234567890abcdef",
         provider: "sentry",
         operation: "login",
         args: ["--auth-token=[REDACTED]"],
@@ -1712,10 +1891,19 @@ describe("BaseToolInterceptor", () => {
         args: ["update-kubeconfig", "--name", "prod", "--region", "us-east-1"],
       },
       {
-        command: "aws codeartifact login --tool npm --domain prod --repository private",
+        command:
+          "aws codeartifact login --tool npm --domain prod --repository private",
         provider: "aws",
         operation: "codeartifact",
-        args: ["login", "--tool", "npm", "--domain", "prod", "--repository", "private"],
+        args: [
+          "login",
+          "--tool",
+          "npm",
+          "--domain",
+          "prod",
+          "--repository",
+          "private",
+        ],
       },
       {
         command: "gcloud auth configure-docker us-docker.pkg.dev --quiet",
@@ -1724,10 +1912,17 @@ describe("BaseToolInterceptor", () => {
         args: ["configure-docker", "us-docker.pkg.dev", "--quiet"],
       },
       {
-        command: "gcloud container clusters get-credentials prod --region us-central1",
+        command:
+          "gcloud container clusters get-credentials prod --region us-central1",
         provider: "gcloud",
         operation: "container",
-        args: ["clusters", "get-credentials", "prod", "--region", "us-central1"],
+        args: [
+          "clusters",
+          "get-credentials",
+          "prod",
+          "--region",
+          "us-central1",
+        ],
       },
       {
         command: "az acr login --name prodregistry",
@@ -1745,7 +1940,13 @@ describe("BaseToolInterceptor", () => {
         command: "az aks get-credentials --resource-group rg-prod --name prod",
         provider: "az",
         operation: "aks",
-        args: ["get-credentials", "--resource-group", "rg-prod", "--name", "prod"],
+        args: [
+          "get-credentials",
+          "--resource-group",
+          "rg-prod",
+          "--name",
+          "prod",
+        ],
       },
       {
         command: "kubectl get secret prod-token -o yaml",
@@ -1760,7 +1961,8 @@ describe("BaseToolInterceptor", () => {
         args: ["get", "dbPassword", "--show-secrets"],
       },
       {
-        command: "circleci context store-secret github acme production DATABASE_URL",
+        command:
+          "circleci context store-secret github acme production DATABASE_URL",
         provider: "circleci",
         operation: "context",
         args: ["store-secret", "github", "acme", "production", "DATABASE_URL"],
@@ -1784,10 +1986,10 @@ describe("BaseToolInterceptor", () => {
         args: ["get", "acme/service", "deploy_key"],
       },
       {
-        command: "sem secret create DATABASE_URL --value postgres://redacted",
+        command: "sem secret create DATABASE_URL --value MY_RAW_SECRET",
         provider: "semaphore",
         operation: "secret",
-        args: ["create", "DATABASE_URL", "--value", "postgres://redacted"],
+        args: ["create", "DATABASE_URL", "--value", "[REDACTED]"],
       },
       {
         command: "appveyor encrypt --secret deploy-key",
@@ -1835,10 +2037,15 @@ describe("BaseToolInterceptor", () => {
         metadata: { framework: "openai", workloadId: "agent-workload-1" },
       });
 
-      await interceptor.beforeExecute("shell", { command: testCase.command }, context);
+      await interceptor.beforeExecute(
+        "shell",
+        { command: testCase.command },
+        context,
+      );
 
       const developerActivityCall = fetchMock.mock.calls.find(
-        ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+        ([url]) =>
+          url === "http://agent.test/api/v1/agent/edr/developer-activity",
       );
       expect(
         developerActivityCall,
@@ -1860,6 +2067,7 @@ describe("BaseToolInterceptor", () => {
           shellClassifier: "cloud_cli",
         },
       });
+      expect(JSON.stringify(payload)).not.toContain("MY_RAW_SECRET");
     }
   });
 
@@ -1876,7 +2084,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1885,10 +2094,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "langchain", agentId: "agent-secret-1" },
     });
 
-    await interceptor.beforeExecute("bash", { cmd: "cat .env.production" }, context);
+    await interceptor.beforeExecute(
+      "bash",
+      { cmd: "cat .env.production" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1925,7 +2139,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1941,7 +2156,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -1978,7 +2194,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -1994,7 +2211,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2031,7 +2249,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2040,10 +2259,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "claude", agentId: "agent-pass-1" },
     });
 
-    await interceptor.beforeExecute("shell", { command: "pass show prod/api-token" }, context);
+    await interceptor.beforeExecute(
+      "shell",
+      { command: "pass show prod/api-token" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2080,7 +2304,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2089,10 +2314,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "claude", agentId: "agent-ssh-agent-1" },
     });
 
-    await interceptor.beforeExecute("shell", { command: "ssh-add -L" }, context);
+    await interceptor.beforeExecute(
+      "shell",
+      { command: "ssh-add -L" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2129,7 +2359,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2138,10 +2369,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "claude", agentId: "agent-git-credential-1" },
     });
 
-    await interceptor.beforeExecute("shell", { command: "git credential fill" }, context);
+    await interceptor.beforeExecute(
+      "shell",
+      { command: "git credential fill" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2178,7 +2414,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2194,7 +2431,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2231,7 +2469,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2247,7 +2486,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2287,7 +2527,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2296,10 +2537,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "openai", agentId: "agent-file-secret-1" },
     });
 
-    await interceptor.beforeExecute("read_file", { path: ".env.production" }, context);
+    await interceptor.beforeExecute(
+      "read_file",
+      { path: ".env.production" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2336,7 +2582,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2345,10 +2592,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "openai", agentId: "agent-ssh-key-1" },
     });
 
-    await interceptor.beforeExecute("read_file", { path: ".ssh/id_ed25519" }, context);
+    await interceptor.beforeExecute(
+      "read_file",
+      { path: ".ssh/id_ed25519" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2385,7 +2637,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2394,10 +2647,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "openai", agentId: "agent-docker-config-1" },
     });
 
-    await interceptor.beforeExecute("read_file", { path: "~/.docker/config.json" }, context);
+    await interceptor.beforeExecute(
+      "read_file",
+      { path: "~/.docker/config.json" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2434,7 +2692,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2443,10 +2702,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "openai", agentId: "agent-cargo-credentials-1" },
     });
 
-    await interceptor.beforeExecute("read_file", { path: "~/.cargo/credentials.toml" }, context);
+    await interceptor.beforeExecute(
+      "read_file",
+      { path: "~/.cargo/credentials.toml" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2483,7 +2747,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2492,10 +2757,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "openai", agentId: "agent-gem-credentials-1" },
     });
 
-    await interceptor.beforeExecute("read_file", { path: "~/.gem/credentials" }, context);
+    await interceptor.beforeExecute(
+      "read_file",
+      { path: "~/.gem/credentials" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2532,7 +2802,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const cases = [
@@ -2588,10 +2859,15 @@ describe("BaseToolInterceptor", () => {
         metadata: { framework: "openai", agentId: testCase.agentId },
       });
 
-      await interceptor.beforeExecute("read_file", { path: testCase.path }, context);
+      await interceptor.beforeExecute(
+        "read_file",
+        { path: testCase.path },
+        context,
+      );
 
       const developerActivityCall = fetchMock.mock.calls.find(
-        ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+        ([url]) =>
+          url === "http://agent.test/api/v1/agent/edr/developer-activity",
       );
       expect(developerActivityCall).toBeDefined();
 
@@ -2629,7 +2905,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const cases = [
@@ -2657,10 +2934,15 @@ describe("BaseToolInterceptor", () => {
         metadata: { framework: "openai", agentId: testCase.agentId },
       });
 
-      await interceptor.beforeExecute("read_file", { path: testCase.path }, context);
+      await interceptor.beforeExecute(
+        "read_file",
+        { path: testCase.path },
+        context,
+      );
 
       const developerActivityCall = fetchMock.mock.calls.find(
-        ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+        ([url]) =>
+          url === "http://agent.test/api/v1/agent/edr/developer-activity",
       );
       expect(developerActivityCall).toBeDefined();
 
@@ -2698,7 +2980,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const cases = [
@@ -2733,10 +3016,15 @@ describe("BaseToolInterceptor", () => {
         metadata: { framework: "openai", agentId: testCase.agentId },
       });
 
-      await interceptor.beforeExecute("read_file", { path: testCase.path }, context);
+      await interceptor.beforeExecute(
+        "read_file",
+        { path: testCase.path },
+        context,
+      );
 
       const developerActivityCall = fetchMock.mock.calls.find(
-        ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+        ([url]) =>
+          url === "http://agent.test/api/v1/agent/edr/developer-activity",
       );
       expect(developerActivityCall).toBeDefined();
 
@@ -2774,7 +3062,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const cases = [
@@ -2802,10 +3091,15 @@ describe("BaseToolInterceptor", () => {
         metadata: { framework: "openai", agentId: testCase.agentId },
       });
 
-      await interceptor.beforeExecute("read_file", { path: testCase.path }, context);
+      await interceptor.beforeExecute(
+        "read_file",
+        { path: testCase.path },
+        context,
+      );
 
       const developerActivityCall = fetchMock.mock.calls.find(
-        ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+        ([url]) =>
+          url === "http://agent.test/api/v1/agent/edr/developer-activity",
       );
       expect(developerActivityCall).toBeDefined();
 
@@ -2843,7 +3137,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
       translateToolCall: ({ sessionId }) => ({
         eventId: "evt-secret-access-1",
@@ -2864,10 +3159,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "claude", agentId: "agent-secret-access-1" },
     });
 
-    await interceptor.beforeExecute("secret_lookup", { value: "MY_RAW_SECRET" }, context);
+    await interceptor.beforeExecute(
+      "secret_lookup",
+      { value: "MY_RAW_SECRET" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2905,7 +3205,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2924,7 +3225,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2935,7 +3237,8 @@ describe("BaseToolInterceptor", () => {
       kind: "dns_lookup",
       query: "prod-admin-endpoint-honey.corp.invalid",
       image: "curl",
-      commandLine: "curl https://prod-admin-endpoint-honey.corp.invalid/admin?token=[REDACTED]",
+      commandLine:
+        "curl https://prod-admin-endpoint-honey.corp.invalid/admin?token=[REDACTED]",
       sessionId: "sess-edr-dns-1",
       agentId: "agent-dns-1",
       metadata: {
@@ -2961,7 +3264,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -2973,13 +3277,15 @@ describe("BaseToolInterceptor", () => {
     await interceptor.beforeExecute(
       "shell",
       {
-        command: "launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.acme.agent.plist",
+        command:
+          "launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.acme.agent.plist",
       },
       context,
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -2992,7 +3298,8 @@ describe("BaseToolInterceptor", () => {
       operation: "bootstrap",
       target: "~/Library/LaunchAgents/com.acme.agent.plist",
       image: "launchctl",
-      commandLine: "launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.acme.agent.plist",
+      commandLine:
+        "launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.acme.agent.plist",
       sessionId: "sess-edr-launchctl-1",
       agentId: "agent-launchctl-1",
       metadata: {
@@ -3016,7 +3323,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3035,7 +3343,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3047,7 +3356,8 @@ describe("BaseToolInterceptor", () => {
       mechanism: "launch_agent",
       operation: "write",
       target: "~/Library/LaunchAgents/com.acme.agent.plist",
-      commandLine: "persistence_change write ~/Library/LaunchAgents/com.acme.agent.plist",
+      commandLine:
+        "persistence_change write ~/Library/LaunchAgents/com.acme.agent.plist",
       sessionId: "sess-edr-launch-agent-write-1",
       agentId: "agent-launch-agent-write-1",
       metadata: {
@@ -3073,7 +3383,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3091,7 +3402,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3128,7 +3440,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3147,7 +3460,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3185,7 +3499,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3203,7 +3518,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3240,7 +3556,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3260,7 +3577,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3274,7 +3592,8 @@ describe("BaseToolInterceptor", () => {
       protocol: "https",
       method: "POST",
       url: "https://collector.example.invalid/ingest",
-      commandLine: "network_egress POST https://collector.example.invalid/ingest",
+      commandLine:
+        "network_egress POST https://collector.example.invalid/ingest",
       sessionId: "sess-edr-network-egress-1",
       agentId: "agent-network-egress-1",
       metadata: {
@@ -3301,7 +3620,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3321,7 +3641,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3361,7 +3682,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3370,10 +3692,15 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "openai", agentId: "agent-file-read-1" },
     });
 
-    await interceptor.beforeExecute("read_file", { path: "/repo/README.md" }, context);
+    await interceptor.beforeExecute(
+      "read_file",
+      { path: "/repo/README.md" },
+      context,
+    );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3410,7 +3737,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3436,7 +3764,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3475,7 +3804,8 @@ describe("BaseToolInterceptor", () => {
         enabled: true,
         token: "local-token",
         policyEventsUrl: "http://agent.test/api/v1/agent/edr/policy-events",
-        developerActivityUrl: "http://agent.test/api/v1/agent/edr/developer-activity",
+        developerActivityUrl:
+          "http://agent.test/api/v1/agent/edr/developer-activity",
       },
     });
     const context = createSecurityContext({
@@ -3494,7 +3824,8 @@ describe("BaseToolInterceptor", () => {
     );
 
     const developerActivityCall = fetchMock.mock.calls.find(
-      ([url]) => url === "http://agent.test/api/v1/agent/edr/developer-activity",
+      ([url]) =>
+        url === "http://agent.test/api/v1/agent/edr/developer-activity",
     );
     expect(developerActivityCall).toBeDefined();
 
@@ -3540,7 +3871,11 @@ describe("BaseToolInterceptor", () => {
       metadata: { framework: "openai" },
     });
 
-    await interceptor.beforeExecute("tool_call", { prompt: "MY_RAW_SECRET" }, context);
+    await interceptor.beforeExecute(
+      "tool_call",
+      { prompt: "MY_RAW_SECRET" },
+      context,
+    );
     fetchMock.mockClear();
 
     await interceptor.afterExecute(

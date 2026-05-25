@@ -5,6 +5,7 @@ use super::{evidence_hash_for_value, stable_id};
 
 pub fn endpoint_policy_event_replay_id(input: EndpointPolicyEventReplayIdInput<'_>) -> String {
     let policy_epoch = input.policy_epoch.to_string();
+    let event_source = evidence_hash_for_value(input.event_source);
     let event_stream_hash = evidence_hash_for_value(input.event_stream_hash);
     let result_hash = evidence_hash_for_value(input.result_hash);
     let event_count = evidence_hash_for_value(input.event_count.to_string());
@@ -17,6 +18,7 @@ pub fn endpoint_policy_event_replay_id(input: EndpointPolicyEventReplayIdInput<'
         [
             input.policy_hash,
             policy_epoch.as_str(),
+            event_source.as_str(),
             event_stream_hash.as_str(),
             result_hash.as_str(),
             event_count.as_str(),
@@ -33,6 +35,7 @@ pub fn endpoint_policy_event_impact_id(input: EndpointPolicyEventImpactIdInput<'
     let current_policy_epoch = input.current_policy_epoch.to_string();
     let proposed_policy_epoch = evidence_hash_for_value(input.proposed_policy_epoch.to_string());
     let proposed_policy_hash = evidence_hash_for_value(input.proposed_policy_hash);
+    let event_source = evidence_hash_for_value(input.event_source);
     let event_stream_hash = evidence_hash_for_value(input.event_stream_hash);
     let current_result_hash = evidence_hash_for_value(input.current_result_hash);
     let proposed_result_hash = evidence_hash_for_value(input.proposed_result_hash);
@@ -48,6 +51,7 @@ pub fn endpoint_policy_event_impact_id(input: EndpointPolicyEventImpactIdInput<'
             current_policy_epoch.as_str(),
             proposed_policy_hash.as_str(),
             proposed_policy_epoch.as_str(),
+            event_source.as_str(),
             event_stream_hash.as_str(),
             current_result_hash.as_str(),
             proposed_result_hash.as_str(),

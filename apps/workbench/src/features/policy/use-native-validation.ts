@@ -17,6 +17,7 @@ import type {
   NativeValidationState,
 } from "@/features/policy/stores/policy-store";
 import type { GuardId } from "@/lib/workbench/types";
+import { logger } from "@/lib/logger";
 
 const GUARD_IDS: readonly string[] = [
   "forbidden_path",
@@ -181,7 +182,7 @@ export async function triggerNativeValidation(
       payload: result,
     });
   } catch (err) {
-    console.error("[native-validation] IPC call failed:", err);
+    logger.error("[native-validation] IPC call failed:", err);
     dispatch({ type: "SET_NATIVE_VALIDATION", payload: EMPTY_NATIVE_VALIDATION });
   }
 }
@@ -233,7 +234,7 @@ export function useNativeValidation(
           payload: result,
         });
       }).catch((err) => {
-        console.error("[native-validation] IPC call failed:", err);
+        logger.error("[native-validation] IPC call failed:", err);
         dispatch({ type: "SET_NATIVE_VALIDATION", payload: EMPTY_NATIVE_VALIDATION });
       });
     }, DEBOUNCE_MS);

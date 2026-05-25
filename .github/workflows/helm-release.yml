@@ -15,6 +15,12 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  # Release publishing must never cancel itself; coalesce by ref so multiple
+  # taggings for the same ref collapse but parallel tags still publish.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   HELM_OCI_REPO: oci://ghcr.io/backbay-labs/clawdstrike/helm
   CHART_NAME: clawdstrike
@@ -23,13 +29,14 @@ jobs:
   publish-oci:
     name: Package and Publish OCI Chart
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       version: ${{ steps.resolve-version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Resolve release version
         id: resolve-version
@@ -61,7 +68,7 @@ jobs:
         run: helm push "dist/helm/clawdstrike-$VERSION.tgz" "$HELM_OCI_REPO"
 
       - name: Upload packaged chart artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: clawdstrike-chart-${{ steps.resolve-version.outputs.version }}
           path: dist/helm/clawdstrike-${{ steps.resolve-version.outputs.version }}.tgz
@@ -69,6 +76,7 @@ jobs:
   publish-artifacthub-metadata:
     name: Publish Artifact Hub Metadata
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: publish-oci
     env:
       ARTIFACTHUB_REPOSITORY_ID: ${{ secrets.ARTIFACTHUB_REPOSITORY_ID }}
@@ -87,7 +95,7 @@ jobs:
 
       - name: Setup ORAS
         if: steps.gate.outputs.should_publish == 'true'
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Login to GHCR for ORAS
         if: steps.gate.outputs.should_publish == 'true'

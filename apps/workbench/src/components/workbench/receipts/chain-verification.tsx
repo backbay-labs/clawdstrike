@@ -10,6 +10,7 @@ import { isDesktop } from "@/lib/tauri-bridge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { IconCheck, IconX, IconCopy } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 
 
 interface ClientReceiptVerification {
@@ -345,7 +346,7 @@ export function ChainVerification({ receipts, onClose }: ChainVerificationProps)
       const client = await verifyChainClientSide(receipts);
       setResult(normaliseClient(client));
     } catch (err) {
-      console.error("[chain-verification] verification failed:", err);
+      logger.error("[chain-verification] verification failed:", err);
       // Attempt client-side as last resort
       try {
         const client = await verifyChainClientSide(receipts);

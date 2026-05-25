@@ -2,7 +2,7 @@ import type { AuditEvent, PolicyEngineLike } from "@clawdstrike/adapter-core";
 import { createSecurityContext } from "@clawdstrike/adapter-core";
 import { getWasmModule, initWasm, isWasmBackend } from "@clawdstrike/sdk";
 import { describe, expect, it, vi } from "vitest";
-import { ClawdstrikePromptSecurityError } from "./errors.js";
+import { ClawdstrikeBlockedError, ClawdstrikePromptSecurityError } from "./errors.js";
 import { buildPromptSecurityPolicyEventForEdr, createClawdstrikeMiddleware } from "./middleware.js";
 
 // Attempt WASM initialization — detection features require it.
@@ -20,7 +20,7 @@ try {
 }
 
 describe("wrapLanguageModel", () => {
-  it("wraps doGenerate and annotates blocked tool calls", async () => {
+  it("wraps doGenerate and rejects blocked tool calls", async () => {
     const engine: PolicyEngineLike = {
       evaluate: (event) => ({
         status: event.eventType === "command_exec" ? "deny" : "allow",
@@ -54,11 +54,11 @@ describe("wrapLanguageModel", () => {
     };
 
     const model = security.wrapLanguageModel(baseModel);
-    const result = await (model as any).doGenerate({ prompt: [] });
+    await expect((model as any).doGenerate({ prompt: [] })).rejects.toBeInstanceOf(
+      ClawdstrikeBlockedError,
+    );
 
     expect(experimental_wrapLanguageModel).toHaveBeenCalledTimes(1);
-    expect(result.toolCalls[0].__clawdstrike_blocked).toBe(true);
-    expect(typeof result.toolCalls[0].__clawdstrike_reason).toBe("string");
   });
 
   it("wraps doStream and uses StreamingToolGuard when enabled", async () => {
@@ -117,16 +117,15 @@ describe("wrapLanguageModel", () => {
     const model = security.wrapLanguageModel(baseModel);
     const result = await (model as any).doStream({ prompt: [] });
 
-    const out: any[] = [];
     const reader = result.stream.getReader();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      out.push(value);
-    }
-
-    const toolCall = out.find((c) => c.type === "tool-call");
-    expect(toolCall.__clawdstrike_blocked).toBe(true);
+    await expect(
+      (async () => {
+        while (true) {
+          const { done } = await reader.read();
+          if (done) break;
+        }
+      })(),
+    ).rejects.toBeInstanceOf(ClawdstrikeBlockedError);
   });
 
   it.skipIf(!wasmAvailable)("blocks doGenerate on jailbreak detection in block mode", async () => {

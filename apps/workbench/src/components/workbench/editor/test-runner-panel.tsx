@@ -51,6 +51,7 @@ import { SdkIntegrationTab } from "@/components/workbench/editor/sdk-integration
 import { CoverageStrip } from "@/components/workbench/editor/coverage-strip";
 import { TestDiffPanel } from "@/components/workbench/editor/test-diff-panel";
 import { generateScenariosFromPolicy } from "@/lib/workbench/scenario-generator";
+import { logger } from "@/lib/logger";
 
 
 type RunnerTab = "quick" | "suite" | "sdk" | "history" | "live";
@@ -896,7 +897,7 @@ function TestSuiteTab() {
       };
       await testHistoryStore.addRun(storedRun);
     } catch (err) {
-      console.warn("[TestRunner] Failed to persist test run to IndexedDB:", err);
+      logger.warn("[TestRunner] Failed to persist test run to IndexedDB:", err);
       toast({
         type: "warning",
         title: "History not saved",
@@ -1316,7 +1317,7 @@ function HistoryTab() {
           setHistoryLoadError(null);
         }
       } catch (err) {
-        console.warn("[HistoryTab] Failed to load test history from IndexedDB:", err);
+        logger.warn("[HistoryTab] Failed to load test history from IndexedDB:", err);
         if (!cancelled) {
           setHistoryLoadError(String(err));
         }

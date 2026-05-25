@@ -165,6 +165,10 @@ describe('Decision caching in handler', () => {
   });
 
   it('should key tool_call cache entries by tool parameters and output', async () => {
+    initToolGuard({
+      ...config,
+      guards: { mcp_tool: false },
+    });
     const { decisionCache: cache } = await import('../src/hooks/tool-guard/handler.js');
 
     const ev1 = makeToolResultEvent('custom_tool', { a: 1 }, 'ok');

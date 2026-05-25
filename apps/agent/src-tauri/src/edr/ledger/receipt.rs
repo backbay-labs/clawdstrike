@@ -14,35 +14,40 @@ use std::fs::{self, OpenOptions};
 use std::io::{Seek as _, SeekFrom, Write as _};
 use std::path::{Path as FsPath, PathBuf};
 
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+
 use anyhow::{Context, Result};
 use clawdstrike_policy_event::edr::{
     CausalGraph, DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan,
-    DeceptionRotationReport, DetectionFinding, EndpointDecisionActor, EndpointDecisionReceipt,
-    EndpointDeceptionCleanupReceiptInput, EndpointDeceptionMaterializationReceiptInput,
-    EndpointDeceptionRotationReceiptInput, EndpointDetectionReceiptInput,
+    DeceptionRotationReport, DetectionFinding, EndpointDeceptionCleanupReceiptInput,
+    EndpointDeceptionMaterializationReceiptInput, EndpointDeceptionRotationReceiptInput,
+    EndpointDecisionActor, EndpointDecisionReceipt, EndpointDetectionReceiptInput,
     EndpointEvidenceBundleManifestReceiptInput, EndpointGraphSliceReceiptInput,
-    EndpointObservation, EndpointObservationReceiptInput,
-    EndpointPolicyDecisionReceiptInput, EndpointPolicyDeltaReceiptInput,
-    EndpointPolicyEventImpactReceiptInput, EndpointPolicyEventReplayReceiptInput,
-    EndpointPolicySimulationReport, EndpointPolicySnapshot, EndpointProviderDegradationReceiptInput,
-    EndpointReceiptEvidence, EndpointResponseAcknowledgementReceiptInput,
-    EndpointResponseAcknowledgementReport, EndpointResponseExecutionReceiptInput,
-    EndpointResponseExecutionReport, EndpointResponsePlan, EndpointResponseReceiptInput,
-    EndpointResponseRollbackReceiptInput, EndpointResponseRollbackReport,
-    EndpointSensorState, EndpointSensorStateReceiptInput, EndpointSimulationReceiptInput,
-    EndpointTelemetryPrivacyReceiptInput, EndpointTelemetryPrivacyReport,
+    EndpointObservation, EndpointObservationReceiptInput, EndpointPolicyDecisionReceiptInput,
+    EndpointPolicyDeltaReceiptInput, EndpointPolicyEventImpactReceiptInput,
+    EndpointPolicyEventReplayReceiptInput, EndpointPolicySimulationReport, EndpointPolicySnapshot,
+    EndpointProviderDegradationReceiptInput, EndpointReceiptEvidence,
+    EndpointResponseAcknowledgementReceiptInput, EndpointResponseAcknowledgementReport,
+    EndpointResponseExecutionReceiptInput, EndpointResponseExecutionReport, EndpointResponsePlan,
+    EndpointResponseReceiptInput, EndpointResponseRollbackReceiptInput,
+    EndpointResponseRollbackReport, EndpointSensorState, EndpointSensorStateReceiptInput,
+    EndpointSimulationReceiptInput, EndpointTelemetryPrivacyReceiptInput,
+    EndpointTelemetryPrivacyReport,
 };
-use hush_core::{Keypair, SignedReceipt};
+use hush_core::{canonicalize_json, sha256, Keypair, SignedReceipt};
+use serde::Serialize;
 
 use crate::api_server::{
     detection_severity_from_policy_label, endpoint_id_for_observation, endpoint_id_for_settings,
-    endpoint_receipt_index_path, endpoint_receipt_index_record, load_or_create_edr_receipt_signer,
-    next_receipt_sequence, policy_delta_source_context_evidence_value,
-    provider_policy_decision_provider_state, read_endpoint_receipt_ledger,
-    read_recent_indexed_endpoint_receipts, rebuild_endpoint_receipt_index, receipt_age_seconds,
-    receipt_compaction_record, receipt_local_sequence, receipt_matches_filter,
-    EdrPolicyDeltaArtifact, EdrPolicyEventImpactReport, EdrPolicyEventReplayReport,
-    EdrReceiptCompactionRecord, EdrReceiptFilter,
+    endpoint_receipt_index_path, endpoint_receipt_index_record,
+    load_or_create_edr_receipt_signer_with_requirement, next_receipt_sequence,
+    policy_delta_source_context_evidence_value, provider_policy_decision_provider_state,
+    read_endpoint_receipt_ledger, read_recent_indexed_endpoint_receipts,
+    rebuild_endpoint_receipt_index, receipt_age_seconds, receipt_compaction_record, receipt_family,
+    receipt_local_sequence, receipt_matches_filter, EdrPolicyDeltaArtifact,
+    EdrPolicyEventImpactReport, EdrPolicyEventReplayReport, EdrReceiptCompactionRecord,
+    EdrReceiptFilter,
 };
 use crate::policy::PolicyCheckOutput;
 use crate::settings::Settings;
@@ -61,6 +66,31 @@ pub(crate) struct ReceiptCompactionReport {
     pub(crate) records: Vec<EdrReceiptCompactionRecord>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceiptCompactionManifest {
+    schema_version: &'static str,
+    compacted_at: String,
+    ledger_path: String,
+    max_receipts: Option<usize>,
+    min_age_seconds: u64,
+    pre_ledger_sha256: String,
+    post_ledger_sha256: String,
+    pre_receipt_count: usize,
+    post_receipt_count: usize,
+    retained: Vec<ReceiptCompactionManifestEntry>,
+    removed: Vec<ReceiptCompactionManifestEntry>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceiptCompactionManifestEntry {
+    receipt_id: Option<String>,
+    family: Option<String>,
+    local_sequence: Option<u64>,
+    signed_receipt_sha256: String,
+}
+
 pub(crate) struct ResponseExecutionReceiptSigningInput<'a> {
     pub(crate) settings: &'a Settings,
     pub(crate) actor: EndpointDecisionActor,
@@ -71,10 +101,22 @@ pub(crate) struct ResponseExecutionReceiptSigningInput<'a> {
     pub(crate) additional_evidence: &'a [EndpointReceiptEvidence],
 }
 
+pub(crate) struct PolicyDecisionReceiptSigningInput<'a> {
+    pub(crate) actor: EndpointDecisionActor,
+    pub(crate) policy: EndpointPolicySnapshot,
+    pub(crate) sensor_state: EndpointSensorState,
+    pub(crate) observation: &'a EndpointObservation,
+    pub(crate) graph: &'a CausalGraph,
+    pub(crate) action_type: &'a str,
+    pub(crate) target: &'a str,
+    pub(crate) decision: &'a PolicyCheckOutput,
+}
+
 pub(crate) struct EdrPolicyDeltaReceiptSigningInput<'a> {
     pub(crate) artifact: &'a EdrPolicyDeltaArtifact,
     pub(crate) artifact_hash: &'a str,
     pub(crate) operation: &'a str,
+    pub(crate) actor: Option<EndpointDecisionActor>,
     pub(crate) previous_policy_hash: Option<&'a str>,
     pub(crate) new_policy_hash: Option<&'a str>,
     pub(crate) backup_path: Option<&'a str>,
@@ -101,9 +143,21 @@ pub(crate) struct DeceptionRotationReceiptSigningInput<'a> {
 
 impl EndpointReceiptLedger {
     pub(crate) fn open(path: impl Into<PathBuf>) -> Result<Self> {
+        Self::open_with_signer_requirement(path, false)
+    }
+
+    pub(crate) fn open_require_enrollment(path: impl Into<PathBuf>) -> Result<Self> {
+        Self::open_with_signer_requirement(path, true)
+    }
+
+    fn open_with_signer_requirement(
+        path: impl Into<PathBuf>,
+        require_enrolled_signer: bool,
+    ) -> Result<Self> {
         let path = path.into();
         let next_sequence = next_receipt_sequence(&path)?;
-        let (keypair, signer_identity) = load_or_create_edr_receipt_signer()?;
+        let (keypair, signer_identity) =
+            load_or_create_edr_receipt_signer_with_requirement(require_enrolled_signer)?;
         let signer_public_key = keypair.public_key().to_hex();
         Ok(Self {
             path: Some(path),
@@ -114,6 +168,7 @@ impl EndpointReceiptLedger {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient(keypair: Keypair, signer_identity: impl Into<String>) -> Self {
         let signer_public_key = keypair.public_key().to_hex();
         Self {
@@ -316,28 +371,25 @@ impl EndpointReceiptLedger {
 
     pub(crate) fn sign_policy_decision_receipt(
         &mut self,
-        actor: EndpointDecisionActor,
-        policy: EndpointPolicySnapshot,
-        sensor_state: EndpointSensorState,
-        action_type: &str,
-        target: &str,
-        decision: &PolicyCheckOutput,
+        input: PolicyDecisionReceiptSigningInput<'_>,
     ) -> Result<SignedReceipt> {
         let mut receipt =
             EndpointDecisionReceipt::for_policy_decision(EndpointPolicyDecisionReceiptInput {
                 local_sequence: self.next_sequence,
                 signer_identity: self.signer_identity.as_str(),
-                actor,
-                policy,
-                sensor_state,
-                action_type,
-                target,
-                allowed: decision.allowed,
-                guard: decision.guard.as_deref(),
-                severity: detection_severity_from_policy_label(decision.severity.as_deref()),
-                severity_label: decision.severity.as_deref(),
-                message: decision.message.as_deref(),
-                details: decision.details.as_ref(),
+                actor: input.actor,
+                policy: input.policy,
+                sensor_state: input.sensor_state,
+                observation: input.observation,
+                graph: input.graph,
+                action_type: input.action_type,
+                target: input.target,
+                allowed: input.decision.allowed,
+                guard: input.decision.guard.as_deref(),
+                severity: detection_severity_from_policy_label(input.decision.severity.as_deref()),
+                severity_label: input.decision.severity.as_deref(),
+                message: input.decision.message.as_deref(),
+                details: input.decision.details.as_ref(),
             });
         receipt.signer.signer_public_key = Some(self.signer_public_key.clone());
         let signed = receipt.sign_with(&self.keypair)?;
@@ -415,6 +467,7 @@ impl EndpointReceiptLedger {
                 policy,
                 sensor_state,
                 replay_id: replay.replay_id.as_str(),
+                event_source: replay.source.as_str(),
                 event_stream_hash: replay.event_stream_hash.as_str(),
                 result_hash: replay.result_hash.as_str(),
                 event_count: replay.event_count,
@@ -447,6 +500,7 @@ impl EndpointReceiptLedger {
                 policy,
                 sensor_state,
                 impact_id: impact.impact_id.as_str(),
+                event_source: impact.source.as_str(),
                 event_stream_hash: impact.event_stream_hash.as_str(),
                 current_result_hash: impact.current_result_hash.as_str(),
                 proposed_result_hash: impact.proposed_result_hash.as_str(),
@@ -484,6 +538,7 @@ impl EndpointReceiptLedger {
                 local_sequence: self.next_sequence,
                 endpoint_id: endpoint_id.as_str(),
                 signer_identity: self.signer_identity.as_str(),
+                actor: input.actor,
                 policy,
                 sensor_state,
                 operation: input.operation,
@@ -772,6 +827,7 @@ impl EndpointReceiptLedger {
         let receipts = self.all()?;
         let receipt_count = receipts.len();
         let mut retained = Vec::with_capacity(receipts.len());
+        let mut removed_receipts = Vec::new();
         let mut records = Vec::new();
         for (index, receipt) in receipts.iter().enumerate() {
             let age_seconds = receipt_age_seconds(receipt, now);
@@ -798,11 +854,22 @@ impl EndpointReceiptLedger {
             ));
             if dry_run {
                 retained.push(receipt.clone());
+            } else {
+                removed_receipts.push(receipt.clone());
             }
         }
 
         if !dry_run {
+            let manifest = self.receipt_compaction_manifest(
+                &receipts,
+                &retained,
+                &removed_receipts,
+                max_receipts,
+                min_age_seconds,
+                now,
+            )?;
             self.rewrite(&retained)?;
+            self.append_compaction_manifest(&manifest)?;
         }
         self.next_sequence = receipts
             .iter()
@@ -817,6 +884,94 @@ impl EndpointReceiptLedger {
             retained_count: retained.len(),
             records,
         })
+    }
+
+    fn receipt_compaction_manifest(
+        &self,
+        pre_receipts: &[SignedReceipt],
+        post_receipts: &[SignedReceipt],
+        removed_receipts: &[SignedReceipt],
+        max_receipts: Option<usize>,
+        min_age_seconds: u64,
+        compacted_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<ReceiptCompactionManifest> {
+        let ledger_path = self
+            .path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "<transient>".to_string());
+        Ok(ReceiptCompactionManifest {
+            schema_version: "clawdstrike.endpoint_receipt_compaction.v1",
+            compacted_at: compacted_at.to_rfc3339(),
+            ledger_path,
+            max_receipts,
+            min_age_seconds,
+            pre_ledger_sha256: receipt_ledger_sha256(pre_receipts)?,
+            post_ledger_sha256: receipt_ledger_sha256(post_receipts)?,
+            pre_receipt_count: pre_receipts.len(),
+            post_receipt_count: post_receipts.len(),
+            retained: post_receipts
+                .iter()
+                .map(receipt_compaction_manifest_entry)
+                .collect::<Result<Vec<_>>>()?,
+            removed: removed_receipts
+                .iter()
+                .map(receipt_compaction_manifest_entry)
+                .collect::<Result<Vec<_>>>()?,
+        })
+    }
+
+    fn append_compaction_manifest(&self, manifest: &ReceiptCompactionManifest) -> Result<()> {
+        let Some(path) = &self.path else {
+            return Ok(());
+        };
+        let manifest_path = endpoint_receipt_compaction_manifest_path(path);
+        if let Some(parent) = manifest_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "create endpoint receipt compaction manifest directory {}",
+                    parent.display()
+                )
+            })?;
+        }
+        let mut options = OpenOptions::new();
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options
+            .create(true)
+            .append(true)
+            .open(&manifest_path)
+            .with_context(|| {
+                format!(
+                    "open endpoint receipt compaction manifest {}",
+                    manifest_path.display()
+                )
+            })?;
+        crate::settings::enforce_private_mode(
+            &manifest_path,
+            "endpoint receipt compaction manifest",
+        )?;
+        let line = serde_json::to_vec(manifest)
+            .context("serialize endpoint receipt compaction manifest")?;
+        file.write_all(&line).with_context(|| {
+            format!(
+                "write endpoint receipt compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+        file.write_all(b"\n").with_context(|| {
+            format!(
+                "write endpoint receipt compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+        file.flush().with_context(|| {
+            format!(
+                "flush endpoint receipt compaction manifest {}",
+                manifest_path.display()
+            )
+        })?;
+        Ok(())
     }
 
     pub(crate) fn all(&self) -> Result<Vec<SignedReceipt>> {
@@ -865,21 +1020,26 @@ impl EndpointReceiptLedger {
             })?;
         }
 
-        let mut file = OpenOptions::new()
+        let mut ledger_options = OpenOptions::new();
+        #[cfg(unix)]
+        ledger_options.mode(0o600);
+        let mut file = ledger_options
             .create(true)
             .append(true)
             .open(path)
             .with_context(|| format!("open endpoint receipt ledger {}", path.display()))?;
-        let mut index_file = OpenOptions::new()
+        crate::settings::enforce_private_mode(path, "endpoint receipt ledger")?;
+
+        let index_path = endpoint_receipt_index_path(path);
+        let mut index_options = OpenOptions::new();
+        #[cfg(unix)]
+        index_options.mode(0o600);
+        let mut index_file = index_options
             .create(true)
             .append(true)
-            .open(endpoint_receipt_index_path(path))
-            .with_context(|| {
-                format!(
-                    "open endpoint receipt index {}",
-                    endpoint_receipt_index_path(path).display()
-                )
-            })?;
+            .open(&index_path)
+            .with_context(|| format!("open endpoint receipt index {}", index_path.display()))?;
+        crate::settings::enforce_private_mode(&index_path, "endpoint receipt index")?;
         for receipt in receipts {
             let line = serde_json::to_vec(receipt).with_context(|| {
                 format!(
@@ -910,20 +1070,14 @@ impl EndpointReceiptLedger {
                 )
             })?;
             index_file.write_all(b"\n").with_context(|| {
-                format!(
-                    "write endpoint receipt index {}",
-                    endpoint_receipt_index_path(path).display()
-                )
+                format!("write endpoint receipt index {}", index_path.display())
             })?;
         }
         file.flush()
             .with_context(|| format!("flush endpoint receipt ledger {}", path.display()))?;
-        index_file.flush().with_context(|| {
-            format!(
-                "flush endpoint receipt index {}",
-                endpoint_receipt_index_path(path).display()
-            )
-        })?;
+        index_file
+            .flush()
+            .with_context(|| format!("flush endpoint receipt index {}", index_path.display()))?;
         Ok(())
     }
 
@@ -932,5 +1086,148 @@ impl EndpointReceiptLedger {
             return Ok(());
         };
         rebuild_endpoint_receipt_index(path)
+    }
+}
+
+pub(crate) fn endpoint_receipt_compaction_manifest_path(path: &FsPath) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(".compaction.jsonl");
+    PathBuf::from(value)
+}
+
+fn receipt_ledger_sha256(receipts: &[SignedReceipt]) -> Result<String> {
+    let bytes = receipt_ledger_bytes(receipts)?;
+    Ok(sha256(&bytes).to_hex_prefixed())
+}
+
+fn receipt_ledger_bytes(receipts: &[SignedReceipt]) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    for receipt in receipts {
+        let line = serde_json::to_vec(receipt).with_context(|| {
+            format!(
+                "serialize endpoint receipt {}",
+                receipt
+                    .receipt
+                    .receipt_id
+                    .as_deref()
+                    .unwrap_or("<missing-receipt-id>")
+            )
+        })?;
+        bytes.extend_from_slice(&line);
+        bytes.push(b'\n');
+    }
+    Ok(bytes)
+}
+
+fn receipt_compaction_manifest_entry(
+    receipt: &SignedReceipt,
+) -> Result<ReceiptCompactionManifestEntry> {
+    let receipt_value = serde_json::to_value(receipt)
+        .context("serialize endpoint receipt for compaction manifest")?;
+    let canonical = canonicalize_json(&receipt_value)
+        .context("canonicalize endpoint receipt for compaction manifest")?;
+    Ok(ReceiptCompactionManifestEntry {
+        receipt_id: receipt.receipt.receipt_id.clone(),
+        family: receipt_family(receipt).map(ToString::to_string),
+        local_sequence: receipt_local_sequence(receipt),
+        signed_receipt_sha256: sha256(canonical.as_bytes()).to_hex_prefixed(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
+    use super::*;
+    use clawdstrike_policy_event::edr::{
+        EndpointEvent, EndpointProcess, EndpointTelemetryPrivacyMode,
+    };
+
+    fn unique_test_path(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("clawdstrike-receipt-ledger-{name}-{nonce}.jsonl"))
+    }
+
+    fn signed_test_receipt() -> SignedReceipt {
+        let observation = EndpointObservation {
+            observation_id: "obs-receipt-private-mode".to_string(),
+            timestamp: chrono::DateTime::parse_from_rfc3339("2026-05-20T12:00:00Z")
+                .expect("timestamp")
+                .with_timezone(&chrono::Utc),
+            host_id: Some("host-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            process: EndpointProcess {
+                pid: Some(42),
+                image: Some("/bin/zsh".to_string()),
+                command_line: Some("/bin/zsh -lc echo ok".to_string()),
+                ..EndpointProcess::default()
+            },
+            event: EndpointEvent::ProcessExec {
+                image: "/bin/zsh".to_string(),
+                args: vec!["-lc".to_string(), "echo ok".to_string()],
+                env: std::collections::BTreeMap::new(),
+            },
+            metadata: std::collections::BTreeMap::new(),
+        };
+        let report = EndpointTelemetryPrivacyReport::from_observations(
+            &[observation],
+            EndpointTelemetryPrivacyMode::HashesFeatures,
+        );
+        let keypair = Keypair::from_seed(&[17u8; 32]);
+        let mut receipt =
+            EndpointDecisionReceipt::for_telemetry_privacy(EndpointTelemetryPrivacyReceiptInput {
+                local_sequence: 1,
+                endpoint_id: "endpoint-test",
+                signer_identity: "local-edr:endpoint-test",
+                policy: EndpointPolicySnapshot {
+                    policy_version: "test-policy@1".to_string(),
+                    policy_hash: hush_core::sha256(b"test-policy").to_hex_prefixed(),
+                    policy_epoch: 1,
+                },
+                sensor_state: EndpointSensorState::single_active_agent("agent-api:test"),
+                report: &report,
+            });
+        receipt.signer.signer_public_key = Some(keypair.public_key().to_hex());
+        receipt.sign_with(&keypair).expect("signed receipt")
+    }
+
+    #[cfg(unix)]
+    fn assert_private_mode(path: &FsPath) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = fs::metadata(path)
+            .unwrap_or_else(|err| panic!("metadata for {}: {err}", path.display()))
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "unexpected mode for {}", path.display());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn append_creates_private_receipt_ledger_and_index() {
+        let path = unique_test_path("append");
+        let ledger_keypair = Keypair::from_seed(&[18u8; 32]);
+        let ledger = EndpointReceiptLedger {
+            path: Some(path.clone()),
+            next_sequence: 1,
+            signer_identity: "local-edr:endpoint-test".to_string(),
+            signer_public_key: ledger_keypair.public_key().to_hex(),
+            keypair: ledger_keypair,
+        };
+        ledger
+            .append(&[signed_test_receipt()])
+            .expect("append receipt");
+        let index_path = endpoint_receipt_index_path(&path);
+
+        assert_private_mode(&path);
+        assert_private_mode(&index_path);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(index_path);
     }
 }

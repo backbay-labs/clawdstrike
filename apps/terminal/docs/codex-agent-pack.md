@@ -13,7 +13,6 @@ surfaces.
 - `.codex/config.toml`: project-scoped Codex profiles and multi-agent role registry
 - `.codex/agents/*.toml`: per-role defaults and role-specific instructions
 - `.codex/swarm/lanes.tsv` and `.codex/swarm/waves.tsv`: initiative lane metadata and wave order for parallel work
-- `.agents/skills/*/SKILL.md`: repo-scoped skills for TUI dogfooding, polish, hardening, and multi-agent coordination
 - `apps/terminal/AGENTS.md`: terminal-subtree working agreement that tightens quality bars for supported beta screens
 - `docs/plans/multi-agent/codex-swarm-playbook.md`: project-wide swarm/orchestration guide
 

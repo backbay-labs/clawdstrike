@@ -13,17 +13,14 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use chrono;
-
 use clawdstrike_policy_event::edr::{
     CausalGraph, CausalNodeKind, CredentialKind, DeceptionCleanupReport,
     DeceptionMaterializationReport, DeceptionPlan, DeceptionRotationReport, DetectionFinding,
-    EndpointDecisionAction, EndpointEvidenceBundleReference,
-    EndpointFlightRecorderCompactionRecord, EndpointObservation, EndpointPolicySimulationIdentityContext,
-    EndpointPolicySimulationReport, EndpointPolicySimulationToolContext,
-    EndpointPolicySnapshot, EndpointProcess, EndpointProviderKind,
-    EndpointResponseAcknowledgementReport,
-    EndpointResponseExecutionReport,
+    EndpointDecisionAction, EndpointDecisionActor, EndpointEvidenceBundleReference,
+    EndpointFlightRecorderCompactionRecord, EndpointObservation,
+    EndpointPolicySimulationIdentityContext, EndpointPolicySimulationReport,
+    EndpointPolicySimulationToolContext, EndpointPolicySnapshot, EndpointProcess,
+    EndpointProviderKind, EndpointResponseAcknowledgementReport, EndpointResponseExecutionReport,
     EndpointResponsePlan, EndpointResponseRollbackReport, EndpointSensorState,
     EndpointSimulationImpactLevel, EndpointTelemetryPrivacyMode, EndpointTelemetryPrivacyReport,
     HoneyArtifact, PackageManager,
@@ -39,13 +36,13 @@ use clawdstrike_policy_event::edr::{
 };
 use clawdstrike_policy_event::simulate::SimulationResult;
 
+use crate::api_server::{
+    affected_identities_for_causal_impact, affected_tools_for_causal_impact,
+    identity_filter_matches, ControlResponseAckPostbackRoute, NetworkExtensionReloadRequestProof,
+    StoredEndpointEvidenceBundle,
+};
 use crate::daemon::DaemonStatus;
 use crate::macos::status::ProviderStatus;
-use crate::api_server::{
-    ControlResponseAckPostbackRoute, NetworkExtensionReloadRequestProof,
-    StoredEndpointEvidenceBundle, affected_identities_for_causal_impact,
-    affected_tools_for_causal_impact, identity_filter_matches,
-};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct EdrHealthSummary {
@@ -74,6 +71,7 @@ pub(crate) struct EdrFindingsResponse {
     pub(crate) receipt_count: usize,
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,6 +90,7 @@ pub(crate) struct EdrPolicyEventsResponse {
     pub(crate) observations: Vec<EndpointObservation>,
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -277,6 +276,8 @@ pub(crate) struct EdrDeveloperActivityResponse {
     pub(crate) observations: Vec<EndpointObservation>,
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
+    pub(crate) policy_decision_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -299,6 +300,14 @@ pub(crate) struct EdrPackageManagerEvent {
     pub(crate) user_id: Option<String>,
     #[serde(default, alias = "sessionId")]
     pub(crate) session_id: Option<String>,
+    #[serde(default, alias = "agentId")]
+    pub(crate) agent_id: Option<String>,
+    #[serde(default, alias = "workloadId")]
+    pub(crate) workload_id: Option<String>,
+    #[serde(default, alias = "approvalId")]
+    pub(crate) approval_id: Option<String>,
+    #[serde(default, alias = "toolCallId", alias = "tool_call_id")]
+    pub(crate) tool_call_id: Option<String>,
     #[serde(default)]
     pub(crate) process: Option<EndpointProcess>,
     #[serde(default)]
@@ -321,6 +330,8 @@ pub(crate) struct EdrPackageManagerEventsResponse {
     pub(crate) observations: Vec<EndpointObservation>,
     pub(crate) findings: Vec<DetectionFinding>,
     pub(crate) receipts: Vec<SignedReceipt>,
+    pub(crate) observation_receipts: Vec<SignedReceipt>,
+    pub(crate) policy_decision_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -512,6 +523,7 @@ pub(crate) struct EdrPolicyEventReplayReport {
     pub(crate) replay_id: String,
     pub(crate) replayed_at: chrono::DateTime<chrono::Utc>,
     pub(crate) mode: String,
+    pub(crate) source: String,
     pub(crate) policy: EndpointPolicySnapshot,
     pub(crate) event_count: u64,
     pub(crate) allowed_count: u64,
@@ -588,6 +600,7 @@ pub(crate) struct EdrPolicyEventImpactReport {
     pub(crate) impact_id: String,
     pub(crate) analyzed_at: chrono::DateTime<chrono::Utc>,
     pub(crate) mode: String,
+    pub(crate) source: String,
     pub(crate) current_policy: EndpointPolicySnapshot,
     pub(crate) proposed_policy: EndpointPolicySnapshot,
     pub(crate) event_count: u64,
@@ -832,7 +845,10 @@ pub(crate) struct EdrPolicyEventHistoryIdentityFilters {
     pub(crate) credential_kind: Option<String>,
 }
 impl EdrPolicyEventHistoryIdentityFilters {
-    pub(crate) fn matches_index_entry(&self, entry: &EndpointFlightRecorderHistoryIndexEntry) -> bool {
+    pub(crate) fn matches_index_entry(
+        &self,
+        entry: &EndpointFlightRecorderHistoryIndexEntry,
+    ) -> bool {
         identity_filter_matches(&self.host_id, entry.host_id.as_deref())
             && identity_filter_matches(&self.user_id, entry.user_id.as_deref())
             && identity_filter_matches(&self.session_id, entry.session_id.as_deref())
@@ -870,7 +886,10 @@ impl EdrPolicyEventHistoryProcessFilters {
         self.process_image_hash.is_none() && self.process_command_line_hash.is_none()
     }
 
-    pub(crate) fn matches_index_entry(&self, entry: &EndpointFlightRecorderHistoryIndexEntry) -> bool {
+    pub(crate) fn matches_index_entry(
+        &self,
+        entry: &EndpointFlightRecorderHistoryIndexEntry,
+    ) -> bool {
         identity_filter_matches(
             &self.process_image_hash,
             entry.process_image_hash.as_deref(),
@@ -908,7 +927,10 @@ impl EdrPolicyEventHistoryTargetFilters {
         self.event_target.is_none() && self.event_target_hash.is_none()
     }
 
-    pub(crate) fn matches_index_entry(&self, entry: &EndpointFlightRecorderHistoryIndexEntry) -> bool {
+    pub(crate) fn matches_index_entry(
+        &self,
+        entry: &EndpointFlightRecorderHistoryIndexEntry,
+    ) -> bool {
         identity_filter_matches(&self.event_target, entry.event_target.as_deref())
             && identity_filter_matches(&self.event_target_hash, entry.event_target_hash.as_deref())
     }
@@ -980,6 +1002,14 @@ pub(crate) struct EdrPolicyEventHistoryCrossWindowImpact {
     pub(crate) total_changed_count: u64,
     pub(crate) total_blocking_change_count: u64,
     pub(crate) impact_hash: String,
+    pub(crate) event_stream_hash: String,
+    pub(crate) current_policy_hash: String,
+    pub(crate) current_policy_epoch: u64,
+    pub(crate) proposed_policy_hash: String,
+    pub(crate) proposed_policy_epoch: u64,
+    pub(crate) current_result_hash: String,
+    pub(crate) proposed_result_hash: String,
+    pub(crate) history_selector_hash: String,
     pub(crate) repeatability: String,
     pub(crate) recommended_stage: String,
     pub(crate) promotion_ready: bool,
@@ -1952,6 +1982,8 @@ pub(crate) struct EdrPolicyDeltaApplyInput {
     #[serde(default, alias = "appliedBy", alias = "promotedBy")]
     pub(crate) applied_by: Option<String>,
     #[serde(default)]
+    pub(crate) actor: Option<EdrResponseActionActorInput>,
+    #[serde(default)]
     pub(crate) note: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -2024,12 +2056,18 @@ pub(crate) struct EdrPolicyDeltasResponse {
     pub(crate) count: usize,
     pub(crate) policy_deltas: Vec<EdrPolicyDeltaRecord>,
 }
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EdrPolicyDeltaApplyRecord {
     pub(crate) policy_delta_id: String,
     pub(crate) applied_at: chrono::DateTime<chrono::Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) apply_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) failure_reason: Option<String>,
     pub(crate) applied_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) actor: Option<EndpointDecisionActor>,
     pub(crate) note: Option<String>,
     pub(crate) dry_run: bool,
     pub(crate) applied: bool,
@@ -2051,6 +2089,8 @@ pub(crate) struct EdrPolicyDeltaApplyRecord {
 pub(crate) struct EdrPolicyDeltaApplyResponse {
     pub(crate) record: EdrPolicyDeltaApplyRecord,
     pub(crate) policy_delta: EdrPolicyDeltaRecord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) prepared_receipt: Option<SignedReceipt>,
     pub(crate) receipt: Option<SignedReceipt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) post_apply_enforcement: Option<EdrPolicyDeltaApplyEnforcementProof>,
@@ -2331,6 +2371,8 @@ pub(crate) struct EdrResponseExecutionExpireResponse {
     pub(crate) rollback_count: usize,
     pub(crate) rollbacks: Vec<EndpointResponseRollbackReport>,
     pub(crate) rollback_receipts: Vec<SignedReceipt>,
+    pub(crate) rollback_transitions: Vec<EdrResponseExecutionRecord>,
+    pub(crate) rollback_transition_receipts: Vec<SignedReceipt>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2477,7 +2519,9 @@ pub(crate) struct EdrResponseAcknowledgementRecord {
     pub(crate) acknowledgement: EndpointResponseAcknowledgementReport,
 }
 impl EdrResponseAcknowledgementRecord {
-    pub(crate) fn from_acknowledgement(acknowledgement: EndpointResponseAcknowledgementReport) -> Self {
+    pub(crate) fn from_acknowledgement(
+        acknowledgement: EndpointResponseAcknowledgementReport,
+    ) -> Self {
         Self { acknowledgement }
     }
 }

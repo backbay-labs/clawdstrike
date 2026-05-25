@@ -18,15 +18,23 @@ on:
       - "scripts/helm-resilience-security.sh"
       - "scripts/release-helm-chart.sh"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint-and-template:
     name: Helm Lint and Template
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Lint chart
         run: helm lint infra/deploy/helm/clawdstrike
@@ -41,7 +49,7 @@ jobs:
         run: helm show chart "dist/helm/clawdstrike-0.0.0-ci.${{ github.run_number }}.tgz"
 
       - name: Upload packaged chart artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: helm-fast-package-${{ github.run_number }}
           path: dist/helm/clawdstrike-0.0.0-ci.${{ github.run_number }}.tgz

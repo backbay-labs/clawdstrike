@@ -2,12 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use hush_core::sha256;
-#[allow(unused_imports)]
-use std::fs;
-#[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -18,11 +12,17 @@ use clawdstrike_policy_event::edr::*;
 #[allow(unused_imports)]
 use clawdstrike_policy_event::event::PolicyEvent;
 #[allow(unused_imports)]
+use hush_core::sha256;
+#[allow(unused_imports)]
 use hush_core::SignedReceipt;
 #[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
+#[allow(unused_imports)]
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+#[allow(unused_imports)]
+use std::fs;
 #[allow(unused_imports)]
 use std::sync::Arc;
 
@@ -71,7 +71,6 @@ pub(crate) async fn agent_edr_receipts(
         receipts,
     }))
 }
-
 
 pub(crate) async fn agent_edr_receipts_upload(
     State(state): State<Arc<AgentApiState>>,
@@ -166,6 +165,13 @@ pub(crate) async fn agent_edr_receipts_upload(
             records,
         }));
     }
+    require_cloud_mode_enrolled_receipt_signer(&state, "endpoint receipt upload").await?;
+    require_cloud_mode_receipts_signed_by_current_signer(
+        &state,
+        &receipts,
+        "endpoint receipt upload",
+    )
+    .await?;
     if !settings.control_api.enabled {
         return Err((
             StatusCode::CONFLICT,
@@ -244,7 +250,6 @@ pub(crate) async fn agent_edr_receipts_upload(
     }))
 }
 
-
 pub(crate) async fn agent_edr_receipts_compact(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -283,7 +288,6 @@ pub(crate) async fn agent_edr_receipts_compact(
     }))
 }
 
-
 pub(crate) async fn agent_edr_evidence_bundle(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -317,7 +321,6 @@ pub(crate) async fn agent_edr_evidence_bundle(
     }))
 }
 
-
 pub(crate) async fn agent_edr_evidence_bundle_fleet_publish(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -325,10 +328,17 @@ pub(crate) async fn agent_edr_evidence_bundle_fleet_publish(
     Query(input): Query<EdrRawArtifactApprovalInput>,
 ) -> Result<(StatusCode, Json<EdrEvidenceBundleFleetPublishResponse>), (StatusCode, String)> {
     require_auth(&headers, &state)?;
-    let raw_artifact_approval = validate_raw_artifact_approval_fields(
-        input.raw_artifact_approval_id.as_deref(),
-        input.raw_artifact_approval_reason.as_deref(),
-    )?;
+    let approval_resource =
+        raw_artifact_approval_resource_for_evidence_bundle_fleet_publish(&bundle_id);
+    let raw_artifact_approval = validate_resolved_raw_artifact_approval(
+        &state,
+        validate_raw_artifact_approval_fields(
+            input.raw_artifact_approval_id.as_deref(),
+            input.raw_artifact_approval_reason.as_deref(),
+        )?,
+        &approval_resource,
+    )
+    .await?;
     let publish_identity = fleet_hunt_event_identity(state.as_ref()).await?;
     let archive_response = evidence_bundle_archive_response(state.as_ref(), &bundle_id).await?;
     if !archive_response.verification.verified {
@@ -438,7 +448,6 @@ pub(crate) async fn agent_edr_evidence_bundle_fleet_publish(
     ))
 }
 
-
 pub(crate) async fn agent_edr_evidence_bundle_archive(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -449,7 +458,6 @@ pub(crate) async fn agent_edr_evidence_bundle_archive(
 
     Ok(Json(archive))
 }
-
 
 pub(crate) async fn agent_edr_evidence_bundle_archive_verify(
     State(state): State<Arc<AgentApiState>>,
@@ -547,7 +555,6 @@ pub(crate) async fn agent_edr_evidence_bundle_archive_verify(
     }))
 }
 
-
 pub(crate) async fn agent_edr_evidence_bundles(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -580,7 +587,6 @@ pub(crate) async fn agent_edr_evidence_bundles(
         bundles: records,
     }))
 }
-
 
 pub(crate) async fn agent_edr_evidence_bundles_compact(
     State(state): State<Arc<AgentApiState>>,
@@ -666,4 +672,3 @@ pub(crate) async fn agent_edr_evidence_bundles_compact(
         records,
     }))
 }
-

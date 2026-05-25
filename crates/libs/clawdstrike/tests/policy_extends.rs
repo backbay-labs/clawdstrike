@@ -11,7 +11,7 @@ use tempfile::TempDir;
 #[test]
 fn test_policy_extends_builtin_strict() {
     let yaml = r#"
-version: "1.1.0"
+version: "1.2.0"
 name: CustomPolicy
 extends: strict
 guards:
@@ -95,7 +95,7 @@ settings:
 #[test]
 fn test_policy_merge_strategy_deep_merge() {
     let yaml = r#"
-version: "1.1.0"
+version: "1.2.0"
 name: CustomPolicy
 extends: strict
 merge_strategy: deep_merge
@@ -341,5 +341,31 @@ extends: p0
     assert!(
         err.to_string().contains("extends depth exceeded"),
         "unexpected error: {err}"
+    );
+}
+
+/// Regression: strict ruleset must keep an empty egress allow list.
+///
+/// `EgressAllowlistConfig::merge_with` only replaces the base allow list when
+/// the child's `allow` is non-empty, so `extends: default` + child `allow: []`
+/// would silently inherit default's OpenAI/GitHub/npm permissions. Locking the
+/// effective allow list to empty here guards against accidental re-introduction
+/// of `extends: default` on strict.
+#[test]
+fn strict_ruleset_has_empty_egress_allow() {
+    let yaml = include_str!("../rulesets/strict.yaml");
+    let policy = Policy::from_yaml_with_extends(yaml, None)
+        .expect("load built-in strict ruleset");
+
+    let egress = policy
+        .guards
+        .egress_allowlist
+        .as_ref()
+        .expect("strict ruleset defines egress_allowlist");
+
+    assert!(
+        egress.effective_allow_patterns().is_empty(),
+        "strict ruleset must have empty egress allow list; got: {:?}",
+        egress.effective_allow_patterns()
     );
 }

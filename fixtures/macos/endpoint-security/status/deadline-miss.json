@@ -14,7 +14,7 @@
   ],
   "evidence_paths" : [
     {
-      "detail" : "Synthetic over-deadline AUTH_OPEN path proving fail-open risk.",
+      "detail" : "Synthetic over-deadline AUTH_OPEN path proving authorization deadline risk.",
       "kind" : "deadline_miss",
       "path" : "fixtures/macos/endpoint-security/evidence/deadline-miss.json"
     }
@@ -32,7 +32,7 @@
     "install_state" : "installed"
   },
   "provider_state" : {
-    "active" : true,
+    "active" : false,
     "approval_status" : "approved",
     "availability" : "degraded",
     "degraded_reasons" : [

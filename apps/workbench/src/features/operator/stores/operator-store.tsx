@@ -17,6 +17,7 @@ import {
 } from "@/lib/workbench/operator-crypto";
 import { signDetachedPayload } from "@/lib/workbench/signature-adapter";
 import { secureStore } from "@/features/settings/secure-store";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,7 +170,7 @@ function schedulePersist(operator: OperatorIdentity | null): void {
         lastOperatorStorageSnapshot = null;
       }
     } catch (e) {
-      console.error("[operator-store] persistOperator failed:", e);
+      logger.error("[operator-store] persistOperator failed:", e);
     }
     persistTimer = null;
   }, 500);
@@ -186,7 +187,7 @@ function persistOperatorSync(operator: OperatorIdentity | null): void {
       lastOperatorStorageSnapshot = null;
     }
   } catch (e) {
-    console.error("[operator-store] persistOperator failed:", e);
+    logger.error("[operator-store] persistOperator failed:", e);
   }
 }
 
@@ -201,12 +202,12 @@ function loadPersistedOperator(): OperatorIdentity | null {
       typeof parsed.publicKey !== "string" ||
       typeof parsed.fingerprint !== "string"
     ) {
-      console.warn("[operator-store] Invalid persisted operator data, ignoring");
+      logger.warn("[operator-store] Invalid persisted operator data, ignoring");
       return null;
     }
     return parsed as OperatorIdentity;
   } catch (e) {
-    console.warn("[operator-store] loadPersistedOperator failed:", e);
+    logger.warn("[operator-store] loadPersistedOperator failed:", e);
     return null;
   }
 }
@@ -263,7 +264,7 @@ const useOperatorStoreBase = create<OperatorStoreState>()(
         _init: () => {
           const operator = loadPersistedOperator();
           set((state) => {
-            state.currentOperator = operator as any;
+            state.currentOperator = operator;
             state.initialized = true;
             state.loading = false;
           });
@@ -273,7 +274,7 @@ const useOperatorStoreBase = create<OperatorStoreState>()(
           const { identity, secretKeyHex } = await createOperatorIdentity(displayName);
           await secureStore.set(SECRET_KEY_STORE_KEY, secretKeyHex);
           set((state) => {
-            state.currentOperator = identity as any;
+            state.currentOperator = identity;
             state.loading = false;
           });
           schedulePersist(identity);
@@ -292,7 +293,7 @@ const useOperatorStoreBase = create<OperatorStoreState>()(
         linkIdp: (claims: IdpClaims) => {
           set((state) => {
             if (state.currentOperator) {
-              state.currentOperator.idpClaims = claims as any;
+              state.currentOperator.idpClaims = claims;
             }
           });
           schedulePersist(get().currentOperator);
@@ -365,7 +366,7 @@ const useOperatorStoreBase = create<OperatorStoreState>()(
               devices: [{ deviceId, deviceName: "imported", addedAt: now, lastSeenAt: now }],
             };
             set((state) => {
-              state.currentOperator = identity as any;
+              state.currentOperator = identity;
               state.loading = false;
             });
             schedulePersist(identity);

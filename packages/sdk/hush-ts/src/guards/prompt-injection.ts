@@ -89,6 +89,11 @@ export class PromptInjectionGuard implements Guard {
     }
 
     const wasm = getWasmModule();
+    if (!wasm) {
+      throw new Error(
+        "PromptInjectionGuard requires the WASM backend; call ensureWasm()/initWasm() first.",
+      );
+    }
     const resultJson: string = wasm.detect_prompt_injection(text, this.maxScanBytes);
     const result: WasmPromptInjectionResult = JSON.parse(resultJson);
 

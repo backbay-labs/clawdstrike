@@ -55,6 +55,7 @@ import {
   type BulkGuardUpdate,
   reconstructPolicyTab,
 } from "@/features/policy/types/policy-tab";
+import { logger } from "@/lib/logger";
 
 type OpenFileByPathOptions = {
   shouldApply?: () => boolean;
@@ -511,7 +512,7 @@ export function useWorkbenchState() {
       });
       pushRecentFile(result.path);
     } catch (err) {
-      console.error("[workbench-state] Failed to open file:", err);
+      logger.error("[workbench-state] Failed to open file:", err);
     }
   }, [dispatch]);
 
@@ -529,7 +530,7 @@ export function useWorkbenchState() {
         });
         pushRecentFile(result.path);
       } catch (err) {
-        console.error("[workbench-state] Failed to open file by path:", err);
+        logger.error("[workbench-state] Failed to open file by path:", err);
       }
     },
     [dispatch],
@@ -554,7 +555,7 @@ export function useWorkbenchState() {
       dispatch({ type: "MARK_CLEAN" });
       pushRecentFile(savedPath);
     } catch (err) {
-      console.error("[workbench-state] Failed to save file:", err);
+      logger.error("[workbench-state] Failed to save file:", err);
     }
   }, [currentTab, exportYaml, dispatch]);
 
@@ -577,7 +578,7 @@ export function useWorkbenchState() {
         await saveFileAs();
       }
     } catch (err) {
-      console.error("[workbench-state] Failed to save file:", err);
+      logger.error("[workbench-state] Failed to save file:", err);
     }
   }, [currentTab, saveFileAs, exportYaml, dispatch]);
 

@@ -1,9 +1,9 @@
-# Dependabot configuration for automated dependency updates
+# Dependabot configuration for automated dependency updates.
 # Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
 
 version: 2
 updates:
-  # Rust dependencies (Cargo)
+  # Rust dependencies.
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
@@ -12,20 +12,233 @@ updates:
     open-pull-requests-limit: 10
     groups:
       rust-minor:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     ignore:
-      # Major version updates require manual review
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-    labels:
-      - "dependencies"
-      - "rust"
+    labels: ["dependencies", "rust"]
 
-  # npm dependencies (@clawdstrike/openclaw plugin)
+  - package-ecosystem: "cargo"
+    directory: "/apps/agent/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      tauri-rust-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    labels: ["dependencies", "rust", "tauri"]
+
+  - package-ecosystem: "cargo"
+    directory: "/apps/desktop/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      tauri-rust-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    labels: ["dependencies", "rust", "tauri"]
+
+  - package-ecosystem: "cargo"
+    directory: "/apps/workbench/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      tauri-rust-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    labels: ["dependencies", "rust", "tauri"]
+
+  - package-ecosystem: "cargo"
+    directory: "/examples/autonomous-sandbox"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    groups:
+      example-rust-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    labels: ["dependencies", "rust", "examples"]
+
+  - package-ecosystem: "cargo"
+    directory: "/fuzz"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    groups:
+      fuzz-rust-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    labels: ["dependencies", "rust", "fuzz"]
+
+  # npm dependencies.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/apps/control-console"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/apps/workbench"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/examples/typescript/browser-verify"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript", "examples"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-adapter-core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-broker-client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-claude"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-engine-adaptive"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-hush-cli-engine"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-hushd-engine"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-langchain"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-openai"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
   - package-ecosystem: "npm"
     directory: "/packages/adapters/clawdstrike-openclaw"
     schedule:
@@ -34,33 +247,108 @@ updates:
     open-pull-requests-limit: 5
     groups:
       npm-minor:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-    labels:
-      - "dependencies"
-      - "javascript"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
 
-  # Python dependencies (hush-py SDK)
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-origin-core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-opencode"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/adapters/clawdstrike-vercel-ai"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/dev/vite-plugin-clawdstrike"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/policy/clawdstrike-policy"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/sdk/hush-ts"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  - package-ecosystem: "npm"
+    directory: "/packages/swarm-engine"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "javascript"]
+
+  # Python dependencies.
   - package-ecosystem: "pip"
     directory: "/packages/sdk/hush-py"
     schedule:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "python"
+    labels: ["dependencies", "python"]
 
-  # GitHub Actions
+  # GitHub Actions.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "ci"
+    labels: ["dependencies", "ci"]

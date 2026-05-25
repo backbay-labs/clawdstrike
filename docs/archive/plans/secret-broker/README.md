@@ -19,7 +19,7 @@ The core thesis is simple:
 
 1. [Current State](./current-state.md)
 2. [Target Architecture](./target-architecture.md)
-3. [Spec 19: Secret-Broker Egress Tier](../../../specs/19-secret-broker-egress-tier.md)
+3. [Spec 20: Secret-Broker Egress Tier](../../../specs/20-secret-broker-egress-tier.md)
 4. [Implementation Roadmap](./roadmap.md)
 
 ## Initial Thesis

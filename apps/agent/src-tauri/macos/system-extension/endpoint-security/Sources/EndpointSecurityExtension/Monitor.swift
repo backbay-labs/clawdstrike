@@ -17,7 +17,7 @@ public final class EndpointSecurityMonitor {
     private var installState: SystemExtensionInstallState
     private var approval: SystemExtensionApproval
     private var providerActive: Bool
-    private var fullDiskAccessGranted: Bool
+    private var fullDiskAccessGranted: Bool?
     private var counters: EndpointSecurityCounters
     private var evidencePaths: [EvidenceArtifact]
     private var lastHealthyTimestamp: String?
@@ -27,7 +27,7 @@ public final class EndpointSecurityMonitor {
         installState: SystemExtensionInstallState = .unknown,
         approval: SystemExtensionApproval = .unknown,
         providerActive: Bool = false,
-        fullDiskAccessGranted: Bool = true
+        fullDiskAccessGranted: Bool? = nil
     ) {
         self.installState = installState
         self.approval = approval
@@ -79,10 +79,11 @@ public final class EndpointSecurityMonitor {
     ) {
         withLockedState {
             fullDiskAccessGranted = granted
-            if !granted {
-                if let evidencePath {
-                    addEvidenceLocked(kind: "missing_full_disk_access", path: evidencePath, detail: detail)
-                }
+            if granted {
+                removeEvidenceLocked(kind: "missing_full_disk_access")
+            } else if let evidencePath {
+                removeEvidenceLocked(kind: "missing_full_disk_access")
+                addEvidenceLocked(kind: "missing_full_disk_access", path: evidencePath, detail: detail)
             }
         }
     }
@@ -127,17 +128,18 @@ public final class EndpointSecurityMonitor {
         withLockedState {
             let degradedReasons = currentDegradedReasons()
             let providerState = currentProviderState()
+            let hostRuntime = currentHostRuntimeState()
             let hostStatus = HostEndpointSecurityStatusPatch(
                 installState: installState,
                 approval: approval,
-                endpointSecurity: HostProviderStatus(runtime: currentHostRuntimeState())
+                endpointSecurity: HostProviderStatus(runtime: hostRuntime)
             )
 
             return EndpointSecurityStatusReport(
                 contract: Self.authorizationContract,
                 authorizationModel: Self.authorizationModel,
                 fdInjectionEquivalent: false,
-                failOpenPossible: true,
+                failOpenPossible: Self.failOpenPossible(hostRuntime: hostRuntime),
                 hostStatus: hostStatus,
                 providerState: providerState,
                 counters: counters,
@@ -148,7 +150,33 @@ public final class EndpointSecurityMonitor {
     }
 
     public static func liveReport() -> EndpointSecurityStatusReport {
-        EndpointSecurityMonitor().snapshot()
+        liveReport(fullDiskAccessProbe: probeFullDiskAccessGranted)
+    }
+
+    static func liveReport(fullDiskAccessProbe: () -> Bool?) -> EndpointSecurityStatusReport {
+        let monitor = EndpointSecurityMonitor()
+        monitor.refreshFullDiskAccessProbe(probe: fullDiskAccessProbe)
+        return monitor.snapshot()
+    }
+
+    public func refreshFullDiskAccessProbe(
+        evidencePath: String = "endpoint-security-full-disk-access-probe",
+        detail: String = "Full Disk Access probe could not read the macOS TCC database.",
+        probe: () -> Bool? = EndpointSecurityMonitor.probeFullDiskAccessGranted
+    ) {
+        guard let granted = probe() else {
+            return
+        }
+        setFullDiskAccessGranted(granted, evidencePath: evidencePath, detail: detail)
+    }
+
+    public static func probeFullDiskAccessGranted() -> Bool? {
+        #if os(macOS)
+        let tccDatabasePath = "/Library/Application Support/com.apple.TCC/TCC.db"
+        return FileManager.default.isReadableFile(atPath: tccDatabasePath)
+        #else
+        return nil
+        #endif
     }
 
     public static func fixtureScenario(_ scenario: EndpointSecurityFixtureScenario) -> EndpointSecurityStatusReport {
@@ -195,7 +223,7 @@ public final class EndpointSecurityMonitor {
             monitor.addEvidence(
                 kind: "deadline_miss",
                 path: "fixtures/macos/endpoint-security/evidence/deadline-miss.json",
-                detail: "Synthetic over-deadline AUTH_OPEN path proving fail-open risk."
+                detail: "Synthetic over-deadline AUTH_OPEN path proving authorization deadline risk."
             )
         case .droppedEvents:
             monitor.recordAuthorization(
@@ -245,7 +273,13 @@ public final class EndpointSecurityMonitor {
                 return .blocked
             }
         }()
-        let active = installState == .installed && approval == .approved && providerActive
+        let healthy = {
+            if case .active = hostRuntime {
+                return true
+            }
+            return false
+        }()
+        let active = installState == .installed && approval == .approved && providerActive && healthy
 
         let availability: ProviderAvailability = {
             switch hostRuntime {
@@ -266,13 +300,6 @@ public final class EndpointSecurityMonitor {
             }
         }()
 
-        let healthy = {
-            if case .active = hostRuntime {
-                return true
-            }
-            return false
-        }()
-
         return AttestationProviderState(
             provider: Self.endpointSecurityProvider,
             installed: installed,
@@ -285,7 +312,19 @@ public final class EndpointSecurityMonitor {
         )
     }
 
+    private static func failOpenPossible(hostRuntime: HostProviderRuntimeState) -> Bool {
+        switch hostRuntime {
+        case .active:
+            return false
+        case .unknown, .inactive, .degraded:
+            return true
+        }
+    }
+
     private func currentHostRuntimeState() -> HostProviderRuntimeState {
+        if fullDiskAccessGranted == false {
+            return .degraded(reason: "missing_full_disk_access")
+        }
         if installState == .unknown {
             return .unknown
         }
@@ -301,8 +340,8 @@ public final class EndpointSecurityMonitor {
         if !providerActive {
             return .inactive
         }
-        if !fullDiskAccessGranted {
-            return .degraded(reason: "missing_full_disk_access")
+        if fullDiskAccessGranted == nil {
+            return .unknown
         }
         if counters.deadlineMissCount > 0 {
             return .degraded(reason: "authorization_deadline_missed")
@@ -330,7 +369,7 @@ public final class EndpointSecurityMonitor {
         if installState == .installed && approval == .approved && !providerActive {
             reasons.append("provider_inactive")
         }
-        if installState == .installed && approval == .approved && !fullDiskAccessGranted {
+        if fullDiskAccessGranted == false {
             reasons.append("missing_full_disk_access")
         }
         if counters.deadlineMissCount > 0 {
@@ -339,7 +378,12 @@ public final class EndpointSecurityMonitor {
         if counters.droppedEventCount > 0 {
             reasons.append("dropped_enforcement_events")
         }
-        if installState == .installed && approval == .approved && providerActive && fullDiskAccessGranted && !healthyObservationSeen {
+        if installState == .installed
+            && approval == .approved
+            && providerActive
+            && fullDiskAccessGranted == true
+            && !healthyObservationSeen
+        {
             reasons.append("live_authorization_signal_missing")
         }
         return reasons
@@ -366,6 +410,10 @@ public final class EndpointSecurityMonitor {
         if !evidencePaths.contains(artifact) {
             evidencePaths.append(artifact)
         }
+    }
+
+    private func removeEvidenceLocked(kind: String) {
+        evidencePaths.removeAll { $0.kind == kind }
     }
 }
 
@@ -559,12 +607,12 @@ public struct URLSessionEndpointSecurityAgentEventTransport: EndpointSecurityAge
 }
 
 public struct EndpointSecurityAgentEventEncoder {
-    private let iso8601Formatter: ISO8601DateFormatter
+    public init() {}
 
-    public init() {
+    private static func iso8601String(from date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.iso8601Formatter = formatter
+        return formatter.string(from: date)
     }
 
     public func authorizationOpenRequest(
@@ -587,7 +635,7 @@ public struct EndpointSecurityAgentEventEncoder {
         let delivered = EndpointSecurityAgentEvent(
             eventId: context.eventId,
             kind: event.eventType,
-            observedAt: event.observedAt.map { iso8601Formatter.string(from: $0) },
+            observedAt: event.observedAt.map(Self.iso8601String),
             hostId: context.hostId,
             userId: context.userId,
             sessionId: context.sessionId,
@@ -617,7 +665,7 @@ public struct EndpointSecurityAgentEventEncoder {
         ]
         let delivered = EndpointSecurityAgentEvent(
             kind: "event_loss",
-            observedAt: iso8601Formatter.string(from: observedAt),
+            observedAt: Self.iso8601String(from: observedAt),
             process: EndpointSecurityAgentProcess(
                 image: "macos.endpoint_security",
                 commandLine: "endpoint_security event_loss"
@@ -787,6 +835,69 @@ public struct EndpointSecurityAuthorizationRequest: Equatable {
             observedAt: observedAt
         )
     }
+
+    public var responseDeadlineExpired: Bool {
+        deadlineMs > 0 && latencyMs >= deadlineMs
+    }
+
+    public var remainingDeadlineBudgetMs: UInt64 {
+        guard deadlineMs > 0 else {
+            return UInt64.max
+        }
+        guard deadlineMs > latencyMs else {
+            return 0
+        }
+        return deadlineMs - latencyMs
+    }
+
+    public mutating func failClosedDecisionForExpiredDeadline() -> EndpointSecurityAuthorizationDecision? {
+        guard responseDeadlineExpired else {
+            return nil
+        }
+        context.metadata["authorizationDecisionSource"] = "deadline_fail_closed"
+        context.metadata["authorizationDeadlineExceededBeforeDecision"] = "true"
+        context.metadata["authorizationDeadlineLatencyMs"] = String(latencyMs)
+        context.metadata["authorizationDeadlineMs"] = String(deadlineMs)
+        return .deny
+    }
+
+    public mutating func failClosedDecisionForInsufficientDeadlineBudget(
+        minRemainingMs: UInt64
+    ) -> EndpointSecurityAuthorizationDecision? {
+        guard !responseDeadlineExpired else {
+            return nil
+        }
+        let remainingMs = remainingDeadlineBudgetMs
+        guard remainingMs < minRemainingMs else {
+            return nil
+        }
+        context.metadata["authorizationDecisionSource"] = "deadline_budget_fail_closed"
+        context.metadata["authorizationDeadlineBudgetTooSmall"] = "true"
+        context.metadata["authorizationDeadlineRemainingMs"] = String(remainingMs)
+        context.metadata["authorizationDeadlineMinimumRemainingMs"] = String(minRemainingMs)
+        context.metadata["authorizationDeadlineLatencyMs"] = String(latencyMs)
+        context.metadata["authorizationDeadlineMs"] = String(deadlineMs)
+        return .deny
+    }
+
+    public mutating func failClosedDecisionForDecisionHandlerTimeout(
+        waitedMs: UInt64,
+        minRemainingMs: UInt64
+    ) -> EndpointSecurityAuthorizationDecision {
+        context.metadata["authorizationDecisionSource"] = "decision_handler_timeout_fail_closed"
+        context.metadata["authorizationDecisionHandlerTimedOut"] = "true"
+        context.metadata["authorizationDecisionHandlerWaitedMs"] = String(waitedMs)
+        context.metadata["authorizationDeadlineRemainingMs"] = String(remainingDeadlineBudgetMs)
+        context.metadata["authorizationDeadlineMinimumRemainingMs"] = String(minRemainingMs)
+        context.metadata["authorizationDeadlineLatencyMs"] = String(latencyMs)
+        context.metadata["authorizationDeadlineMs"] = String(deadlineMs)
+        return .deny
+    }
+
+    public mutating func addAuthorizationLatency(ms: UInt64) {
+        let sum = latencyMs.addingReportingOverflow(ms)
+        latencyMs = sum.overflow ? UInt64.max : sum.partialValue
+    }
 }
 
 public enum EndpointSecurityRuntimeClientError: Error, LocalizedError, Equatable {
@@ -825,6 +936,16 @@ public enum EndpointSecurityRuntimeClientError: Error, LocalizedError, Equatable
 }
 
 #if canImport(EndpointSecurity)
+private func endpointSecurityMachDeltaMilliseconds(from start: UInt64, to end: UInt64) -> UInt64 {
+    guard end > start else {
+        return 0
+    }
+    var info = mach_timebase_info_data_t()
+    mach_timebase_info(&info)
+    let nanos = Double(end - start) * Double(info.numer) / Double(info.denom)
+    return UInt64(nanos / 1_000_000)
+}
+
 public struct EndpointSecurityAuthOpenMessageAdapter {
     private let hostId: String?
     private let userId: String?
@@ -859,8 +980,14 @@ public struct EndpointSecurityAuthOpenMessageAdapter {
         let pidVersion = audit_token_to_pidversion(process.audit_token)
         let processGuid = pid > 0 && pidVersion >= 0 ? "macos:\(pid):\(pidVersion)" : nil
         let parentGuid = parentProcessGuid(for: process, messageVersion: message.pointee.version)
-        let latencyMs = Self.machDeltaMilliseconds(from: message.pointee.mach_time, to: mach_absolute_time())
-        let deadlineMs = Self.machDeltaMilliseconds(from: message.pointee.mach_time, to: message.pointee.deadline)
+        let latencyMs = endpointSecurityMachDeltaMilliseconds(
+            from: message.pointee.mach_time,
+            to: mach_absolute_time()
+        )
+        let deadlineMs = endpointSecurityMachDeltaMilliseconds(
+            from: message.pointee.mach_time,
+            to: message.pointee.deadline
+        )
         let observedAt = Date(
             timeIntervalSince1970: TimeInterval(message.pointee.time.tv_sec)
                 + TimeInterval(message.pointee.time.tv_nsec) / 1_000_000_000
@@ -917,16 +1044,10 @@ public struct EndpointSecurityAuthOpenMessageAdapter {
         }
     }
 
-    private static func machDeltaMilliseconds(from start: UInt64, to end: UInt64) -> UInt64 {
-        guard end > start else {
-            return 0
-        }
-        var info = mach_timebase_info_data_t()
-        mach_timebase_info(&info)
-        let nanos = Double(end - start) * Double(info.numer) / Double(info.denom)
-        return UInt64(nanos / 1_000_000)
-    }
 }
+
+@available(macOS 10.15, *)
+private let endpointSecurityMinimumAuthOpenDecisionBudgetMs: UInt64 = 25
 
 @available(macOS 10.15, *)
 public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAgentEventTransport> {
@@ -937,6 +1058,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
     private let publisher: EndpointSecurityAgentEventPublisher<Transport>
     private let adapter: EndpointSecurityAuthOpenMessageAdapter
     private let decisionHandler: DecisionHandler
+    private let decisionQueue: DispatchQueue
     private let publishErrorHandler: PublishErrorHandler?
     private var client: OpaquePointer?
 
@@ -951,6 +1073,7 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         self.publisher = publisher
         self.adapter = adapter
         self.decisionHandler = decisionHandler
+        self.decisionQueue = DispatchQueue(label: "com.clawdstrike.endpoint-security.auth-open-decision", attributes: .concurrent)
         self.publishErrorHandler = publishErrorHandler
     }
 
@@ -959,15 +1082,17 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
             return
         }
 
+        monitor.refreshFullDiskAccessProbe()
+
         var createdClient: OpaquePointer?
         let monitor = monitor
         let createResult = es_new_client(&createdClient) { [weak self, monitor] client, message in
             guard let self else {
-                _ = Self.issueFailOpenAuthOpenResponse(
+                _ = Self.issueFailClosedAuthOpenResponse(
                     client: client,
                     message: message,
                     monitor: monitor,
-                    detail: "EndpointSecurity runtime was deallocated before AUTH_OPEN handling; fail-open response issued to meet the kernel deadline."
+                    detail: "EndpointSecurity runtime was deallocated before AUTH_OPEN handling; fail-closed response issued to meet the kernel deadline."
                 )
                 return
             }
@@ -1000,8 +1125,6 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         }
 
         client = createdClient
-        monitor.setInstallState(.installed)
-        monitor.setApproval(.approved)
         monitor.setProviderActive(true)
     }
 
@@ -1016,11 +1139,11 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         guard let activeClient = client else {
             return
         }
-        client = nil
         let result = es_delete_client(activeClient)
         guard result == ES_RETURN_SUCCESS else {
             throw EndpointSecurityRuntimeClientError.deletionFailed(endpointSecurityReturnName(result))
         }
+        client = nil
     }
 
     private func handleAuthorizationMessage(
@@ -1029,8 +1152,19 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
     ) {
         var responseAttempted = false
         do {
-            let request = try adapter.authorizationRequest(from: message)
-            let decision = decisionHandler(request)
+            var request = try adapter.authorizationRequest(from: message)
+            let evaluatedDecision =
+                request.failClosedDecisionForExpiredDeadline()
+                    ?? request.failClosedDecisionForInsufficientDeadlineBudget(
+                        minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
+                    )
+                    ?? evaluateDecisionHandlerWithinDeadline(request: &request)
+            let decision =
+                request.failClosedDecisionForExpiredDeadline()
+                    ?? request.failClosedDecisionForInsufficientDeadlineBudget(
+                        minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
+                    )
+                    ?? evaluatedDecision
             try adapter.respondAuthorizationOpen(client: client, message: message, decision: decision)
             responseAttempted = true
             let event = request.authorizationEvent(decision: decision)
@@ -1045,11 +1179,11 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
             }
         } catch {
             if message.pointee.event_type == ES_EVENT_TYPE_AUTH_OPEN && !responseAttempted {
-                if let responseDetail = Self.issueFailOpenAuthOpenResponse(
+                if let responseDetail = Self.issueFailClosedAuthOpenResponse(
                     client: client,
                     message: message,
                     monitor: monitor,
-                    detail: "EndpointSecurity AUTH_OPEN message could not be mapped or answered; fail-open response issued to meet the kernel deadline."
+                    detail: "EndpointSecurity AUTH_OPEN message could not be mapped or answered; fail-closed response issued to meet the kernel deadline."
                 ) {
                     Task {
                         do {
@@ -1067,7 +1201,56 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         }
     }
 
-    private static func issueFailOpenAuthOpenResponse(
+    private func evaluateDecisionHandlerWithinDeadline(
+        request: inout EndpointSecurityAuthorizationRequest
+    ) -> EndpointSecurityAuthorizationDecision {
+        let remainingMs = request.remainingDeadlineBudgetMs
+        let waitBudgetMs = remainingMs > endpointSecurityMinimumAuthOpenDecisionBudgetMs
+            ? remainingMs - endpointSecurityMinimumAuthOpenDecisionBudgetMs
+            : 0
+        guard waitBudgetMs > 0 else {
+            return request.failClosedDecisionForDecisionHandlerTimeout(
+                waitedMs: 0,
+                minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
+            )
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        let decisionLock = NSLock()
+        var handlerDecision: EndpointSecurityAuthorizationDecision?
+        let requestSnapshot = request
+        let started = mach_absolute_time()
+        decisionQueue.async { [decisionHandler] in
+            let decision = decisionHandler(requestSnapshot)
+            decisionLock.lock()
+            handlerDecision = decision
+            decisionLock.unlock()
+            semaphore.signal()
+        }
+
+        let cappedWaitMs = min(waitBudgetMs, UInt64(Int.max))
+        let timeout = DispatchTime.now() + .milliseconds(Int(cappedWaitMs))
+        let result = semaphore.wait(timeout: timeout)
+        let elapsedMs = Self.elapsedMilliseconds(since: started)
+        request.addAuthorizationLatency(ms: elapsedMs)
+        guard result == .success else {
+            return request.failClosedDecisionForDecisionHandlerTimeout(
+                waitedMs: elapsedMs,
+                minRemainingMs: endpointSecurityMinimumAuthOpenDecisionBudgetMs
+            )
+        }
+
+        decisionLock.lock()
+        let decision = handlerDecision ?? .deny
+        decisionLock.unlock()
+        return decision
+    }
+
+    private static func elapsedMilliseconds(since started: UInt64) -> UInt64 {
+        endpointSecurityMachDeltaMilliseconds(from: started, to: mach_absolute_time())
+    }
+
+    private static func issueFailClosedAuthOpenResponse(
         client: OpaquePointer,
         message: UnsafePointer<es_message_t>,
         monitor: EndpointSecurityMonitor,
@@ -1077,12 +1260,12 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
             return nil
         }
 
-        let result = es_respond_flags_result(client, message, UInt32.max, false)
+        let result = es_respond_flags_result(client, message, 0, false)
         let responseDetail: String
         if result == ES_RESPOND_RESULT_SUCCESS {
             responseDetail = detail
         } else {
-            responseDetail = "\(detail) Fail-open response result: \(endpointSecurityRespondResultName(result))."
+            responseDetail = "\(detail) Fail-closed response result: \(endpointSecurityRespondResultName(result))."
         }
         monitor.recordDroppedEvents(
             count: 1,
@@ -1093,7 +1276,6 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
     }
 
     private func recordClientCreationFailure(_ result: es_new_client_result_t) {
-        monitor.setInstallState(.installed)
         monitor.setProviderActive(
             false,
             evidencePath: "endpoint-security-runtime",
@@ -1101,7 +1283,6 @@ public final class EndpointSecurityAuthOpenRuntime<Transport: EndpointSecurityAg
         )
         switch result {
         case ES_NEW_CLIENT_RESULT_ERR_NOT_PERMITTED:
-            monitor.setApproval(.approved)
             monitor.setFullDiskAccessGranted(
                 false,
                 evidencePath: "endpoint-security-runtime",

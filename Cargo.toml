@@ -66,7 +66,7 @@ ed25519-dalek = { version = "2.2", features = ["rand_core", "zeroize"] }
 zeroize = "1"
 sha2 = "0.10"
 sha3 = "0.10"
-rand = "0.9"
+rand = "0.9.4"
 rand_core = { version = "0.6", features = ["getrandom"] }
 hex = "0.4"
 base64 = "0.22"
@@ -79,7 +79,7 @@ serde_yaml = "0.9"
 ryu = "1.0"
 
 # Async runtime
-tokio = { version = "1.49", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 async-trait = "0.1"
 
 # Patterns
@@ -105,10 +105,10 @@ crossterm = "0.28"
 time = "0.3"
 
 # UUID
-uuid = { version = "1.21", features = ["v4", "v7", "serde", "js"] }
+uuid = { version = "1.23", features = ["v4", "v7", "serde", "js"] }
 
 # CLI
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4.6", features = ["derive", "env"] }
 colored = "3"
 comfy-table = "7"
 indicatif = "0.17"
@@ -125,7 +125,7 @@ tokio-rustls = "0.26"
 
 # Rate limiting
 governor = "0.10"
-dashmap = "6.1"
+dashmap = "6.2"
 
 # Database
 rusqlite = { version = "0.38", features = ["bundled"] }
@@ -185,9 +185,6 @@ nono = { path = "infra/vendor/nono", version = "0.11.0", default-features = fals
 [profile.release]
 lto = true
 codegen-units = 1
-
-[patch.crates-io]
-async-nats = { path = "infra/vendor/async-nats" }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

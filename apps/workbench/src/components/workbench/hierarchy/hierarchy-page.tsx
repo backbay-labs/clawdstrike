@@ -69,6 +69,7 @@ import type {
 } from "@/features/fleet/fleet-client";
 import { usePolicyTabsStore } from "@/features/policy/stores/policy-tabs-store";
 import { usePolicyEditStore } from "@/features/policy/stores/policy-edit-store";
+import { logger } from "@/lib/logger";
 
 
 const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
@@ -1184,7 +1185,7 @@ export function HierarchyPage() {
       const capturedVersion = hierarchyVersionRef.current;
       return fn().then((result): HierarchySyncResult => {
         if (!result.success) {
-          console.warn(`[hierarchy-sync] ${label} failed:`, result.error);
+          logger.warn(`[hierarchy-sync] ${label} failed:`, result.error);
           const reverted = hierarchyVersionRef.current === capturedVersion;
           if (reverted) {
             applyHierarchyChange(prevHierarchy);
@@ -1198,7 +1199,7 @@ export function HierarchyPage() {
         }
         return result;
       }).catch((err): HierarchySyncResult => {
-        console.warn(`[hierarchy-sync] ${label} error:`, err);
+        logger.warn(`[hierarchy-sync] ${label} error:`, err);
         const reverted = hierarchyVersionRef.current === capturedVersion;
         if (reverted) {
           applyHierarchyChange(prevHierarchy);
@@ -1565,7 +1566,7 @@ export function HierarchyPage() {
   const handlePushToFleet = useCallback(async () => {
     if (!fleetConnected) return;
     if (syncInProgressRef.current) {
-      console.warn("[hierarchy-sync] push skipped: another sync operation is in progress");
+      logger.warn("[hierarchy-sync] push skipped: another sync operation is in progress");
       showSyncStatus("error", "Another sync operation is already in progress");
       return;
     }
@@ -1627,7 +1628,7 @@ export function HierarchyPage() {
 
         const result = await createHierarchyNode(getAuthenticatedConnection(), input);
         if (!result.success) {
-          console.warn(
+          logger.warn(
             `[hierarchy-sync] push failed for node "${node.name}":`,
             result.error,
           );
@@ -1647,7 +1648,7 @@ export function HierarchyPage() {
             0,
             getDescendants(hierarchySnapshot, node.id).length - 1,
           );
-          console.warn(
+          logger.warn(
             `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
           );
           continue;
@@ -1771,7 +1772,7 @@ export function HierarchyPage() {
   const handlePullFromFleet = useCallback(async () => {
     if (!fleetConnected) return;
     if (syncInProgressRef.current) {
-      console.warn("[hierarchy-sync] pull skipped: another sync operation is in progress");
+      logger.warn("[hierarchy-sync] pull skipped: another sync operation is in progress");
       showSyncStatus("error", "Another sync operation is already in progress");
       return;
     }
@@ -1868,7 +1869,7 @@ export function HierarchyPage() {
       }
 
       // Fallback: try older scoped-policies endpoint for backward compatibility
-      console.warn("[hierarchy-sync] hierarchy/tree unavailable, falling back to scoped-policies");
+      logger.warn("[hierarchy-sync] hierarchy/tree unavailable, falling back to scoped-policies");
       const [scopedPolicies, assignments] = await Promise.all([
         fetchScopedPolicies(getAuthenticatedConnection()),
         fetchPolicyAssignments(getAuthenticatedConnection()),

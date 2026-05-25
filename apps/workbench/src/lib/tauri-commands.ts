@@ -11,6 +11,7 @@
 
 import { isDesktop } from "./tauri-bridge";
 import { getWorkbenchE2EBridge, hasWorkbenchE2EInvoke } from "@/lib/workbench/e2e-bridge";
+import { logger } from "@/lib/logger";
 
 
 export interface TauriValidationError {
@@ -220,7 +221,7 @@ export async function validatePolicyNative(yaml: string): Promise<TauriValidatio
   try {
     return await tauriInvoke<TauriValidationResponse>("validate_policy", { yaml });
   } catch (err) {
-    console.error("[tauri-commands] validate_policy failed:", err);
+    logger.error("[tauri-commands] validate_policy failed:", err);
     return null;
   }
 }
@@ -232,7 +233,7 @@ export async function validateSigmaRuleNative(
   try {
     return await tauriInvoke<TauriSigmaValidationResponse>("validate_sigma_rule", { source });
   } catch (err) {
-    console.error("[tauri-commands] validate_sigma_rule failed:", err);
+    logger.error("[tauri-commands] validate_sigma_rule failed:", err);
     return null;
   }
 }
@@ -244,7 +245,7 @@ export async function validateYaraRuleNative(
   try {
     return await tauriInvoke<TauriYaraValidationResponse>("validate_yara_rule", { source });
   } catch (err) {
-    console.error("[tauri-commands] validate_yara_rule failed:", err);
+    logger.error("[tauri-commands] validate_yara_rule failed:", err);
     return null;
   }
 }
@@ -256,7 +257,7 @@ export async function validateOcsfEventNative(
   try {
     return await tauriInvoke<TauriOcsfValidationResponse>("validate_ocsf_event", { json });
   } catch (err) {
-    console.error("[tauri-commands] validate_ocsf_event failed:", err);
+    logger.error("[tauri-commands] validate_ocsf_event failed:", err);
     return null;
   }
 }
@@ -270,7 +271,7 @@ export async function listBuiltinRulesets(): Promise<TauriRulesetInfo[] | null> 
   try {
     return await tauriInvoke<TauriRulesetInfo[]>("list_builtin_rulesets");
   } catch (err) {
-    console.error("[tauri-commands] list_builtin_rulesets failed:", err);
+    logger.error("[tauri-commands] list_builtin_rulesets failed:", err);
     return null;
   }
 }
@@ -284,7 +285,7 @@ export async function loadBuiltinRuleset(name: string): Promise<string | null> {
   try {
     return await tauriInvoke<string>("load_builtin_ruleset", { name });
   } catch (err) {
-    console.error("[tauri-commands] load_builtin_ruleset failed:", err);
+    logger.error("[tauri-commands] load_builtin_ruleset failed:", err);
     return null;
   }
 }
@@ -308,7 +309,7 @@ export async function simulateActionNative(
       content: content ?? null,
     });
   } catch (err) {
-    console.error("[tauri-commands] simulate_action failed:", err);
+    logger.error("[tauri-commands] simulate_action failed:", err);
     return null;
   }
 }
@@ -335,7 +336,7 @@ export async function simulateWithPostureNative(
       postureStateJson: postureStateJson ?? null,
     });
   } catch (err) {
-    console.error("[tauri-commands] simulate_action_with_posture failed:", err);
+    logger.error("[tauri-commands] simulate_action_with_posture failed:", err);
     return null;
   }
 }
@@ -355,7 +356,7 @@ export async function signReceiptNative(
       verdictPassed,
     });
   } catch (err) {
-    console.error("[tauri-commands] sign_receipt failed:", err);
+    logger.error("[tauri-commands] sign_receipt failed:", err);
     return null;
   }
 }
@@ -377,7 +378,7 @@ export async function exportPolicyFileNative(
   try {
     return await tauriInvoke<TauriExportResponse>("export_policy_file", { content, path, format });
   } catch (err) {
-    console.error("[tauri-commands] export_policy_file failed:", err);
+    logger.error("[tauri-commands] export_policy_file failed:", err);
     return null;
   }
 }
@@ -393,7 +394,7 @@ export async function importPolicyFileNative(
   try {
     return await tauriInvoke<TauriImportResponse>("import_policy_file", { path });
   } catch (err) {
-    console.error("[tauri-commands] import_policy_file failed:", err);
+    logger.error("[tauri-commands] import_policy_file failed:", err);
     return null;
   }
 }
@@ -405,7 +406,7 @@ export async function importDetectionFileNative(
   try {
     return await tauriInvoke<TauriDetectionImportResponse>("import_detection_file", { path });
   } catch (err) {
-    console.error("[tauri-commands] import_detection_file failed:", err);
+    logger.error("[tauri-commands] import_detection_file failed:", err);
     return null;
   }
 }
@@ -423,7 +424,7 @@ export async function exportDetectionFileNative(
       fileType,
     });
   } catch (err) {
-    console.error("[tauri-commands] export_detection_file failed:", err);
+    logger.error("[tauri-commands] export_detection_file failed:", err);
     return null;
   }
 }
@@ -440,7 +441,7 @@ export async function verifyReceiptChainNative(
   try {
     return await tauriInvoke<TauriChainVerificationResponse>("verify_receipt_chain", { receipts });
   } catch (err) {
-    console.error("[tauri-commands] verify_receipt_chain failed:", err);
+    logger.error("[tauri-commands] verify_receipt_chain failed:", err);
     return null;
   }
 }
@@ -455,7 +456,7 @@ export async function generatePersistentKeypairNative(): Promise<TauriGenerateKe
   try {
     return await tauriInvoke<TauriGenerateKeypairResponse>("generate_persistent_keypair");
   } catch (err) {
-    console.error("[tauri-commands] generate_persistent_keypair failed:", err);
+    logger.error("[tauri-commands] generate_persistent_keypair failed:", err);
     return null;
   }
 }
@@ -469,7 +470,7 @@ export async function getSigningPublicKeyNative(): Promise<string | null> {
   try {
     return await tauriInvoke<string | null>("get_signing_public_key");
   } catch (err) {
-    console.error("[tauri-commands] get_signing_public_key failed:", err);
+    logger.error("[tauri-commands] get_signing_public_key failed:", err);
     return null;
   }
 }
@@ -484,7 +485,7 @@ export async function signWithPersistentKeyNative(dataHex: string): Promise<stri
   try {
     return await tauriInvoke<string>("sign_with_persistent_key", { dataHex });
   } catch (err) {
-    console.error("[tauri-commands] sign_with_persistent_key failed:", err);
+    logger.error("[tauri-commands] sign_with_persistent_key failed:", err);
     return null;
   }
 }
@@ -505,7 +506,7 @@ export async function signReceiptPersistentNative(
       verdictPassed,
     });
   } catch (err) {
-    console.error("[tauri-commands] sign_receipt_persistent failed:", err);
+    logger.error("[tauri-commands] sign_receipt_persistent failed:", err);
     return null;
   }
 }
@@ -563,7 +564,7 @@ export async function testSigmaRuleNative(
   try {
     return await tauriInvoke<TauriSigmaTestResponse>("test_sigma_rule", { source, eventsJson });
   } catch (err) {
-    console.warn("[tauri-commands] test_sigma_rule failed:", err);
+    logger.warn("[tauri-commands] test_sigma_rule failed:", err);
     return null;
   }
 }
@@ -579,7 +580,7 @@ export async function compileSigmaRuleNative(
   try {
     return await tauriInvoke<TauriSigmaCompileResponse>("compile_sigma_rule", { source });
   } catch (err) {
-    console.warn("[tauri-commands] compile_sigma_rule failed:", err);
+    logger.warn("[tauri-commands] compile_sigma_rule failed:", err);
     return null;
   }
 }
@@ -595,7 +596,7 @@ export async function normalizeOcsfEventNative(
   try {
     return await tauriInvoke<TauriOcsfNormalizeResponse>("normalize_ocsf_event", { json });
   } catch (err) {
-    console.warn("[tauri-commands] normalize_ocsf_event failed:", err);
+    logger.warn("[tauri-commands] normalize_ocsf_event failed:", err);
     return null;
   }
 }
@@ -615,7 +616,7 @@ export async function convertSigmaRuleNative(
       targetFormat,
     });
   } catch (err) {
-    console.warn("[tauri-commands] convert_sigma_rule failed:", err);
+    logger.warn("[tauri-commands] convert_sigma_rule failed:", err);
     return null;
   }
 }
@@ -664,7 +665,7 @@ export async function searchInProjectNative(
       searchId,
     });
   } catch (err) {
-    console.error("[tauri-commands] search_in_project failed:", err);
+    logger.error("[tauri-commands] search_in_project failed:", err);
     throw normalizeTauriCommandError("search_in_project", err);
   }
 }
@@ -674,7 +675,7 @@ export async function cancelSearchInProjectNative(searchId: string): Promise<voi
   try {
     await tauriInvoke("cancel_search_in_project", { searchId });
   } catch (err) {
-    console.warn("[tauri-commands] cancel_search_in_project failed:", err);
+    logger.warn("[tauri-commands] cancel_search_in_project failed:", err);
   }
 }
 
@@ -696,7 +697,7 @@ export async function getMcpStatus(): Promise<TauriMcpStatusResponse | null> {
   try {
     return await tauriInvoke<TauriMcpStatusResponse>("get_mcp_status");
   } catch (err) {
-    console.error("[tauri-commands] get_mcp_status failed:", err);
+    logger.error("[tauri-commands] get_mcp_status failed:", err);
     return null;
   }
 }
@@ -710,7 +711,7 @@ export async function stopMcpServer(): Promise<TauriMcpStatusResponse | null> {
   try {
     return await tauriInvoke<TauriMcpStatusResponse>("stop_mcp_server");
   } catch (err) {
-    console.error("[tauri-commands] stop_mcp_server failed:", err);
+    logger.error("[tauri-commands] stop_mcp_server failed:", err);
     return null;
   }
 }
@@ -725,7 +726,7 @@ export async function restartMcpServer(): Promise<TauriMcpStatusResponse | null>
   try {
     return await tauriInvoke<TauriMcpStatusResponse>("restart_mcp_server");
   } catch (err) {
-    console.error("[tauri-commands] restart_mcp_server failed:", err);
+    logger.error("[tauri-commands] restart_mcp_server failed:", err);
     return null;
   }
 }

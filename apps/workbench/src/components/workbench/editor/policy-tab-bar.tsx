@@ -23,6 +23,7 @@ import {
   IconHome,
   IconChevronDown,
 } from "@tabler/icons-react";
+import { logger } from "@/lib/logger";
 
 
 interface ContextMenuState {
@@ -106,7 +107,7 @@ function TabContextMenu({
         menu="tab"
         context={{ tabId: menu.tabId } as WhenContext}
         onExecuteCommand={(commandId) => {
-          console.log(`[TabContextMenu] Execute command: ${commandId}`);
+          logger.info(`[TabContextMenu] Execute command: ${commandId}`);
           onClose();
         }}
       />

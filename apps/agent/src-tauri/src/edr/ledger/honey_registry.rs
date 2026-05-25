@@ -5,12 +5,14 @@
 //! is a plain JSONL file; entries are deduped on `artifact_id`.
 
 use std::collections::BTreeSet;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write as _;
 use std::path::{Path as FsPath, PathBuf};
 
 use anyhow::{Context, Result};
 use clawdstrike_policy_event::edr::HoneyArtifact;
+
+use super::open_private_truncate;
 
 pub(crate) struct EndpointHoneyRegistry {
     path: Option<PathBuf>,
@@ -27,6 +29,7 @@ impl EndpointHoneyRegistry {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient() -> Self {
         Self {
             path: None,
@@ -97,12 +100,7 @@ impl EndpointHoneyRegistry {
             })?;
         }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(path)
-            .with_context(|| format!("open endpoint honey registry {}", path.display()))?;
+        let mut file = open_private_truncate(path, "endpoint honey registry")?;
         for artifact in &self.artifacts {
             serde_json::to_writer(&mut file, artifact).with_context(|| {
                 format!("serialize endpoint honey artifact {}", artifact.artifact_id)

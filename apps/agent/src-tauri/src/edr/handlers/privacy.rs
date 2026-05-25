@@ -2,8 +2,6 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use crate::api_server::*;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[allow(unused_imports)]
 use axum::extract::{Path, Query, State};
 #[allow(unused_imports)]
 use axum::http::{HeaderMap, StatusCode};
@@ -16,15 +14,17 @@ use clawdstrike_policy_event::event::PolicyEvent;
 #[allow(unused_imports)]
 use hush_core::SignedReceipt;
 #[allow(unused_imports)]
+use hush_core::{canonicalize_json, sha256};
+#[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use serde_json::Value;
 #[allow(unused_imports)]
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::fs;
 #[allow(unused_imports)]
-use hush_core::{sha256, canonicalize_json};
+use std::sync::Arc;
 
 pub(crate) async fn agent_edr_privacy_report(
     State(state): State<Arc<AgentApiState>>,
@@ -33,7 +33,12 @@ pub(crate) async fn agent_edr_privacy_report(
 ) -> Result<Json<EdrPrivacyReportResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
     validate_edr_request_sizes(input.observations.len(), 0)?;
-    let raw_artifact_approval = validate_raw_artifact_approval(&input)?;
+    let raw_artifact_approval = validate_resolved_raw_artifact_approval(
+        &state,
+        validate_raw_artifact_approval(&input)?,
+        &raw_artifact_approval_resource_for_privacy_report(),
+    )
+    .await?;
     let requested_privacy_mode = input.privacy_mode.unwrap_or_default();
     let settings = state.settings.read().await.clone();
     let privacy_policy = edr_privacy_policy_decision(
@@ -58,7 +63,6 @@ pub(crate) async fn agent_edr_privacy_report(
         receipt,
     }))
 }
-
 
 pub(crate) async fn agent_edr_network_extension_egress_policy_proof(
     State(state): State<Arc<AgentApiState>>,
@@ -253,7 +257,6 @@ pub(crate) async fn agent_edr_network_extension_egress_policy_proof(
     }))
 }
 
-
 pub(crate) async fn agent_edr_protection_state(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -298,4 +301,3 @@ pub(crate) async fn agent_edr_protection_state(
         provider_recoveries,
     }))
 }
-

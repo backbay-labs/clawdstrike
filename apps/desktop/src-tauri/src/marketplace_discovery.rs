@@ -3,28 +3,36 @@
 //! This is deliberately low-trust: discovery only gossips potential feed URIs (e.g. `ipfs://...`).
 //! The desktop marketplace still verifies feed and bundle signatures before showing/installing.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket as StdUdpSocket};
 use std::time::Duration;
 
-use libp2p::core::upgrade;
-use libp2p::futures::StreamExt;
-use libp2p::gossipsub::{self, IdentTopic, MessageAuthenticity, ValidationMode};
-use libp2p::identity;
-use libp2p::mdns;
-use libp2p::noise;
-use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
-use libp2p::tcp;
-use libp2p::yamux;
-use libp2p::{Multiaddr, PeerId, Transport};
+use futures::StreamExt;
+use libp2p_core::{multiaddr::Protocol, upgrade, Multiaddr, Transport};
+use libp2p_gossipsub::{self as gossipsub, IdentTopic, MessageAuthenticity, ValidationMode};
+use libp2p_identity::{Keypair, PeerId};
+use libp2p_noise as noise;
+use libp2p_swarm::{NetworkBehaviour, Swarm, SwarmEvent};
+use libp2p_tcp as tcp;
+use libp2p_yamux as yamux;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
+use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::time::{self, MissedTickBehavior};
 
 pub const MARKETPLACE_DISCOVERY_EVENT: &str = "marketplace_discovery";
 pub const DEFAULT_MARKETPLACE_DISCOVERY_TOPIC: &str = "clawdstrike/marketplace/v1/discovery";
 
 const DISCOVERY_PROTOCOL_VERSION: u8 = 2;
 const MAX_ANNOUNCEMENT_BYTES: usize = 8 * 1024;
+const LOCAL_PEER_DISCOVERY_VERSION: u8 = 1;
+const LOCAL_PEER_DISCOVERY_PORT: u16 = 45321;
+const LOCAL_PEER_DISCOVERY_MAX_BYTES: usize = 4096;
+const LOCAL_PEER_DISCOVERY_INTERVAL: Duration = Duration::from_secs(5);
+// IPv6 link-local "all nodes" multicast — packets reach all hosts on the same
+// link without router forwarding. Used as the v6 counterpart to v4 broadcast.
+const LOCAL_PEER_DISCOVERY_V6_GROUP: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarketplaceDiscoveryAnnouncement {
@@ -120,6 +128,11 @@ struct DiscoveryInner {
 
 struct DiscoveryHandle {
     cmd_tx: mpsc::Sender<DiscoveryCommand>,
+    join: tauri::async_runtime::JoinHandle<()>,
+}
+
+struct LocalPeerDiscoveryHandle {
+    listen_addrs_tx: mpsc::Sender<Vec<String>>,
     join: tauri::async_runtime::JoinHandle<()>,
 }
 
@@ -253,27 +266,23 @@ impl DiscoveryInner {
 }
 
 #[derive(NetworkBehaviour)]
-#[behaviour(to_swarm = "DiscoveryBehaviourEvent")]
+#[behaviour(
+    prelude = "libp2p_swarm::derive_prelude",
+    to_swarm = "DiscoveryBehaviourEvent"
+)]
 struct DiscoveryBehaviour {
+    // LAN peer discovery runs below as a small UDP beacon so we do not pull in libp2p-mdns.
     gossipsub: gossipsub::Behaviour,
-    mdns: mdns::tokio::Behaviour,
 }
 
 #[derive(Debug)]
 enum DiscoveryBehaviourEvent {
     Gossipsub(Box<gossipsub::Event>),
-    Mdns(mdns::Event),
 }
 
 impl From<gossipsub::Event> for DiscoveryBehaviourEvent {
     fn from(value: gossipsub::Event) -> Self {
         Self::Gossipsub(Box::new(value))
-    }
-}
-
-impl From<mdns::Event> for DiscoveryBehaviourEvent {
-    fn from(value: mdns::Event) -> Self {
-        Self::Mdns(value)
     }
 }
 
@@ -289,7 +298,7 @@ async fn run_discovery<R: Runtime>(
         .unwrap_or_else(|| DEFAULT_MARKETPLACE_DISCOVERY_TOPIC.to_string());
     let topic = IdentTopic::new(topic_name.clone());
 
-    let local_key = identity::Keypair::generate_ed25519();
+    let local_key = Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
 
     {
@@ -341,21 +350,13 @@ async fn run_discovery<R: Runtime>(
         return;
     }
 
-    let mdns = match mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id) {
-        Ok(v) => v,
-        Err(e) => {
-            set_fatal_error(&status, format!("Failed to start mDNS: {e}")).await;
-            return;
-        }
-    };
-
-    let behaviour = DiscoveryBehaviour { gossipsub, mdns };
+    let behaviour = DiscoveryBehaviour { gossipsub };
 
     let mut swarm = Swarm::new(
         transport,
         behaviour,
         local_peer_id,
-        libp2p::swarm::Config::with_tokio_executor(),
+        libp2p_swarm::Config::with_tokio_executor(),
     );
 
     let port = config.listen_port.unwrap_or(0);
@@ -385,6 +386,11 @@ async fn run_discovery<R: Runtime>(
     }
 
     let mut connected: HashSet<PeerId> = HashSet::new();
+    let (local_peer_tx, mut local_peer_rx) = mpsc::channel::<Multiaddr>(32);
+    let mut local_peer_rx_closed = false;
+    let mut local_discovery_dialed = HashMap::<Multiaddr, PeerId>::new();
+    let local_peer_discovery =
+        start_local_peer_discovery(local_peer_id, local_peer_tx, status.clone()).await;
 
     loop {
         tokio::select! {
@@ -401,37 +407,35 @@ async fn run_discovery<R: Runtime>(
                     }
                     SwarmEvent::NewListenAddr { address, .. } => {
                         let addr_str = address.to_string();
-                        let mut s = status.write().await;
-                        if !s.listen_addrs.iter().any(|a| a == &addr_str) {
-                            s.listen_addrs.push(addr_str);
-                    }
-                }
+                        let listen_addrs = {
+                            let mut s = status.write().await;
+                            if !s.listen_addrs.iter().any(|a| a == &addr_str) {
+                                s.listen_addrs.push(addr_str);
+                            }
+                            s.listen_addrs.clone()
+                        };
+                        if let Some(local_discovery) = local_peer_discovery.as_ref() {
+                            let _ = local_discovery.listen_addrs_tx.try_send(listen_addrs);
+                        }
+                    },
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                     connected.insert(peer_id);
                     status.write().await.connected_peers = connected.len();
                 }
                 SwarmEvent::ConnectionClosed { peer_id, .. } => {
                     connected.remove(&peer_id);
+                    local_discovery_dialed.retain(|_, dialed_peer_id| *dialed_peer_id != peer_id);
                     status.write().await.connected_peers = connected.len();
                 }
-                SwarmEvent::Behaviour(DiscoveryBehaviourEvent::Mdns(event)) => match event {
-                    mdns::Event::Discovered(list) => {
-                        for (peer_id, _addr) in list {
-                            swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
-                        }
-                    }
-                    mdns::Event::Expired(list) => {
-                        for (peer_id, _addr) in list {
-                            swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
-                        }
-                    }
-                },
                 SwarmEvent::Behaviour(DiscoveryBehaviourEvent::Gossipsub(event)) => {
                     if let gossipsub::Event::Message { propagation_source, message, .. } = *event {
                         handle_gossipsub_message(&app, &status, propagation_source, &message.data).await;
                     }
                 }
                 SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                    if let Some(peer_id) = peer_id {
+                        local_discovery_dialed.retain(|_, dialed_peer_id| *dialed_peer_id != peer_id);
+                    }
                     set_error(&status, format!("Outgoing connection error ({peer_id:?}): {error}")).await;
                 }
                 SwarmEvent::IncomingConnectionError { error, .. } => {
@@ -455,13 +459,245 @@ async fn run_discovery<R: Runtime>(
                 None => {
                     break;
                 }
+            },
+            discovered_addr = local_peer_rx.recv(), if !local_peer_rx_closed => match discovered_addr {
+                Some(addr) => {
+                    if !local_discovery_dialed.contains_key(&addr) {
+                        if let Some(peer_id) = peer_id_from_multiaddr(&addr) {
+                            local_discovery_dialed.insert(addr.clone(), peer_id);
+                        }
+                        if let Err(e) = swarm.dial(addr.clone()) {
+                            local_discovery_dialed.remove(&addr);
+                            set_error(&status, format!("Failed to dial local discovery peer {addr}: {e}")).await;
+                        }
+                    }
+                }
+                None => {
+                    local_peer_rx_closed = true;
+                }
             }
         }
+    }
+
+    if let Some(local_discovery) = local_peer_discovery {
+        local_discovery.join.abort();
+        let _ = local_discovery.join.await;
     }
 
     // If we exit without an explicit Stop command (e.g. task dropped or init failed in a later
     // stage), ensure status reflects the stopped state.
     status.write().await.running = false;
+}
+
+fn peer_id_from_multiaddr(addr: &Multiaddr) -> Option<PeerId> {
+    addr.iter().find_map(|protocol| match protocol {
+        Protocol::P2p(peer_id) => Some(peer_id),
+        _ => None,
+    })
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct LocalPeerDiscoveryPacket {
+    v: u8,
+    peer_id: String,
+    listen_addrs: Vec<String>,
+}
+
+fn bind_local_discovery_v4() -> std::io::Result<UdpSocket> {
+    use socket2::{Domain, Protocol, Socket, Type};
+    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_reuse_address(true)?;
+    #[cfg(unix)]
+    socket.set_reuse_port(true)?;
+    socket.bind(&SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LOCAL_PEER_DISCOVERY_PORT).into())?;
+    socket.set_broadcast(true)?;
+    socket.set_nonblocking(true)?;
+    let std_socket: StdUdpSocket = socket.into();
+    UdpSocket::from_std(std_socket)
+}
+
+fn bind_local_discovery_v6() -> std::io::Result<UdpSocket> {
+    use socket2::{Domain, Protocol, Socket, Type};
+    let socket = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
+    // V6ONLY=true lets the v4 socket bind the same port independently. Without
+    // it, on Linux/macOS the v6 socket would claim both families via 4-in-6
+    // mapping, blocking the v4 bind.
+    socket.set_only_v6(true)?;
+    socket.set_reuse_address(true)?;
+    #[cfg(unix)]
+    socket.set_reuse_port(true)?;
+    socket.bind(&SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), LOCAL_PEER_DISCOVERY_PORT).into())?;
+    // Join the link-local all-nodes multicast group on all interfaces (idx 0).
+    // Some platforms reject idx=0 — treat the join as best-effort.
+    let _ = socket.join_multicast_v6(&LOCAL_PEER_DISCOVERY_V6_GROUP, 0);
+    socket.set_multicast_loop_v6(false)?;
+    socket.set_nonblocking(true)?;
+    let std_socket: StdUdpSocket = socket.into();
+    UdpSocket::from_std(std_socket)
+}
+
+async fn start_local_peer_discovery(
+    local_peer_id: PeerId,
+    discovered_tx: mpsc::Sender<Multiaddr>,
+    status: std::sync::Arc<RwLock<MarketplaceDiscoveryStatus>>,
+) -> Option<LocalPeerDiscoveryHandle> {
+    let v4 = match bind_local_discovery_v4() {
+        Ok(s) => Some(s),
+        Err(e) => {
+            tracing::warn!("Local peer discovery: IPv4 socket bind failed: {e}");
+            None
+        }
+    };
+    let v6 = match bind_local_discovery_v6() {
+        Ok(s) => Some(s),
+        Err(e) => {
+            tracing::warn!("Local peer discovery: IPv6 socket bind failed: {e}");
+            None
+        }
+    };
+
+    if v4.is_none() && v6.is_none() {
+        set_error(
+            &status,
+            "Local peer discovery disabled: failed to bind any UDP socket".to_string(),
+        )
+        .await;
+        return None;
+    }
+
+    let (listen_addrs_tx, listen_addrs_rx) = mpsc::channel::<Vec<String>>(8);
+    let join = tauri::async_runtime::spawn(run_local_peer_discovery(
+        v4,
+        v6,
+        local_peer_id,
+        listen_addrs_rx,
+        discovered_tx,
+    ));
+
+    Some(LocalPeerDiscoveryHandle {
+        listen_addrs_tx,
+        join,
+    })
+}
+
+async fn handle_local_discovery_packet(
+    bytes: &[u8],
+    sender_ip: IpAddr,
+    local_peer_id: &PeerId,
+    discovered_tx: &mpsc::Sender<Multiaddr>,
+) {
+    if bytes.len() > LOCAL_PEER_DISCOVERY_MAX_BYTES {
+        return;
+    }
+    let Ok(packet) = serde_json::from_slice::<LocalPeerDiscoveryPacket>(bytes) else {
+        return;
+    };
+    if packet.v != LOCAL_PEER_DISCOVERY_VERSION || packet.peer_id == local_peer_id.to_string() {
+        return;
+    }
+    let Ok(peer_id) = packet.peer_id.parse::<PeerId>() else {
+        return;
+    };
+    for raw_addr in packet.listen_addrs {
+        if let Some(dial_addr) = normalize_local_discovery_addr(&raw_addr, sender_ip, &peer_id) {
+            let _ = discovered_tx.send(dial_addr).await;
+        }
+    }
+}
+
+async fn run_local_peer_discovery(
+    v4: Option<UdpSocket>,
+    v6: Option<UdpSocket>,
+    local_peer_id: PeerId,
+    mut listen_addrs_rx: mpsc::Receiver<Vec<String>>,
+    discovered_tx: mpsc::Sender<Multiaddr>,
+) {
+    let mut listen_addrs = Vec::new();
+    let mut interval = time::interval(LOCAL_PEER_DISCOVERY_INTERVAL);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let v4_send_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), LOCAL_PEER_DISCOVERY_PORT);
+    let v6_send_addr = SocketAddr::new(
+        IpAddr::V6(LOCAL_PEER_DISCOVERY_V6_GROUP),
+        LOCAL_PEER_DISCOVERY_PORT,
+    );
+    let mut v4_buf = vec![0_u8; LOCAL_PEER_DISCOVERY_MAX_BYTES];
+    let mut v6_buf = vec![0_u8; LOCAL_PEER_DISCOVERY_MAX_BYTES];
+
+    // Helper macros to make the select arms readable while keeping the borrow
+    // checker happy with optional sockets.
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                if listen_addrs.is_empty() {
+                    continue;
+                }
+                let packet = LocalPeerDiscoveryPacket {
+                    v: LOCAL_PEER_DISCOVERY_VERSION,
+                    peer_id: local_peer_id.to_string(),
+                    listen_addrs: listen_addrs.clone(),
+                };
+                if let Ok(bytes) = serde_json::to_vec(&packet) {
+                    if let Some(s) = v4.as_ref() {
+                        let _ = s.send_to(&bytes, v4_send_addr).await;
+                    }
+                    if let Some(s) = v6.as_ref() {
+                        let _ = s.send_to(&bytes, v6_send_addr).await;
+                    }
+                }
+            }
+            updated = listen_addrs_rx.recv() => match updated {
+                Some(addrs) => {
+                    listen_addrs = addrs;
+                }
+                None => break,
+            },
+            received = async {
+                match v4.as_ref() {
+                    Some(s) => s.recv_from(&mut v4_buf).await.map(Some),
+                    None => std::future::pending().await,
+                }
+            } => {
+                let Ok(Some((len, sender))) = received else { continue };
+                handle_local_discovery_packet(&v4_buf[..len], sender.ip(), &local_peer_id, &discovered_tx).await;
+            }
+            received = async {
+                match v6.as_ref() {
+                    Some(s) => s.recv_from(&mut v6_buf).await.map(Some),
+                    None => std::future::pending().await,
+                }
+            } => {
+                let Ok(Some((len, sender))) = received else { continue };
+                handle_local_discovery_packet(&v6_buf[..len], sender.ip(), &local_peer_id, &discovered_tx).await;
+            }
+        }
+    }
+}
+
+fn normalize_local_discovery_addr(
+    raw_addr: &str,
+    sender_ip: IpAddr,
+    peer_id: &PeerId,
+) -> Option<Multiaddr> {
+    // SECURITY: The packet body is unauthenticated UDP from the LAN, so the
+    // advertised IP in `listen_addrs` is attacker-controlled. Trust only the
+    // datagram sender IP for the host, and take only the TCP port from the
+    // packet (peer id is validated upstream). This prevents a forged broadcast
+    // from coercing this node into dialing arbitrary external/internal targets.
+    let addr = raw_addr.parse::<Multiaddr>().ok()?;
+    let port = addr.iter().find_map(|protocol| match protocol {
+        Protocol::Tcp(port) => Some(port),
+        _ => None,
+    })?;
+
+    match sender_ip {
+        IpAddr::V4(ip) if !ip.is_unspecified() => {
+            format!("/ip4/{ip}/tcp/{port}/p2p/{peer_id}").parse().ok()
+        }
+        IpAddr::V6(ip) if !ip.is_unspecified() => {
+            format!("/ip6/{ip}/tcp/{port}/p2p/{peer_id}").parse().ok()
+        }
+        _ => None,
+    }
 }
 
 async fn publish_announcement(
@@ -647,5 +883,98 @@ mod discovery_manager_tests {
         );
 
         let _ = manager.stop().await;
+    }
+
+    fn test_peer_id() -> PeerId {
+        Keypair::generate_ed25519().public().to_peer_id()
+    }
+
+    #[test]
+    fn local_discovery_addr_ignores_advertised_ip_and_uses_sender() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50));
+        // Advertised IP is a hostile external address; must be ignored.
+        let raw = "/ip4/203.0.113.10/tcp/4001";
+        let dial = normalize_local_discovery_addr(raw, sender, &peer_id)
+            .expect("should produce a dial address");
+        let s = dial.to_string();
+        assert!(
+            s.starts_with("/ip4/192.168.1.50/tcp/4001/p2p/"),
+            "expected dial addr to use sender IP, got {s}"
+        );
+        assert!(
+            !s.contains("203.0.113.10"),
+            "advertised external IP must not appear in dial addr: {s}"
+        );
+    }
+
+    #[test]
+    fn local_discovery_addr_takes_port_from_packet() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 7));
+        let raw = "/ip4/10.0.0.7/tcp/9999";
+        let dial = normalize_local_discovery_addr(raw, sender, &peer_id)
+            .expect("should produce a dial address");
+        assert!(dial.to_string().contains("/tcp/9999/"));
+    }
+
+    #[test]
+    fn local_discovery_addr_handles_ipv6_sender() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V6("fe80::1".parse().unwrap());
+        // Advertised v4 IP must be ignored; sender v6 IP is used.
+        let raw = "/ip4/8.8.8.8/tcp/4001";
+        let dial = normalize_local_discovery_addr(raw, sender, &peer_id)
+            .expect("should produce a dial address");
+        let s = dial.to_string();
+        assert!(s.starts_with("/ip6/fe80::1/tcp/4001/p2p/"), "got {s}");
+        assert!(!s.contains("8.8.8.8"));
+    }
+
+    #[test]
+    fn local_discovery_addr_rejects_unspecified_sender() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+        let raw = "/ip4/192.168.1.10/tcp/4001";
+        assert!(normalize_local_discovery_addr(raw, sender, &peer_id).is_none());
+    }
+
+    #[test]
+    fn local_discovery_addr_rejects_missing_tcp_port() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50));
+        let raw = "/ip4/192.168.1.50/udp/4001";
+        assert!(normalize_local_discovery_addr(raw, sender, &peer_id).is_none());
+    }
+
+    #[test]
+    fn local_discovery_addr_rejects_unparseable_input() {
+        let peer_id = test_peer_id();
+        let sender = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50));
+        assert!(normalize_local_discovery_addr("not-a-multiaddr", sender, &peer_id).is_none());
+    }
+
+    #[tokio::test]
+    async fn local_discovery_dual_stack_binds_v4_and_v6_on_same_port() {
+        // Both helpers must bind the same UDP port without colliding — V6ONLY
+        // on the v6 socket plus SO_REUSEADDR/SO_REUSEPORT on both is what
+        // unblocks the v4 bind on Linux/macOS where dual-stack v6 sockets
+        // would otherwise claim the v4 family too.
+        let v4 = bind_local_discovery_v4();
+        let v6 = bind_local_discovery_v6();
+        // At least one socket should succeed in any reasonable sandbox; on
+        // CI runners both should succeed.
+        assert!(
+            v4.is_ok() || v6.is_ok(),
+            "expected at least one of v4/v6 binds to succeed (v4: {:?}, v6: {:?})",
+            v4.as_ref().err(),
+            v6.as_ref().err(),
+        );
+        if let Ok(s) = v4 {
+            assert_eq!(s.local_addr().unwrap().port(), LOCAL_PEER_DISCOVERY_PORT);
+        }
+        if let Ok(s) = v6 {
+            assert_eq!(s.local_addr().unwrap().port(), LOCAL_PEER_DISCOVERY_PORT);
+        }
     }
 }

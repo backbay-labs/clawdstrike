@@ -14,6 +14,7 @@ import type {
   ServerMessageRaw,
 } from "./types";
 import { HEARTBEAT_INTERVAL_MS } from "./types";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -237,7 +238,7 @@ export class PresenceSocket {
       this.opts.onMessage(parsed);
     } catch {
       // Skip malformed messages — do not tear down the connection.
-      console.warn("[PresenceSocket] Skipping malformed message");
+      logger.warn("[PresenceSocket] Skipping malformed message");
     }
   }
 
@@ -253,7 +254,7 @@ export class PresenceSocket {
 
   private onError(): void {
     // onClose fires after onError and handles the state transition.
-    console.warn("[PresenceSocket] WebSocket error");
+    logger.warn("[PresenceSocket] WebSocket error");
   }
 
   // ---- Reconnect with jittered backoff ----
@@ -295,7 +296,7 @@ export class PresenceSocket {
   private sendJoin(): void {
     const identity = this.opts.getIdentity();
     if (!identity) {
-      console.warn("[PresenceSocket] Cannot join — no operator identity");
+      logger.warn("[PresenceSocket] Cannot join — no operator identity");
       return;
     }
     this.send({

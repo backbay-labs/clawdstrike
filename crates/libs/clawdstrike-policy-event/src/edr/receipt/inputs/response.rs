@@ -1,9 +1,10 @@
 use super::super::super::{
     actor::{EndpointDecisionActor, EndpointPolicySnapshot},
     causal::CausalGraph,
+    receipt::evidence::EndpointEvidenceBundleReference,
     response::{
-        EndpointResponseAcknowledgementReport, EndpointResponseExecutionReport,
-        EndpointResponsePlan, EndpointResponseRollbackReport,
+        EndpointResponseAcknowledgementReport, EndpointResponseControlCorrelation,
+        EndpointResponseExecutionReport, EndpointResponsePlan, EndpointResponseRollbackReport,
     },
     sensor_state::EndpointSensorState,
 };

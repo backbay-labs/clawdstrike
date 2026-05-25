@@ -7,7 +7,9 @@
 
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
+use sqlx::executor::Executor;
 use sqlx::row::Row;
+use sqlx_postgres::Postgres;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -15,6 +17,20 @@ use crate::db::PgPool;
 use crate::services::tenant_provisioner::tenant_subject_prefix;
 
 pub const POLICY_SYNC_KEY: &str = "policy.yaml";
+
+const POLICY_SYNC_EPOCH_YAML_PATHS: &[&[&str]] = &[
+    &["policy_epoch"],
+    &["policyEpoch"],
+    &["epoch"],
+    &["policy", "epoch"],
+    &["policy", "policy_epoch"],
+    &["policy", "policyEpoch"],
+    &["metadata", "policy_epoch"],
+    &["metadata", "policyEpoch"],
+    &["bundle", "epoch"],
+    &["bundle", "policy_epoch"],
+    &["bundle", "policyEpoch"],
+];
 
 #[derive(Debug, Clone)]
 pub struct ActiveTenantPolicy {
@@ -102,6 +118,18 @@ pub async fn upsert_active_policy(
     policy_yaml: &str,
     description: Option<&str>,
 ) -> Result<ActiveTenantPolicy, sqlx::error::Error> {
+    upsert_active_policy_with_executor(db, tenant_id, policy_yaml, description).await
+}
+
+pub async fn upsert_active_policy_with_executor<'e, E>(
+    executor: E,
+    tenant_id: Uuid,
+    policy_yaml: &str,
+    description: Option<&str>,
+) -> Result<ActiveTenantPolicy, sqlx::error::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
     let checksum = checksum_sha256_hex(policy_yaml);
     let row = sqlx::query::query(
         r#"WITH upsert AS (
@@ -136,16 +164,96 @@ pub async fn upsert_active_policy(
     .bind(policy_yaml)
     .bind(checksum)
     .bind(description)
-    .fetch_one(db)
+    .fetch_one(executor)
     .await?;
 
     row_to_active_policy(row)
+}
+
+pub async fn upsert_active_policy_after_version_with_executor<'e, E>(
+    executor: E,
+    tenant_id: Uuid,
+    policy_yaml: &str,
+    description: Option<&str>,
+    expected_base_version: i64,
+) -> Result<Option<ActiveTenantPolicy>, sqlx::error::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let checksum = checksum_sha256_hex(policy_yaml);
+    let row = sqlx::query::query(
+        r#"WITH updated AS (
+               UPDATE tenant_active_policies
+               SET policy_yaml = $2,
+                   checksum_sha256 = $3,
+                   description = $4,
+                   version = tenant_active_policies.version + 1,
+                   updated_at = now()
+               WHERE tenant_id = $1
+                 AND version = $5
+               RETURNING tenant_id, policy_yaml, checksum_sha256, description, version, updated_at
+           ),
+           inserted AS (
+               INSERT INTO tenant_active_policies (
+                   tenant_id,
+                   policy_yaml,
+                   checksum_sha256,
+                   description,
+                   version
+               )
+               SELECT $1, $2, $3, $4, 1
+               WHERE $5 = 0
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM tenant_active_policies
+                     WHERE tenant_id = $1
+                 )
+               ON CONFLICT (tenant_id) DO NOTHING
+               RETURNING tenant_id, policy_yaml, checksum_sha256, description, version, updated_at
+           ),
+           upsert AS (
+               SELECT *
+               FROM updated
+               UNION ALL
+               SELECT *
+               FROM inserted
+           )
+           SELECT u.tenant_id,
+                  t.slug AS tenant_slug,
+                  u.policy_yaml,
+                  u.checksum_sha256,
+                  u.description,
+                  u.version,
+                  u.updated_at
+           FROM upsert AS u
+           JOIN tenants AS t
+             ON t.id = u.tenant_id"#,
+    )
+    .bind(tenant_id)
+    .bind(policy_yaml)
+    .bind(checksum)
+    .bind(description)
+    .bind(expected_base_version)
+    .fetch_optional(executor)
+    .await?;
+
+    row.map(row_to_active_policy).transpose()
 }
 
 pub async fn fetch_active_policy_by_tenant_id(
     db: &PgPool,
     tenant_id: Uuid,
 ) -> Result<Option<ActiveTenantPolicy>, sqlx::error::Error> {
+    fetch_active_policy_by_tenant_id_with_executor(db, tenant_id).await
+}
+
+pub async fn fetch_active_policy_by_tenant_id_with_executor<'e, E>(
+    executor: E,
+    tenant_id: Uuid,
+) -> Result<Option<ActiveTenantPolicy>, sqlx::error::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
     let row = sqlx::query::query(
         r#"SELECT p.tenant_id,
                   t.slug AS tenant_slug,
@@ -160,7 +268,35 @@ pub async fn fetch_active_policy_by_tenant_id(
            WHERE p.tenant_id = $1"#,
     )
     .bind(tenant_id)
-    .fetch_optional(db)
+    .fetch_optional(executor)
+    .await?;
+
+    row.map(row_to_active_policy).transpose()
+}
+
+pub async fn fetch_active_policy_by_tenant_id_for_update_with_executor<'e, E>(
+    executor: E,
+    tenant_id: Uuid,
+) -> Result<Option<ActiveTenantPolicy>, sqlx::error::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query::query(
+        r#"SELECT p.tenant_id,
+                  t.slug AS tenant_slug,
+                  p.policy_yaml,
+                  p.checksum_sha256,
+                  p.description,
+                  p.version,
+                  p.updated_at
+           FROM tenant_active_policies AS p
+           JOIN tenants AS t
+             ON t.id = p.tenant_id
+           WHERE p.tenant_id = $1
+           FOR UPDATE OF p"#,
+    )
+    .bind(tenant_id)
+    .fetch_optional(executor)
     .await?;
 
     row.map(row_to_active_policy).transpose()
@@ -235,13 +371,14 @@ pub async fn put_effective_policy_for_agent(
     nats: &async_nats::Client,
     policy: &EffectiveAgentPolicy,
 ) -> Result<(), String> {
-    put_policy_yaml_for_agent(
+    reconcile_effective_policy_yaml_for_agent(
         nats,
         &policy.tenant_slug,
         &policy.agent_id,
         &policy.policy_yaml,
     )
     .await
+    .map(|_| ())
 }
 
 async fn put_policy_yaml_for_agent(
@@ -283,7 +420,7 @@ pub async fn reconcile_effective_policy_for_agent(
     let Some(policy) = resolve_effective_policy_for_agent(db, tenant_id, agent_id).await? else {
         return Ok(false);
     };
-    reconcile_policy_yaml_for_agent(
+    reconcile_effective_policy_yaml_for_agent(
         nats,
         &policy.tenant_slug,
         &policy.agent_id,
@@ -322,6 +459,80 @@ async fn reconcile_policy_yaml_for_agent(
         .await
         .map_err(|err| err.to_string())?;
     Ok(true)
+}
+
+async fn reconcile_effective_policy_yaml_for_agent(
+    nats: &async_nats::Client,
+    tenant_slug: &str,
+    agent_id: &str,
+    policy_yaml: &str,
+) -> Result<bool, String> {
+    let js = async_nats::jetstream::new(nats.clone());
+    let bucket = policy_sync_bucket(&tenant_subject_prefix(tenant_slug), agent_id);
+    let store = spine::nats_transport::ensure_kv(&js, &bucket, 1)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let existing = store
+        .get(POLICY_SYNC_KEY)
+        .await
+        .map_err(|err| err.to_string())?;
+    let mut expected_policy_yaml = policy_yaml.to_string();
+    if let Some(existing) = existing.as_ref() {
+        if existing.as_ref() == expected_policy_yaml.as_bytes() {
+            return Ok(false);
+        }
+        if policy_yaml_content_matches_ignoring_epoch(
+            expected_policy_yaml.as_bytes(),
+            existing.as_ref(),
+        ) && !candidate_policy_epoch_advances_existing(&expected_policy_yaml, existing.as_ref())?
+        {
+            return Ok(false);
+        }
+        expected_policy_yaml =
+            policy_yaml_with_epoch_after_existing(&expected_policy_yaml, existing.as_ref())?;
+    } else if policy_epoch_from_yaml(expected_policy_yaml.as_bytes()).is_none() {
+        return Err("effective policy is missing policy_epoch".to_string());
+    }
+
+    store
+        .put(
+            POLICY_SYNC_KEY.to_string(),
+            expected_policy_yaml.as_bytes().to_vec().into(),
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(true)
+}
+
+fn candidate_policy_epoch_advances_existing(
+    candidate_policy_yaml: &str,
+    existing_policy_yaml: &[u8],
+) -> Result<bool, String> {
+    let candidate_epoch = policy_epoch_from_yaml(candidate_policy_yaml.as_bytes())
+        .ok_or_else(|| "effective policy is missing policy_epoch".to_string())?;
+    let Some(existing_epoch) = policy_epoch_from_yaml(existing_policy_yaml) else {
+        return Ok(true);
+    };
+    Ok(candidate_epoch > existing_epoch)
+}
+
+fn policy_yaml_with_epoch_after_existing(
+    candidate_policy_yaml: &str,
+    existing_policy_yaml: &[u8],
+) -> Result<String, String> {
+    let Some(existing_epoch) = policy_epoch_from_yaml(existing_policy_yaml) else {
+        return Ok(candidate_policy_yaml.to_string());
+    };
+    let candidate_epoch = policy_epoch_from_yaml(candidate_policy_yaml.as_bytes())
+        .ok_or_else(|| "effective policy is missing policy_epoch".to_string())?;
+    if candidate_epoch > existing_epoch {
+        return Ok(candidate_policy_yaml.to_string());
+    }
+    let next_epoch = existing_epoch
+        .checked_add(1)
+        .ok_or_else(|| format!("policy epoch {existing_epoch} cannot be incremented"))?;
+    stamp_policy_epoch(candidate_policy_yaml, next_epoch)
 }
 
 pub fn distribution_policy_yaml(policy: &ActiveTenantPolicy) -> Result<String, String> {
@@ -488,6 +699,49 @@ fn stamp_policy_epoch(policy_yaml: &str, policy_epoch: u64) -> Result<String, St
             .map_err(|err| format!("failed to serialize policy epoch: {err}"))?,
     );
     serde_yaml::to_string(&value).map_err(|err| format!("failed to serialize policy YAML: {err}"))
+}
+
+fn policy_yaml_content_matches_ignoring_epoch(left: &[u8], right: &[u8]) -> bool {
+    let Some(left) = policy_yaml_without_epoch_metadata(left) else {
+        return false;
+    };
+    let Some(right) = policy_yaml_without_epoch_metadata(right) else {
+        return false;
+    };
+    left == right
+}
+
+fn policy_yaml_without_epoch_metadata(policy_yaml: &[u8]) -> Option<serde_yaml::Value> {
+    let mut value: serde_yaml::Value = serde_yaml::from_slice(policy_yaml).ok()?;
+    let serde_yaml::Value::Mapping(map) = &mut value else {
+        return Some(value);
+    };
+    remove_policy_epoch_metadata(map);
+    Some(value)
+}
+
+fn policy_epoch_from_yaml(policy_yaml: &[u8]) -> Option<u64> {
+    let root: serde_yaml::Value = serde_yaml::from_slice(policy_yaml).ok()?;
+    POLICY_SYNC_EPOCH_YAML_PATHS
+        .iter()
+        .filter_map(|path| yaml_u64_at_path(&root, path))
+        .find(|epoch| *epoch > 0)
+}
+
+fn yaml_u64_at_path(value: &serde_yaml::Value, path: &[&str]) -> Option<u64> {
+    let mut current = value;
+    for segment in path {
+        current = current.get(*segment)?;
+    }
+    yaml_u64_value(current)
+}
+
+fn yaml_u64_value(value: &serde_yaml::Value) -> Option<u64> {
+    match value {
+        serde_yaml::Value::Number(value) => value.as_u64(),
+        serde_yaml::Value::String(value) => value.trim().parse::<u64>().ok(),
+        _ => None,
+    }
 }
 
 fn remove_policy_epoch_metadata(map: &mut serde_yaml::Mapping) {
@@ -976,6 +1230,101 @@ rules: []
             .and_then(|policy| policy.get("keep"))
             .is_none());
         assert!(value.get("policyEpoch").is_none());
+    }
+
+    #[test]
+    fn effective_policy_publish_epoch_advances_same_epoch_content_change() {
+        let existing = "policy:
+  mode: old
+policy_epoch: 12
+";
+        let candidate = "policy:
+  mode: new
+policy_epoch: 12
+";
+
+        let restamped = policy_yaml_with_epoch_after_existing(candidate, existing.as_bytes())
+            .expect("restamped policy");
+        let value: serde_yaml::Value = serde_yaml::from_str(&restamped).expect("policy YAML");
+
+        assert_eq!(
+            value
+                .get("policy_epoch")
+                .and_then(serde_yaml::Value::as_u64),
+            Some(13)
+        );
+        assert_eq!(
+            value
+                .get("policy")
+                .and_then(|policy| policy.get("mode"))
+                .and_then(serde_yaml::Value::as_str),
+            Some("new")
+        );
+    }
+
+    #[test]
+    fn effective_policy_publish_epoch_ignores_epoch_only_drift() {
+        let existing = "policy:
+  mode: new
+policy_epoch: 13
+";
+        let candidate = "policy:
+  mode: new
+policy_epoch: 12
+";
+
+        assert!(policy_yaml_content_matches_ignoring_epoch(
+            candidate.as_bytes(),
+            existing.as_bytes()
+        ));
+        assert!(
+            !candidate_policy_epoch_advances_existing(candidate, existing.as_bytes())
+                .expect("epoch comparison")
+        );
+    }
+
+    #[test]
+    fn effective_policy_publish_epoch_writes_higher_epoch_same_content() {
+        let existing = "policy:
+  mode: new
+policy_epoch: 13
+";
+        let candidate = "policy:
+  mode: new
+policy_epoch: 14
+";
+
+        assert!(policy_yaml_content_matches_ignoring_epoch(
+            candidate.as_bytes(),
+            existing.as_bytes()
+        ));
+        assert!(
+            candidate_policy_epoch_advances_existing(candidate, existing.as_bytes())
+                .expect("epoch comparison")
+        );
+    }
+
+    #[test]
+    fn effective_policy_publish_epoch_keeps_higher_candidate_epoch() {
+        let existing = "policy:
+  mode: old
+policy_epoch: 12
+";
+        let candidate = "policy:
+  mode: new
+policy_epoch: 20
+";
+
+        let restamped = policy_yaml_with_epoch_after_existing(candidate, existing.as_bytes())
+            .expect("restamped policy");
+        let value: serde_yaml::Value = serde_yaml::from_str(&restamped).expect("policy YAML");
+
+        assert_eq!(
+            value
+                .get("policy_epoch")
+                .and_then(serde_yaml::Value::as_u64),
+            Some(20)
+        );
     }
 
     fn test_attachment(

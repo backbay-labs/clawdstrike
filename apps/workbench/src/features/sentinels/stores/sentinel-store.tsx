@@ -20,6 +20,7 @@ import {
   retireSentinel as engineRetireSentinel,
   updateStats as engineUpdateStats,
 } from "@/lib/workbench/sentinel-manager";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,7 +64,7 @@ function schedulePersist(state: SentinelState): void {
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
     } catch (e) {
-      console.error("[sentinel-store] persistSentinels failed:", e);
+      logger.error("[sentinel-store] persistSentinels failed:", e);
     }
     persistTimer = null;
   }, 500);
@@ -75,7 +76,7 @@ function loadPersistedSentinels(): Pick<SentinelState, "sentinels" | "activeSent
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.sentinels)) {
-      console.warn("[sentinel-store] Invalid persisted sentinel data, using defaults");
+      logger.warn("[sentinel-store] Invalid persisted sentinel data, using defaults");
       return null;
     }
 
@@ -113,7 +114,7 @@ function loadPersistedSentinels(): Pick<SentinelState, "sentinels" | "activeSent
       loading: false,
     };
   } catch (e) {
-    console.warn("[sentinel-store] loadPersistedSentinels failed:", e);
+    logger.warn("[sentinel-store] loadPersistedSentinels failed:", e);
     return null;
   }
 }
@@ -163,7 +164,7 @@ const useSentinelStoreBase = create<SentinelState>()(
                 state.sentinels[idx] as Sentinel,
                 patch,
               );
-              state.sentinels[idx] = updated as any;
+              state.sentinels[idx] = updated;
             }
           });
           schedulePersist(get());
@@ -173,7 +174,7 @@ const useSentinelStoreBase = create<SentinelState>()(
           set((state) => {
             const remaining = engineDeleteSentinel(sentinelId, state.sentinels as Sentinel[]);
             const needNewActive = state.activeSentinelId === sentinelId;
-            state.sentinels = remaining as any;
+            state.sentinels = remaining;
             if (needNewActive) {
               state.activeSentinelId =
                 remaining.length > 0 ? remaining[0].id : null;
@@ -198,7 +199,7 @@ const useSentinelStoreBase = create<SentinelState>()(
             if (idx !== -1) {
               try {
                 const activated = engineActivateSentinel(state.sentinels[idx] as Sentinel);
-                state.sentinels[idx] = activated as any;
+                state.sentinels[idx] = activated;
               } catch {
                 // Invalid transition -- no-op
               }
@@ -213,7 +214,7 @@ const useSentinelStoreBase = create<SentinelState>()(
             if (idx !== -1) {
               try {
                 const paused = enginePauseSentinel(state.sentinels[idx] as Sentinel);
-                state.sentinels[idx] = paused as any;
+                state.sentinels[idx] = paused;
               } catch {
                 // Invalid transition -- no-op
               }
@@ -228,7 +229,7 @@ const useSentinelStoreBase = create<SentinelState>()(
             if (idx !== -1) {
               try {
                 const retired = engineRetireSentinel(state.sentinels[idx] as Sentinel);
-                state.sentinels[idx] = retired as any;
+                state.sentinels[idx] = retired;
               } catch {
                 // Invalid transition -- no-op
               }
@@ -253,7 +254,7 @@ const useSentinelStoreBase = create<SentinelState>()(
             const idx = state.sentinels.findIndex((s) => s.id === sentinelId);
             if (idx !== -1) {
               const s = state.sentinels[idx] as Sentinel;
-              state.sentinels[idx].stats = engineUpdateStats(s.stats, event) as any;
+              state.sentinels[idx].stats = engineUpdateStats(s.stats, event);
               state.sentinels[idx].updatedAt = Date.now();
             }
           });
@@ -266,7 +267,7 @@ const useSentinelStoreBase = create<SentinelState>()(
               state.activeSentinelId && sentinels.some((s) => s.id === state.activeSentinelId)
                 ? state.activeSentinelId
                 : sentinels.length > 0 ? sentinels[0].id : null;
-            state.sentinels = sentinels as any;
+            state.sentinels = sentinels;
             state.activeSentinelId = activeId;
             state.loading = false;
           });

@@ -92,4 +92,25 @@ execution:
     - "sudo su"
     - "chmod 777"
 
+tools:
+  allowed:
+    - read
+    - read_file
+    - list_dir
+    - list_directory
+    - search
+    - grep
+    - web_search
+    - code_search
+    - read_url
+  denied:
+    - shell_exec
+    - run_command
+  require_confirmation:
+    - file_write
+    - git_push
+    - deploy
+    - publish
+  default_action: block
+
 on_violation: cancel

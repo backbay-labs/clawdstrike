@@ -1,13 +1,16 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::event::{EndpointEvent, EndpointObservation};
 use super::{
     create_new_honey_file, ensure_safe_relative_path, honey_artifact, hostname_from_url_like,
-    normalize_hostname, normalize_path_string,
+    normalize_hostname, normalize_path_string, stable_id,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,7 +57,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub(crate) fn matches_path(&self, path: &str) -> bool {
+    pub fn matches_path(&self, path: &str) -> bool {
         let observed = normalize_path_string(path);
         let relative = normalize_path_string(&self.relative_path.display().to_string());
         observed == relative || observed.ends_with(&format!("/{relative}"))
@@ -72,7 +75,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub(crate) fn matches_network_destination(&self, host: &str, url: Option<&str>) -> bool {
+    pub fn matches_network_destination(&self, host: &str, url: Option<&str>) -> bool {
         let Some(honey_host) = self.internal_hostname() else {
             return false;
         };
@@ -89,7 +92,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub(crate) fn browser_cookie_indicators(&self) -> Vec<String> {
+    pub fn browser_cookie_indicators(&self) -> Vec<String> {
         if self.kind != HoneyArtifactKind::BrowserCookieJar {
             return Vec::new();
         }
@@ -133,7 +136,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub(crate) fn matches_browser_cookie_access(&self, name: Option<&str>) -> bool {
+    pub fn matches_browser_cookie_access(&self, name: Option<&str>) -> bool {
         let Some(name) = name else {
             return false;
         };
@@ -208,7 +211,14 @@ impl DeceptionPlan {
             match create_new_honey_file(&path, artifact) {
                 Ok(()) => created.push(path.display().to_string()),
                 Err(err) if err.kind() == ErrorKind::AlreadyExists => {
-                    skipped.push(path.display().to_string());
+                    if existing_honey_file_matches(&path, artifact)? {
+                        skipped.push(path.display().to_string());
+                    } else {
+                        return Err(anyhow!(
+                            "refusing to materialize honey artifact over pre-existing non-honey path: {}",
+                            path.display()
+                        ));
+                    }
                 }
                 Err(err) => {
                     return Err(err)
@@ -219,6 +229,34 @@ impl DeceptionPlan {
 
         Ok(DeceptionMaterializationReport { created, skipped })
     }
+}
+
+fn existing_honey_file_matches(path: &Path, artifact: &HoneyArtifact) -> Result<bool> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("inspect existing honey artifact {}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Ok(false);
+    }
+
+    let contents = fs::read(path)
+        .with_context(|| format!("read existing honey artifact {}", path.display()))?;
+    if contents != artifact.contents.as_bytes() {
+        return Ok(false);
+    }
+
+    honey_file_permissions_match(&metadata, artifact.permissions_octal)
+}
+
+#[cfg(unix)]
+fn honey_file_permissions_match(metadata: &fs::Metadata, permissions_octal: u32) -> Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+
+    Ok(metadata.permissions().mode() & 0o777 == permissions_octal & 0o777)
+}
+
+#[cfg(not(unix))]
+fn honey_file_permissions_match(_metadata: &fs::Metadata, _permissions_octal: u32) -> Result<bool> {
+    Ok(true)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -5,13 +5,15 @@
 //! stage, rule_id, and direct lookup by policy_delta_id.
 
 use std::collections::VecDeque;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write as _;
 use std::path::{Path as FsPath, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::api_server::{EdrPolicyDeltaRecord, EDR_MAX_STORED_FINDINGS};
+use crate::api_server::{EdrPolicyDeltaApplyRecord, EdrPolicyDeltaRecord, EDR_MAX_STORED_FINDINGS};
+
+use super::{open_private_append, open_private_truncate};
 
 pub(crate) struct EndpointPolicyDeltaStore {
     root: Option<PathBuf>,
@@ -28,6 +30,7 @@ impl EndpointPolicyDeltaStore {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn transient() -> Self {
         Self {
             root: None,
@@ -46,14 +49,7 @@ impl EndpointPolicyDeltaStore {
             })?;
             let artifact_path = root.join(policy_delta_filename(&record.policy_delta_id)?);
             serde_json::to_writer_pretty(
-                OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(&artifact_path)
-                    .with_context(|| {
-                        format!("open endpoint policy delta {}", artifact_path.display())
-                    })?,
+                open_private_truncate(&artifact_path, "endpoint policy delta")?,
                 &record.artifact,
             )
             .with_context(|| {
@@ -74,13 +70,7 @@ impl EndpointPolicyDeltaStore {
             return Ok(());
         };
         let index_path = policy_delta_index_path(root);
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&index_path)
-            .with_context(|| {
-                format!("open endpoint policy delta index {}", index_path.display())
-            })?;
+        let mut file = open_private_append(&index_path, "endpoint policy delta index")?;
         serde_json::to_writer(&mut file, record).with_context(|| {
             format!(
                 "serialize endpoint policy delta record {}",
@@ -117,15 +107,42 @@ impl EndpointPolicyDeltaStore {
             .collect())
     }
 
-    pub(crate) fn read_by_id(
-        &self,
-        policy_delta_id: &str,
-    ) -> Result<Option<EdrPolicyDeltaRecord>> {
+    pub(crate) fn read_by_id(&self, policy_delta_id: &str) -> Result<Option<EdrPolicyDeltaRecord>> {
         Ok(self
             .all()?
             .into_iter()
             .rev()
             .find(|record| record.policy_delta_id == policy_delta_id))
+    }
+
+    pub(crate) fn append_apply(&mut self, record: &EdrPolicyDeltaApplyRecord) -> Result<()> {
+        let Some(root) = &self.root else {
+            return Ok(());
+        };
+        fs::create_dir_all(root).with_context(|| {
+            format!("create endpoint policy delta directory {}", root.display())
+        })?;
+        let apply_path = policy_delta_apply_index_path(root);
+        let mut file = open_private_append(&apply_path, "endpoint policy delta apply index")?;
+        serde_json::to_writer(&mut file, record).with_context(|| {
+            format!(
+                "serialize endpoint policy delta apply record {}",
+                record.policy_delta_id
+            )
+        })?;
+        file.write_all(b"\n").with_context(|| {
+            format!(
+                "write endpoint policy delta apply index {}",
+                apply_path.display()
+            )
+        })?;
+        file.flush().with_context(|| {
+            format!(
+                "flush endpoint policy delta apply index {}",
+                apply_path.display()
+            )
+        })?;
+        Ok(())
     }
 
     pub(crate) fn all(&self) -> Result<Vec<EdrPolicyDeltaRecord>> {
@@ -138,6 +155,10 @@ impl EndpointPolicyDeltaStore {
 
 pub(crate) fn policy_delta_index_path(root: &FsPath) -> PathBuf {
     root.join("policy-deltas.jsonl")
+}
+
+pub(crate) fn policy_delta_apply_index_path(root: &FsPath) -> PathBuf {
+    root.join("policy-delta-applies.jsonl")
 }
 
 pub(crate) fn policy_delta_filename(policy_delta_id: &str) -> Result<String> {

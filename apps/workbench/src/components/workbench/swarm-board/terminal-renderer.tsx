@@ -11,6 +11,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { init as initGhostty, Terminal, FitAddon } from "ghostty-web";
 import { terminalService } from "@/lib/workbench/terminal-service";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // WASM initialisation — call once, cache the promise
@@ -176,7 +177,7 @@ export function TerminalRenderer({
             }
           })
           .catch((err) => {
-            console.error("[TerminalRenderer] Failed to subscribe to output:", err);
+            logger.error("[TerminalRenderer] Failed to subscribe to output:", err);
           });
 
         // Forward user input to PTY stdin
@@ -189,7 +190,7 @@ export function TerminalRenderer({
         onDataDisposeRef.current = onDataDispose;
       })
       .catch((err) => {
-        console.error("[TerminalRenderer] Failed to initialize ghostty-web:", err);
+        logger.error("[TerminalRenderer] Failed to initialize ghostty-web:", err);
       });
 
     // Cleanup

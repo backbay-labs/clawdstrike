@@ -354,7 +354,7 @@ mod tests {
             allow_private_upstream_hosts: false,
             allow_invalid_upstream_tls: false,
             admin_token: None,
-            allow_insecure_no_admin_token: true,
+            insecure_disable_admin_auth: true,
         }
     }
 

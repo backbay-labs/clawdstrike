@@ -399,6 +399,7 @@ public enum NetworkExtensionStatusTool {
     public static let egressPolicyPathEnvironment = "CLAWDSTRIKE_NETWORK_EXTENSION_EGRESS_POLICY_PATH"
     public static let runtimeSnapshotPathEnvironment =
         "CLAWDSTRIKE_NETWORK_EXTENSION_RUNTIME_SNAPSHOT_PATH"
+    public static let runtimeSnapshotMaxAgeSeconds: TimeInterval = 120
 
     public static func liveSnapshot() -> NetworkExtensionProviderSnapshot {
         let environment = ProcessInfo.processInfo.environment
@@ -428,6 +429,18 @@ public enum NetworkExtensionStatusTool {
     }
 
     public static func liveSnapshot(policySnapshotURL: URL) -> NetworkExtensionProviderSnapshot {
+        return liveSnapshot(
+            policySnapshotURL: policySnapshotURL,
+            degradedReasons: ["policy_snapshot_loaded_provider_runtime_unknown"],
+            lastError: nil
+        )
+    }
+
+    private static func liveSnapshot(
+        policySnapshotURL: URL,
+        degradedReasons: [String],
+        lastError: String?
+    ) -> NetworkExtensionProviderSnapshot {
         let policy: NetworkExtensionEgressPolicy
         do {
             policy = try NetworkExtensionEgressPolicy.loadSnapshot(from: policySnapshotURL)
@@ -449,11 +462,12 @@ public enum NetworkExtensionStatusTool {
                 filterRunning: false,
                 policySynced: true,
                 enforcementReady: policy.enforcementReady,
-                degradedReasons: ["policy_snapshot_loaded_provider_runtime_unknown"],
+                degradedReasons: degradedReasons,
                 lastHealthyAt: nil,
                 counters: NetworkExtensionCounters(
                     remediationRequests: UInt64(policy.restrictions.count)
-                )
+                ),
+                lastError: lastError
             )
         )
     }
@@ -462,6 +476,21 @@ public enum NetworkExtensionStatusTool {
         runtimeSnapshotURL: URL,
         fallbackPolicySnapshotURL: URL? = nil
     ) -> NetworkExtensionProviderSnapshot {
+        guard runtimeSnapshotIsFresh(runtimeSnapshotURL) else {
+            if let fallbackPolicySnapshotURL {
+                return liveSnapshot(
+                    policySnapshotURL: fallbackPolicySnapshotURL,
+                    degradedReasons: ["provider_runtime_snapshot_stale"],
+                    lastError: "provider_runtime_snapshot_stale"
+                )
+            }
+            return NetworkExtensionStateProjector.snapshot(
+                from: NetworkExtensionProviderInputs(
+                    degradedReasons: ["provider_runtime_snapshot_stale"],
+                    lastError: "provider_runtime_snapshot_stale"
+                )
+            )
+        }
         do {
             return try FileNetworkExtensionProviderRuntimeSnapshotStore(
                 snapshotURL: runtimeSnapshotURL
@@ -483,6 +512,20 @@ public enum NetworkExtensionStatusTool {
         policySnapshotURL
             .deletingLastPathComponent()
             .appendingPathComponent("\(policySnapshotURL.lastPathComponent).provider-runtime.json")
+    }
+
+    private static func runtimeSnapshotIsFresh(
+        _ url: URL,
+        now: Date = Date(),
+        fileManager: FileManager = .default
+    ) -> Bool {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let modifiedAt = attributes[.modificationDate] as? Date
+        else {
+            return false
+        }
+        let age = now.timeIntervalSince(modifiedAt)
+        return age >= 0 && age <= runtimeSnapshotMaxAgeSeconds
     }
 
     public static func fixtureSnapshot(_ scenario: NetworkExtensionFixtureScenario) -> NetworkExtensionProviderSnapshot {

@@ -343,7 +343,7 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         allow: [],
         block: ['shell_exec', 'run_command', 'raw_file_write', 'raw_file_delete'],
         require_confirmation: ['file_write', 'file_delete', 'git_push'],
-        default_action: 'allow',
+        default_action: 'block',
         max_args_size: 1024 * 1024,
       },
     },
@@ -466,7 +466,7 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         allow: [],
         block: ['shell_exec', 'run_command'],
         require_confirmation: ['git_push', 'deploy', 'publish'],
-        default_action: 'allow',
+        default_action: 'block',
         max_args_size: 2 * 1024 * 1024,
       },
     },
@@ -1555,7 +1555,7 @@ export class ClawdstrikeSession {
     return new GuardAction(
       action,
       params.path as string | undefined,
-      params.content as Uint8Array | undefined,
+      guardActionContent(params.content),
       params.host as string | undefined,
       params.port as number | undefined,
       params.tool as string | undefined,
@@ -2010,7 +2010,7 @@ export class Clawdstrike {
     return new GuardAction(
       action,
       params.path as string | undefined,
-      params.content as Uint8Array | undefined,
+      guardActionContent(params.content),
       params.host as string | undefined,
       params.port as number | undefined,
       params.tool as string | undefined,
@@ -2022,6 +2022,13 @@ export class Clawdstrike {
     );
   }
 
+}
+
+function guardActionContent(value: unknown): Uint8Array | undefined {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (typeof value === "string") return new TextEncoder().encode(value);
+  return undefined;
 }
 
 export default Clawdstrike;

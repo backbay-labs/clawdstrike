@@ -60,6 +60,7 @@ pub enum CausalEdgeKind {
     Downloaded,
     AccessedCredential,
     MadeDecision,
+    InvokedTool,
     TemporalNext,
     TouchedHoney,
     Related,

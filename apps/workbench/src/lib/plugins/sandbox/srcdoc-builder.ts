@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * Srcdoc Builder
  *
@@ -165,7 +166,7 @@ function createPluginContext(plugin, fallbackPluginId) {
       try {
         handler();
       } catch (error) {
-        console.error("[plugin-sandbox] command handler failed", error);
+        logger.error("[plugin-sandbox] command handler failed", error);
       }
     }
   });
@@ -175,11 +176,11 @@ function createPluginContext(plugin, fallbackPluginId) {
       var result = bridge.call(method, params);
       if (result && typeof result.catch === "function") {
         result.catch(function(error) {
-          console.error("[plugin-sandbox] bridge call failed for " + method, error);
+          logger.error("[plugin-sandbox] bridge call failed for " + method, error);
         });
       }
     } catch (error) {
-      console.error("[plugin-sandbox] bridge call failed for " + method, error);
+      logger.error("[plugin-sandbox] bridge call failed for " + method, error);
     }
   }
 
@@ -286,7 +287,7 @@ try {
     }
   }
 } catch (error) {
-  console.error("[plugin-sandbox] plugin bootstrap failed", error);
+  logger.error("[plugin-sandbox] plugin bootstrap failed", error);
 }
 </script>
 </body>

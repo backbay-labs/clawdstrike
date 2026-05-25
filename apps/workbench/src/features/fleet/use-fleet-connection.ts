@@ -30,6 +30,8 @@ import { reduceFleetEvent } from "@/features/fleet/fleet-event-reducer";
 import type { CheckEventData } from "@/features/fleet/fleet-event-reducer";
 import { useSignalStore } from "@/features/findings/stores/signal-store";
 import type { Signal } from "@/lib/workbench/signal-pipeline";
+import type { TestActionType } from "@/lib/workbench/types";
+import { logger } from "@/lib/logger";
 
 // ---- Types ----
 
@@ -134,6 +136,22 @@ function readFleetConnectionSnapshot(): string {
 // Fleet check event -> Signal bridge (INTEL-01)
 // ---------------------------------------------------------------------------
 
+const FLEET_ACTION_TYPES = [
+  "file_access",
+  "file_write",
+  "network_egress",
+  "shell_command",
+  "mcp_tool_call",
+  "patch_apply",
+  "user_input",
+] as const;
+
+function toFleetActionType(raw: string): TestActionType | undefined {
+  return (FLEET_ACTION_TYPES as ReadonlyArray<string>).includes(raw)
+    ? (raw as TestActionType)
+    : undefined;
+}
+
 function checkEventToSignal(check: CheckEventData): Signal {
   const verdict = check.verdict?.toLowerCase();
   const severity = verdict === "deny" ? "high" : verdict === "warn" ? "medium" : "low";
@@ -152,7 +170,7 @@ function checkEventToSignal(check: CheckEventData): Signal {
     data: {
       kind: "fleet_check",
       summary: `${check.action_type} on ${check.target}: ${check.verdict}`,
-      actionType: check.action_type as any,
+      actionType: toFleetActionType(check.action_type),
       verdict: verdict === "deny" ? "deny" : verdict === "warn" ? "warn" : undefined,
       target: check.target,
     },
@@ -268,7 +286,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
       apiTestConnection(conn.hushdUrl, conn.apiKey)
         .then((health) => {
           set((state) => {
-            state.connection.hushdHealth = health as any;
+            state.connection.hushdHealth = health;
             state.connection.connected = true;
           });
           set((state) => {
@@ -295,7 +313,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
       )
         .then((list) => {
           set((state) => {
-            state.agents = list as any;
+            state.agents = list;
             state.connection.agentCount = list.length;
           });
           consecutivePollFailures = 0;
@@ -323,7 +341,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
             set((state) => {
               state.pollError = `Agent polling failing repeatedly: ${message}`;
             });
-            console.warn(
+            logger.warn(
               `[fleet-connection] pollAgents: ${consecutivePollFailures} consecutive failures — ${message}`,
             );
           }
@@ -337,7 +355,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
       apiFetchRemotePolicy(conn)
         .then((info) => {
           set((state) => {
-            state.remotePolicyInfo = info as any;
+            state.remotePolicyInfo = info;
           });
         })
         .catch(() => {
@@ -367,7 +385,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
           const currentAgents = get().agents;
           const result = reduceFleetEvent(currentAgents, event);
           set((state) => {
-            state.agents = result.agents as any;
+            state.agents = result.agents;
             state.connection.agentCount = result.agents.length;
           });
           // Bridge check events to signal pipeline (INTEL-01)
@@ -419,7 +437,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
             const connected: FleetConnection = { ...conn, connected: true, hushdHealth: health };
             setCredentials(conn.apiKey, conn.controlApiToken);
             set((state) => {
-              state.connection = redactFleetConnection(connected) as any;
+              state.connection = redactFleetConnection(connected);
             });
             startPolling(connected);
 
@@ -440,7 +458,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
             // Saved creds are stale — show as disconnected but keep the URLs
             setCredentials(conn.apiKey, conn.controlApiToken);
             set((state) => {
-              state.connection = redactFleetConnection(conn) as any;
+              state.connection = redactFleetConnection(conn);
             });
           }
 
@@ -506,7 +524,7 @@ const useFleetConnectionStoreBase = create<FleetStoreState>()(
 
             setCredentials(apiKey, controlApiToken ?? "");
             set((state) => {
-              state.connection = redactFleetConnection(conn) as any;
+              state.connection = redactFleetConnection(conn);
               state.isConnecting = false;
             });
             startPolling(conn);

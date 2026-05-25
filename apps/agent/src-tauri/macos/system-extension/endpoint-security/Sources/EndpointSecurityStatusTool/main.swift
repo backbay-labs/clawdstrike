@@ -2,6 +2,8 @@ import EndpointSecurityExtension
 import Darwin
 import Foundation
 
+let runtimeSnapshotMaxAgeSeconds: TimeInterval = 120
+
 enum StatusToolMode {
     case live
     case fixture(EndpointSecurityFixtureScenario)
@@ -68,10 +70,22 @@ func endpointSecurityRuntimeSnapshotURL() -> URL? {
     return URL(fileURLWithPath: path)
 }
 
+func runtimeSnapshotIsFresh(_ url: URL, now: Date = Date()) throws -> Bool {
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    guard let modifiedAt = attributes[.modificationDate] as? Date else {
+        return false
+    }
+    let age = now.timeIntervalSince(modifiedAt)
+    return age >= 0 && age <= runtimeSnapshotMaxAgeSeconds
+}
+
 func loadRuntimeSnapshot() throws -> EndpointSecurityStatusReport? {
     guard let url = endpointSecurityRuntimeSnapshotURL(),
           FileManager.default.fileExists(atPath: url.path)
     else {
+        return nil
+    }
+    guard try runtimeSnapshotIsFresh(url) else {
         return nil
     }
     let data = try Data(contentsOf: url)

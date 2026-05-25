@@ -3167,7 +3167,7 @@ name: Test
     #[test]
     fn test_policy_extends_builtin() {
         let yaml = r#"
-version: "1.1.0"
+version: "1.2.0"
 name: CustomStrict
 extends: strict
 settings:
@@ -3187,7 +3187,7 @@ settings:
     fn test_policy_extends_with_additional_patterns() {
         // Test adding patterns via additional_patterns
         let yaml = r#"
-version: "1.1.0"
+version: "1.2.0"
 name: CustomDefault
 extends: default
 guards:
@@ -3218,7 +3218,7 @@ guards:
     #[test]
     fn test_secret_leak_merge_preserves_base_patterns() {
         let yaml = r#"
-version: "1.1.0"
+version: "1.2.0"
 name: CustomDefault
 extends: default
 guards:

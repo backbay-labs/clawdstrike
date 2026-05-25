@@ -46,19 +46,19 @@ async function main(): Promise<void> {
   const denySsh = (await tool.execute({
     action: "file_read",
     resource: `${homedir()}/.ssh/id_rsa`,
-  } as any)) as PolicyCheckResult;
+  })) as PolicyCheckResult;
   assert.equal(denySsh.status, "deny");
 
   const denyLocalhost = (await tool.execute({
     action: "network",
     resource: "http://localhost:8080",
-  } as any)) as PolicyCheckResult;
+  })) as PolicyCheckResult;
   assert.equal(denyLocalhost.status, "deny");
 
   const denyRm = (await tool.execute({
     action: "command",
     resource: "rm -rf /",
-  } as any)) as PolicyCheckResult;
+  })) as PolicyCheckResult;
   assert.equal(denyRm.status, "deny");
 
   // 3) Post-action hook enforcement: tool_result_persist must block exfil paths and secrets.

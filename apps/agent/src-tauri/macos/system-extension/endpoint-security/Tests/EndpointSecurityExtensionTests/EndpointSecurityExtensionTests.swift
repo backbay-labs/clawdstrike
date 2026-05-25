@@ -1,4 +1,4 @@
-import EndpointSecurityExtension
+@testable import EndpointSecurityExtension
 import Foundation
 import XCTest
 
@@ -7,7 +7,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         let report = EndpointSecurityMonitor.fixtureScenario(.healthyAllow)
 
         XCTAssertEqual(report.fdInjectionEquivalent, false)
-        XCTAssertEqual(report.failOpenPossible, true)
+        XCTAssertEqual(report.failOpenPossible, false)
         XCTAssertEqual(report.contract, "macos_endpoint_security_auth_contract")
         XCTAssertEqual(report.authorizationModel, "auth_open_point_in_time")
         XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .active)
@@ -36,12 +36,66 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertTrue(report.degradedReasons.contains("authorization_deadline_missed"))
         XCTAssertEqual(report.providerState.healthy, false)
         XCTAssertEqual(report.providerState.availability, .degraded)
+        XCTAssertEqual(report.failOpenPossible, true)
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "deadline_miss" }))
         XCTAssertEqual(
             report.hostStatus.endpointSecurity.runtime,
             .degraded(reason: "authorization_deadline_missed")
         )
         try assertFixture(report, named: "deadline-miss")
+    }
+
+    func testDeadlineBoundaryCountsAsMiss() {
+        let monitor = EndpointSecurityMonitor(
+            installState: .installed,
+            approval: .approved,
+            providerActive: true,
+            fullDiskAccessGranted: true
+        )
+        monitor.recordAuthorization(
+            AuthorizationEvent(
+                path: "/tmp/clawdstrike-es-boundary.txt",
+                decision: .allow,
+                latencyMs: 200,
+                deadlineMs: 200,
+                notifyObserved: true,
+                observedAt: Date(timeIntervalSince1970: 1_778_824_801)
+            )
+        )
+
+        let report = monitor.snapshot()
+
+        XCTAssertEqual(report.counters.authOpenAllowCount, 1)
+        XCTAssertEqual(report.counters.deadlineMissCount, 1)
+        XCTAssertTrue(report.degradedReasons.contains("authorization_deadline_missed"))
+        XCTAssertEqual(report.providerState.availability, .degraded)
+        XCTAssertEqual(report.failOpenPossible, true)
+    }
+
+    func testZeroDeadlineDoesNotCountAsMiss() {
+        let monitor = EndpointSecurityMonitor(
+            installState: .installed,
+            approval: .approved,
+            providerActive: true,
+            fullDiskAccessGranted: true
+        )
+        monitor.recordAuthorization(
+            AuthorizationEvent(
+                path: "/tmp/clawdstrike-es-zero-deadline.txt",
+                decision: .allow,
+                latencyMs: 0,
+                deadlineMs: 0,
+                notifyObserved: true,
+                observedAt: Date(timeIntervalSince1970: 1_778_824_802)
+            )
+        )
+
+        let report = monitor.snapshot()
+
+        XCTAssertEqual(report.counters.authOpenAllowCount, 1)
+        XCTAssertEqual(report.counters.deadlineMissCount, 0)
+        XCTAssertFalse(report.degradedReasons.contains("authorization_deadline_missed"))
+        XCTAssertEqual(report.providerState.availability, .active)
     }
 
     func testDroppedEventsCarryEvidencePathAndDegradeProvider() throws {
@@ -51,6 +105,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertTrue(report.degradedReasons.contains("dropped_enforcement_events"))
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.path.hasSuffix("dropped-events.json") }))
         XCTAssertEqual(report.providerState.availability, .degraded)
+        XCTAssertEqual(report.failOpenPossible, true)
         try assertFixture(report, named: "dropped-events")
     }
 
@@ -59,6 +114,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
 
         XCTAssertTrue(report.degradedReasons.contains("missing_full_disk_access"))
         XCTAssertEqual(report.providerState.availability, .degraded)
+        XCTAssertEqual(report.failOpenPossible, true)
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "missing_full_disk_access" }))
         XCTAssertEqual(
             report.hostStatus.endpointSecurity.runtime,
@@ -73,6 +129,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(report.providerState.active, false)
         XCTAssertEqual(report.providerState.availability, .inactive)
         XCTAssertEqual(report.providerState.healthy, false)
+        XCTAssertEqual(report.failOpenPossible, true)
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "inactive_provider" }))
         XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .inactive)
         try assertFixture(report, named: "inactive-provider")
@@ -86,6 +143,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(report.providerState.healthy, false)
         XCTAssertEqual(report.providerState.availability, .unavailable)
         XCTAssertEqual(report.providerState.approvalStatus, .blocked)
+        XCTAssertEqual(report.failOpenPossible, true)
         XCTAssertTrue(report.degradedReasons.contains("system_extension_approval_blocked"))
         XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "approval_blocked" }))
         try assertFixture(report, named: "approval-blocked")
@@ -119,11 +177,109 @@ final class EndpointSecurityExtensionTests: XCTestCase {
     func testLiveReportStartsUnknownUntilAHealthyObservationIsRecorded() {
         let report = EndpointSecurityMonitor.liveReport()
 
-        XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .unknown)
+        if report.degradedReasons.contains("missing_full_disk_access") {
+            XCTAssertEqual(
+                report.hostStatus.endpointSecurity.runtime,
+                .degraded(reason: "missing_full_disk_access")
+            )
+        } else {
+            XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .unknown)
+            XCTAssertTrue(report.degradedReasons.contains("provider_state_unknown"))
+        }
         XCTAssertEqual(report.providerState.active, false)
         XCTAssertEqual(report.providerState.healthy, false)
         XCTAssertEqual(report.providerState.availability, .unavailable)
-        XCTAssertTrue(report.degradedReasons.contains("provider_state_unknown"))
+    }
+
+    func testLiveReportRecordsMissingFullDiskAccessEvidenceWhenProbeFails() {
+        let report = EndpointSecurityMonitor.liveReport(fullDiskAccessProbe: { false })
+
+        XCTAssertTrue(report.degradedReasons.contains("missing_full_disk_access"))
+        XCTAssertEqual(
+            report.hostStatus.endpointSecurity.runtime,
+            .degraded(reason: "missing_full_disk_access")
+        )
+        XCTAssertTrue(report.evidencePaths.contains { artifact in
+            artifact.kind == "missing_full_disk_access"
+                && artifact.path == "endpoint-security-full-disk-access-probe"
+        })
+    }
+
+    func testFullDiskAccessIsNotGrantedByDefaultForInstalledActiveProvider() {
+        let monitor = EndpointSecurityMonitor(
+            installState: .installed,
+            approval: .approved,
+            providerActive: true
+        )
+        monitor.recordAuthorization(
+            AuthorizationEvent(
+                path: "/tmp/clawdstrike-es-fda-unknown.txt",
+                decision: .allow,
+                latencyMs: 12,
+                deadlineMs: 200,
+                notifyObserved: true,
+                observedAt: Date(timeIntervalSince1970: 1_778_824_803)
+            )
+        )
+
+        let report = monitor.snapshot()
+
+        XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .unknown)
+        XCTAssertEqual(report.providerState.active, false)
+        XCTAssertEqual(report.providerState.healthy, false)
+        XCTAssertEqual(report.providerState.availability, .inactive)
+    }
+
+    func testMissingFullDiskAccessDegradesEvenWhenInstallStateIsUnknown() {
+        let monitor = EndpointSecurityMonitor()
+        monitor.setFullDiskAccessGranted(
+            false,
+            evidencePath: "endpoint-security-full-disk-access-probe"
+        )
+
+        let report = monitor.snapshot()
+
+        XCTAssertEqual(
+            report.hostStatus.endpointSecurity.runtime,
+            .degraded(reason: "missing_full_disk_access")
+        )
+        XCTAssertTrue(report.degradedReasons.contains("missing_full_disk_access"))
+        XCTAssertEqual(report.providerState.active, false)
+        XCTAssertEqual(report.providerState.healthy, false)
+        XCTAssertTrue(report.evidencePaths.contains(where: { $0.kind == "missing_full_disk_access" }))
+    }
+
+    func testFullDiskAccessEvidenceClearsWhenProbeRecovers() {
+        let monitor = EndpointSecurityMonitor(
+            installState: .installed,
+            approval: .approved,
+            providerActive: true
+        )
+        monitor.setFullDiskAccessGranted(
+            false,
+            evidencePath: "endpoint-security-full-disk-access-probe"
+        )
+        XCTAssertTrue(
+            monitor.snapshot().evidencePaths.contains { $0.kind == "missing_full_disk_access" }
+        )
+
+        monitor.setFullDiskAccessGranted(true)
+        monitor.recordAuthorization(
+            AuthorizationEvent(
+                path: "/tmp/clawdstrike-es-fda-recovered.txt",
+                decision: .allow,
+                latencyMs: 12,
+                deadlineMs: 200,
+                notifyObserved: true,
+                observedAt: Date(timeIntervalSince1970: 1_778_824_804)
+            )
+        )
+        let report = monitor.snapshot()
+
+        XCTAssertFalse(report.degradedReasons.contains("missing_full_disk_access"))
+        XCTAssertFalse(report.evidencePaths.contains { $0.kind == "missing_full_disk_access" })
+        XCTAssertEqual(report.hostStatus.endpointSecurity.runtime, .active)
+        XCTAssertEqual(report.providerState.availability, .active)
     }
 
     func testAuthorizationPublisherRequestMatchesAgentEndpointContract() throws {
@@ -186,6 +342,41 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(metadata["dogfoodMarker"] as? String, "clawdstrike-es-dogfood-test")
     }
 
+    func testAuthorizationPublisherEncoderFormatsConcurrentObservedAtValues() async throws {
+        let encoder = EndpointSecurityAgentEventEncoder()
+
+        try await withThrowingTaskGroup(of: String.self) { group in
+            for index in 0..<128 {
+                group.addTask {
+                    let event = AuthorizationEvent(
+                        path: "/tmp/clawdstrike-es-dogfood-test-\(index).txt",
+                        decision: .allow,
+                        latencyMs: 1,
+                        deadlineMs: 200,
+                        notifyObserved: true,
+                        observedAt: Date(timeIntervalSince1970: 1_778_824_800 + Double(index) / 1_000)
+                    )
+                    let context = EndpointSecurityAgentEventContext(
+                        eventId: "es-auth-open-\(index)",
+                        process: EndpointSecurityAgentProcess(image: "/bin/cat")
+                    )
+                    let request = try encoder.authorizationOpenRequest(event: event, context: context)
+                    guard let observedAt = request.events.first?.observedAt else {
+                        throw NSError(domain: "EndpointSecurityExtensionTests", code: 1)
+                    }
+                    return observedAt
+                }
+            }
+
+            var observedAtValues = Set<String>()
+            for try await observedAt in group {
+                XCTAssertTrue(observedAt.hasSuffix("Z"))
+                observedAtValues.insert(observedAt)
+            }
+            XCTAssertEqual(observedAtValues.count, 128)
+        }
+    }
+
     func testAuthorizationPublisherRejectsEventsThatCannotReachAgentContract() throws {
         let event = AuthorizationEvent(
             path: "   ",
@@ -244,7 +435,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(events.first?["eventId"] as? String, "es-auth-open-2")
     }
 
-    func testPublisherPostsEndpointSecurityEventLossForFailOpenRecovery() async throws {
+    func testPublisherPostsEndpointSecurityEventLossForFailClosedRecovery() async throws {
         let transport = CapturingEndpointSecurityTransport()
         let publisher = try EndpointSecurityAgentEventPublisher(
             agentURL: "http://127.0.0.1:9878/",
@@ -253,7 +444,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         )
 
         let response = try await publisher.publishEventLoss(
-            reason: "AUTH_OPEN response failed; fail-open recovery issued.",
+            reason: "AUTH_OPEN response failed; fail-closed recovery issued.",
             droppedEventCount: 1
         )
 
@@ -263,7 +454,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
         let delivered = try XCTUnwrap(events.first)
         XCTAssertEqual(delivered["kind"] as? String, "event_loss")
-        XCTAssertEqual(delivered["reason"] as? String, "AUTH_OPEN response failed; fail-open recovery issued.")
+        XCTAssertEqual(delivered["reason"] as? String, "AUTH_OPEN response failed; fail-closed recovery issued.")
         XCTAssertEqual(delivered["droppedEventCount"] as? Int, 1)
         XCTAssertEqual(delivered["deadlineMissCount"] as? Int, 0)
         XCTAssertEqual(delivered["deadlineMissed"] as? Bool, false)
@@ -334,6 +525,154 @@ final class EndpointSecurityExtensionTests: XCTestCase {
         XCTAssertEqual(request.context.metadata["endpointSecurityRespondApi"], "es_respond_flags_result")
     }
 
+    func testAuthorizationRequestFailsClosedBeforeDecisionHandlerWhenDeadlineExpired() throws {
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open:deadline",
+            process: EndpointSecurityAgentProcess(
+                pid: 501,
+                ppid: 1,
+                processGuid: "macos:501:9",
+                image: "/bin/cat",
+                commandLine: "/bin/cat"
+            ),
+            metadata: [
+                "endpointSecurityEventType": "AUTH_OPEN",
+                "endpointSecurityRespondApi": "es_respond_flags_result"
+            ]
+        )
+        var request = EndpointSecurityAuthorizationRequest(
+            path: "/tmp/clawdstrike-es-auth-open.txt",
+            fflag: 1,
+            latencyMs: 200,
+            deadlineMs: 200,
+            context: context
+        )
+
+        let decision = try XCTUnwrap(request.failClosedDecisionForExpiredDeadline())
+        let event = request.authorizationEvent(decision: decision)
+
+        XCTAssertEqual(decision, .deny)
+        XCTAssertEqual(event.decision, .deny)
+        XCTAssertTrue(event.exceededDeadline)
+        XCTAssertEqual(request.context.metadata["authorizationDecisionSource"], "deadline_fail_closed")
+        XCTAssertEqual(
+            request.context.metadata["authorizationDeadlineExceededBeforeDecision"],
+            "true"
+        )
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineLatencyMs"], "200")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineMs"], "200")
+    }
+
+    func testAuthorizationRequestZeroDeadlineDoesNotFailClosed() {
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open:no-deadline",
+            process: EndpointSecurityAgentProcess(
+                pid: 501,
+                ppid: 1,
+                processGuid: "macos:501:11",
+                image: "/bin/cat",
+                commandLine: "/bin/cat"
+            ),
+            metadata: [
+                "endpointSecurityEventType": "AUTH_OPEN",
+                "endpointSecurityRespondApi": "es_respond_flags_result"
+            ]
+        )
+        var request = EndpointSecurityAuthorizationRequest(
+            path: "/tmp/clawdstrike-es-auth-open.txt",
+            fflag: 1,
+            latencyMs: 0,
+            deadlineMs: 0,
+            context: context
+        )
+        let event = request.authorizationEvent(decision: .allow)
+
+        XCTAssertFalse(event.exceededDeadline)
+        XCTAssertFalse(request.responseDeadlineExpired)
+        XCTAssertEqual(request.remainingDeadlineBudgetMs, UInt64.max)
+        XCTAssertNil(request.failClosedDecisionForExpiredDeadline())
+        XCTAssertNil(request.failClosedDecisionForInsufficientDeadlineBudget(minRemainingMs: 25))
+        XCTAssertNil(request.context.metadata["authorizationDecisionSource"])
+    }
+
+    func testAuthorizationRequestFailsClosedWhenDeadlineBudgetIsTooSmallForPolicyWork() throws {
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open:near-deadline",
+            process: EndpointSecurityAgentProcess(
+                pid: 501,
+                ppid: 1,
+                processGuid: "macos:501:9",
+                image: "/bin/cat",
+                commandLine: "/bin/cat"
+            ),
+            metadata: [
+                "endpointSecurityEventType": "AUTH_OPEN",
+                "endpointSecurityRespondApi": "es_respond_flags_result"
+            ]
+        )
+        var request = EndpointSecurityAuthorizationRequest(
+            path: "/tmp/clawdstrike-es-auth-open.txt",
+            fflag: 1,
+            latencyMs: 186,
+            deadlineMs: 200,
+            context: context
+        )
+
+        let decision = try XCTUnwrap(
+            request.failClosedDecisionForInsufficientDeadlineBudget(minRemainingMs: 25)
+        )
+        let event = request.authorizationEvent(decision: decision)
+
+        XCTAssertEqual(decision, .deny)
+        XCTAssertEqual(event.decision, .deny)
+        XCTAssertFalse(event.exceededDeadline)
+        XCTAssertEqual(request.context.metadata["authorizationDecisionSource"], "deadline_budget_fail_closed")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineBudgetTooSmall"], "true")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineRemainingMs"], "14")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineMinimumRemainingMs"], "25")
+    }
+
+    func testAuthorizationRequestFailsClosedWhenDecisionHandlerTimesOut() throws {
+        let context = EndpointSecurityAgentEventContext(
+            eventId: "es-auth-open:handler-timeout",
+            process: EndpointSecurityAgentProcess(
+                pid: 501,
+                ppid: 1,
+                processGuid: "macos:501:10",
+                image: "/bin/cat",
+                commandLine: "/bin/cat"
+            ),
+            metadata: [
+                "endpointSecurityEventType": "AUTH_OPEN",
+                "endpointSecurityRespondApi": "es_respond_flags_result"
+            ]
+        )
+        var request = EndpointSecurityAuthorizationRequest(
+            path: "/tmp/clawdstrike-es-auth-open.txt",
+            fflag: 1,
+            latencyMs: 100,
+            deadlineMs: 200,
+            context: context
+        )
+        request.addAuthorizationLatency(ms: 80)
+
+        let decision = request.failClosedDecisionForDecisionHandlerTimeout(
+            waitedMs: 80,
+            minRemainingMs: 25
+        )
+        let event = request.authorizationEvent(decision: decision)
+
+        XCTAssertEqual(decision, .deny)
+        XCTAssertEqual(event.decision, .deny)
+        XCTAssertFalse(event.exceededDeadline)
+        XCTAssertEqual(request.latencyMs, 180)
+        XCTAssertEqual(request.context.metadata["authorizationDecisionSource"], "decision_handler_timeout_fail_closed")
+        XCTAssertEqual(request.context.metadata["authorizationDecisionHandlerTimedOut"], "true")
+        XCTAssertEqual(request.context.metadata["authorizationDecisionHandlerWaitedMs"], "80")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineRemainingMs"], "20")
+        XCTAssertEqual(request.context.metadata["authorizationDeadlineMinimumRemainingMs"], "25")
+    }
+
     func testStatusToolRejectsUnsupportedScenarioInsteadOfFallingBackToHealthy() {
         XCTAssertThrowsError(
             try EndpointSecurityFixtureScenario.resolve(commandLineArgument: "definitely-not-real")
@@ -371,7 +710,7 @@ final class EndpointSecurityExtensionTests: XCTestCase {
 
     func testAgentTokenCandidatesUseExplicitPathOnly() {
         let candidates = ClawdStrikeAgentConfigPaths.agentTokenCandidates(
-            explicitPath: "/tmp/clawdstrike-token",
+            explicitPath: " /tmp/clawdstrike-token\n",
             homeDirectory: URL(fileURLWithPath: "/Users/tester", isDirectory: true)
         )
 

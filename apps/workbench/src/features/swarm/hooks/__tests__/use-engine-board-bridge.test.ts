@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, cleanup, act } from "@testing-library/react";
-import { TypedEventEmitter } from "@clawdstrike/swarm-engine";
+import { TypedEventEmitter } from "@/features/swarm/engine";
 import type {
   SwarmEngineEventMap,
   SwarmEngineState,
-} from "@clawdstrike/swarm-engine";
+} from "@/features/swarm/engine";
 import { useEngineBoardBridge } from "../use-engine-board-bridge";
 import { useSwarmBoardStore } from "@/features/swarm/stores/swarm-board-store";
 

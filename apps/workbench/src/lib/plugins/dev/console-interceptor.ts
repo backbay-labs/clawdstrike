@@ -1,11 +1,12 @@
 import { devConsoleStore } from './dev-console-store';
 import type { DevLifecycleEventType } from './types';
+import { logger } from "@/lib/logger";
 
 // State
 
-let origLog: typeof console.log | null = null;
-let origWarn: typeof console.warn | null = null;
-let origError: typeof console.error | null = null;
+let origLog: typeof logger.info | null = null;
+let origWarn: typeof logger.warn | null = null;
+let origError: typeof logger.error | null = null;
 
 let isIntercepting = false;
 
@@ -59,16 +60,16 @@ function makeWrapper(
 /** Returns a dispose function that restores originals when no interceptors remain. */
 export function interceptConsole(pluginId: string): () => void {
   if (!origLog) {
-    origLog = console.log;
-    origWarn = console.warn;
-    origError = console.error;
+    origLog = logger.info;
+    origWarn = logger.warn;
+    origError = logger.error;
   }
 
   activePluginStack.push(pluginId);
 
-  console.log = makeWrapper(origLog!, 'console:log');
-  console.warn = makeWrapper(origWarn!, 'console:warn');
-  console.error = makeWrapper(origError!, 'console:error');
+  logger.info = makeWrapper(origLog!, 'console:log');
+  logger.warn = makeWrapper(origWarn!, 'console:warn');
+  logger.error = makeWrapper(origError!, 'console:error');
 
   return () => {
     const idx = activePluginStack.lastIndexOf(pluginId);
@@ -77,18 +78,18 @@ export function interceptConsole(pluginId: string): () => void {
     }
 
     if (activePluginStack.length === 0) {
-      if (origLog) console.log = origLog;
-      if (origWarn) console.warn = origWarn;
-      if (origError) console.error = origError;
+      if (origLog) logger.info = origLog;
+      if (origWarn) logger.warn = origWarn;
+      if (origError) logger.error = origError;
     }
   };
 }
 
 /** Safety valve: immediately restore all original console methods. */
 export function stopIntercepting(): void {
-  if (origLog) console.log = origLog;
-  if (origWarn) console.warn = origWarn;
-  if (origError) console.error = origError;
+  if (origLog) logger.info = origLog;
+  if (origWarn) logger.warn = origWarn;
+  if (origError) logger.error = origError;
   origLog = null;
   origWarn = null;
   origError = null;

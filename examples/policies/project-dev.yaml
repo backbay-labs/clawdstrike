@@ -1,5 +1,5 @@
 # Example: Development policy extending project base
-version: "1.1.0"
+version: "1.5.0"
 name: Project Dev
 description: Development environment - more permissive for testing
 

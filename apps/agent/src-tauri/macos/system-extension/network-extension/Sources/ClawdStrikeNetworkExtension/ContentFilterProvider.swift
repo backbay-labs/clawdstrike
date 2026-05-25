@@ -86,27 +86,26 @@ public enum NetworkExtensionProviderCommand {
 
         switch request.command {
         case reloadPolicyCommand:
-            if let policySnapshotPath = request.policySnapshotPath,
-               !policySnapshotPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                runtime.setPolicySnapshotSource(at: URL(fileURLWithPath: policySnapshotPath))
-            }
             let reloaded = runtime.requestPolicyReloadFromHostApp(
                 requestID: request.requestID,
                 command: request.command,
                 policySnapshotPath: request.policySnapshotPath,
                 generation: request.generation
             )
+            let snapshotTime = Date()
             let snapshot = runtime.snapshot(
                 installState: context.installState,
                 approval: context.approval,
                 backendHint: context.backendHint,
-                filterRunning: context.filterRunning
+                filterRunning: context.filterRunning,
+                now: snapshotTime
             )
             runtime.persistSnapshot(
                 installState: context.installState,
                 approval: context.approval,
                 backendHint: context.backendHint,
-                filterRunning: context.filterRunning
+                filterRunning: context.filterRunning,
+                now: snapshotTime
             )
             response = NetworkExtensionProviderCommandResponse(
                 requestID: request.requestID,
@@ -359,6 +358,11 @@ public final class NetworkExtensionContentFilterRuntime {
         runtimeSnapshotStore: NetworkExtensionProviderRuntimeSnapshotStore? = nil
     ) {
         self.runtimeSnapshotStore = runtimeSnapshotStore
+            ?? policySnapshotURL.map { snapshotURL in
+                FileNetworkExtensionProviderRuntimeSnapshotStore(
+                    snapshotURL: NetworkExtensionStatusTool.runtimeSnapshotURL(for: snapshotURL)
+                )
+            }
         self.policySynced = policySynced
         self.policy = nil
         self.policyReloader = policySnapshotURL.map(NetworkExtensionEgressPolicyReloader.init(snapshotURL:))
@@ -402,6 +406,9 @@ public final class NetworkExtensionContentFilterRuntime {
     public func reloadWatchedPolicy() -> Bool {
         lock.lock()
         guard var reloader = policyReloader else {
+            policySynced = false
+            degradedReasons = ["policy_reload_source_unconfigured"]
+            lastError = "policy_reload_source_unconfigured"
             lock.unlock()
             return false
         }
@@ -466,7 +473,12 @@ public final class NetworkExtensionContentFilterRuntime {
 
     public func evaluate(target: NetworkExtensionFlowTarget, now: Date = Date()) -> NetworkExtensionFlowDecision {
         lock.lock()
-        let decision = policy?.decision(for: target, now: now) ?? .allow
+        let decision: NetworkExtensionFlowDecision
+        if let policy, policySynced {
+            decision = policy.decision(for: target, now: now)
+        } else {
+            decision = failClosedDecision(target: target, now: now, reason: "policy_not_enforcing")
+        }
         lock.unlock()
         return decision
     }
@@ -494,15 +506,15 @@ public final class NetworkExtensionContentFilterRuntime {
         target: NetworkExtensionFlowTarget?,
         now: Date = Date()
     ) -> NetworkExtensionFlowDecision {
-        reloadWatchedPolicy()
-
         lock.lock()
         counters.flowsObserved += 1
-        let decision = target
-            .flatMap { policy?.decision(for: $0, now: now) }
-            ?? .allow
-        if policySynced, policy?.enforcementReady == true {
+        let decision: NetworkExtensionFlowDecision
+        if let target, let policy, policySynced {
+            decision = policy.decision(for: target, now: now)
             lastHealthyAt = now
+        } else {
+            let reason = target == nil ? "flow_target_unresolved" : "policy_not_enforcing"
+            decision = failClosedDecision(target: target, now: now, reason: reason)
         }
         if case .block = decision {
             counters.flowsBlocked += 1
@@ -512,12 +524,30 @@ public final class NetworkExtensionContentFilterRuntime {
         return decision
     }
 
+    private func failClosedDecision(
+        target: NetworkExtensionFlowTarget?,
+        now: Date,
+        reason: String
+    ) -> NetworkExtensionFlowDecision {
+        counters.droppedVerdicts += 1
+        degradedReasons = [reason]
+        lastError = reason
+        return .block(NetworkExtensionEgressRestriction(
+            restrictionID: "clawdstrike_fail_closed",
+            actionID: "clawdstrike_fail_closed",
+            executionID: "clawdstrike_fail_closed",
+            target: target.map { "\($0.host):\($0.port)" } ?? "unresolved-flow-target",
+            expiresAt: now.addingTimeInterval(60)
+        ))
+    }
+
     public func snapshot(
         installState: SystemExtensionInstallState,
         approval: SystemExtensionApproval,
         providerKind: NetworkExtensionProviderKind = .contentFilter,
         backendHint: MediationBackendHint?,
-        filterRunning: Bool
+        filterRunning: Bool,
+        now: Date = Date()
     ) -> NetworkExtensionProviderSnapshot {
         lock.lock()
         let inputs = NetworkExtensionProviderInputs(
@@ -527,7 +557,7 @@ public final class NetworkExtensionContentFilterRuntime {
             backendHint: backendHint,
             filterRunning: filterRunning,
             policySynced: policySynced,
-            enforcementReady: policy?.enforcementReady ?? false,
+            enforcementReady: policy?.enforcementReady(now: now) ?? false,
             degradedReasons: degradedReasons,
             lastHealthyAt: lastHealthyAt,
             counters: counters,
@@ -545,7 +575,8 @@ public final class NetworkExtensionContentFilterRuntime {
         approval: SystemExtensionApproval,
         providerKind: NetworkExtensionProviderKind = .contentFilter,
         backendHint: MediationBackendHint?,
-        filterRunning: Bool
+        filterRunning: Bool,
+        now: Date = Date()
     ) -> Bool {
         guard let runtimeSnapshotStore else {
             return false
@@ -555,7 +586,8 @@ public final class NetworkExtensionContentFilterRuntime {
             approval: approval,
             providerKind: providerKind,
             backendHint: backendHint,
-            filterRunning: filterRunning
+            filterRunning: filterRunning,
+            now: now
         )
         do {
             try runtimeSnapshotStore.saveSnapshot(currentSnapshot)
@@ -625,9 +657,7 @@ public final class ClawdStrikeContentFilterDataProvider: NEFilterDataProvider {
     }
 
     public override func handleNewFlow(_ flow: NEFilterFlow) -> NEFilterNewFlowVerdict {
-        applyCurrentVendorConfiguration()
         let decision = runtime.recordFlow(target: Self.target(from: flow))
-        persistRuntimeSnapshot()
         switch decision {
         case .allow:
             return .allow()
@@ -710,12 +740,14 @@ public final class ClawdStrikeContentFilterDataProvider: NEFilterDataProvider {
             vendorConfigurationLock.unlock()
         }
         do {
-            _ = try vendorConfigurationHandler.handleIfChanged(
+            let response = try vendorConfigurationHandler.handleIfChanged(
                 filterConfiguration.vendorConfiguration ?? [:],
                 runtime: runtime,
                 context: providerCommandContext()
             )
-            persistRuntimeSnapshot()
+            if response != nil {
+                persistRuntimeSnapshot()
+            }
         } catch {
             runtime.markDegraded(reason: "vendor_configuration_command_failed")
             persistRuntimeSnapshot()
@@ -782,10 +814,10 @@ public final class ClawdStrikeContentFilterDataProvider: NEFilterDataProvider {
         guard let hostEndpoint = socketFlow.remoteEndpoint as? NWHostEndpoint else {
             return nil
         }
-        return NetworkExtensionFlowTarget(
-            host: hostEndpoint.hostname,
-            port: Int(hostEndpoint.port)
-        )
+        guard let port = Int(hostEndpoint.port) else {
+            return nil
+        }
+        return NetworkExtensionFlowTarget(host: hostEndpoint.hostname, port: port)
     }
 
     private static func target(from endpoint: Network.NWEndpoint) -> NetworkExtensionFlowTarget? {

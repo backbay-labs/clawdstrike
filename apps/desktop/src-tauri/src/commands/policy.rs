@@ -154,7 +154,10 @@ pub async fn policy_load(state: State<'_, AppState>) -> Result<PolicyLoadRespons
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(format!("Policy load failed with status {}: {}", status, text));
+        return Err(format!(
+            "Policy load failed with status {}: {}",
+            status, text
+        ));
     }
 
     response
@@ -211,7 +214,10 @@ pub async fn policy_eval_event(
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(format!("Policy eval failed with status {}: {}", status, text));
+        return Err(format!(
+            "Policy eval failed with status {}: {}",
+            status, text
+        ));
     }
 
     response
@@ -238,7 +244,10 @@ pub async fn policy_save(
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(format!("Policy save failed with status {}: {}", status, text));
+        return Err(format!(
+            "Policy save failed with status {}: {}",
+            status, text
+        ));
     }
 
     response

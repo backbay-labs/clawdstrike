@@ -270,7 +270,7 @@ public struct AuthorizationEvent: Codable, Equatable {
     }
 
     public var exceededDeadline: Bool {
-        latencyMs > deadlineMs
+        deadlineMs > 0 && latencyMs >= deadlineMs
     }
 
     enum CodingKeys: String, CodingKey {
@@ -280,6 +280,7 @@ public struct AuthorizationEvent: Codable, Equatable {
         case latencyMs = "latency_ms"
         case deadlineMs = "deadline_ms"
         case notifyObserved = "notify_observed"
+        case observedAt = "observed_at"
     }
 }
 
@@ -345,8 +346,11 @@ public enum ClawdStrikeAgentConfigPaths {
         explicitPath: String? = nil,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> [String] {
-        if let explicitPath, !explicitPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return [explicitPath]
+        if let explicitPath {
+            let trimmedExplicitPath = explicitPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedExplicitPath.isEmpty {
+                return [trimmedExplicitPath]
+            }
         }
         let primary = configDirectory(homeDirectory: homeDirectory)
             .appendingPathComponent("agent-local-token")

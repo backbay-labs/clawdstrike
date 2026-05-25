@@ -25,6 +25,7 @@ import {
   savePolicyFile,
   readPolicyFileByPath,
 } from "@/lib/tauri-bridge";
+import { logger } from "@/lib/logger";
 
 export const DEFAULT_POLICY: WorkbenchPolicy = {
   version: "1.2.0",
@@ -495,7 +496,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       if (stored) {
         const parsed: unknown = JSON.parse(stored);
         if (!Array.isArray(parsed)) {
-          console.warn("[policy-store] Saved policies is not an array, skipping hydration");
+          logger.warn("[policy-store] Saved policies is not an array, skipping hydration");
         } else {
           // Validate each entry has the expected shape before loading
           const policies: SavedPolicy[] = parsed.filter((entry: unknown): entry is SavedPolicy => {
@@ -580,7 +581,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "MARK_CLEAN" });
       pushRecentFile(result.path);
     } catch (err) {
-      console.error("[workbench] Failed to open file:", err);
+      logger.error("[workbench] Failed to open file:", err);
     }
   }, []);
 
@@ -594,7 +595,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "MARK_CLEAN" });
       pushRecentFile(result.path);
     } catch (err) {
-      console.error("[workbench] Failed to open file by path:", err);
+      logger.error("[workbench] Failed to open file by path:", err);
     }
   }, []);
 
@@ -612,7 +613,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "MARK_CLEAN" });
       pushRecentFile(savedPath);
     } catch (err) {
-      console.error("[workbench] Failed to save file:", err);
+      logger.error("[workbench] Failed to save file:", err);
     }
   }, [state.yaml, exportYaml]);
 
@@ -632,7 +633,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         await saveFileAs();
       }
     } catch (err) {
-      console.error("[workbench] Failed to save file:", err);
+      logger.error("[workbench] Failed to save file:", err);
     }
   }, [state.yaml, state.filePath, saveFileAs, exportYaml]);
 

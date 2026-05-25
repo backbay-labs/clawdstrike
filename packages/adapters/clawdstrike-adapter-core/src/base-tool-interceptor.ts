@@ -541,7 +541,22 @@ export class BaseToolInterceptor implements ToolInterceptor {
   }
 
   private async emitAuditEvent(context: SecurityContext, event: AuditEvent): Promise<void> {
-    await emitAuditEventShared(context, this.config, event, (error) => {
+    const sanitizedEvent: AuditEvent = {
+      ...event,
+      parameters: event.parameters
+        ? (this.sanitizeForAudit(event.parameters) as Record<string, unknown>)
+        : undefined,
+      output:
+        event.output !== undefined ? this.sanitizeForAudit(event.output) : undefined,
+      decision: event.decision
+        ? (this.sanitizeForAudit(event.decision) as Decision)
+        : undefined,
+      details: event.details
+        ? (this.sanitizeForAudit(event.details) as Record<string, unknown>)
+        : undefined,
+    };
+
+    await emitAuditEventShared(context, this.config, sanitizedEvent, (error) => {
       this.config.handlers?.onError?.(error);
     });
   }

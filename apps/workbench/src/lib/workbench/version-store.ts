@@ -4,6 +4,7 @@ import {
   sanitizeYamlForStorageWithMetadata,
 } from "./storage-sanitizer";
 import { yamlToPolicy } from "./yaml-utils";
+import { logger } from "@/lib/logger";
 
 // ---- Types ----
 
@@ -141,7 +142,7 @@ export class VersionStore {
     try {
       this.db = await openDB();
     } catch (err) {
-      console.error("[version-store] Failed to open IndexedDB:", err);
+      logger.error("[version-store] Failed to open IndexedDB:", err);
       // Graceful degradation: store stays null, all operations become no-ops or return empty
     }
   }
@@ -213,7 +214,7 @@ export class VersionStore {
     } catch (err) {
       // Handle ConstraintError gracefully (e.g. duplicate key from concurrent save)
       if (err instanceof DOMException && err.name === "ConstraintError") {
-        console.warn("[version-store] ConstraintError on save, returning latest version");
+        logger.warn("[version-store] ConstraintError on save, returning latest version");
         return latest ?? version;
       }
       throw err;
@@ -223,7 +224,7 @@ export class VersionStore {
     try {
       await this.deleteOldVersions(policyId, 50);
     } catch (pruneErr) {
-      console.warn("[version-store] Auto-prune failed (non-fatal):", pruneErr);
+      logger.warn("[version-store] Auto-prune failed (non-fatal):", pruneErr);
     }
 
     return version;

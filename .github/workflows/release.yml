@@ -27,6 +27,7 @@ jobs:
   resolve-version:
     name: Resolve Version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
@@ -56,6 +57,7 @@ jobs:
   preflight:
     name: Preflight Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: resolve-version
     steps:
       - uses: actions/checkout@v6
@@ -91,12 +93,25 @@ jobs:
             }
           done
 
-          if grep -R -nE "__[A-Z0-9_]+__" apps/agent/src-tauri/macos/system-extension; then
+          placeholder_pattern='(__[A-Z0-9_]+__|_{5,})'
+          placeholder_hits=0
+          while IFS= read -r -d '' path; do
+            if grep -I -nE "$placeholder_pattern" "$path"; then
+              placeholder_hits=1
+            fi
+          done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
+          if (( placeholder_hits != 0 )); then
             echo "macOS combined-system-extension packaging still contains placeholders; replace them before release." >&2
             exit 1
           fi
 
-          if grep -R -n "scaffold_only" apps/agent/src-tauri/macos/system-extension; then
+          scaffold_hits=0
+          while IFS= read -r -d '' path; do
+            if grep -I -n "scaffold_only" "$path"; then
+              scaffold_hits=1
+            fi
+          done < <(find apps/agent/src-tauri/macos/system-extension -type f -not -path '*/.build/*' -print0)
+          if (( scaffold_hits != 0 )); then
             echo "macOS packaging sources still declare scaffold_only state; release requires concrete source metadata plus a real embedded system extension bundle." >&2
             exit 1
           fi
@@ -104,12 +119,21 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Verify vendored offline Rust dependency graph
+        run: CARGO_NET_OFFLINE=true scripts/cargo-offline.sh metadata --locked --format-version 1
+
+      - name: Test vendored offline Rust workspace
+        run: scripts/cargo-offline.sh test --workspace --all-targets
+        env:
+          CARGO_NET_OFFLINE: "true"
+
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   publish-crates:
     name: Publish crates.io
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: [resolve-version, preflight]
     steps:
       - uses: actions/checkout@v6
@@ -214,6 +238,7 @@ jobs:
   publish-npm:
     name: Publish npm packages
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [resolve-version, preflight]
     steps:
       - uses: actions/checkout@v6
@@ -424,6 +449,7 @@ jobs:
   publish-wasm-npm:
     name: Publish @clawdstrike/wasm
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [resolve-version, preflight, publish-npm]
     steps:
       - uses: actions/checkout@v6
@@ -492,6 +518,7 @@ jobs:
   pypi-detect:
     name: Detect PyPI package status
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [resolve-version, preflight]
     outputs:
       name: ${{ steps.detect.outputs.name }}
@@ -568,6 +595,7 @@ jobs:
   build-pypi-native-wheels:
     name: Build native PyPI wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     needs: [resolve-version, preflight, pypi-detect]
     if: needs.pypi-detect.outputs.none_missing == 'false'
     strategy:
@@ -605,7 +633,7 @@ jobs:
 
       - name: Setup QEMU (linux aarch64 wheels)
         if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Sync Python sources for native wheel build
         shell: bash
@@ -692,7 +720,7 @@ jobs:
           ls -la wheelhouse
 
       - name: Upload native wheel artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: wheelhouse/*.whl
@@ -701,6 +729,7 @@ jobs:
   publish-pypi:
     name: Publish PyPI package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [resolve-version, preflight, pypi-detect, build-pypi-native-wheels]
     if: >
       always() &&
@@ -787,6 +816,7 @@ jobs:
   build-binaries:
     name: Build Binaries
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     needs: preflight
     strategy:
       matrix:
@@ -864,7 +894,7 @@ jobs:
           cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
@@ -881,7 +911,7 @@ jobs:
 
       - name: Upload release archive
         if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.archive }}.tar.gz
           path: ${{ matrix.archive }}.tar.gz
@@ -889,6 +919,7 @@ jobs:
   build-hushd-binaries:
     name: Build hushd Binaries
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     needs: preflight
     strategy:
       matrix:
@@ -960,7 +991,7 @@ jobs:
           cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Upload hushd artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
@@ -968,6 +999,7 @@ jobs:
   build-agent-dmg:
     name: Build Agent DMG
     runs-on: macos-latest
+    timeout-minutes: 120
     needs: preflight
     env:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -979,6 +1011,9 @@ jobs:
       APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
       APPLE_SIGNING_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_SIGNING_KEYCHAIN_PASSWORD }}
       CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING: "1"
+      CLAWDSTRIKE_SYSTEM_EXTENSION_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH: ${{ vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH }}
+      CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256: ${{ vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 || secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 }}
       NOTARIZE_OUT_DIR: ${{ github.workspace }}/.github-artifacts/clawdstrike-notarization
     steps:
       - uses: actions/checkout@v6
@@ -991,7 +1026,14 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --locked --version '^2'
+        run: cargo install tauri-cli --locked --version '2.10.2'
+
+      - name: Test macOS system extension Swift packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/endpoint-security
+          swift test --disable-sandbox --package-path apps/agent/src-tauri/macos/system-extension/network-extension
 
       - name: Import Apple signing certificate
         if: ${{ env.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}
@@ -1028,8 +1070,22 @@ jobs:
             -k "$keychain_password" \
             "$KEYCHAIN_PATH"
 
+      - name: Validate notarytool profile credentials
+        if: ${{ env.NOTARYTOOL_PROFILE != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$APPLE_ID" ]] || missing+=(APPLE_ID)
+          [[ -n "$APPLE_PASSWORD" ]] || missing+=(APPLE_PASSWORD)
+          [[ -n "$APPLE_TEAM_ID" ]] || missing+=(APPLE_TEAM_ID)
+          if (( ${#missing[@]} > 0 )); then
+            printf 'NOTARYTOOL_PROFILE requires %s so this fresh runner can create the keychain profile.\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
       - name: Store notarytool credentials
-        if: ${{ env.NOTARYTOOL_PROFILE != '' && env.APPLE_ID != '' && env.APPLE_PASSWORD != '' && env.APPLE_TEAM_ID != '' }}
+        if: ${{ env.NOTARYTOOL_PROFILE != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1037,6 +1093,61 @@ jobs:
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
             --team-id "$APPLE_TEAM_ID"
+
+      - name: Provision prebuilt system extension bundle
+        shell: bash
+        env:
+          SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64: ${{ secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64 }}
+        run: |
+          set -euo pipefail
+          sysext_path="${CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH:-}"
+          if [[ -n "$sysext_path" && "$sysext_path" != /* ]]; then
+            sysext_path="${GITHUB_WORKSPACE}/${sysext_path}"
+          fi
+
+          if [[ -z "$sysext_path" ]]; then
+            if [[ -z "$SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64" ]]; then
+              {
+                echo "A signed prebuilt .systemextension bundle is required before notarization."
+                echo "Set vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH to a checked-out bundle path"
+                echo "or set secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64 to a base64-encoded zip containing exactly one .systemextension directory."
+              } >&2
+              exit 1
+            fi
+            sysext_zip="${RUNNER_TEMP}/clawdstrike-system-extension.zip"
+            sysext_unpack_dir="${RUNNER_TEMP}/clawdstrike-system-extension"
+            mkdir -p "$sysext_unpack_dir"
+            ZIP_PATH="$sysext_zip" python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["ZIP_PATH"]).write_bytes(
+              base64.b64decode(os.environ["SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64"])
+          )
+          PY
+            unzip -q "$sysext_zip" -d "$sysext_unpack_dir"
+            candidates_file="${RUNNER_TEMP}/clawdstrike-system-extension-candidates.txt"
+            find "$sysext_unpack_dir" -type d -name '*.systemextension' | sort > "$candidates_file"
+            candidate_count="$(wc -l < "$candidates_file" | tr -d '[:space:]')"
+            if [[ "$candidate_count" != "1" ]]; then
+              echo "Expected exactly one .systemextension in CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_ZIP_BASE64, found ${candidate_count}." >&2
+              cat "$candidates_file" >&2
+              exit 1
+            fi
+            sysext_path="$(sed -n '1p' "$candidates_file")"
+          fi
+
+          if [[ ! -d "$sysext_path" ]]; then
+            echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH does not exist on this runner: $sysext_path" >&2
+            exit 1
+          fi
+          if [[ "$sysext_path" != *.systemextension ]]; then
+            echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH must end in .systemextension: $sysext_path" >&2
+            exit 1
+          fi
+          echo "CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_PATH=$sysext_path" >> "$GITHUB_ENV"
+          echo "Using prebuilt system extension bundle: $sysext_path"
 
       - name: Build and notarize agent app bundle
         run: bash scripts/notarize-agent-macos.sh
@@ -1053,7 +1164,7 @@ jobs:
           security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
 
       - name: Upload agent DMG artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: clawdstrike-agent-dmg
           path: apps/agent/src-tauri/target/release/bundle/dmg/*.dmg
@@ -1061,7 +1172,7 @@ jobs:
 
       - name: Upload notarization evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: clawdstrike-agent-notarization
           path: ${{ env.NOTARIZE_OUT_DIR }}/
@@ -1070,7 +1181,9 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [resolve-version, build-binaries, build-hushd-binaries, build-agent-dmg, publish-crates, publish-npm, publish-wasm-npm, publish-pypi]
+    # contents: write is required to create the release and upload assets.
     permissions:
       contents: write
     steps:
@@ -1172,7 +1285,7 @@ jobs:
           rm -f release-files/hushd-ota-manifest-beta.unsigned.json
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.resolve-version.outputs.tag }}
           generate_release_notes: true
@@ -1184,6 +1297,7 @@ jobs:
   update-homebrew:
     name: Update Homebrew Tap
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [resolve-version, create-release]
     steps:
       - name: Download release archives

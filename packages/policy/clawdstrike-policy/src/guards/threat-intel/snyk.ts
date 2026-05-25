@@ -121,35 +121,49 @@ export function createSnykGuard(config: SnykConfig, asyncCfg: AsyncGuard["config
 
 type Vuln = { severity: SnykSeverity; upgradable: boolean };
 
+interface SnykVulnerabilityRaw {
+  severity?: unknown;
+  isUpgradable?: unknown;
+  upgradePath?: unknown;
+}
+
+interface SnykResponseShape {
+  vulnerabilities?: SnykVulnerabilityRaw[];
+  issues?: { vulnerabilities?: SnykVulnerabilityRaw[] };
+}
+
+const SNYK_SEVERITIES: ReadonlyArray<SnykSeverity> = ["low", "medium", "high", "critical"];
+
+function isSnykSeverity(value: string): value is SnykSeverity {
+  return (SNYK_SEVERITIES as ReadonlyArray<string>).includes(value);
+}
+
 function extractVulnerabilities(json: unknown): Vuln[] {
-  const root = json as any;
-  const list = Array.isArray(root?.vulnerabilities)
+  const root = (json ?? {}) as SnykResponseShape;
+  const list: SnykVulnerabilityRaw[] = Array.isArray(root.vulnerabilities)
     ? root.vulnerabilities
-    : Array.isArray(root?.issues?.vulnerabilities)
-      ? root.issues.vulnerabilities
+    : Array.isArray(root.issues?.vulnerabilities)
+      ? (root.issues!.vulnerabilities ?? [])
       : [];
 
   const out: Vuln[] = [];
   for (const v of list) {
-    const sevRaw = typeof v?.severity === "string" ? (v.severity as string).toLowerCase() : "";
-    const sev = (["low", "medium", "high", "critical"] as const).includes(sevRaw as any)
-      ? (sevRaw as SnykSeverity)
-      : null;
-    if (!sev) continue;
+    const sevRaw = typeof v?.severity === "string" ? v.severity.toLowerCase() : "";
+    if (!isSnykSeverity(sevRaw)) continue;
 
     const isUpgradable = Boolean(v?.isUpgradable);
     const upgradePathHasString = Array.isArray(v?.upgradePath)
       ? v.upgradePath.some((x: unknown) => typeof x === "string" && x.length > 0)
       : false;
 
-    out.push({ severity: sev, upgradable: isUpgradable || upgradePathHasString });
+    out.push({ severity: sevRaw, upgradable: isUpgradable || upgradePathHasString });
   }
   return out;
 }
 
 function fileContentBytes(event: PolicyEvent): Buffer | null {
   if (event.data.type !== "file") return null;
-  const data = event.data as any;
+  const data = event.data as { contentBase64?: unknown; content?: unknown };
   if (typeof data.contentBase64 === "string") {
     try {
       return Buffer.from(data.contentBase64, "base64");
