@@ -17,8 +17,8 @@ shell-injection sink in codex-swarm bootstrap`) credits the regression to
 
 ### 2. .env not on disk
 PASS. `ls -la .env` returns "No such file or directory". The live
-`sk-proj-Xg1k2XaPA5BuBjy...` credential string does not appear in any
-git-tracked file (`git ls-files | xargs grep -l "Xg1k2XaPA5BuBjy"` empty).
+`sk-proj-<REDACTED>` credential string does not appear in any
+git-tracked file (verified by `git ls-files | xargs grep -l` against the prefix; empty).
 `.env` was never committed (gitignored at `.gitignore:67`), so no git-history
 purge is required. Note: revoking the credential at the OpenAI console is a
 separate action that this reviewer cannot verify from the repository.
@@ -171,9 +171,9 @@ survived:
 
 ### E. OpenAI key string survives anywhere
 **PASS.** Searches:
-- `grep -rn "Xg1k2XaPA5BuBjy"` against the entire repo (excluding
+- `grep -rn "<key-prefix>"` against the entire repo (excluding
   node_modules, target, infra/vendor) returns empty.
-- `git ls-files | xargs grep -l "sk-proj-Xg1k2X"` returns empty.
+- `git ls-files | xargs grep -l "sk-proj-<key-prefix>"` returns empty.
 - `git log --all -- .env` returns empty (file never tracked).
 
 All remaining `sk-proj-` matches in the repo are regex patterns
@@ -183,7 +183,7 @@ All remaining `sk-proj-` matches in the repo are regex patterns
 (`OPENAI_API_KEY=sk-proj-abc123def456ghi789` in
 `packages/sdk/hush-py/examples/live-testing/scenario-suite.yaml:90`,
 `apps/workbench/mcp-server/index.ts:351`), or doc text. None are real
-credentials. The live key string `sk-proj-Xg1k2XaPA5BuBjy...` is
+credentials. The live key string (`sk-proj-<REDACTED>`) is
 completely gone from working tree, git index, and git history.
 
 Caveat: revoking the credential at the OpenAI console is required and

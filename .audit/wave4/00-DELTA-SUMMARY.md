@@ -17,7 +17,7 @@
 **What did change is small and partially bad.** The EDR refactor (commits `a97fda5d9` → `bd3ea7e63`) extracted ~3.2K of ~21K planned LOC out of `api_server.rs` into `edr/` submodules — but the file itself is still 48,111 lines. Worse: someone removed `#![allow(dead_code, unused_imports)]` from `crates/libs/clawdstrike-policy-event/src/edr/mod.rs` *without deleting the dead code*, which broke `cargo check` under `-D warnings`, and the uncommitted working tree silently re-adds the allow to compile. Half-cleanup that left the repo in a worse spot than before. The CI signing setup (`1ade43894`) introduced a new shell-injection sink in `scripts/codex-swarm/common.sh:462`. The macOS Swift hardening (`768876a7b`, `56dc31483`) is real cleanup that landed cleanly.
 
 **5 new criticals the wave-1 audit missed (or that materialized after):**
-1. **Live OpenAI API key in `.env`** — `sk-proj-Xg1k2XaPA5BuBjy...` is a real, unrevoked credential on a security tool's working tree. (D01 N-01)
+1. **Live OpenAI API key in `.env`** — a real, unrevoked `sk-proj-<REDACTED>` credential on a security tool's working tree. (D01 N-01)
 2. **Shell-injection regression** at `scripts/codex-swarm/common.sh:462` introduced by `1ade43894` — `bash -lc "$bootstrap_preset"` against untrusted lane TSV input. (D02 N-01)
 3. **`infra/vendor/` is 1.0 GB / 841 directories** with 96 multi-version duplicates; every clone pays 1 GB. (D02 N-03)
 4. **swarm-engine ships with 3 CRITICAL + 4 HIGH security findings** documented in-tree at `docs/plans/swarm-engine/SECURITY-AUDIT.md` since 2026-03-24. (D05 N-01)
@@ -56,7 +56,7 @@ Plus: workbench `biome.json` has `linter.enabled: false` (D06 N-09), schema-vers
 These are the things that turn this from "needs cleanup" to "actively dangerous or embarrassing."
 
 ### C-1. Revoke the OpenAI API key in `.env`, then delete the file. (D01 N-01)
-- `.env` at repo root contains `OPENAI_API_KEY=sk-proj-Xg1k2XaPA5BuBjy...` + `OPENAI_MODEL=gpt-5`.
+- `.env` at repo root contains `OPENAI_API_KEY=sk-proj-<REDACTED>` + `OPENAI_MODEL=gpt-5`.
 - Gitignored, but the credential is exfiltratable by anyone with FS read.
 - **Action:** revoke in OpenAI console *first*, then `rm .env`. Add `.env.example` documenting expected vars.
 - **Time:** 5 min.

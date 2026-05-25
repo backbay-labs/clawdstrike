@@ -202,7 +202,7 @@ None substantive. The only wrinkle is the off-by-one on the `.planning/` duplica
 
 ## AGGRESSIVE EXECUTION PLAN (top-5 highest-leverage actions in THIS area)
 
-1. **Revoke the OpenAI key and nuke the cruft.** Revoke `sk-proj-Xg1...` at the OpenAI API console (5 min). Then: `rm -rf .env .DS_Store .tmp-release-venv .playwright-cli coverage tmp output .worktrees .cleanup-audit && find . -name .DS_Store -not -path './.git/*' -delete && rm -rf node_modules`. Add a `[tasks.clean]` block to `mise.toml`. Risk: low. Effort: 15 min. Commit count: 1.
+1. **Revoke the OpenAI key and nuke the cruft.** Revoke `sk-proj-<REDACTED>` at the OpenAI API console (5 min). Then: `rm -rf .env .DS_Store .tmp-release-venv .playwright-cli coverage tmp output .worktrees .cleanup-audit && find . -name .DS_Store -not -path './.git/*' -delete && rm -rf node_modules`. Add a `[tasks.clean]` block to `mise.toml`. Risk: low. Effort: 15 min. Commit count: 1.
 
 2. **Rewrite README from scratch to ~250 lines.** Target structure: 1-paragraph definition (rip from `README.md:84`) → install snippet (rip from `README.md:158-250`) → 30-line quickstart → guard table (mirror `CLAUDE.md:95-109` exactly) → links to deeper docs in `docs/`. Move the poem, sigils, divider, hero PNG, enterprise architecture (L916-1080), compliance tables, observe-synth walkthrough, Spider-Sense quick-start, and reel GIF to `docs/enterprise/`, `docs/getting-started/`, `docs/research.md`, etc. Delete `assets/promo-reel.gif` if unused. Risk: medium (some external blog posts deep-link to README anchors — verify before delete). Effort: 3-4 hours. Commit count: 2 (one for new README, one for docs/ relocation).
 
