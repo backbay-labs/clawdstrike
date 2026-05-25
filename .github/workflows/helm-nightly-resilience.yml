@@ -41,7 +41,7 @@ jobs:
       chart_version: ${{ steps.version.outputs.chart_version }}
     steps:
       - name: Setup ORAS
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Login to GHCR (ORAS)
         env:
@@ -80,7 +80,7 @@ jobs:
         uses: azure/setup-helm@v5
 
       - name: Setup ORAS
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
