@@ -8,6 +8,7 @@
 pub(crate) mod conversion;
 pub(crate) mod dto;
 pub(crate) mod handlers;
+pub(crate) mod helpers;
 pub(crate) mod ledger;
 pub(crate) mod policy_events;
 pub(crate) mod queries;
