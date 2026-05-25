@@ -188,9 +188,13 @@ _GUARD_MERGE_SPECS: dict[str, dict[str, _MergeMode]] = {
         "additional_blocked": _MergeMode.MERGE_LIST,
         "allowed_commands": _MergeMode.MERGE_LIST,
         "enabled": _MergeMode.OVERRIDE,
+        "enforce_forbidden_paths": _MergeMode.OVERRIDE,
     },
     "path_allowlist": {
         "allowed_paths": _MergeMode.MERGE_LIST,
+        "file_access_allow": _MergeMode.MERGE_LIST,
+        "file_write_allow": _MergeMode.MERGE_LIST,
+        "patch_allow": _MergeMode.MERGE_LIST,
         "enabled": _MergeMode.OVERRIDE,
     },
     "spider_sense": {
@@ -827,10 +831,14 @@ class Policy:
                 "additional_blocked": self.guards.shell_command.additional_blocked,
                 "allowed_commands": self.guards.shell_command.allowed_commands,
                 "enabled": self.guards.shell_command.enabled,
+                "enforce_forbidden_paths": self.guards.shell_command.enforce_forbidden_paths,
             }
         if self.guards.path_allowlist:
             data["guards"]["path_allowlist"] = {
                 "allowed_paths": self.guards.path_allowlist.allowed_paths,
+                "file_access_allow": self.guards.path_allowlist.file_access_allow,
+                "file_write_allow": self.guards.path_allowlist.file_write_allow,
+                "patch_allow": self.guards.path_allowlist.patch_allow,
                 "enabled": self.guards.path_allowlist.enabled,
             }
         if self.guards.prompt_injection:
