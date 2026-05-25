@@ -92,6 +92,39 @@ clawdstrike run --policy clawdstrike:strict -- python my_agent.py
 
 The agent runs normally. Every tool call hits the engine first. Denials raise a typed error in your SDK and emit a signed receipt.
 
+### Cluster: Helm chart and control plane
+
+For fleet deployments, install the Helm chart. It brings up the full SDR stack: bundled NATS JetStream, the Spine audit chain (checkpointer + witness + proofs API), `hushd` enforcement daemons, and the Control API (cloud enrollment + posture commands).
+
+```bash
+# Pinned release from the OCI registry
+helm install clawdstrike \
+  oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
+  --version 0.2.0 \
+  --namespace clawdstrike-system --create-namespace
+```
+
+Or install from the repo for development:
+
+```bash
+helm install clawdstrike ./infra/deploy/helm/clawdstrike \
+  --namespace clawdstrike-system --create-namespace
+```
+
+| Component | Workload | Purpose |
+|---|---|---|
+| `nats` | StatefulSet | JetStream transport for the Spine envelope |
+| `spine-checkpointer` | Deployment | Hash-chained Ed25519 audit log |
+| `spine-witness` | Deployment | Independent co-signature on checkpoints |
+| `spine-proofs-api` | Deployment | Merkle-proof endpoint for receipts |
+| `hushd` | Deployment | Centralised policy evaluation + receipt signing |
+| `control-api` | Deployment | Tenant management, enrollment, posture commands |
+| `tetragon-bridge` / `hubble-bridge` | DaemonSet / Deployment | Optional kernel + L7 telemetry into the Spine |
+
+The Control API issues single-use enrollment tokens that bind a Desktop Agent to a tenant over mTLS, then provisions per-agent NATS credentials. From there, posture commands flow Control API → NATS → agent, and signed completion bundles flow back. The Control Console (separate app at `apps/control-console/`) is the SOC operator UI on top of the API.
+
+See [`infra/deploy/helm/clawdstrike/README.md`](infra/deploy/helm/clawdstrike/README.md) for chart parameters and [Enterprise enrollment](docs/src/guides/enterprise-enrollment.md) for the end-to-end agent onboarding flow.
+
 ---
 
 ## How it works
