@@ -51,7 +51,7 @@
   "devDependencies": {
     "typedoc": "^0.28.0",
     "typedoc-plugin-markdown": "^4.6.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "tsup": "^8.5.1",
     "vitest": "^4.1.7"
   },
