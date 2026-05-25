@@ -354,8 +354,7 @@ extends: p0
 #[test]
 fn strict_ruleset_has_empty_egress_allow() {
     let yaml = include_str!("../rulesets/strict.yaml");
-    let policy = Policy::from_yaml_with_extends(yaml, None)
-        .expect("load built-in strict ruleset");
+    let policy = Policy::from_yaml_with_extends(yaml, None).expect("load built-in strict ruleset");
 
     let egress = policy
         .guards

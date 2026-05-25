@@ -49,7 +49,8 @@ impl Config {
 
     /// Load configuration from environment variables.
     pub fn from_env() -> anyhow::Result<Self> {
-        let host = std::env::var("CLAWDSTRIKE_REGISTRY_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+        let host =
+            std::env::var("CLAWDSTRIKE_REGISTRY_HOST").unwrap_or_else(|_| "127.0.0.1".into());
         let port: u16 = std::env::var("CLAWDSTRIKE_REGISTRY_PORT")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -214,10 +215,8 @@ mod tests {
             "CLAWDSTRIKE_REGISTRY_DATA_DIR",
             "CLAWDSTRIKE_REGISTRY_MAX_UPLOAD_BYTES",
         ];
-        let saved: Vec<(&str, Option<String>)> = keys
-            .iter()
-            .map(|k| (*k, std::env::var(k).ok()))
-            .collect();
+        let saved: Vec<(&str, Option<String>)> =
+            keys.iter().map(|k| (*k, std::env::var(k).ok())).collect();
         for (k, _) in &saved {
             std::env::remove_var(k);
         }

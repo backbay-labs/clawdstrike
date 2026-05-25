@@ -195,16 +195,15 @@ impl Config {
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(300);
 
-        let cors_allowed_origins: Vec<String> =
-            std::env::var("CONTROL_API_CORS_ALLOWED_ORIGINS")
-                .ok()
-                .map(|raw| {
-                    raw.split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default();
+        let cors_allowed_origins: Vec<String> = std::env::var("CONTROL_API_CORS_ALLOWED_ORIGINS")
+            .ok()
+            .map(|raw| {
+                raw.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
         let cors = CorsConfig {
             allowed_origins: cors_allowed_origins,
         };
