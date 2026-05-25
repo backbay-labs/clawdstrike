@@ -95,7 +95,7 @@ jobs:
 
       - name: Setup ORAS
         if: steps.gate.outputs.should_publish == 'true'
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Login to GHCR for ORAS
         if: steps.gate.outputs.should_publish == 'true'
