@@ -86,7 +86,7 @@ jobs:
         # the moving @master ref. continue-on-error was previously enabled to
         # suppress scan flakes; removed so HIGH/CRITICAL findings actually
         # block the build.
-        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.30.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.30.0
         with:
           image-ref: ${{ env.IMAGE_PREFIX }}/spine:${{ matrix.bin }}-${{ github.sha }}
           format: 'table'
@@ -153,7 +153,7 @@ jobs:
         # the moving @master ref. continue-on-error was previously enabled to
         # suppress scan flakes; removed so HIGH/CRITICAL findings actually
         # block the build.
-        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.30.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.30.0
         with:
           image-ref: ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.sha }}
           format: 'table'
