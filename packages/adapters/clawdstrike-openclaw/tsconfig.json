@@ -4,6 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@clawdstrike/adapter-core": ["../clawdstrike-adapter-core/dist/index.d.ts"]
     },
