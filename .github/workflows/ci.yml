@@ -1277,6 +1277,21 @@ jobs:
         working-directory: .
         run: cargo build -p hush-cli --bin hush
 
+      # IMPORTANT: install hush-ts FIRST so that the final per-subpackage
+      # `npm ci` is the clawdstrike-policy one. With npm workspaces, each
+      # `npm ci` in a workspace child hoists to the root node_modules and
+      # uses that child's package-lock.json — meaning a later `npm ci` in
+      # a sibling can prune deps that aren't in its lockfile (e.g. lru-cache).
+      # Running clawdstrike-policy's install LAST guarantees its deps
+      # (lru-cache) are still present when policy-parity.mjs runs.
+      - name: Bootstrap file deps (hush-ts)
+        working-directory: packages/sdk/hush-ts
+        run: npm ci
+
+      - name: Build file deps (hush-ts)
+        working-directory: packages/sdk/hush-ts
+        run: npm run build
+
       - name: Install dependencies
         run: npm ci
 
@@ -1284,14 +1299,6 @@ jobs:
         run: npm run typecheck
 
       - name: Build
-        run: npm run build
-
-      - name: Bootstrap file deps (hush-ts)
-        working-directory: packages/sdk/hush-ts
-        run: npm ci
-
-      - name: Build file deps (hush-ts)
-        working-directory: packages/sdk/hush-ts
         run: npm run build
 
       - name: Policy parity (Rust ↔ TS)
