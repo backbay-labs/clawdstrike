@@ -94,34 +94,45 @@ The agent runs normally. Every tool call hits the engine first. Denials raise a 
 
 ### Cluster: Helm chart and control plane
 
-For fleet deployments, install the Helm chart. It brings up the full SDR stack: bundled NATS JetStream, the Spine audit chain (checkpointer + witness + proofs API), `hushd` enforcement daemons, and the Control API (cloud enrollment + posture commands).
+For fleet deployments, install the Helm chart. The default install brings up the enforcement + audit core: bundled NATS JetStream, the Spine audit chain (checkpointer + witness + proofs API), and `hushd`. The Control API (cloud enrollment + posture commands) and the kernel/L7 telemetry bridges are off by default — turn them on with `--set`.
 
 ```bash
-# Pinned release from the OCI registry
+# Default install: enforcement + audit only (no Control API)
 helm install clawdstrike \
   oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
   --version 0.2.0 \
   --namespace clawdstrike-system --create-namespace
 ```
 
-Or install from the repo for development:
+To bring up the full control plane (enrollment, posture commands, signed completion bundles back to the API), enable the Control API:
+
+```bash
+helm install clawdstrike \
+  oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
+  --version 0.2.0 \
+  --namespace clawdstrike-system --create-namespace \
+  --set controlApi.enabled=true
+```
+
+For development off the repo, swap the OCI reference for the local path:
 
 ```bash
 helm install clawdstrike ./infra/deploy/helm/clawdstrike \
-  --namespace clawdstrike-system --create-namespace
+  --namespace clawdstrike-system --create-namespace \
+  --set controlApi.enabled=true
 ```
 
-| Component | Workload | Purpose |
-|---|---|---|
-| `nats` | StatefulSet | JetStream transport for the Spine envelope |
-| `spine-checkpointer` | Deployment | Hash-chained Ed25519 audit log |
-| `spine-witness` | Deployment | Independent co-signature on checkpoints |
-| `spine-proofs-api` | Deployment | Merkle-proof endpoint for receipts |
-| `hushd` | Deployment | Centralised policy evaluation + receipt signing |
-| `control-api` | Deployment | Tenant management, enrollment, posture commands |
-| `tetragon-bridge` / `hubble-bridge` | DaemonSet / Deployment | Optional kernel + L7 telemetry into the Spine |
+| Component | Workload | Default | Purpose |
+|---|---|---|---|
+| `nats` | StatefulSet | on | JetStream transport for the Spine envelope |
+| `spine-checkpointer` | Deployment | on | Hash-chained Ed25519 audit log |
+| `spine-witness` | Deployment | on | Independent co-signature on checkpoints |
+| `spine-proofs-api` | Deployment | on | Merkle-proof endpoint for receipts |
+| `hushd` | Deployment | on | Centralised policy evaluation + receipt signing |
+| `control-api` | Deployment | **off** (`--set controlApi.enabled=true`) | Tenant management, enrollment, posture commands |
+| `tetragon-bridge` / `hubble-bridge` | DaemonSet / Deployment | off | Kernel + L7 telemetry into the Spine |
 
-The Control API issues single-use enrollment tokens that bind a Desktop Agent to a tenant over mTLS, then provisions per-agent NATS credentials. From there, posture commands flow Control API → NATS → agent, and signed completion bundles flow back. The Control Console (separate app at `apps/control-console/`) is the SOC operator UI on top of the API.
+With Control API enabled, it issues single-use enrollment tokens that bind a Desktop Agent to a tenant over mTLS, then provisions per-agent NATS credentials. From there, posture commands flow Control API → NATS → agent, and signed completion bundles flow back. The Control Console (separate app at `apps/control-console/`) is the SOC operator UI on top of the API.
 
 See [`infra/deploy/helm/clawdstrike/README.md`](infra/deploy/helm/clawdstrike/README.md) for chart parameters and [Enterprise enrollment](docs/src/guides/enterprise-enrollment.md) for the end-to-end agent onboarding flow.
 
