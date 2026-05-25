@@ -1105,6 +1105,10 @@ jobs:
     name: OpenClaw Runtime (${{ matrix.openclaw_version }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # The 'latest' matrix entry tracks the upstream openclaw npm dist-tag and
+    # is allowed to soft-fail so third-party regressions don't gate this repo's
+    # CI. Pinned versions remain required.
+    continue-on-error: ${{ matrix.openclaw_version == 'latest' }}
     strategy:
       fail-fast: false
       matrix:
