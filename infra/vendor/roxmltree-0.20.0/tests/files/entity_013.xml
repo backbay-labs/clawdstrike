@@ -1,4 +1,0 @@
-<!DOCTYPE test [
-    <!ENTITY q 'q'>
-]>
-<root>&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;&q;</root>

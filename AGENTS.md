@@ -10,7 +10,7 @@
 - `rulesets/`: pre-configured YAML policies used by examples and tooling
 - `docs/`: mdBook source (`docs/src/**`)
 - `examples/`, `fixtures/`, `scripts/`, `tools/`, `fuzz/`
-- `infra/vendor/`: vendored Rust dependencies for offline builds (avoid hand-editing)
+- `infra/vendor/`: three preserved path-deps (`nono`, `async-nats`, `rustls-webpki`); the rest of the offline-build mirror is generated at CI time via `cargo vendor` (see `.github/workflows/ci.yml`)
 
 ## Build, Test, and Development Commands
 

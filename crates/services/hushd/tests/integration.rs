@@ -10,7 +10,8 @@ mod common;
 
 use common::daemon_url;
 use hushd::config::{
-    AuditConfig, AuditEncryptionConfig, AuditEncryptionKeySource, Config, RateLimitConfig,
+    AuditConfig, AuditEncryptionConfig, AuditEncryptionKeySource, AuthConfig, Config,
+    RateLimitConfig,
 };
 
 /// Helper to get client and URL
@@ -416,6 +417,12 @@ async fn test_audit_encryption_stores_ciphertext_and_decrypts_on_query() {
 
     let daemon = common::TestDaemon::spawn_with_config(Config {
         cors_enabled: false,
+        // Wave B turned auth on by default; this test exercises audit
+        // encryption end-to-end without an auth header, so opt out.
+        auth: AuthConfig {
+            enabled: false,
+            api_keys: Vec::new(),
+        },
         rate_limit: RateLimitConfig {
             enabled: false,
             ..Default::default()

@@ -51,7 +51,7 @@ Policies configure built-in guards under `guards.*` and can inherit via `extends
 Create `policy.yaml`:
 
 ```yaml
-version: "1.2.0"
+version: "1.5.0"
 name: My Policy
 extends: clawdstrike:ai-agent
 

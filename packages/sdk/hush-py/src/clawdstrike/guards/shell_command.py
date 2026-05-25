@@ -30,11 +30,19 @@ DEFAULT_BLOCKED_COMMANDS: list[str] = [
 
 @dataclass(init=False)
 class ShellCommandConfig:
-    """Configuration for ShellCommandGuard."""
+    """Configuration for ShellCommandGuard.
+
+    Mirrors the Rust schema in ``crates/libs/clawdstrike/src/guards/shell_command.rs``.
+    The ``enforce_forbidden_paths`` flag controls whether forbidden-path checks are
+    run against best-effort path tokens extracted from the commandline; the
+    pure-Python implementation only honours the flag for schema parity (path
+    enforcement happens elsewhere in this backend).
+    """
     forbidden_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_COMMANDS))
     additional_blocked: list[str] = field(default_factory=list)
     allowed_commands: list[str] = field(default_factory=list)
     enabled: bool = True
+    enforce_forbidden_paths: bool = True
 
     def __init__(
         self,
@@ -44,6 +52,7 @@ class ShellCommandConfig:
         additional_blocked: list[str] | None = None,
         allowed_commands: list[str] | None = None,
         enabled: bool = True,
+        enforce_forbidden_paths: bool = True,
     ) -> None:
         if forbidden_patterns is not None and blocked_patterns is not None:
             msg = "shell_command cannot define both blocked_patterns and forbidden_patterns"
@@ -59,6 +68,7 @@ class ShellCommandConfig:
         self.additional_blocked = list(additional_blocked or [])
         self.allowed_commands = list(allowed_commands or [])
         self.enabled = enabled
+        self.enforce_forbidden_paths = enforce_forbidden_paths
 
 
 class ShellCommandGuard(Guard):

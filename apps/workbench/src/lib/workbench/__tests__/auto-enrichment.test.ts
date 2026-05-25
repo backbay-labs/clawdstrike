@@ -485,7 +485,9 @@ describe("AutoEnrichmentManager", () => {
     await Promise.resolve();
 
     // console.error should have been called by the .catch() handler
+    // (via logger.error, which prepends "[workbench]")
     expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[workbench]",
       expect.stringContaining("[AutoEnrichment]"),
       expect.stringContaining("API unavailable"),
     );

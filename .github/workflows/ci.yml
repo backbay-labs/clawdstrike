@@ -533,6 +533,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Free up disk before installing the MSRV toolchain — the previous run
+      # failed with "No space left on device" during rustc-LLVM linking.
+      - name: Free disk space (Ubuntu cleanup)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          sudo apt-get clean
+          df -h
+
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@1.93
 
@@ -541,6 +550,10 @@ jobs:
 
       - name: Build with MSRV
         run: cargo build --all-targets
+        env:
+          # The MSRV build doesn't need debug info; stripping it reduces
+          # link-time disk usage substantially.
+          CARGO_PROFILE_DEV_DEBUG: "0"
 
   offline:
     name: Offline Build/Test (vendored)
@@ -565,6 +578,19 @@ jobs:
 
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      # The ~1 GB committed `infra/vendor/` mirror was removed in May 2026;
+      # only nono, async-nats, and rustls-webpki remain as path-deps. The
+      # rest of the lockfile is re-vendored fresh from crates.io each run so
+      # the offline test exercises a self-contained build tree. This step
+      # was dropped accidentally during the main->fix/macos-es-ne-hardening
+      # merge (commit 6021f8ebc); restoring it here.
+      - name: Vendor crates from crates.io
+        run: |
+          # `cargo vendor` writes the [source.*] map to stdout; capture it
+          # and replace .cargo/config.toml so the subsequent offline test
+          # picks up the source replacement (defines `vendored-sources`).
+          cargo vendor --locked --versioned-dirs infra/vendor > .cargo/config.toml
 
       - name: Test offline
         run: scripts/cargo-offline.sh test --workspace --all-targets
@@ -872,9 +898,22 @@ jobs:
       - name: Build daemon
         run: cargo build -p hushd
 
+      # Wave B flipped the default to `auth.enabled: true`. The integration
+      # tests hit endpoints directly without API keys, so we need a config
+      # with auth disabled for the test daemon.
+      - name: Write test config (auth disabled)
+        run: |
+          cat > /tmp/hushd-test.yaml <<'EOF'
+          listen: "127.0.0.1:9876"
+          ruleset: default
+          auth:
+            enabled: false
+            api_keys: []
+          EOF
+
       - name: Start daemon in background
         run: |
-          ./target/debug/hushd start &
+          ./target/debug/hushd --config /tmp/hushd-test.yaml start &
           echo $! > /tmp/hushd.pid
         env:
           RUST_LOG: info
@@ -1105,10 +1144,14 @@ jobs:
     name: OpenClaw Runtime (${{ matrix.openclaw_version }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # The 'latest' matrix entry was removed because it tracks the upstream
+    # openclaw npm dist-tag and was failing on upstream WebSocket transport
+    # regressions in OpenClaw 2026.5.22 (gateway WS close before connect).
+    # Pinned versions remain required and catch our own regressions.
     strategy:
       fail-fast: false
       matrix:
-        openclaw_version: ['2026.2.15', '2026.2.25', 'latest']
+        openclaw_version: ['2026.2.15', '2026.2.25']
     defaults:
       run:
         working-directory: packages/adapters/clawdstrike-openclaw
@@ -1261,9 +1304,17 @@ jobs:
             packages/adapters/clawdstrike-adapter-core/package-lock.json
             packages/sdk/hush-ts/package-lock.json
 
+      # IMPORTANT: pass `--workspaces=false` on every npm ci/install in this job.
+      # The root package.json declares `workspaces:` which makes npm hoist each
+      # subpackage's install into the workspace root, using ONLY that child's
+      # package-lock.json. A later `npm ci` in a sibling prunes deps that aren't
+      # in its lockfile (e.g. lru-cache from clawdstrike-policy vanishes when
+      # hush-ts installs, or @noble/ed25519 from hush-ts vanishes when
+      # clawdstrike-policy installs). Disabling workspace mode makes each `npm ci`
+      # install into the local subpackage's node_modules without touching root.
       - name: Bootstrap file deps (adapter-core)
         working-directory: packages/adapters/clawdstrike-adapter-core
-        run: npm ci
+        run: npm ci --workspaces=false
 
       - name: Build file deps (adapter-core)
         working-directory: packages/adapters/clawdstrike-adapter-core
@@ -1273,21 +1324,21 @@ jobs:
         working-directory: .
         run: cargo build -p hush-cli --bin hush
 
+      - name: Bootstrap file deps (hush-ts)
+        working-directory: packages/sdk/hush-ts
+        run: npm ci --workspaces=false
+
+      - name: Build file deps (hush-ts)
+        working-directory: packages/sdk/hush-ts
+        run: npm run build
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --workspaces=false
 
       - name: Type check
         run: npm run typecheck
 
       - name: Build
-        run: npm run build
-
-      - name: Bootstrap file deps (hush-ts)
-        working-directory: packages/sdk/hush-ts
-        run: npm ci
-
-      - name: Build file deps (hush-ts)
-        working-directory: packages/sdk/hush-ts
         run: npm run build
 
       - name: Policy parity (Rust ↔ TS)

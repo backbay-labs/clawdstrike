@@ -155,4 +155,14 @@ ignore = [
     "RUSTSEC-2026-0049",
     "RUSTSEC-2026-0067",
     "RUSTSEC-2026-0068",
+
+    # rustls-webpki 0.102.8 advisories pulled in via async-nats 0.40.
+    # Limited impact (require compromised trusted issuing authority for
+    # the cert-validation paths; CRL panic gated by malformed CRL input).
+    # Owner: @messaging-platform, Expiry: 2026-08-31
+    # Patched copy reserved at infra/vendor/rustls-webpki (0.103.13)
+    # for future [patch.crates-io] once async-nats upgrades its stack.
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
 ]

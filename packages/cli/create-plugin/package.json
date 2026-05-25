@@ -27,7 +27,7 @@
     "@clack/prompts": "^1.4.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "tsup": "^8.5.1",
     "vitest": "^4.1.7"
   },

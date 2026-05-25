@@ -57,6 +57,12 @@ impl TestDaemon {
     pub fn spawn() -> Self {
         Self::spawn_with_config(Config {
             cors_enabled: false,
+            // Default-on auth would block these tests; auth behavior is exercised
+            // via spawn_auth_daemon().
+            auth: AuthConfig {
+                enabled: false,
+                api_keys: Vec::new(),
+            },
             rate_limit: RateLimitConfig {
                 enabled: false,
                 ..Default::default()

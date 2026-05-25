@@ -17,7 +17,12 @@ guards:
   # ~/.ssh, ~/.aws, /etc/shadow, etc. This guard adds an explicit
   # allowlist so the agent can only touch its own workspace.
   path_allowlist:
-    allowed_paths:
+    enabled: true
+    file_access_allow:
+      - "/tmp/workspace/**"
+    file_write_allow:
+      - "/tmp/workspace/**"
+    patch_allow:
       - "/tmp/workspace/**"
 
   # Tighten network egress to only what this agent needs.

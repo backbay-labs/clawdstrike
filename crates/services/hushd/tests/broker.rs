@@ -12,7 +12,7 @@ use clawdstrike_broker_protocol::{
 };
 use hush_core::{Keypair, PublicKey};
 use hush_multi_agent::{AgentCapability, AgentId, DelegationClaims, SignedDelegationToken};
-use hushd::config::{BrokerApiConfig, Config, RateLimitConfig};
+use hushd::config::{AuthConfig, BrokerApiConfig, Config, RateLimitConfig};
 
 use common::TestDaemon;
 
@@ -58,6 +58,13 @@ fn broker_daemon() -> TestDaemon {
             capability_ttl_secs: 120,
             allow_http_loopback: true,
         },
+        // Wave B made auth.enabled true by default; broker tests exercise
+        // the broker routes directly without auth headers, so we opt the
+        // test daemon out of auth.
+        auth: AuthConfig {
+            enabled: false,
+            api_keys: Vec::new(),
+        },
         rate_limit: RateLimitConfig {
             enabled: false,
             ..Default::default()
@@ -74,6 +81,10 @@ fn broker_daemon_with_policy(policy: &str) -> TestDaemon {
             enabled: true,
             capability_ttl_secs: 120,
             allow_http_loopback: true,
+        },
+        auth: AuthConfig {
+            enabled: false,
+            api_keys: Vec::new(),
         },
         rate_limit: RateLimitConfig {
             enabled: false,

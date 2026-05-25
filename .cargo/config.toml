@@ -1,2 +1,12 @@
-[source.vendored-sources]
-directory = "infra/vendor"
+# Cargo configuration for clawdstrike.
+#
+# By default this workspace builds online (from crates.io). The previous
+# committed `infra/vendor/` mirror (~1.0 GB, 838 crates) was removed in favor
+# of CI-time `cargo vendor` for offline builds. See:
+#   - .github/workflows/ci.yml (offline job runs `cargo vendor` before tests)
+#   - scripts/cargo-offline.sh (used by the offline CI job)
+#
+# Three crates remain under `infra/vendor/` because they are either first-party
+# (nono) or carry local modifications that must be preserved across re-vendoring
+# (rustls-webpki advisory backport, async-nats patch crate). They are wired in
+# as path-deps in the workspace root Cargo.toml, NOT via this source map.

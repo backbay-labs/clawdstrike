@@ -36,6 +36,7 @@ members = [
     "crates/libs/clawdstrike-policy-event",
     "crates/libs/clawdstrike-logos",
     "crates/libs/logos-ffi",
+    "crates/libs/hushspec",
 ]
 exclude = [
     "fuzz",

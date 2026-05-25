@@ -24,7 +24,7 @@ clawdstrike policy list
 ## Extend a ruleset
 
 ```yaml
-version: "1.2.0"
+version: "1.5.0"
 name: My Policy
 extends: clawdstrike:default
 ```

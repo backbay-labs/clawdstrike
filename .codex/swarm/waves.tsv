@@ -19,3 +19,13 @@ sdk-wave0	sdk-orch
 sdk-wave1	sdk-py1,sdk-go1
 sdk-wave2	sdk-py2,sdk-go2
 sdk-wave3	sdk-orch
+macos-es-ne-wave0	macos-es-ne-orch
+macos-es-ne-wave1	macos-es-ne-host
+macos-es-ne-wave2	macos-es-ne-rhost
+macos-es-ne-wave3	macos-es-ne-polat
+macos-es-ne-wave4	macos-es-ne-rpolat
+macos-es-ne-wave5	macos-es-ne-esint,macos-es-ne-neint
+macos-es-ne-wave6	macos-es-ne-resint,macos-es-ne-rneint
+macos-es-ne-wave7	macos-es-ne-pkg
+macos-es-ne-wave8	macos-es-ne-rpkg
+macos-es-ne-wave9	macos-es-ne-orch

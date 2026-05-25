@@ -1397,8 +1397,9 @@ describe("PluginLoader", () => {
       // Plugin should still be activated despite source load failure
       expect(registry.get("ti-fail-test")!.state).toBe("activated");
 
-      // Warning should have been logged
+      // Warning should have been logged (via logger.warn, which prepends "[workbench]")
       expect(warnSpy).toHaveBeenCalledWith(
+        "[workbench]",
         expect.stringContaining("ti-fail-test.bad-source"),
         expect.anything(),
       );
@@ -1444,8 +1445,9 @@ describe("PluginLoader", () => {
       // Plugin should still be activated
       expect(registry.get("ti-noenrich-test")!.state).toBe("activated");
 
-      // Warning about missing enrich method
+      // Warning about missing enrich method (via logger.warn, which prepends "[workbench]")
       expect(warnSpy).toHaveBeenCalledWith(
+        "[workbench]",
         expect.stringContaining("missing enrich method"),
       );
 

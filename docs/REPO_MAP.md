@@ -15,7 +15,7 @@ This document is the newcomer index for the monorepo layout.
 | `infra/` | Packaging and infrastructure assets (for example Homebrew formula). |
 | `infra/deploy/` | Deployment manifests and policy assets. |
 | `infra/docker/` | Container build assets. |
-| `infra/vendor/` | Vendored Rust dependencies for offline builds. |
+| `infra/vendor/` | Three preserved path-deps (`nono`, `async-nats`, `rustls-webpki`). The full offline-build mirror is regenerated at CI time. |
 | `docs/` | Public docs, plans, specs, and research. |
 | `docs/ops/` | Operational guidance (limits, rollout plans, safe defaults). |
 | `docs/audits/` | Point-in-time repository and quality audits. |

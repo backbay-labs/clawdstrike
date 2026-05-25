@@ -1,12 +1,11 @@
-import { devConsoleStore } from './dev-console-store';
-import type { DevLifecycleEventType } from './types';
-import { logger } from "@/lib/logger";
+import { devConsoleStore } from "./dev-console-store";
+import type { DevLifecycleEventType } from "./types";
 
 // State
 
-let origLog: typeof logger.info | null = null;
-let origWarn: typeof logger.warn | null = null;
-let origError: typeof logger.error | null = null;
+let origLog: typeof console.log | null = null;
+let origWarn: typeof console.warn | null = null;
+let origError: typeof console.error | null = null;
 
 let isIntercepting = false;
 
@@ -17,17 +16,17 @@ const activePluginStack: string[] = [];
 function formatArgs(args: unknown[]): string {
   return args
     .map((arg) => {
-      if (arg === null) return 'null';
-      if (arg === undefined) return 'undefined';
-      if (typeof arg === 'string') return arg;
-      if (typeof arg === 'number' || typeof arg === 'boolean') return String(arg);
+      if (arg === null) return "null";
+      if (arg === undefined) return "undefined";
+      if (typeof arg === "string") return arg;
+      if (typeof arg === "number" || typeof arg === "boolean") return String(arg);
       try {
         return JSON.stringify(arg);
       } catch {
         return String(arg);
       }
     })
-    .join(' ');
+    .join(" ");
 }
 
 function makeWrapper(
@@ -60,16 +59,19 @@ function makeWrapper(
 /** Returns a dispose function that restores originals when no interceptors remain. */
 export function interceptConsole(pluginId: string): () => void {
   if (!origLog) {
-    origLog = logger.info;
-    origWarn = logger.warn;
-    origError = logger.error;
+    origLog = console.log;
+    origWarn = console.warn;
+    origError = console.error;
   }
 
   activePluginStack.push(pluginId);
 
-  logger.info = makeWrapper(origLog!, 'console:log');
-  logger.warn = makeWrapper(origWarn!, 'console:warn');
-  logger.error = makeWrapper(origError!, 'console:error');
+  // eslint-disable-next-line no-console
+  console.log = makeWrapper(origLog!, "console:log");
+  // eslint-disable-next-line no-console
+  console.warn = makeWrapper(origWarn!, "console:warn");
+  // eslint-disable-next-line no-console
+  console.error = makeWrapper(origError!, "console:error");
 
   return () => {
     const idx = activePluginStack.lastIndexOf(pluginId);
@@ -78,18 +80,24 @@ export function interceptConsole(pluginId: string): () => void {
     }
 
     if (activePluginStack.length === 0) {
-      if (origLog) logger.info = origLog;
-      if (origWarn) logger.warn = origWarn;
-      if (origError) logger.error = origError;
+      // eslint-disable-next-line no-console
+      if (origLog) console.log = origLog;
+      // eslint-disable-next-line no-console
+      if (origWarn) console.warn = origWarn;
+      // eslint-disable-next-line no-console
+      if (origError) console.error = origError;
     }
   };
 }
 
 /** Safety valve: immediately restore all original console methods. */
 export function stopIntercepting(): void {
-  if (origLog) logger.info = origLog;
-  if (origWarn) logger.warn = origWarn;
-  if (origError) logger.error = origError;
+  // eslint-disable-next-line no-console
+  if (origLog) console.log = origLog;
+  // eslint-disable-next-line no-console
+  if (origWarn) console.warn = origWarn;
+  // eslint-disable-next-line no-console
+  if (origError) console.error = origError;
   origLog = null;
   origWarn = null;
   origError = null;

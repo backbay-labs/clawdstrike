@@ -226,9 +226,9 @@ export function DesktopLayout() {
 
     return (
       <ResizablePanelGroup
-        direction="vertical"
+        orientation="vertical"
         className="h-full w-full"
-        onLayout={(sizes) => {
+        onLayoutChange={(sizes) => {
           if (sizes.length >= 2) {
             useBottomPaneStore.getState().setSize(sizes[1]);
           }

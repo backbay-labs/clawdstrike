@@ -29,7 +29,10 @@ fn main() {
                 .unwrap_or_else(std::env::temp_dir)
                 .join("com.clawdstrike.workbench");
             let _ = std::fs::create_dir_all(&data_dir);
-            let password = stronghold_cmds::derive_machine_password(&data_dir);
+            // SAFETY: a getrandom failure must propagate; refuse to derive a
+            // weak fallback password (see stronghold::generate_and_write_machine_secret).
+            let password = stronghold_cmds::derive_machine_password(&data_dir)
+                .expect("derive vault password requires working OS CSPRNG");
             tauri_plugin_stronghold::Builder::new(move |_| password.to_vec()).build()
         })
         .manage(StrongholdState::new())

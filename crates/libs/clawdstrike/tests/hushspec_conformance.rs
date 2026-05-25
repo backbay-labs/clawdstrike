@@ -15,8 +15,11 @@ use clawdstrike::hushspec_compiler;
 use clawdstrike::policy::POLICY_SCHEMA_VERSION;
 use std::path::Path;
 
-const HUSHSPEC_SNAPSHOT_DIR: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../../fixtures/hushspec");
+// Built-in ruleset snapshots live alongside the hushspec workspace crate so
+// they track the spec exactly and are not duplicated under fixtures/.
+const HUSHSPEC_SNAPSHOT_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../hushspec");
+// Conformance-only fixtures (cross-spec valid/invalid/merge cases) remain
+// under fixtures/hushspec/fixtures/ — they are NOT shipped with the crate.
 const FIXTURES_DIR: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../fixtures/hushspec/fixtures"

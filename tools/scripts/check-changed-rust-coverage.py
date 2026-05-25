@@ -140,16 +140,24 @@ DECLARATION_PREFIXES = (
     "pub(crate) use ",
     "pub trait ",
     "trait ",
+    "pub(crate) trait ",
     "pub struct ",
     "struct ",
+    "pub(crate) struct ",
     "pub enum ",
     "enum ",
+    "pub(crate) enum ",
     "pub type ",
     "type ",
+    "pub(crate) type ",
     "pub const ",
     "const ",
+    "pub(crate) const ",
+    "pub(super) const ",
     "pub static ",
     "static ",
+    "pub(crate) static ",
+    "pub(super) static ",
 )
 FN_SIGNATURE_RE = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\b")
 DECLARATION_BLOCK_RE = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?(?:enum|struct)\b")
@@ -157,6 +165,11 @@ DECLARATION_BLOCK_RE = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?(?:enum|struct)\b"
 
 def brace_delta(line: str) -> int:
     return line.count("{") - line.count("}")
+
+
+CONST_STATIC_DECL_RE = re.compile(
+    r"^(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\b"
+)
 
 
 def has_executable_rust_lines(path: str) -> bool:
@@ -168,6 +181,10 @@ def has_executable_rust_lines(path: str) -> bool:
     in_use_group = False
     declaration_block_depth = 0
     pending_fn_signature = False
+    # Track multi-line const/static initializers so that array entries like
+    # `"foo",` inside `pub const FOO: &[&str] = &[...];` are not misclassified
+    # as executable Rust.
+    in_const_initializer = False
 
     with source_path.open("r", encoding="utf-8") as handle:
         for raw in handle:
@@ -186,6 +203,13 @@ def has_executable_rust_lines(path: str) -> bool:
 
             if declaration_block_depth > 0:
                 declaration_block_depth += brace_delta(line)
+                continue
+
+            if in_const_initializer:
+                # Const/static initializers terminate with a semicolon on either
+                # the same line or a follow-up line. Skip everything in between.
+                if line.endswith(";") or line.endswith("];") or line.endswith("};"):
+                    in_const_initializer = False
                 continue
 
             if line.startswith("//") or line.startswith("#!") or line.startswith("#["):
@@ -225,6 +249,14 @@ def has_executable_rust_lines(path: str) -> bool:
             if (line.startswith("pub use ") or line.startswith("use ")) and "{" in line:
                 if not line.endswith("};"):
                     in_use_group = True
+                continue
+
+            if CONST_STATIC_DECL_RE.match(line):
+                # Single-line decl like `pub const FOO: u32 = 1;` terminates here.
+                # Multi-line decls (`pub const FOO: &[&str] = &[`) continue into
+                # the initializer until the next `;`/`];`/`};`.
+                if not (line.endswith(";") or line.endswith("];") or line.endswith("};")):
+                    in_const_initializer = True
                 continue
 
             if any(line.startswith(prefix) for prefix in DECLARATION_PREFIXES):

@@ -1,5 +1,0 @@
-error: Union types are not supported.
- --> tests/max_encoded_len_ui/union.rs:4:1
-  |
-4 | union Union {
-  | ^^^^^
