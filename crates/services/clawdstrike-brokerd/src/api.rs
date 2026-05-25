@@ -188,24 +188,21 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// Verify the `Authorization: Bearer <token>` header against the configured
-/// admin token. Called only from mutation endpoints; GET routes inherit the
-/// `/health` openness.
+/// admin token.
+///
+/// When `admin_token` is `None`, the only path to reach this function is via
+/// the explicit `insecure_disable_admin_auth` opt-out (enforced by
+/// `Config::from_env`).  In that case the check is intentionally a no-op,
+/// but we log a per-request warning so the insecure mode is visible.
 fn require_admin_auth(headers: &HeaderMap, state: &AppState) -> Result<(), ApiError> {
     let expected = match state.config.admin_token.as_deref() {
         Some(token) => token,
         None => {
-            if state.config.allow_insecure_no_admin_token {
-                tracing::warn!(
-                    "brokerd admin_token unset and allow_insecure_no_admin_token=true; \
-                     mutating endpoint is open"
-                );
-                return Ok(());
-            }
-            return Err(ApiError::unauthorized(
-                "BROKER_AUTH_REQUIRED",
-                "admin bearer token required (set CLAWDSTRIKE_BROKERD_ADMIN_TOKEN, or \
-                 set CLAWDSTRIKE_BROKERD_ALLOW_INSECURE_NO_ADMIN_TOKEN=true to opt in)",
-            ));
+            tracing::warn!(
+                "Admin endpoint reached with admin auth disabled \
+                 (CLAWDSTRIKE_BROKERD_INSECURE_DISABLE_ADMIN_AUTH=true)"
+            );
+            return Ok(());
         }
     };
     let header_value = headers
@@ -1199,13 +1196,6 @@ mod tests {
     // ── require_admin_auth ──────────────────────────────────────────
 
     fn make_test_state(admin_token: Option<String>) -> AppState {
-        make_test_state_with(admin_token, false)
-    }
-
-    fn make_test_state_with(
-        admin_token: Option<String>,
-        allow_insecure_no_admin_token: bool,
-    ) -> AppState {
         use crate::config::{Config, SecretBackendConfig};
         use crate::operator::OperatorState;
         use hush_core::Keypair;
@@ -1225,8 +1215,8 @@ mod tests {
             allow_http_loopback: false,
             allow_private_upstream_hosts: false,
             allow_invalid_upstream_tls: false,
+            insecure_disable_admin_auth: admin_token.is_none(),
             admin_token,
-            allow_insecure_no_admin_token,
         };
         AppState {
             config: Arc::new(config),
@@ -1240,17 +1230,8 @@ mod tests {
     }
 
     #[test]
-    fn auth_rejects_missing_token_by_default() {
+    fn auth_skipped_when_no_token_configured() {
         let state = make_test_state(None);
-        let headers = HeaderMap::new();
-        let err = require_admin_auth(&headers, &state).unwrap_err();
-        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
-        assert_eq!(err.code, "BROKER_AUTH_REQUIRED");
-    }
-
-    #[test]
-    fn auth_skipped_when_insecure_opt_in_set() {
-        let state = make_test_state_with(None, true);
         let headers = HeaderMap::new();
         assert!(require_admin_auth(&headers, &state).is_ok());
     }
@@ -1311,44 +1292,6 @@ mod tests {
         assert_eq!(err.status, StatusCode::UNAUTHORIZED);
     }
 
-    #[tokio::test]
-    async fn mutation_endpoint_returns_401_when_no_token_and_no_insecure_opt_in() {
-        use tower::ServiceExt;
-        let state = make_test_state(None);
-        let app = create_router(state);
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("POST")
-                    .uri("/v1/admin/freeze")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"frozen":true}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn mutation_endpoint_open_when_insecure_opt_in_set() {
-        use tower::ServiceExt;
-        let state = make_test_state_with(None, true);
-        let app = create_router(state);
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("POST")
-                    .uri("/v1/admin/freeze")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"frozen":true}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
     #[derive(Clone, Default)]
     struct ProviderRevokeTestState {
         requests: std::sync::Arc<tokio::sync::Mutex<Vec<Option<String>>>>,
@@ -1381,7 +1324,7 @@ mod tests {
                 .unwrap();
         });
 
-        let state = make_test_state_with(None, true).with_secret_provider(std::sync::Arc::new(
+        let state = make_test_state(None).with_secret_provider(std::sync::Arc::new(
             crate::secret_provider::FileSecretProvider::new(BTreeMap::from([(
                 "github/prod".to_string(),
                 serde_json::json!({
@@ -1492,7 +1435,7 @@ mod tests {
                 .unwrap();
         });
 
-        let state = make_test_state_with(None, true).with_secret_provider(std::sync::Arc::new(
+        let state = make_test_state(None).with_secret_provider(std::sync::Arc::new(
             crate::secret_provider::FileSecretProvider::new(BTreeMap::from([(
                 "slack/prod".to_string(),
                 "xoxb-provider-revoke-test".to_string(),
@@ -1597,7 +1540,7 @@ mod tests {
                 .unwrap();
         });
 
-        let state = make_test_state_with(None, true).with_secret_provider(std::sync::Arc::new(
+        let state = make_test_state(None).with_secret_provider(std::sync::Arc::new(
             crate::secret_provider::FileSecretProvider::new(BTreeMap::from([(
                 "generic/prod".to_string(),
                 serde_json::json!({

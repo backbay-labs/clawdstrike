@@ -329,7 +329,7 @@ export function FileEditorShell() {
   // Computed as a variable so TypeScript narrowing from the null guard above applies.
   const editorContent =
     splitActive && isPolicyFileType(tabMeta.fileType) ? (
-      <ResizablePanelGroup direction="horizontal" className="h-full">
+      <ResizablePanelGroup orientation="horizontal" className="h-full">
         <ResizablePanel defaultSize={45} minSize={25}>
           <EditorVisualPanel />
         </ResizablePanel>
@@ -375,7 +375,7 @@ export function FileEditorShell() {
           splitActive={splitActive}
         />
         {testRunnerOpen && isPolicyFileType(tabMeta.fileType) ? (
-          <ResizablePanelGroup direction="vertical" className="flex-1 min-h-0">
+          <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0">
             <ResizablePanel defaultSize={60} minSize={20}>
               {editorContent}
             </ResizablePanel>

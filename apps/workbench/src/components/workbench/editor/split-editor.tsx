@@ -197,7 +197,7 @@ function EditorPane() {
   };
 
   return (
-    <ResizablePanelGroup direction="horizontal" className="h-full">
+    <ResizablePanelGroup orientation="horizontal" className="h-full">
       <ResizablePanel defaultSize={55} minSize={30}>
         {renderVisualPanel()}
       </ResizablePanel>
@@ -261,7 +261,7 @@ export function SplitEditor() {
 
   return (
     <div className="h-full w-full">
-      <ResizablePanelGroup direction={direction} className="h-full">
+      <ResizablePanelGroup orientation={direction} className="h-full">
         <ResizablePanel defaultSize={50} minSize={25}>
           <div className="flex h-full flex-col">
             <div className="border-b border-[#2d3240] bg-[#0b0d13] px-3 py-1 text-[10px] font-mono text-[#d4a84b]/70">

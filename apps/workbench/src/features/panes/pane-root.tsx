@@ -18,9 +18,9 @@ function PaneNodeRenderer({ node }: { node: PaneNode }) {
 
   return (
     <ResizablePanelGroup
-      direction={panelDirection}
+      orientation={panelDirection}
       className="h-full w-full"
-      onLayout={(sizes) => {
+      onLayoutChange={(sizes) => {
         if (sizes.length >= 2) {
           usePaneStore.getState().resizeSplit(node.id, [sizes[0], sizes[1]]);
         }
