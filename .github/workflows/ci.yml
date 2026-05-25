@@ -566,6 +566,19 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+      # The ~1 GB committed `infra/vendor/` mirror was removed in May 2026;
+      # only nono, async-nats, and rustls-webpki remain as path-deps. The
+      # rest of the lockfile is re-vendored fresh from crates.io each run so
+      # the offline test exercises a self-contained build tree. This step
+      # was dropped accidentally during the main->fix/macos-es-ne-hardening
+      # merge (commit 6021f8ebc); restoring it here.
+      - name: Vendor crates from crates.io
+        run: |
+          # `cargo vendor` writes the [source.*] map to stdout; capture it
+          # and replace .cargo/config.toml so the subsequent offline test
+          # picks up the source replacement (defines `vendored-sources`).
+          cargo vendor --locked --versioned-dirs infra/vendor > .cargo/config.toml
+
       - name: Test offline
         run: scripts/cargo-offline.sh test --workspace --all-targets
         env:
