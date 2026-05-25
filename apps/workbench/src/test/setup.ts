@@ -11,6 +11,86 @@ if (typeof Element.prototype.getAnimations === "undefined") {
   Element.prototype.getAnimations = () => [];
 }
 
+// jsdom's Blob/File implementations omit the async `text()` / `arrayBuffer()`
+// methods that the browser spec defines. Code that calls `file.text()` (e.g.
+// EvidencePack import) blows up under jsdom otherwise. Track construction
+// parts in a WeakMap so we can lazily decode them when `text()` is called.
+{
+  const BlobProto = Blob.prototype as Blob & {
+    text?: () => Promise<string>;
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+  };
+
+  if (typeof BlobProto.text !== "function") {
+    type AnyPart = string | Uint8Array | ArrayBuffer | Blob | { text?: () => Promise<string> };
+    const partsRegistry = new WeakMap<Blob, ReadonlyArray<AnyPart>>();
+
+    const NativeBlob = globalThis.Blob;
+    function PatchedBlob(
+      this: Blob,
+      parts: ReadonlyArray<AnyPart> = [],
+      options?: BlobPropertyBag,
+    ) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const instance = new (NativeBlob as any)(parts as BlobPart[], options);
+      partsRegistry.set(instance, parts);
+      return instance;
+    }
+    PatchedBlob.prototype = NativeBlob.prototype;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).Blob = PatchedBlob;
+
+    if (typeof File !== "undefined") {
+      const NativeFile = globalThis.File;
+      function PatchedFile(
+        this: File,
+        parts: ReadonlyArray<AnyPart> = [],
+        name: string,
+        options?: FilePropertyBag,
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const instance = new (NativeFile as any)(parts as BlobPart[], name, options);
+        partsRegistry.set(instance, parts);
+        return instance;
+      }
+      PatchedFile.prototype = NativeFile.prototype;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).File = PatchedFile;
+    }
+
+    async function partsToText(parts: ReadonlyArray<AnyPart>): Promise<string> {
+      let out = "";
+      const decoder = new TextDecoder();
+      for (const part of parts) {
+        if (typeof part === "string") {
+          out += part;
+        } else if (part instanceof Uint8Array) {
+          out += decoder.decode(part);
+        } else if (part instanceof ArrayBuffer) {
+          out += decoder.decode(new Uint8Array(part));
+        } else if (part && typeof (part as { text?: () => Promise<string> }).text === "function") {
+          out += await (part as { text: () => Promise<string> }).text();
+        } else {
+          out += String(part);
+        }
+      }
+      return out;
+    }
+
+    BlobProto.text = async function text(this: Blob): Promise<string> {
+      const parts = partsRegistry.get(this) ?? [];
+      return partsToText(parts);
+    };
+
+    if (typeof BlobProto.arrayBuffer !== "function") {
+      BlobProto.arrayBuffer = async function arrayBuffer(this: Blob): Promise<ArrayBuffer> {
+        const text = await this.text();
+        return new TextEncoder().encode(text).buffer as ArrayBuffer;
+      };
+    }
+  }
+}
+
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class ResizeObserver {
     observe() {}
