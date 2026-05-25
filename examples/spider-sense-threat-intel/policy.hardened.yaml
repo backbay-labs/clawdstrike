@@ -25,15 +25,10 @@ guards:
         initial_backoff_ms: 250
         max_backoff_ms: 2000
         multiplier: 2.0
-        honor_retry_after: true
-        retry_after_cap_ms: 10000
-        honor_rate_limit_reset: true
-        rate_limit_reset_grace_ms: 250
       circuit_breaker:
         failure_threshold: 5
         reset_timeout_ms: 30000
         success_threshold: 2
-        on_open: deny
 
     # Optional deep-path knobs. Uncomment only when an LLM provider is configured.
     # llm_api_url: "${SPIDER_SENSE_LLM_URL}"

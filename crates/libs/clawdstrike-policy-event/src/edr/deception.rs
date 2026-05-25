@@ -1,16 +1,13 @@
-use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::event::{EndpointEvent, EndpointObservation};
 use super::{
     create_new_honey_file, ensure_safe_relative_path, honey_artifact, hostname_from_url_like,
-    normalize_hostname, normalize_path_string, stable_id,
+    normalize_hostname, normalize_path_string,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,7 +54,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub fn matches_path(&self, path: &str) -> bool {
+    pub(crate) fn matches_path(&self, path: &str) -> bool {
         let observed = normalize_path_string(path);
         let relative = normalize_path_string(&self.relative_path.display().to_string());
         observed == relative || observed.ends_with(&format!("/{relative}"))
@@ -75,7 +72,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub fn matches_network_destination(&self, host: &str, url: Option<&str>) -> bool {
+    pub(crate) fn matches_network_destination(&self, host: &str, url: Option<&str>) -> bool {
         let Some(honey_host) = self.internal_hostname() else {
             return false;
         };
@@ -92,7 +89,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub fn browser_cookie_indicators(&self) -> Vec<String> {
+    pub(crate) fn browser_cookie_indicators(&self) -> Vec<String> {
         if self.kind != HoneyArtifactKind::BrowserCookieJar {
             return Vec::new();
         }
@@ -136,7 +133,7 @@ impl HoneyArtifact {
     }
 
     #[must_use]
-    pub fn matches_browser_cookie_access(&self, name: Option<&str>) -> bool {
+    pub(crate) fn matches_browser_cookie_access(&self, name: Option<&str>) -> bool {
         let Some(name) = name else {
             return false;
         };

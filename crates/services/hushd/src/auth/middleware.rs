@@ -229,4 +229,39 @@ mod tests {
         let req = make_request_with_auth("Bearermy-api-key");
         assert_eq!(extract_bearer_token(&req), None);
     }
+
+    #[tokio::test]
+    async fn default_auth_config_rejects_request_with_no_bearer_token() {
+        use axum::{extract::State, middleware, routing::get, Router};
+        use tower::ServiceExt;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        // Config::default() — exercises the default AuthConfig, which must enable auth.
+        let config = crate::config::Config {
+            audit_db: temp_dir.path().join("audit.db"),
+            control_db: Some(temp_dir.path().join("control.db")),
+            ..Default::default()
+        };
+        assert!(
+            config.auth.enabled,
+            "AuthConfig must default to enabled (fail-closed)"
+        );
+
+        let state = crate::state::AppState::new(config).await.expect("state");
+
+        async fn ok(State(_): State<crate::state::AppState>) -> &'static str {
+            "ok"
+        }
+
+        let app = Router::new()
+            .route("/protected", get(ok))
+            .layer(middleware::from_fn_with_state(state.clone(), require_auth))
+            .with_state(state);
+
+        let response = app
+            .oneshot(make_request_without_auth())
+            .await
+            .expect("oneshot");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
 }

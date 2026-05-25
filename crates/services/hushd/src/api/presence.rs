@@ -1162,6 +1162,10 @@ mod tests {
             cors_enabled: false,
             audit_db: temp_dir.path().join("audit.db"),
             control_db: Some(temp_dir.path().join("control.db")),
+            auth: crate::config::AuthConfig {
+                enabled: false,
+                api_keys: Vec::new(),
+            },
             ..Default::default()
         };
         let state = crate::state::AppState::new(config).await.expect("state");

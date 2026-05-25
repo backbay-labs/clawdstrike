@@ -1,33 +1,39 @@
-# Clawdstrike/OpenClaw policy for the hello-secure-agent example.
+# Clawdstrike canonical policy for the hello-secure-agent example.
 #
-# This file is consumed by the @clawdstrike/openclaw plugin (not the Rust `clawdstrike::Policy` type).
+# This file is consumable by both the canonical Rust engine and the
+# @clawdstrike/openclaw plugin (which translates the canonical shape).
 # Validate it with:
+#   clawdstrike policy validate ./policy.yaml
 #   npx clawdstrike policy lint ./policy.yaml
 
-version: "clawdstrike-v1.0"
+version: "1.1.0"
+name: hello-secure-agent
+description: Egress + filesystem guardrails for the hello-secure-agent example
 
-egress:
-  mode: allowlist
-  allowed_domains:
-    - "api.openai.com"
-    - "api.anthropic.com"
-    - "api.github.com"
-    - "registry.npmjs.org"
-    - "pypi.org"
-    - "files.pythonhosted.org"
-  denied_domains:
-    - "*.onion"
-    - "localhost"
-    - "127.*"
-    - "10.*"
-    - "192.168.*"
+guards:
+  forbidden_path:
+    additional_patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.gnupg/**"
+      - "**/.env"
+      - "**/.env.*"
 
-filesystem:
-  forbidden_paths:
-    - "~/.ssh"
-    - "~/.aws"
-    - "~/.gnupg"
-    - ".env"
-    - ".env.*"
+  egress_allowlist:
+    allow:
+      - "api.openai.com"
+      - "api.anthropic.com"
+      - "api.github.com"
+      - "registry.npmjs.org"
+      - "pypi.org"
+      - "files.pythonhosted.org"
+    block:
+      - "*.onion"
+      - "localhost"
+      - "127.*"
+      - "10.*"
+      - "192.168.*"
+    default_action: block
 
-on_violation: cancel
+settings:
+  fail_fast: true

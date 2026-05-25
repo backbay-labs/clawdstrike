@@ -63,7 +63,7 @@ openclaw agent --local --session-id test \
 The OpenClaw plugin runtime shape is **not identical** to the Rust `clawdstrike::Policy` shape, but it supports two policy inputs:
 
 - Legacy OpenClaw schema: `version: "clawdstrike-v1.0"`
-- Canonical schema: `version: "1.1.0"` or `version: "1.2.0"` (preferred)
+- Canonical schema: `version: "1.1.0"` through `version: "1.5.0"` (preferred: `1.5.0`)
 
 Canonical policies are validated using canonical rules and translated into the OpenClaw runtime shape before enforcement.
 

@@ -1,17 +1,14 @@
 pub mod compaction;
 pub mod index;
 
-pub use compaction::*;
-pub use index::*;
-
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead as _, BufReader, ErrorKind, Read as _, Seek as _, SeekFrom, Write as _};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use self::compaction::{
     EndpointFlightRecorderCompactionRecord, EndpointFlightRecorderCompactionReport,
@@ -20,15 +17,12 @@ use self::index::{
     EndpointFlightRecorderGraphEdgeIndexEntry, EndpointFlightRecorderGraphNodeIndexEntry,
     EndpointFlightRecorderHistoryIndexEntry,
 };
-use super::causal::{
-    CausalEdge, CausalEdgeKind, CausalGraph, CausalGraphRecorder, CausalNode, CausalNodeKind,
-};
+use super::causal::{CausalGraph, CausalGraphRecorder};
 use super::event::EndpointObservation;
 use super::{
     agent_id_field, approval_id_field, credential_kind_field, event_target_field,
-    event_target_hash_field, normalize_path_string, observation_age_seconds,
-    process_command_line_hash_field, process_image_hash_field, stable_id, string_field,
-    tool_call_id_field, tool_name_field, workload_id_field,
+    event_target_hash_field, observation_age_seconds, process_command_line_hash_field,
+    process_image_hash_field, tool_call_id_field, tool_name_field, workload_id_field,
     ENDPOINT_FLIGHT_RECORDER_GRAPH_EDGE_INDEX_SCHEMA_VERSION,
     ENDPOINT_FLIGHT_RECORDER_GRAPH_INDEX_SCHEMA_VERSION,
     ENDPOINT_FLIGHT_RECORDER_HISTORY_INDEX_SCHEMA_VERSION,
@@ -45,14 +39,6 @@ pub struct EndpointFlightRecorder {
     path: Option<PathBuf>,
     recorder: CausalGraphRecorder,
     observation_count: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EndpointFlightRecorderSnapshot {
-    pub path: Option<PathBuf>,
-    pub observation_count: usize,
-    pub graph: CausalGraph,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -113,42 +99,6 @@ impl EndpointFlightRecorder {
     #[must_use]
     pub fn graph(&self) -> &CausalGraph {
         self.recorder.graph()
-    }
-
-    #[must_use]
-    pub fn snapshot(&self) -> EndpointFlightRecorderSnapshot {
-        EndpointFlightRecorderSnapshot {
-            path: self.path.clone(),
-            observation_count: self.observation_count,
-            graph: self.recorder.graph().clone(),
-        }
-    }
-
-    /// Read the durable JSONL observation history without mutating recorder
-    /// state. Transient recorders deliberately do not expose raw history because
-    /// they have no backing log to replay from.
-    pub fn read_observations(&self) -> Result<Vec<EndpointObservation>> {
-        self.read_observations_from_disk()
-    }
-
-    /// Stream the durable JSONL log and retain only the newest matching
-    /// observations. This keeps replay/impact history selection bounded even
-    /// when the local recorder contains a much larger window than the operator
-    /// asks to simulate.
-    pub fn read_observation_window<F>(
-        &self,
-        limit: usize,
-        predicate: F,
-    ) -> Result<EndpointFlightRecorderHistoryWindow>
-    where
-        F: FnMut(&EndpointObservation) -> bool,
-    {
-        let Some(path) = &self.path else {
-            return Err(anyhow!(
-                "endpoint flight recorder history selection requires a durable backing file"
-            ));
-        };
-        read_endpoint_observation_window(path, limit, predicate)
     }
 
     /// Use the durable sidecar index to retain the newest matching observations
@@ -489,74 +439,6 @@ fn read_endpoint_observations(path: &Path) -> Result<Vec<EndpointObservation>> {
         observations.push(observation);
     }
     Ok(observations)
-}
-
-fn read_endpoint_observation_window<F>(
-    path: &Path,
-    limit: usize,
-    mut predicate: F,
-) -> Result<EndpointFlightRecorderHistoryWindow>
-where
-    F: FnMut(&EndpointObservation) -> bool,
-{
-    let file = match fs::File::open(path) {
-        Ok(file) => file,
-        Err(err) if err.kind() == ErrorKind::NotFound => {
-            return Ok(EndpointFlightRecorderHistoryWindow {
-                selection_mode: "streaming_jsonl_scan".to_string(),
-                index_path: None,
-                ..EndpointFlightRecorderHistoryWindow::default()
-            });
-        }
-        Err(err) => {
-            return Err(err)
-                .with_context(|| format!("read endpoint flight recorder log {}", path.display()))
-        }
-    };
-    let reader = BufReader::new(file);
-    let mut selected = VecDeque::new();
-    let mut total_observation_count = 0usize;
-    let mut matched_observation_count = 0usize;
-
-    for (idx, line) in reader.lines().enumerate() {
-        let line = line.with_context(|| {
-            format!(
-                "read endpoint observation JSONL line at {}:{}",
-                path.display(),
-                idx + 1
-            )
-        })?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let observation: EndpointObservation =
-            serde_json::from_str(trimmed).with_context(|| {
-                format!(
-                    "invalid endpoint observation JSONL at {}:{}",
-                    path.display(),
-                    idx + 1
-                )
-            })?;
-        total_observation_count = total_observation_count.saturating_add(1);
-        if predicate(&observation) {
-            matched_observation_count = matched_observation_count.saturating_add(1);
-            if limit > 0 {
-                selected.push_back(observation);
-                while selected.len() > limit {
-                    let _ = selected.pop_front();
-                }
-            }
-        }
-    }
-
-    Ok(EndpointFlightRecorderHistoryWindow {
-        selection_mode: "streaming_jsonl_scan".to_string(),
-        index_path: None,
-        total_observation_count,
-        matched_observation_count,
-        selected_observations: selected.into_iter().collect(),
-    })
 }
 
 fn read_indexed_endpoint_observation_window<F>(

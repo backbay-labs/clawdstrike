@@ -62,7 +62,7 @@ const SIGNING_PUBKEY_RECORD: &[u8] = b"signing_public_key";
 /// This avoids the previous predictable hostname-only derivation while still
 /// binding the key to the machine. A production build would use a more
 /// robust machine-bound key (Secure Enclave / TPM).
-pub fn derive_machine_password(data_dir: &Path) -> Zeroizing<Vec<u8>> {
+pub fn derive_machine_password(data_dir: &Path) -> Result<Zeroizing<Vec<u8>>, String> {
     let key_file = data_dir.join("vault-machine-key");
     let mut machine_secret = Zeroizing::new([0u8; 32]);
 
@@ -72,14 +72,14 @@ pub fn derive_machine_password(data_dir: &Path) -> Zeroizing<Vec<u8>> {
                 machine_secret.copy_from_slice(&bytes);
             } else {
                 // Corrupted file — regenerate.
-                generate_and_write_machine_secret(&key_file, &mut machine_secret);
+                generate_and_write_machine_secret(&key_file, &mut machine_secret)?;
             }
         } else {
             // Cannot read — regenerate.
-            generate_and_write_machine_secret(&key_file, &mut machine_secret);
+            generate_and_write_machine_secret(&key_file, &mut machine_secret)?;
         }
     } else {
-        generate_and_write_machine_secret(&key_file, &mut machine_secret);
+        generate_and_write_machine_secret(&key_file, &mut machine_secret)?;
     }
 
     let hostname = hostname::get()
@@ -90,15 +90,22 @@ pub fn derive_machine_password(data_dir: &Path) -> Zeroizing<Vec<u8>> {
     hasher.update(machine_secret.as_ref());
     hasher.update(hostname.as_bytes());
     hasher.update(b"clawdstrike-vault-v2");
-    Zeroizing::new(hasher.finalize().to_vec())
+    Ok(Zeroizing::new(hasher.finalize().to_vec()))
 }
 
 /// Generate 32 random bytes using the OS CSPRNG and write them to the key file.
-fn generate_and_write_machine_secret(key_file: &Path, out: &mut [u8; 32]) {
-    getrandom::getrandom(out).unwrap_or_else(|_| {
-        // Absolute last resort — should never happen on supported platforms.
-        eprintln!("[stronghold] WARNING: getrandom failed, using fallback");
-    });
+//
+// SAFETY: a getrandom failure used to be swallowed with `unwrap_or_else`, leaving
+// `out` zeroed and effectively deriving the vault key from hostname alone. Any
+// CSPRNG failure here must propagate so the vault refuses to open rather than
+// silently fall back to a predictable, machine-public key.
+fn generate_and_write_machine_secret(key_file: &Path, out: &mut [u8; 32]) -> Result<(), String> {
+    getrandom::getrandom(out).map_err(|e| {
+        eprintln!("[stronghold] getrandom failed: {e}");
+        format!(
+            "OS CSPRNG (getrandom) failed: {e}. Refusing to open vault with a weak key."
+        )
+    })?;
     // Best-effort write; if it fails the key will be regenerated next time.
     let _ = std::fs::write(key_file, &out[..]);
     // Restrict file permissions to owner-only on Unix.
@@ -107,6 +114,7 @@ fn generate_and_write_machine_secret(key_file: &Path, out: &mut [u8; 32]) {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(key_file, std::fs::Permissions::from_mode(0o600));
     }
+    Ok(())
 }
 
 /// Access the initialised Stronghold, returning an error if not yet initialised.
@@ -143,7 +151,7 @@ fn init_stronghold_state(
         return Ok(true);
     }
 
-    let password = derive_machine_password(data_dir);
+    let password = derive_machine_password(data_dir)?;
     let keyprovider = KeyProvider::try_from(password).map_err(|e| {
         eprintln!("[stronghold] keyprovider error: {e}");
         "Failed to initialize vault key".to_string()
@@ -551,8 +559,8 @@ mod tests {
     #[test]
     fn derive_machine_password_is_stable_fixed_length_material() {
         let temp_dir = TempDir::new().expect("temp dir");
-        let first = derive_machine_password(temp_dir.path());
-        let second = derive_machine_password(temp_dir.path());
+        let first = derive_machine_password(temp_dir.path()).expect("derive first");
+        let second = derive_machine_password(temp_dir.path()).expect("derive second");
 
         assert_eq!(*first, *second);
         assert_eq!(first.len(), 32);

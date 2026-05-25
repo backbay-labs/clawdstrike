@@ -2344,6 +2344,17 @@ async fn build_policy_proposal_fleet_history_impact(
     Ok(impact)
 }
 
+struct PolicyProposalRuleDiffObservation<'a> {
+    event_id: String,
+    timestamp: DateTime<Utc>,
+    verdict: &'a str,
+    action_type: Option<String>,
+    runtime_agent_id: Option<String>,
+    principal_id: Option<String>,
+    session_id: Option<String>,
+    detection_ids: Vec<String>,
+}
+
 struct PolicyProposalFleetRuleDiffEndpointSelection {
     endpoint_agent_id: String,
     event_count: i64,
@@ -2377,17 +2388,17 @@ impl PolicyProposalFleetRuleDiffEndpointSelection {
         }
     }
 
-    fn observe(
-        &mut self,
-        event_id: String,
-        timestamp: DateTime<Utc>,
-        verdict: &str,
-        action_type: Option<String>,
-        runtime_agent_id: Option<String>,
-        principal_id: Option<String>,
-        session_id: Option<String>,
-        detection_ids: Vec<String>,
-    ) {
+    fn observe(&mut self, observation: PolicyProposalRuleDiffObservation<'_>) {
+        let PolicyProposalRuleDiffObservation {
+            event_id,
+            timestamp,
+            verdict,
+            action_type,
+            runtime_agent_id,
+            principal_id,
+            session_id,
+            detection_ids,
+        } = observation;
         self.event_count += 1;
         if timestamp < self.first_seen {
             self.first_seen = timestamp;
@@ -2491,16 +2502,16 @@ async fn build_policy_proposal_fleet_rule_diff_validation_plan(
                     timestamp,
                 )
             })
-            .observe(
+            .observe(PolicyProposalRuleDiffObservation {
                 event_id,
                 timestamp,
-                &verdict,
+                verdict: &verdict,
                 action_type,
                 runtime_agent_id,
                 principal_id,
                 session_id,
                 detection_ids,
-            );
+            });
     }
 
     let mut endpoint_selections = endpoints.into_values().collect::<Vec<_>>();

@@ -83,7 +83,7 @@ If the active policy is blocking legitimate actions, follow these steps to relax
 3. **Try a less restrictive ruleset**: If on `strict`, try `default` or `ai-agent`. Use `clawdstrike_policy_show` to compare what changes.
 4. **Create a custom override**: Extend the current ruleset and override only the specific guard:
    ```yaml
-   schema_version: "1.2.0"
+   version: "1.5.0"
    extends: strict
    guards:
      ForbiddenPathGuard:

@@ -1,10 +1,12 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// Application configuration loaded from environment variables.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub listen_addr: SocketAddr,
+    /// CORS allowlist. Empty = no cross-origin requests permitted (fail-closed).
+    pub cors_allowed_origins: Vec<String>,
     pub database_url: String,
     pub nats_url: String,
     pub agent_nats_url: String,
@@ -43,6 +45,51 @@ pub struct Config {
     pub dead_threshold_secs: i64,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            listen_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080),
+            cors_allowed_origins: Vec::new(),
+            database_url: String::new(),
+            nats_url: "nats://localhost:4222".to_string(),
+            agent_nats_url: "nats://localhost:4222".to_string(),
+            nats_provisioning_mode: "external".to_string(),
+            nats_provisioner_base_url: None,
+            nats_provisioner_api_token: None,
+            nats_allow_insecure_mock_provisioner: false,
+            jwt_secret: String::new(),
+            jwt_issuer: "clawdstrike-control-api".to_string(),
+            jwt_audience: "clawdstrike-control-api".to_string(),
+            stripe_secret_key: String::new(),
+            stripe_webhook_secret: String::new(),
+            approval_signing_enabled: true,
+            approval_signing_keypair_path: None,
+            approval_resolution_outbox_enabled: true,
+            approval_resolution_outbox_poll_interval_secs: 5,
+            audit_consumer_enabled: false,
+            audit_subject_filter: ">".to_string(),
+            audit_stream_name: "clawdstrike_audit".to_string(),
+            audit_consumer_name: "clawdstrike_audit_consumer".to_string(),
+            approval_consumer_enabled: true,
+            approval_subject_filter: default_approval_subject_filter(),
+            approval_stream_name: default_adaptive_ingress_stream_name(),
+            approval_consumer_name: "clawdstrike_approval_request_consumer".to_string(),
+            heartbeat_consumer_enabled: true,
+            heartbeat_subject_filter: default_heartbeat_subject_filter(),
+            heartbeat_stream_name: default_adaptive_ingress_stream_name(),
+            heartbeat_consumer_name: "clawdstrike_agent_heartbeat_consumer".to_string(),
+            hunt_event_consumer_enabled: true,
+            hunt_event_subject_filter: default_hunt_event_subject_filter(),
+            hunt_event_stream_name: default_adaptive_ingress_stream_name(),
+            hunt_event_consumer_name: "clawdstrike_hunt_event_consumer".to_string(),
+            stale_detector_enabled: true,
+            stale_check_interval_secs: 60,
+            stale_threshold_secs: 120,
+            dead_threshold_secs: 300,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("missing environment variable: {0}")]
@@ -57,8 +104,19 @@ impl Config {
     /// Load configuration from environment variables.
     pub fn from_env() -> Result<Self, ConfigError> {
         let listen_addr = std::env::var("LISTEN_ADDR")
-            .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
+            .unwrap_or_else(|_| "127.0.0.1:8080".to_string())
             .parse::<SocketAddr>()?;
+
+        let cors_allowed_origins = std::env::var("CORS_ALLOWED_ORIGINS")
+            .ok()
+            .map(|raw| {
+                raw.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         let database_url = std::env::var("DATABASE_URL")
             .map_err(|_| ConfigError::MissingVar("DATABASE_URL".into()))?;
@@ -207,6 +265,7 @@ impl Config {
 
         Ok(Self {
             listen_addr,
+            cors_allowed_origins,
             database_url,
             nats_url,
             agent_nats_url,
@@ -564,6 +623,7 @@ mod tests {
     fn from_env_with_required_vars_uses_defaults() {
         let all_env_keys = [
             "LISTEN_ADDR",
+            "CORS_ALLOWED_ORIGINS",
             "DATABASE_URL",
             "NATS_URL",
             "AGENT_NATS_URL",
@@ -611,7 +671,8 @@ mod tests {
             &all_env_keys,
             || {
                 let config = Config::from_env().expect("should parse with defaults");
-                assert_eq!(config.listen_addr.to_string(), "0.0.0.0:8080");
+                assert_eq!(config.listen_addr.to_string(), "127.0.0.1:8080");
+                assert!(config.cors_allowed_origins.is_empty());
                 assert_eq!(config.database_url, "postgres://test:test@localhost/test");
                 assert_eq!(config.nats_url, "nats://localhost:4222");
                 assert_eq!(config.agent_nats_url, "nats://localhost:4222");
@@ -736,6 +797,40 @@ mod tests {
                 let config = Config::from_env().expect("should parse");
                 assert_eq!(config.jwt_issuer, "https://issuer.example.test");
                 assert_eq!(config.jwt_audience, "control-api-clients");
+            },
+        );
+    }
+
+    #[test]
+    fn default_config_binds_localhost_with_empty_cors_allowlist() {
+        let config = Config::default();
+        assert_eq!(config.listen_addr.to_string(), "127.0.0.1:8080");
+        assert!(
+            config.cors_allowed_origins.is_empty(),
+            "default CORS allowlist must be empty (fail-closed)"
+        );
+    }
+
+    #[test]
+    fn from_env_parses_cors_allowed_origins_csv() {
+        with_env_vars(
+            &[
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+                (
+                    "CORS_ALLOWED_ORIGINS",
+                    "https://a.example, https://b.example",
+                ),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().expect("should parse");
+                assert_eq!(
+                    config.cors_allowed_origins,
+                    vec!["https://a.example", "https://b.example"]
+                );
             },
         );
     }

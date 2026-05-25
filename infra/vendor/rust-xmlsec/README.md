@@ -1,2 +1,0 @@
-# Pure rust XMLSec implementation
-

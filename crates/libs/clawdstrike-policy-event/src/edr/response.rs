@@ -1,6 +1,3 @@
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use hush_core::{canonicalize_json, sha256};
@@ -9,12 +6,11 @@ use uuid::Uuid;
 
 use super::action::EndpointDecisionAction;
 use super::actor::EndpointDecisionActor;
-use super::causal::{CausalGraph, CausalNode};
+use super::causal::CausalGraph;
 use super::receipt::evidence::{EndpointEvidenceBundleReference, EndpointGraphReference};
 use super::receipt::{
     response_acknowledgement_id_from_report_fields,
-    response_acknowledgement_id_from_report_fields_with_control,
-    response_execution_effect_binding_digest_from_effects, response_rollback_id_from_effects,
+    response_acknowledgement_id_from_report_fields_with_control, response_rollback_id_from_effects,
 };
 use super::{
     response_execution_id_from_effects, response_execution_transition_id_from_reason_hash,
@@ -172,26 +168,6 @@ impl EndpointResponsePlan {
         )
     }
 
-    #[must_use]
-    #[deprecated(
-        note = "terminate_process_tree is dry-run/modeling only; use EndpointResponsePlan::dry_run or suspend_process_tree_execution for live response plans"
-    )]
-    pub fn terminate_process_tree_execution(
-        root_node_id: impl Into<String>,
-        graph: &CausalGraph,
-        ttl_seconds: u64,
-        reason: impl Into<String>,
-    ) -> Self {
-        Self::new(
-            EndpointDecisionAction::TerminateProcessTree,
-            false,
-            root_node_id,
-            graph,
-            ttl_seconds,
-            reason,
-        )
-    }
-
     fn new(
         action: EndpointDecisionAction,
         dry_run: bool,
@@ -319,7 +295,7 @@ pub struct EndpointResponseExecutionEffect {
 
 impl EndpointResponseExecutionEffect {
     #[must_use]
-    pub fn quarantine_file(
+    pub(crate) fn quarantine_file(
         original_path: impl AsRef<str>,
         quarantine_path: impl AsRef<str>,
         content_hash: impl AsRef<str>,
@@ -367,7 +343,7 @@ impl EndpointResponseExecutionEffect {
     }
 
     #[must_use]
-    pub fn disable_persistence(
+    pub(crate) fn disable_persistence(
         original_path: impl AsRef<str>,
         disabled_path: impl AsRef<str>,
         content_hash: impl AsRef<str>,
@@ -527,31 +503,6 @@ impl EndpointResponseExecutionEffect {
         }
     }
 
-    #[must_use]
-    pub fn terminate_process_tree(root_pid: u32, pids: &[u32]) -> Self {
-        let mut pids = pids.to_vec();
-        pids.sort_unstable();
-        pids.dedup();
-        let pid_list = pids
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        let content_hash = sha256(pid_list.as_bytes()).to_hex_prefixed();
-        let target = format!("pid:{root_pid}");
-        let effect_id = stable_id(
-            "response_effect_terminate_process_tree",
-            [target.as_str(), content_hash.as_str()],
-        );
-        Self {
-            effect_id,
-            effect_type: "terminate_process_tree".to_string(),
-            target,
-            artifact: Some(pid_list),
-            content_hash: Some(content_hash),
-            byte_count: Some(pids.len() as u64),
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1118,17 +1069,6 @@ impl EndpointResponseExecutionReport {
             effects: vec![effect],
             summary,
         })
-    }
-
-    pub fn terminate_process_tree(
-        _plan: &EndpointResponsePlan,
-        _graph: &CausalGraph,
-        _root_pid: u32,
-        _pids: &[u32],
-    ) -> Result<Self> {
-        Err(anyhow!(
-            "terminate_process_tree execution reports are disabled because the action is not rollback-capable; use dry-run modeling or suspend_process_tree"
-        ))
     }
 
     #[must_use]

@@ -1,11 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
-use super::super::event::{
-    CredentialKind, EndpointEvent, EndpointObservation, FileOperation, PackageManager,
-};
+use super::super::event::{EndpointEvent, EndpointObservation, FileOperation};
 use super::super::{
     agent_id_field, approval_id_field, insert_json, normalize_hostname, normalize_path_string,
     normalized_identity_value, reconstruct_path, stable_id, string_field, tool_call_id_field,

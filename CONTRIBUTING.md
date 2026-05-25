@@ -123,7 +123,7 @@ clawdstrike/
 ### Key Abstractions
 
 - **Guard** -- Security check implementing the `Guard` (sync) or `AsyncGuard` (async) trait
-- **Policy** -- YAML configuration (schema v1.1.0) with `extends` for inheritance
+- **Policy** -- YAML configuration (schema v1.5.0, backward-compatible with v1.1.0) with `extends` for inheritance
 - **Receipt** -- Ed25519-signed attestation of decision, policy, and evidence
 - **HushEngine** -- Facade orchestrating guards and signing
 - **Spine Envelope** -- Signed fact in the append-only transparency log
@@ -150,7 +150,7 @@ Create a new security ruleset in `rulesets/`:
 
 ```yaml
 # rulesets/my-policy.yaml
-version: "1.2.0"
+version: "1.5.0"
 name: "my-org-baseline"
 extends: "default"
 guards:
