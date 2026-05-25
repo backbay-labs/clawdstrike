@@ -56,6 +56,25 @@ ignore = [
     # Owner: @deps-maintainers, Expiry: 2026-06-30.
     # Transitive via indicatif 0.17 → number_prefix 0.4; no patched release yet.
     "RUSTSEC-2025-0119",
+    # RUSTSEC-2026-0049 / `rustls-webpki` CRL distribution-point matching.
+    # Owner: @messaging-platform, Expiry: 2026-08-31.
+    # Transitive via async-nats 0.40 → rustls-webpki 0.102.8. Limited impact
+    # (requires compromised trusted issuing authority). Patched copy at
+    # infra/vendor/rustls-webpki (0.103.13) reserved for future [patch.crates-io]
+    # once async-nats upgrades its rustls stack.
+    "RUSTSEC-2026-0049",
+    # RUSTSEC-2026-0098 / `rustls-webpki` URI name constraints.
+    # Owner: @messaging-platform, Expiry: 2026-08-31. Same transitive source/path
+    # as RUSTSEC-2026-0049.
+    "RUSTSEC-2026-0098",
+    # RUSTSEC-2026-0099 / `rustls-webpki` wildcard name constraints.
+    # Owner: @messaging-platform, Expiry: 2026-08-31. Same transitive source/path
+    # as RUSTSEC-2026-0049.
+    "RUSTSEC-2026-0099",
+    # RUSTSEC-2026-0104 / `rustls-webpki` reachable panic in CRL parsing.
+    # Owner: @messaging-platform, Expiry: 2026-08-31. Same transitive source/path
+    # as RUSTSEC-2026-0049.
+    "RUSTSEC-2026-0104",
 ]
 
 [sources]
