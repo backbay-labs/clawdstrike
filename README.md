@@ -129,8 +129,12 @@ helm upgrade clawdstrike \
   --namespace "$NS" \
   --set hushd.auth.existingSecret=clawdstrike-hushd-auth \
   --set controlApi.enabled=true \
-  --set controlApi.secrets.existingSecret=clawdstrike-control-api
+  --set controlApi.secrets.existingSecret=clawdstrike-control-api \
+  --set controlApi.env.NATS_PROVISIONING_MODE=mock \
+  --set controlApi.env.NATS_ALLOW_INSECURE_MOCK_PROVISIONER=true
 ```
+
+The mock provisioner is for non-production trials only. For a real deployment, leave `NATS_PROVISIONING_MODE=external` (the default) and set `controlApi.env.NATS_PROVISIONER_BASE_URL` to a control-plane endpoint that holds NATS admin credentials; otherwise enrollment will return `NATS provisioning is not configured`.
 
 For local development off the repo, swap the OCI reference for `./infra/deploy/helm/clawdstrike` and keep the same `--set` flags.
 
