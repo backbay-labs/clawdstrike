@@ -20,9 +20,9 @@
 
 > **Status: pre-1.0 beta.** Public APIs are stable; defaults may still tighten before 1.0.
 
-Clawdstrike is a **fail-closed policy engine and cryptographic attestation runtime** for AI agent systems. It sits at the tool boundary, where an agent's intent becomes a real-world action, and enforces policy with Ed25519-signed receipts. Same engine, same receipt format, from a single laptop to a managed fleet.
+Clawdstrike is a **fail-closed policy engine, a next-gen EDR, and a cryptographic attestation fabric** in one binary. Every boundary where intent becomes action — an AI agent's `tool_call`, a kernel-level `file_access`, a `process_exec`, an outbound `network_flow`, a `dylib_load`, a `launch_persistence` write — lives in the same event taxonomy, runs through the same policy engine, and lands in the same Ed25519-signed causal graph. Most EDRs treat AI agents as a black box. This one threads the agent's intent through the kernel, end to end.
 
-The same engine ships as a Rust crate, a TypeScript SDK, a Python package, a Go module, a CLI, a desktop agent, and an enterprise control plane.
+The same engine ships as a Rust crate, a TypeScript SDK, a Python package, a Go module, a CLI, a desktop EDR agent (macOS Endpoint Security + Network Extension; Linux Tetragon + Hubble), and an enterprise control plane.
 
 <p align="center">
   <a href="#quick-start">Quick Start</a>
