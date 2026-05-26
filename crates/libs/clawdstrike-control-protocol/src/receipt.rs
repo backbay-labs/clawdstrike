@@ -25,7 +25,7 @@ use serde_json::Value;
 
 /// Request body for `POST /api/v1/receipts`.
 ///
-/// The agent constructs one of these from a [`hush_core::SignedReceipt`] and
+/// The agent constructs one of these from a `hush_core::SignedReceipt` and
 /// posts it to the Control API for durable storage. The Control API
 /// re-verifies the signature against the embedded `signed_receipt` before
 /// persisting.
