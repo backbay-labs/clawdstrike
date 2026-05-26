@@ -12,97 +12,92 @@
 
 // Top-level imports are kept here so the legacy sibling submodules
 // (`control_sync`, `receipts`, `response_actions`, ...) continue to compile
-// via their `use super::*` lines. Some of them are unused at this level but
-// consumed only inside those sibling submodules.
-#![allow(unused_imports)]
+// via their `use super::*` lines. The submodules now own most of the
+// route-level imports — anything still pulled in here is either consumed by
+// a sibling via `super::*`, by the colocated `#[cfg(test)] mod tests`, or by
+// the re-export block below.
 
-use crate::approval::{
-    ApprovalQueue, ApprovalRequestInput, ApprovalResolution, ApprovalResolveInput, ApprovalStatus,
-    ApprovalStatusResponse,
-};
-use crate::daemon::{AuditQueue, DaemonManager, DaemonStatus};
+use crate::approval::{ApprovalResolution, ApprovalStatus};
 use crate::macos::status::{
     CombinedSystemExtensionStatus, ProviderAvailability, ProviderRuntimeState, ProviderStatus,
     SystemExtensionApproval, SystemExtensionInstallState,
 };
-use crate::macos::MacosHostService;
-use crate::openclaw::{
-    GatewayDiscoverInput, GatewayRequestInput, GatewayUpsertRequest, ImportGatewayRequest,
-    OpenClawManager,
-};
-use crate::policy::{evaluate_policy_check, PolicyCheckInput, PolicyCheckOutput};
-use crate::runtime_registry::{
-    register_runtime_agent, resolve_effective_endpoint_agent_id, RuntimeRegistrationInput,
-};
-use crate::session::{SessionManager, SessionState};
-use crate::settings::{IntegrationSettings, RuntimeAgentRegistration, Settings};
-use crate::telemetry_publisher::TelemetryPublisher;
-use crate::updater::{HushdUpdater, OtaStatus};
+use crate::policy::{PolicyCheckInput, PolicyCheckOutput};
+use crate::runtime_registry::resolve_effective_endpoint_agent_id;
+use crate::session::SessionState;
+use crate::settings::Settings;
 use anyhow::{Context, Result};
-use axum::body::Body;
-use axum::extract::DefaultBodyLimit;
-use axum::extract::{Form, Path, Request, State};
-use axum::http::header::{
-    ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
-};
-use axum::http::{uri::Authority, HeaderMap, HeaderValue, StatusCode, Uri};
-use axum::middleware::Next;
-use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::Html;
-use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post, put};
-use axum::{Json, Router};
-// Receipt*Input types are used only in `mod tests { use super::* }` below.
-#[allow(unused_imports)]
+use axum::http::header::AUTHORIZATION;
+use axum::http::StatusCode;
 use clawdstrike_policy_event::edr::{
-    endpoint_policy_delta_id, endpoint_policy_event_impact_id, endpoint_policy_event_replay_id,
     CausalEdgeKind, CausalGraph, CausalGraphRecorder, CausalNode, CausalNodeKind, CredentialKind,
     DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan, DeceptionRotationReport,
-    DetectionFinding, DetectionSeverity, EndpointDeceptionCleanupReceiptInput,
-    EndpointDeceptionMaterializationReceiptInput, EndpointDeceptionRotationReceiptInput,
-    EndpointDecisionAction, EndpointDecisionActor, EndpointDecisionReceipt,
-    EndpointDetectionReceiptInput, EndpointEvent, EndpointEvidenceBundleManifestReceiptInput,
-    EndpointEvidenceBundleReference, EndpointEvidenceRedactionClass, EndpointFlightRecorder,
-    EndpointFlightRecorderCompactionRecord, EndpointFlightRecorderGraphEdgeIndexEntry,
-    EndpointFlightRecorderGraphNodeIndexEntry, EndpointFlightRecorderHistoryIndexEntry,
-    EndpointGraphReference, EndpointGraphSliceReceiptInput, EndpointObservation,
-    EndpointObservationReceiptInput, EndpointPolicyDecisionReceiptInput,
-    EndpointPolicyDeltaIdInput, EndpointPolicyDeltaReceiptInput, EndpointPolicyEventImpactIdInput,
-    EndpointPolicyEventImpactReceiptInput, EndpointPolicyEventReplayIdInput,
-    EndpointPolicyEventReplayReceiptInput, EndpointPolicySimulationIdentityContext,
-    EndpointPolicySimulationReport, EndpointPolicySimulationRule,
-    EndpointPolicySimulationToolContext, EndpointPolicySnapshot, EndpointProcess,
-    EndpointProviderDegradationReceiptInput, EndpointProviderKind, EndpointProviderState,
-    EndpointReceiptEvidence, EndpointResponseAcknowledgementReceiptInput,
+    DetectionFinding, DetectionSeverity, EndpointDecisionAction, EndpointDecisionActor,
+    EndpointDecisionReceipt, EndpointEvent, EndpointEvidenceRedactionClass, EndpointGraphReference,
+    EndpointObservation, EndpointPolicySimulationReport, EndpointPolicySnapshot, EndpointProcess,
+    EndpointProviderKind, EndpointProviderState, EndpointReceiptEvidence,
     EndpointResponseAcknowledgementReport, EndpointResponseControlCorrelation,
-    EndpointResponseExecutionEffect, EndpointResponseExecutionReceiptInput,
-    EndpointResponseExecutionReport, EndpointResponseExecutionStatus, EndpointResponsePlan,
-    EndpointResponseProcessIdentityBinding, EndpointResponseReceiptInput,
-    EndpointResponseRollbackReceiptInput, EndpointResponseRollbackReport, EndpointSensorState,
-    EndpointSensorStateReceiptInput, EndpointSimulationImpactLevel, EndpointSimulationReceiptInput,
-    EndpointTelemetryPrivacyMode, EndpointTelemetryPrivacyReceiptInput,
-    EndpointTelemetryPrivacyReport, FileOperation, HoneyArtifact, PackageManager,
+    EndpointResponseExecutionEffect, EndpointResponseExecutionReport,
+    EndpointResponseExecutionStatus, EndpointResponsePlan, EndpointResponseProcessIdentityBinding,
+    EndpointResponseRollbackReport, EndpointSensorState, EndpointSimulationImpactLevel,
+    EndpointTelemetryPrivacyMode, EndpointTelemetryPrivacyReport, FileOperation, HoneyArtifact,
     SupplyChainRuntimeGuard,
 };
 use clawdstrike_policy_event::event::PolicyEvent;
 use clawdstrike_policy_event::simulate::replay_events;
-use futures::{Stream, StreamExt, TryStreamExt};
 use hush_core::{canonicalize_json, sha256, Keypair, SignedReceipt};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
-use std::future::Future;
 use std::io::{Read as _, Seek as _, SeekFrom};
-use std::net::{IpAddr, SocketAddr};
-use std::path::{Component, Path as FsPath, PathBuf};
-use std::pin::Pin;
-use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
+use std::net::IpAddr;
+use std::path::{Path as FsPath, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+// The colocated `#[cfg(test)] mod tests` resolves these via `use super::*`.
+// Kept here (rather than in the test files) because the test sources predate
+// the api_server split and rely on every helper being in scope from the
+// parent module.
+#[cfg(test)]
+use crate::approval::ApprovalRequestInput;
+#[cfg(test)]
+use crate::daemon::DaemonManager;
+#[cfg(test)]
+use crate::macos::MacosHostService;
+#[cfg(test)]
+use crate::openclaw::OpenClawManager;
+#[cfg(test)]
+use crate::settings::IntegrationSettings;
+#[cfg(test)]
+use axum::extract::{Path, State};
+#[cfg(test)]
+use axum::http::header::{CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE};
+#[cfg(test)]
+use axum::http::{HeaderMap, Uri};
+#[cfg(test)]
+use axum::response::{IntoResponse, Response};
+#[cfg(test)]
+use axum::routing::{get, post};
+#[cfg(test)]
+use axum::{Json, Router};
+#[cfg(test)]
+use clawdstrike_policy_event::edr::{
+    EndpointDeceptionCleanupReceiptInput, EndpointEvidenceBundleManifestReceiptInput,
+    EndpointEvidenceBundleReference, EndpointFlightRecorder,
+    EndpointResponseAcknowledgementReceiptInput, EndpointResponseExecutionReceiptInput,
+    EndpointResponseReceiptInput, EndpointResponseRollbackReceiptInput,
+    EndpointSensorStateReceiptInput,
+};
+#[cfg(test)]
+use std::collections::HashMap;
+#[cfg(test)]
+use std::sync::{Mutex as StdMutex, RwLock as StdRwLock};
+#[cfg(test)]
 use tokio::net::TcpListener;
+#[cfg(test)]
 use tokio::sync::{broadcast, Mutex, RwLock};
-use tokio_stream::wrappers::BroadcastStream;
-use tower_http::services::{ServeDir, ServeFile};
 
 pub(crate) use crate::edr::conversion::*;
 pub(crate) use crate::edr::dto::*;
@@ -189,14 +184,12 @@ pub(crate) use crate::edr::ledger::{
 pub(crate) use crate::edr::ledger::{
     EndpointFleetHuntEventOutbox, EndpointFleetHuntEventOutboxEntry,
 };
-// read_*_ledger free functions are used only in mod tests { use super::* }
+// `read_*_ledger` free functions are used only in `mod tests { use super::* }`,
+// but `crate::edr::ledger` re-exports them unconditionally — keep the
+// re-exports here so the unused-warning lives in one place.
 #[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_control_ack_postback_retry_ledger;
-#[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_control_archive_upload_retry_ledger;
-#[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_control_receipt_upload_retry_ledger;
-#[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_egress_restriction_ledger;
-#[allow(unused_imports)]
-pub(crate) use crate::edr::ledger::read_fleet_hunt_event_outbox;
+pub(crate) use crate::edr::ledger::{
+    read_control_ack_postback_retry_ledger, read_control_archive_upload_retry_ledger,
+    read_control_receipt_upload_retry_ledger, read_egress_restriction_ledger,
+    read_fleet_hunt_event_outbox,
+};
