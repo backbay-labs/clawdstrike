@@ -1842,6 +1842,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "clawdstrike-fs-policy-paths"
+version = "0.2.7"
+
+[[package]]
 name = "clawdstrike-guard-sdk"
 version = "0.2.7"
 dependencies = [

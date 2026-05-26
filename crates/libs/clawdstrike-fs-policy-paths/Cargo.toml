@@ -1,0 +1,18 @@
+[package]
+name = "clawdstrike-fs-policy-paths"
+description = "Pure filesystem path validators for OS persistence-target boundaries shared between the agent enforcer and the control-plane validator"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "clawdstrike_fs_policy_paths"
+path = "src/lib.rs"
+
+[dependencies]
+
+[lints]
+workspace = true
