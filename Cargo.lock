@@ -1811,6 +1811,7 @@ dependencies = [
  "axum",
  "axum-extra",
  "chrono",
+ "clawdstrike-control-protocol",
  "clawdstrike-ocsf",
  "clawdstrike-policy-event",
  "futures",
@@ -1839,6 +1840,15 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "zip",
+]
+
+[[package]]
+name = "clawdstrike-control-protocol"
+version = "0.2.7"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

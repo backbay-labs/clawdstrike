@@ -25,6 +25,7 @@ hush-multi-agent.workspace = true
 spine.workspace = true
 clawdstrike-ocsf.workspace = true
 clawdstrike-policy-event.workspace = true
+clawdstrike-control-protocol.workspace = true
 
 # Web framework
 axum.workspace = true

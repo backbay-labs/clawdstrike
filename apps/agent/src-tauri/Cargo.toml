@@ -62,6 +62,7 @@ hush-core = { path = "../../../crates/libs/hush-core" }
 clawdstrike-policy-event = { path = "../../../crates/libs/clawdstrike-policy-event", default-features = false, features = ["simulate"] }
 clawdstrike-hushd-config = { path = "../../../crates/libs/clawdstrike-hushd-config" }
 clawdstrike-fs-policy-paths = { path = "../../../crates/libs/clawdstrike-fs-policy-paths" }
+clawdstrike-control-protocol = { path = "../../../crates/libs/clawdstrike-control-protocol" }
 base64 = "0.22"
 
 # NATS / Spine (adaptive SDR)

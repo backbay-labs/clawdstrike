@@ -1,0 +1,24 @@
+[package]
+name = "clawdstrike-control-protocol"
+description = "Shared wire-format DTOs exchanged between the Clawdstrike agent and the Control API"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "clawdstrike_control_protocol"
+path = "src/lib.rs"
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true
