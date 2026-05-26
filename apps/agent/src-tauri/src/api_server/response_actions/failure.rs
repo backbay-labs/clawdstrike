@@ -118,6 +118,6 @@ fn response_failure_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
 }
 
-pub(crate) fn sanitize_brokerd_error_body(body: &str) -> String {
+pub(super) fn sanitize_brokerd_error_body(body: &str) -> String {
     sanitize_response_execution_failure(body)
 }

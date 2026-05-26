@@ -92,7 +92,7 @@ pub(crate) async fn execute_quarantine_file_response(
     ))
 }
 
-pub(crate) fn validate_quarantine_source_path(path: &FsPath) -> Result<()> {
+pub(super) fn validate_quarantine_source_path(path: &FsPath) -> Result<()> {
     let metadata = fs::symlink_metadata(path)
         .with_context(|| format!("stat quarantine target {}", path.display()))?;
     if metadata.file_type().is_symlink() {
@@ -116,7 +116,9 @@ pub(crate) fn validate_quarantine_source_path(path: &FsPath) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn path_is_bounded_quarantine_source(path: &FsPath) -> bool {
+pub(in crate::api_server::response_actions) fn path_is_bounded_quarantine_source(
+    path: &FsPath,
+) -> bool {
     let normalized = path.display().to_string().replace('\\', "/");
     let temp_dir = std::env::temp_dir()
         .display()
@@ -134,7 +136,7 @@ pub(crate) fn path_is_bounded_quarantine_source(path: &FsPath) -> bool {
         || normalized.contains("/target/release/")
 }
 
-pub(crate) fn validate_quarantine_artifact_path(
+pub(in crate::api_server::response_actions) fn validate_quarantine_artifact_path(
     quarantine_root: &FsPath,
     artifact_path: &FsPath,
 ) -> Result<(), (StatusCode, String)> {

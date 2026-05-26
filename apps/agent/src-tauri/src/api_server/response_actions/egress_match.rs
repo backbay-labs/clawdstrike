@@ -39,7 +39,7 @@ pub(crate) fn policy_output_for_active_egress_restriction(
     }
 }
 
-pub(crate) fn restrict_egress_targets(
+pub(super) fn restrict_egress_targets(
     plan: &EndpointResponsePlan,
     graph: &CausalGraph,
 ) -> Result<Vec<String>> {
@@ -104,7 +104,7 @@ fn normalize_egress_policy_target(action_type: &str, target: &str) -> Option<Str
     normalize_egress_target(target.as_str()).ok()
 }
 
-pub(crate) fn normalize_egress_target(target: &str) -> Result<String> {
+pub(super) fn normalize_egress_target(target: &str) -> Result<String> {
     let target = target.trim();
     if target.is_empty() {
         return Err(anyhow::anyhow!("egress target must not be empty"));

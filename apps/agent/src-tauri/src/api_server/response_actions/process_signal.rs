@@ -7,7 +7,7 @@
 
 use super::*;
 
-pub(crate) fn validate_process_signal_targets(targets: &[ProcessSignalTarget]) -> Result<()> {
+pub(super) fn validate_process_signal_targets(targets: &[ProcessSignalTarget]) -> Result<()> {
     if targets.is_empty() {
         return Err(anyhow::anyhow!(
             "process tree has no signalable process nodes"
@@ -38,14 +38,14 @@ pub(crate) fn validate_process_signal_targets(targets: &[ProcessSignalTarget]) -
     Ok(())
 }
 
-pub(crate) fn validate_process_signal_target_before_signal(
+pub(super) fn validate_process_signal_target_before_signal(
     target: &ProcessSignalTarget,
 ) -> Result<()> {
     validate_process_identity_binding(target.pid, Some(target.process_identity_key.as_str()))?;
     check_process_signalable(target.pid)
 }
 
-pub(crate) fn validate_process_effect_signal_target_before_signal(
+pub(super) fn validate_process_effect_signal_target_before_signal(
     target: &ProcessTreeEffectSignalTarget,
 ) -> Result<()> {
     validate_process_identity_binding(target.pid, target.process_identity_key.as_deref())?;
@@ -111,22 +111,22 @@ fn current_parent_pid() -> Option<u32> {
 }
 
 #[cfg(unix)]
-pub(crate) fn process_suspend_signal() -> i32 {
+pub(super) fn process_suspend_signal() -> i32 {
     libc::SIGSTOP
 }
 
 #[cfg(not(unix))]
-pub(crate) fn process_suspend_signal() -> i32 {
+pub(super) fn process_suspend_signal() -> i32 {
     0
 }
 
 #[cfg(unix)]
-pub(crate) fn process_resume_signal() -> i32 {
+pub(super) fn process_resume_signal() -> i32 {
     libc::SIGCONT
 }
 
 #[cfg(not(unix))]
-pub(crate) fn process_resume_signal() -> i32 {
+pub(super) fn process_resume_signal() -> i32 {
     0
 }
 
@@ -143,7 +143,7 @@ fn check_process_signalable(_pid: u32) -> Result<()> {
 }
 
 #[cfg(unix)]
-pub(crate) fn signal_process(pid: u32, signal: i32) -> Result<()> {
+pub(super) fn signal_process(pid: u32, signal: i32) -> Result<()> {
     let pid = i32::try_from(pid).context("pid exceeds platform signal range")?;
     let result = unsafe { libc::kill(pid, signal) };
     if result == 0 {
@@ -160,7 +160,7 @@ pub(crate) fn signal_process(pid: u32, signal: i32) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-pub(crate) fn signal_process(_pid: u32, _signal: i32) -> Result<()> {
+pub(super) fn signal_process(_pid: u32, _signal: i32) -> Result<()> {
     Err(anyhow::anyhow!(
         "process signalling is only supported on Unix platforms"
     ))

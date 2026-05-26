@@ -97,7 +97,7 @@ pub(crate) async fn execute_disable_persistence_response(
     ))
 }
 
-pub(crate) fn disable_persistence_target_path(
+pub(super) fn disable_persistence_target_path(
     plan: &EndpointResponsePlan,
     graph: &CausalGraph,
 ) -> Result<PathBuf> {
@@ -144,7 +144,7 @@ fn browser_extension_manifest_target_path(path: PathBuf) -> PathBuf {
     }
 }
 
-pub(crate) fn validate_disable_persistence_source_path(path: &FsPath) -> Result<()> {
+pub(super) fn validate_disable_persistence_source_path(path: &FsPath) -> Result<()> {
     let metadata = fs::symlink_metadata(path)
         .with_context(|| format!("stat persistence target {}", path.display()))?;
     if metadata.file_type().is_symlink() {
@@ -168,7 +168,7 @@ pub(crate) fn validate_disable_persistence_source_path(path: &FsPath) -> Result<
     Ok(())
 }
 
-pub(crate) fn persistence_disable_destination_path(
+pub(super) fn persistence_disable_destination_path(
     quarantine_root: &FsPath,
     plan: &EndpointResponsePlan,
     source_path: &FsPath,

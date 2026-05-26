@@ -120,7 +120,7 @@ pub(crate) async fn record_edr_response_rollback_failure(
     Ok((failed, receipt))
 }
 
-pub(crate) fn response_execution_transition_id(
+pub(super) fn response_execution_transition_id(
     prefix: &str,
     response_action_id: &str,
     evidence_bundle_id: &str,
