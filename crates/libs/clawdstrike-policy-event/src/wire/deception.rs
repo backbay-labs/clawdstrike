@@ -3,8 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::edr::{
-    DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan,
-    DeceptionRotationReport,
+    DeceptionCleanupReport, DeceptionMaterializationReport, DeceptionPlan, DeceptionRotationReport,
 };
 use hush_core::SignedReceipt;
 

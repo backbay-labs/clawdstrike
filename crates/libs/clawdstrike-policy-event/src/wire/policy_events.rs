@@ -2,9 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::edr::{
-    DetectionFinding, EndpointObservation, EndpointPolicySnapshot, HoneyArtifact,
-};
+use crate::edr::{DetectionFinding, EndpointObservation, EndpointPolicySnapshot, HoneyArtifact};
 use crate::event::PolicyEvent;
 use crate::simulate::{DecisionInfo, SimulationResult};
 use hush_core::SignedReceipt;

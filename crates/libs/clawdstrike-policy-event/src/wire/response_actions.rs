@@ -8,9 +8,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::edr::{
-    CausalGraph, EndpointDecisionAction, EndpointGraphReference, EndpointResponseAcknowledgementReport,
-    EndpointResponseExecutionReport, EndpointResponsePlan, EndpointResponseRollbackReport,
-    EndpointSensorState,
+    CausalGraph, EndpointDecisionAction, EndpointGraphReference,
+    EndpointResponseAcknowledgementReport, EndpointResponseExecutionReport, EndpointResponsePlan,
+    EndpointResponseRollbackReport, EndpointSensorState,
 };
 use hush_core::SignedReceipt;
 
@@ -311,9 +311,7 @@ pub struct EdrResponseAcknowledgementRecord {
 }
 
 impl EdrResponseAcknowledgementRecord {
-    pub fn from_acknowledgement(
-        acknowledgement: EndpointResponseAcknowledgementReport,
-    ) -> Self {
+    pub fn from_acknowledgement(acknowledgement: EndpointResponseAcknowledgementReport) -> Self {
         Self { acknowledgement }
     }
 }

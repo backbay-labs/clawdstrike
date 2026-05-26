@@ -4,9 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::edr::{
-    DetectionFinding, EndpointObservation, EndpointProcess, HoneyArtifact,
-};
+use crate::edr::{DetectionFinding, EndpointObservation, EndpointProcess, HoneyArtifact};
 use hush_core::SignedReceipt;
 
 #[derive(Debug, Deserialize, Serialize)]
