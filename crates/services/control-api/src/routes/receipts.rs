@@ -11,9 +11,21 @@ use hush_core::{PublicKey, Signature, SignedReceipt};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use clawdstrike_control_protocol::{ControlBatchStoreReceiptsRequest, ControlStoreReceiptRequest};
+
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
 use crate::state::AppState;
+
+/// Local alias for [`ControlStoreReceiptRequest`]. Both the agent and the
+/// Control API now share this type via the `clawdstrike-control-protocol`
+/// crate; the alias keeps the legacy local name available for handlers and
+/// tests without forcing a sweep of every reference.
+pub type StoreReceiptRequest = ControlStoreReceiptRequest;
+
+/// Local alias for [`ControlBatchStoreReceiptsRequest`]. See
+/// [`StoreReceiptRequest`].
+pub type BatchStoreReceiptsRequest = ControlBatchStoreReceiptsRequest;
 
 // ---------------------------------------------------------------------------
 // Size limits for in-memory stores
@@ -250,32 +262,12 @@ pub struct ChainReceiptsQuery {
     pub limit: Option<usize>,
 }
 
-/// Request body for storing a single receipt.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StoreReceiptRequest {
-    pub timestamp: String,
-    pub verdict: String,
-    pub guard: String,
-    pub policy_name: String,
-    pub signature: String,
-    pub public_key: String,
-    #[serde(default)]
-    pub chain_hash: Option<String>,
-    #[serde(default)]
-    pub evidence: Option<serde_json::Value>,
-    #[serde(default)]
-    pub metadata: Option<serde_json::Value>,
-    #[serde(default)]
-    pub signed_receipt: Option<serde_json::Value>,
-}
-
-/// Request body for storing multiple receipts at once.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BatchStoreReceiptsRequest {
-    pub receipts: Vec<StoreReceiptRequest>,
-}
+// `StoreReceiptRequest` and `BatchStoreReceiptsRequest` are aliases (declared
+// near the top of the module) for the shared wire types in
+// `clawdstrike-control-protocol`. The previous local definitions declared
+// `signed_receipt` as `Option<serde_json::Value>` even though
+// `validate_store_request` below requires it at runtime — the unified type
+// makes the requirement explicit at the deserialize level.
 
 /// Response for a batch store operation.
 #[derive(Debug, Serialize)]
@@ -532,10 +524,7 @@ fn validate_store_request(req: &StoreReceiptRequest) -> Result<(), ApiError> {
         ApiError::BadRequest("invalid signature: not a valid Ed25519 signature hex".to_string())
     })?;
 
-    let signed_receipt_json = req.signed_receipt.as_ref().ok_or_else(|| {
-        ApiError::BadRequest("signed_receipt is required for receipt storage".to_string())
-    })?;
-    let signed_receipt: SignedReceipt = serde_json::from_value(signed_receipt_json.clone())
+    let signed_receipt: SignedReceipt = serde_json::from_value(req.signed_receipt.clone())
         .map_err(|e| ApiError::BadRequest(format!("invalid signed_receipt: {}", e)))?;
 
     if signed_receipt.signatures.signer.to_hex() != req.signature {
@@ -581,7 +570,7 @@ fn stored_receipt_from_request(tenant_id: Uuid, req: StoreReceiptRequest) -> Sto
         chain_hash: req.chain_hash,
         evidence: req.evidence,
         metadata: req.metadata,
-        signed_receipt: req.signed_receipt,
+        signed_receipt: Some(req.signed_receipt),
     }
 }
 
@@ -832,9 +821,30 @@ mod tests {
             chain_hash: None,
             evidence: None,
             metadata: None,
-            signed_receipt: None,
+            signed_receipt: serde_json::Value::Null,
         };
         assert!(validate_store_request(&req).is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_missing_signed_receipt() {
+        // Previously this was tested at the handler level via
+        // `validate_store_request`. Now that `signed_receipt` is a required
+        // field on the shared protocol type, the deserializer rejects
+        // payloads missing it before any handler logic runs.
+        let raw = serde_json::json!({
+            "timestamp": "2026-03-09T00:00:00Z",
+            "verdict": "allow",
+            "guard": "TestGuard",
+            "policy_name": "default",
+            "signature": "abcd",
+            "public_key": "deadbeef",
+        });
+        let err = serde_json::from_value::<StoreReceiptRequest>(raw).unwrap_err();
+        assert!(
+            err.to_string().contains("signed_receipt"),
+            "expected missing-field error on signed_receipt, got {err}"
+        );
     }
 
     fn make_signed_store_request(verdict: &str) -> StoreReceiptRequest {
@@ -860,7 +870,7 @@ mod tests {
             chain_hash: None,
             evidence: None,
             metadata: None,
-            signed_receipt: Some(serde_json::to_value(&signed_receipt).unwrap()),
+            signed_receipt: serde_json::to_value(&signed_receipt).unwrap(),
         }
     }
 
@@ -871,9 +881,12 @@ mod tests {
     }
 
     #[test]
-    fn validate_requires_signed_receipt() {
+    fn validate_requires_well_formed_signed_receipt() {
+        // The `signed_receipt` field is required at deserialize-time on the
+        // shared protocol type, so the runtime check now exercises the
+        // "field present but not a valid signed receipt" path.
         let mut req = make_signed_store_request("allow");
-        req.signed_receipt = None;
+        req.signed_receipt = serde_json::Value::Null;
         let err = validate_store_request(&req).unwrap_err();
         assert!(matches!(err, ApiError::BadRequest(_)));
     }

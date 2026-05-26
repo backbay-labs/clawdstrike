@@ -2367,51 +2367,13 @@ pub(crate) struct StoredEndpointEvidenceBundle {
     pub(crate) graph: CausalGraph,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct ControlStoreReceiptRequest {
-    pub(crate) timestamp: String,
-    pub(crate) verdict: String,
-    pub(crate) guard: String,
-    pub(crate) policy_name: String,
-    pub(crate) signature: String,
-    pub(crate) public_key: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) chain_hash: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) evidence: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) metadata: Option<serde_json::Value>,
-    pub(crate) signed_receipt: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct ControlBatchStoreReceiptsRequest {
-    pub(crate) receipts: Vec<ControlStoreReceiptRequest>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct EndpointReceiptIndexRecord {
-    pub(crate) receipt_id: Option<String>,
-    pub(crate) timestamp: String,
-    pub(crate) family: Option<String>,
-    pub(crate) action: Option<String>,
-    pub(crate) finding_id: Option<String>,
-    pub(crate) rule_id: Option<String>,
-    pub(crate) graph_slice_id: Option<String>,
-    pub(crate) root_node_id: Option<String>,
-    pub(crate) execution_id: Option<String>,
-    pub(crate) execution_status: Option<String>,
-    pub(crate) actor_endpoint_id: Option<String>,
-    pub(crate) actor_user_id: Option<String>,
-    pub(crate) actor_session_id: Option<String>,
-    pub(crate) actor_agent_id: Option<String>,
-    pub(crate) actor_workload_id: Option<String>,
-    pub(crate) actor_approval_id: Option<String>,
-    pub(crate) local_sequence: Option<u64>,
-    pub(crate) byte_offset: u64,
-    pub(crate) byte_len: u64,
-}
+// Wire DTOs for the Control API used to live here as duplicates of the types
+// in `crates/services/control-api/src/routes/receipts.rs`. They now live in
+// the shared `clawdstrike-control-protocol` crate so the agent (producer) and
+// `control-api` (consumer) share a single source of truth.
+pub(crate) use clawdstrike_control_protocol::{
+    ControlBatchStoreReceiptsRequest, ControlStoreReceiptRequest, EndpointReceiptIndexRecord,
+};
 
 fn default_apply_integrations_changes() -> bool {
     true
