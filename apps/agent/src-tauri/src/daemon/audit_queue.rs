@@ -16,15 +16,15 @@ use tokio::sync::Mutex;
 /// Stores events that were generated while hushd was unreachable so they
 /// can be uploaded when connectivity is restored.
 pub struct AuditQueue {
-    pub(super) path: PathBuf,
-    pub(super) queue: Mutex<VecDeque<serde_json::Value>>,
+    path: PathBuf,
+    queue: Mutex<VecDeque<serde_json::Value>>,
     flush_lock: Mutex<()>,
     http_client: reqwest::Client,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub(super) struct PersistedAuditQueue {
-    pub(super) entries: VecDeque<serde_json::Value>,
+struct PersistedAuditQueue {
+    entries: VecDeque<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,8 +66,8 @@ impl fmt::Display for AuditFlushProgressError {
 
 impl std::error::Error for AuditFlushProgressError {}
 
-pub(super) const MAX_AUDIT_QUEUE_LEN: usize = 10_000;
-pub(super) const MAX_AUDIT_BATCH_LEN: usize = 5_000;
+const MAX_AUDIT_QUEUE_LEN: usize = 10_000;
+const MAX_AUDIT_BATCH_LEN: usize = 5_000;
 
 fn audit_flush_has_prior_progress(outcome: AuditFlushOutcome) -> bool {
     outcome.accepted > 0 || outcome.duplicates > 0 || outcome.rejected > 0
@@ -115,7 +115,7 @@ fn load_persisted_audit_queue(path: &Path) -> (VecDeque<serde_json::Value>, bool
     }
 }
 
-pub(super) fn persist_audit_queue(path: &Path, queue: &VecDeque<serde_json::Value>) -> Result<()> {
+fn persist_audit_queue(path: &Path, queue: &VecDeque<serde_json::Value>) -> Result<()> {
     let serialized = serde_json::to_string_pretty(&PersistedAuditQueue {
         entries: queue.clone(),
     })
@@ -227,7 +227,7 @@ fn drain_flush_batch(
 }
 
 impl AuditQueue {
-    pub(super) fn with_path(path: PathBuf) -> Self {
+    fn with_path(path: PathBuf) -> Self {
         let (queue, sanitized) = load_persisted_audit_queue(&path);
         if sanitized {
             if let Err(err) = persist_audit_queue(&path, &queue) {
