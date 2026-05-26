@@ -224,3 +224,20 @@ body,
     transform: translateX(0);
   }
 }
+
+/* Sidebar nav keyboard focus ring — gold, only on keyboard navigation. */
+.cs-nav-focus:focus {
+  outline: none;
+}
+.cs-nav-focus:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+/* Sidebar nav buttons carry inline transitions; honor reduced-motion globally. */
+@media (prefers-reduced-motion: reduce) {
+  .cs-nav-focus,
+  .cs-nav-focus * {
+    transition: none !important;
+  }
+}
