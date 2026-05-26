@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/libs/bridge-runtime",
     "crates/libs/clawdstrike-broker-protocol",
+    "crates/libs/clawdstrike-fs-policy-paths",
     "crates/libs/hush-core",
     "crates/libs/hush-proxy",
     "crates/libs/clawdstrike",
@@ -169,6 +170,7 @@ hush-core = { path = "crates/libs/hush-core", version = "0.2.7" }
 hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.7" }
 clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.7", default-features = false }
 clawdstrike-broker-protocol = { path = "crates/libs/clawdstrike-broker-protocol", version = "0.2.7" }
+clawdstrike-fs-policy-paths = { path = "crates/libs/clawdstrike-fs-policy-paths", version = "0.2.7" }
 hush-certification = { path = "crates/libs/hush-certification", version = "0.2.7" }
 spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.7" }
 bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.2.7" }
