@@ -94,71 +94,31 @@ The agent runs normally. Every tool call hits the engine first. Denials raise a 
 
 ### Cluster: Helm chart and control plane
 
-For fleet deployments, install the Helm chart. The default install brings up the enforcement + audit core: bundled NATS JetStream, the Spine audit chain (checkpointer + witness + proofs API), and `hushd`. The Control API (cloud enrollment + posture commands) and the kernel/L7 telemetry bridges are off by default; enable them with `--set`.
-
-`hushd` and the Spine checkpointer + witness all ship fail-closed, so they require signing material at install time. The cleanest path is to pre-create Kubernetes Secrets and reference them from the chart:
+For fleet deployments, install the Helm chart. `hushd` and the Spine signers are fail-closed and need keys at install time, so pre-create the Secrets and reference them from the chart:
 
 ```bash
 NS=clawdstrike-system
 kubectl create namespace "$NS"
 
-# hushd: API key, admin key, auth pepper
 kubectl -n "$NS" create secret generic clawdstrike-hushd-auth \
   --from-literal=CLAWDSTRIKE_API_KEY="$(openssl rand -hex 32)" \
   --from-literal=CLAWDSTRIKE_ADMIN_KEY="$(openssl rand -hex 32)" \
   --from-literal=CLAWDSTRIKE_AUTH_PEPPER="$(openssl rand -hex 32)"
 
-# Spine: Ed25519 seeds for the checkpointer and witness signers
 kubectl -n "$NS" create secret generic clawdstrike-spine \
   --from-literal=SPINE_LOG_SEED_HEX="$(openssl rand -hex 32)" \
   --from-literal=SPINE_WITNESS_SEED_HEX="$(openssl rand -hex 32)"
 
 helm install clawdstrike \
-  oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
-  --version 0.2.0 \
+  oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike --version 0.2.0 \
   --namespace "$NS" \
   --set hushd.auth.existingSecret=clawdstrike-hushd-auth \
   --set spine.secrets.existingSecret=clawdstrike-spine
 ```
 
-To bring up the full control plane (enrollment, posture commands, signed completion bundles back to the API), enable the Control API. It needs its own Secret (Postgres URL, JWT signing secret, and Stripe billing keys; use placeholder values if you are not running billing):
+That brings up `hushd`, the Spine checkpointer + witness, and bundled NATS JetStream. The Control API (enrollment, posture commands, signed completion bundles back) and the Tetragon/Hubble telemetry bridges are opt-in.
 
-```bash
-kubectl -n "$NS" create secret generic clawdstrike-control-api \
-  --from-literal=DATABASE_URL="postgres://..." \
-  --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
-  --from-literal=STRIPE_SECRET_KEY="sk_test_placeholder" \
-  --from-literal=STRIPE_WEBHOOK_SECRET="whsec_placeholder"
-
-helm upgrade clawdstrike \
-  oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
-  --version 0.2.0 \
-  --namespace "$NS" \
-  --set hushd.auth.existingSecret=clawdstrike-hushd-auth \
-  --set spine.secrets.existingSecret=clawdstrike-spine \
-  --set controlApi.enabled=true \
-  --set controlApi.secrets.existingSecret=clawdstrike-control-api \
-  --set controlApi.env.NATS_PROVISIONING_MODE=mock \
-  --set controlApi.env.NATS_ALLOW_INSECURE_MOCK_PROVISIONER=true
-```
-
-The mock provisioner is for non-production trials only. For a real deployment, leave `NATS_PROVISIONING_MODE=external` (the default) and set `controlApi.env.NATS_PROVISIONER_BASE_URL` to a control-plane endpoint that holds NATS admin credentials; otherwise enrollment will return `NATS provisioning is not configured`.
-
-For local development off the repo, swap the OCI reference for `./infra/deploy/helm/clawdstrike` and keep the same `--set` flags.
-
-| Component | Workload | Default | Purpose |
-|---|---|---|---|
-| `nats` | StatefulSet | on | JetStream transport for the Spine envelope |
-| `spine-checkpointer` | Deployment | on | Hash-chained Ed25519 audit log |
-| `spine-witness` | Deployment | on | Independent co-signature on checkpoints |
-| `spine-proofs-api` | Deployment | on | Merkle-proof endpoint for receipts |
-| `hushd` | Deployment | on | Centralised policy evaluation + receipt signing |
-| `control-api` | Deployment | **off** (`--set controlApi.enabled=true`) | Tenant management, enrollment, posture commands |
-| `tetragon-bridge` / `hubble-bridge` | DaemonSet / Deployment | off | Kernel + L7 telemetry into the Spine |
-
-With Control API enabled, it issues single-use enrollment tokens that bind a Desktop Agent to a tenant over mTLS, then provisions per-agent NATS credentials. From there, posture commands flow Control API → NATS → agent, and signed completion bundles flow back. The Control Console (separate app at `apps/control-console/`) is the SOC operator UI on top of the API.
-
-See [`infra/deploy/helm/clawdstrike/README.md`](infra/deploy/helm/clawdstrike/README.md) for chart parameters and [Enterprise enrollment](docs/src/guides/enterprise-enrollment.md) for the end-to-end agent onboarding flow.
+See the [chart README](infra/deploy/helm/clawdstrike/README.md) for the full parameter set, and [Enterprise enrollment](docs/src/guides/enterprise-enrollment.md) for end-to-end agent onboarding.
 
 ---
 
@@ -166,22 +126,18 @@ See [`infra/deploy/helm/clawdstrike/README.md`](infra/deploy/helm/clawdstrike/RE
 
 ```mermaid
 flowchart LR
-    A[AI agent SDK] --> N
-    K[Kernel sensors<br/>ES · NetExt · Tetragon · Hubble] --> N
-    N[Canonical event] --> P[Policy engine + guard stack]
-    P -->|allow| T[Action proceeds]
-    P -->|deny| B[Fail closed]
-    P --> R[Response action<br/>quarantine · suspend · revoke]
-    P --> F[Ed25519 receipt]
-    F --> G[Causal graph + flight recorder]
-    G -.->|enterprise| S[Spine: checkpointer + witness]
+    A[Agent / sensor] --> B[Canonical event]
+    B --> C[Policy engine + guard stack]
+    C -->|allow| D[Action runs]
+    C -->|deny| E[Blocked, fail-closed]
+    C --> F[Ed25519 receipt]
+    F --> G[Causal graph]
+    G -.->|enterprise| H[Spine audit chain]
 ```
 
-Two input paths feed one policy engine. The SDK adapter normalises an AI agent's tool call into a canonical event; kernel sensors (macOS Endpoint Security and Network Extension; Linux Tetragon and Hubble) produce the same event shape for `file_access`, `process_exec`, `network_flow`, `dylib_load`, and `launch_persistence`. The guard stack returns a verdict bound to an Ed25519 receipt. Allowed actions proceed; denied actions fail closed.
+SDK adapters and OS-level sensors feed the same canonical event into the policy engine. Adapters cover AI agent tool calls; kernel sensors (macOS Endpoint Security and Network Extension, Linux Tetragon and Hubble) cover file, process, network, dylib, and persistence events. The guard stack returns a verdict, the verdict ships with an Ed25519 receipt, and each receipt is content-hashed into a per-session causal graph that threads agent identity through downstream OS events.
 
-Each receipt is content-hashed into a per-session causal graph that threads identity context (`agent_id`, `tool_call_id`, `workload_id`, `approval_id`) through every downstream OS event the decision touched. The graph and the raw observations are written to a disk-backed flight recorder with compaction and graph/history indices, so policies can be simulated against past state before they ship.
-
-Response actions (`quarantine_file`, `restrict_egress`, `disable_persistence`, `revoke_grant`, `suspend_process_tree`, `terminate_process_tree`) produce their own signed `EndpointResponseExecutionEffect` and are reversible where possible. In enterprise mode the chain ships over NATS to the Spine checkpointer; an independent witness co-signs each batch.
+When a decision crosses a response threshold the engine emits a signed effect: quarantine a file, restrict an egress destination, suspend a process tree, revoke a previously-issued approval. Effects are reversible where possible. Past observations stay on a disk-backed flight recorder, so a tightened policy can be simulated against last week's state before it ships. In enterprise mode the receipt chain ships over NATS to the Spine checkpointer; an independent witness co-signs each batch.
 
 > *Logs are stories; proof is a signature.*
 
