@@ -96,31 +96,43 @@ The agent runs normally. Every tool call hits the engine first. Denials raise a 
 
 For fleet deployments, install the Helm chart. The default install brings up the enforcement + audit core: bundled NATS JetStream, the Spine audit chain (checkpointer + witness + proofs API), and `hushd`. The Control API (cloud enrollment + posture commands) and the kernel/L7 telemetry bridges are off by default; enable them with `--set`.
 
+`hushd` ships fail-closed, so it requires three secrets at install time (API key, admin key, auth pepper). The cleanest path is to create a Kubernetes Secret first and reference it from the chart:
+
 ```bash
-# Default install: enforcement + audit only (no Control API)
+NS=clawdstrike-system
+kubectl create namespace "$NS"
+
+kubectl -n "$NS" create secret generic clawdstrike-hushd-auth \
+  --from-literal=CLAWDSTRIKE_API_KEY="$(openssl rand -hex 32)" \
+  --from-literal=CLAWDSTRIKE_ADMIN_KEY="$(openssl rand -hex 32)" \
+  --from-literal=CLAWDSTRIKE_AUTH_PEPPER="$(openssl rand -hex 32)"
+
 helm install clawdstrike \
   oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
   --version 0.2.0 \
-  --namespace clawdstrike-system --create-namespace
+  --namespace "$NS" \
+  --set hushd.auth.existingSecret=clawdstrike-hushd-auth
 ```
 
-To bring up the full control plane (enrollment, posture commands, signed completion bundles back to the API), enable the Control API:
+To bring up the full control plane (enrollment, posture commands, signed completion bundles back to the API), enable the Control API. It needs its own Secret (Postgres URL, JWT signing secret, and Stripe billing keys; use placeholder values if you are not running billing):
 
 ```bash
-helm install clawdstrike \
+kubectl -n "$NS" create secret generic clawdstrike-control-api \
+  --from-literal=DATABASE_URL="postgres://..." \
+  --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
+  --from-literal=STRIPE_SECRET_KEY="sk_test_placeholder" \
+  --from-literal=STRIPE_WEBHOOK_SECRET="whsec_placeholder"
+
+helm upgrade clawdstrike \
   oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
   --version 0.2.0 \
-  --namespace clawdstrike-system --create-namespace \
-  --set controlApi.enabled=true
+  --namespace "$NS" \
+  --set hushd.auth.existingSecret=clawdstrike-hushd-auth \
+  --set controlApi.enabled=true \
+  --set controlApi.secrets.existingSecret=clawdstrike-control-api
 ```
 
-For development off the repo, swap the OCI reference for the local path:
-
-```bash
-helm install clawdstrike ./infra/deploy/helm/clawdstrike \
-  --namespace clawdstrike-system --create-namespace \
-  --set controlApi.enabled=true
-```
+For local development off the repo, swap the OCI reference for `./infra/deploy/helm/clawdstrike` and keep the same `--set` flags.
 
 | Component | Workload | Default | Purpose |
 |---|---|---|---|
