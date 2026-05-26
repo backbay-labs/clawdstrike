@@ -166,15 +166,22 @@ See [`infra/deploy/helm/clawdstrike/README.md`](infra/deploy/helm/clawdstrike/RE
 
 ```mermaid
 flowchart LR
-    A[Agent] --> B[Adapter]
-    B --> C[Policy engine + guard stack]
-    C -->|allow| D[Tool runs]
-    C -->|deny| E[Blocked, fail-closed]
-    C --> F[Ed25519 receipt]
-    F -.->|enterprise| G[Spine audit chain]
+    A[AI agent SDK] --> N
+    K[Kernel sensors<br/>ES · NetExt · Tetragon · Hubble] --> N
+    N[Canonical event] --> P[Policy engine + guard stack]
+    P -->|allow| T[Action proceeds]
+    P -->|deny| B[Fail closed]
+    P --> R[Response action<br/>quarantine · suspend · revoke]
+    P --> F[Ed25519 receipt]
+    F --> G[Causal graph + flight recorder]
+    G -.->|enterprise| S[Spine: checkpointer + witness]
 ```
 
-The adapter normalises agent tool calls into a canonical event. The policy engine runs the guard stack against the event and returns a verdict. The verdict ships with a signed receipt. The agent never sees a raw decision without proof.
+Two input paths feed one policy engine. The SDK adapter normalises an AI agent's tool call into a canonical event; kernel sensors (macOS Endpoint Security and Network Extension; Linux Tetragon and Hubble) produce the same event shape for `file_access`, `process_exec`, `network_flow`, `dylib_load`, and `launch_persistence`. The guard stack returns a verdict bound to an Ed25519 receipt. Allowed actions proceed; denied actions fail closed.
+
+Each receipt is content-hashed into a per-session causal graph that threads identity context (`agent_id`, `tool_call_id`, `workload_id`, `approval_id`) through every downstream OS event the decision touched. The graph and the raw observations are written to a disk-backed flight recorder with compaction and graph/history indices, so policies can be simulated against past state before they ship.
+
+Response actions (`quarantine_file`, `restrict_egress`, `disable_persistence`, `revoke_grant`, `suspend_process_tree`, `terminate_process_tree`) produce their own signed `EndpointResponseExecutionEffect` and are reversible where possible. In enterprise mode the chain ships over NATS to the Spine checkpointer; an independent witness co-signs each batch.
 
 > *Logs are stories; proof is a signature.*
 
