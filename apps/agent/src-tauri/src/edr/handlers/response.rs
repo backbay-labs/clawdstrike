@@ -172,7 +172,9 @@ pub(crate) async fn agent_edr_response_action(
                 };
             (
                 Some(execution),
-                Some(EdrEvidenceBundleArtifact::from_stored(&stored_bundle)),
+                Some(crate::edr::dto::evidence_bundle_artifact_from_stored(
+                    &stored_bundle,
+                )),
                 Some(receipt),
                 Some(bundle_receipt),
             )
@@ -383,7 +385,7 @@ pub(crate) async fn agent_edr_response_execution_proof(
         let affected_identities = affected_identities_for_causal_impact(&stored.graph);
         let affected_tools = affected_tools_for_causal_impact(&stored.graph);
         (
-            EdrEvidenceBundleArtifact::from_stored(&stored),
+            crate::edr::dto::evidence_bundle_artifact_from_stored(&stored),
             affected_identities,
             affected_tools,
         )

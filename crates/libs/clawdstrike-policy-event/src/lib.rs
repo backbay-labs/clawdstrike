@@ -11,6 +11,7 @@
 //! - [`edr`] - endpoint detection, deception, and causal graph primitives
 //! - [`ocsf`] - PolicyEvent to OCSF conversion
 //! - [`facade`] - JSON-in/JSON-out facade for cross-language bindings
+//! - [`wire`] - Wire-format request/response DTOs over EDR types
 
 #[cfg(feature = "timeline")]
 pub mod bridge;
@@ -23,6 +24,7 @@ pub mod ocsf;
 pub mod simulate;
 pub mod stream;
 pub mod synth;
+pub mod wire;
 
 pub use event::*;
 #[cfg(feature = "simulate")]

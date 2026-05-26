@@ -2338,7 +2338,12 @@ async fn hydrate_response_execution_record_attribution(
     for record in records {
         let bundle_id = record.execution.evidence_bundle.bundle_id.as_str();
         match store.load(bundle_id) {
-            Ok(Some(stored)) => record.hydrate_attribution(&stored.graph),
+            Ok(Some(stored)) => {
+                crate::edr::dto::hydrate_response_execution_record_attribution(
+                    record,
+                    &stored.graph,
+                );
+            }
             Ok(None) => {}
             Err(err) => {
                 tracing::warn!(
