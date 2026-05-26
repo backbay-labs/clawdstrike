@@ -29,7 +29,15 @@ use serde_json::Value;
 /// posts it to the Control API for durable storage. The Control API
 /// re-verifies the signature against the embedded `signed_receipt` before
 /// persisting.
+///
+/// `signed_receipt` is `Option<Value>` on the wire (not required at the
+/// deserializer level) so that requests missing the field surface as the
+/// handler's `ApiError::BadRequest` (HTTP 400 with a JSON envelope), matching
+/// the original control-api contract before this crate was extracted. Making
+/// it required here would force Axum's `Json<>` extractor to short-circuit
+/// with a default 422 response, breaking clients that depend on the 400.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ControlStoreReceiptRequest {
     /// RFC 3339 timestamp from the original receipt.
     pub timestamp: String,
@@ -52,14 +60,17 @@ pub struct ControlStoreReceiptRequest {
     /// Optional metadata payload (e.g. `receiptId`, source, policy hash).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Value>,
-    /// The full signed receipt envelope. Required — the control-api
-    /// validation pipeline rejects payloads where this is missing, so we
-    /// model the requirement at the type level.
-    pub signed_receipt: Value,
+    /// The signed receipt envelope. Producers always emit one; the receiver's
+    /// `validate_store_request` rejects payloads with this missing as HTTP 400.
+    /// Kept optional here so the rejection happens in the handler, not the
+    /// deserializer, preserving the prior 400 contract.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_receipt: Option<Value>,
 }
 
 /// Request body for `POST /api/v1/receipts/batch`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ControlBatchStoreReceiptsRequest {
     /// Receipts to store, processed in order.
     pub receipts: Vec<ControlStoreReceiptRequest>,
@@ -81,7 +92,7 @@ mod tests {
             chain_hash: None,
             evidence: None,
             metadata: None,
-            signed_receipt: serde_json::json!({"signed": true}),
+            signed_receipt: Some(serde_json::json!({"signed": true})),
         };
         let bytes = serde_json::to_vec(&req).unwrap();
         let back: ControlStoreReceiptRequest = serde_json::from_slice(&bytes).unwrap();
@@ -90,7 +101,10 @@ mod tests {
     }
 
     #[test]
-    fn store_receipt_request_rejects_missing_signed_receipt() {
+    fn store_receipt_request_accepts_missing_signed_receipt() {
+        // Deliberately not required at the deserializer level so the handler
+        // can return HTTP 400 (instead of Axum's default 422) for missing
+        // signed_receipt. See struct doc-comment.
         let raw = serde_json::json!({
             "timestamp": "2026-05-26T00:00:00Z",
             "verdict": "allow",
@@ -99,10 +113,26 @@ mod tests {
             "signature": "ab",
             "public_key": "cd",
         });
+        let req: ControlStoreReceiptRequest = serde_json::from_value(raw).unwrap();
+        assert!(req.signed_receipt.is_none());
+    }
+
+    #[test]
+    fn store_receipt_request_rejects_unknown_fields() {
+        let raw = serde_json::json!({
+            "timestamp": "2026-05-26T00:00:00Z",
+            "verdict": "allow",
+            "guard": "endpoint_decision",
+            "policy_name": "default",
+            "signature": "ab",
+            "public_key": "cd",
+            "signed_receipt": {},
+            "unexpected_field": "boom",
+        });
         let err = serde_json::from_value::<ControlStoreReceiptRequest>(raw).unwrap_err();
         assert!(
-            err.to_string().contains("signed_receipt"),
-            "expected missing-field error to mention signed_receipt, got {err}"
+            err.to_string().contains("unexpected_field"),
+            "expected unknown-field rejection, got {err}"
         );
     }
 
@@ -119,7 +149,7 @@ mod tests {
                 chain_hash: Some("0xdeadbeef".to_string()),
                 evidence: Some(serde_json::json!([])),
                 metadata: Some(serde_json::json!({"receiptId": "abc"})),
-                signed_receipt: serde_json::json!({}),
+                signed_receipt: Some(serde_json::json!({})),
             }],
         };
         let bytes = serde_json::to_vec(&batch).unwrap();

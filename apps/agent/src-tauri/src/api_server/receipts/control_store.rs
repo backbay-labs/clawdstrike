@@ -59,7 +59,7 @@ pub(crate) fn control_store_receipt_from_endpoint_receipt(
             "endpointId": receipt_endpoint_decision_str(receipt, &["actor", "endpointId"]),
             "policyHash": receipt_endpoint_decision_str(receipt, &["policy", "policyHash"]),
         })),
-        signed_receipt,
+        signed_receipt: Some(signed_receipt),
     })
 }
 

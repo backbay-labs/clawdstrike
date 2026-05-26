@@ -12,11 +12,14 @@ pub(crate) async fn enqueue_control_receipt_upload_retry(
     receipt: &ControlStoreReceiptRequest,
     failure: ControlReceiptUploadAttemptFailure,
 ) -> Result<(String, chrono::DateTime<chrono::Utc>), (StatusCode, String)> {
-    let receipt_hash = canonical_json_hash(
-        &receipt.signed_receipt,
-        "control receipt upload signed receipt",
-    )
-    .map_err(internal_error)?;
+    let signed_receipt = receipt.signed_receipt.as_ref().ok_or_else(|| {
+        internal_error(anyhow::anyhow!(
+            "control receipt upload retry requires signed_receipt"
+        ))
+    })?;
+    let receipt_hash =
+        canonical_json_hash(signed_receipt, "control receipt upload signed receipt")
+            .map_err(internal_error)?;
     let receipt_id = receipt
         .metadata
         .as_ref()

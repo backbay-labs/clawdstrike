@@ -1224,8 +1224,12 @@
         assert!(queued[0].receipt_hash.starts_with("0x"));
         assert_eq!(queued[0].last_http_status, Some(503));
         assert_eq!(
-            queued[0].payload.signed_receipt["receipt"]["metadata"]["endpointDecision"]
-                ["receiptFamily"],
+            queued[0]
+                .payload
+                .signed_receipt
+                .as_ref()
+                .expect("queued payload always carries signed_receipt")
+                ["receipt"]["metadata"]["endpointDecision"]["receiptFamily"],
             "detection"
         );
 

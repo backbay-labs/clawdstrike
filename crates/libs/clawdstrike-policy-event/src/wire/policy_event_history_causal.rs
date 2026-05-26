@@ -7,7 +7,9 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::edr::{CausalGraph, CausalNodeKind, EndpointDecisionAction, EndpointSimulationImpactLevel};
+use crate::edr::{
+    CausalGraph, CausalNodeKind, EndpointDecisionAction, EndpointSimulationImpactLevel,
+};
 use hush_core::SignedReceipt;
 
 use super::policy_event_history::{

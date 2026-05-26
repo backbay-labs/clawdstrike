@@ -2,9 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::edr::{
-    CausalGraph, DetectionFinding, EndpointObservation, HoneyArtifact,
-};
+use crate::edr::{CausalGraph, DetectionFinding, EndpointObservation, HoneyArtifact};
 use hush_core::SignedReceipt;
 
 use super::policy_event_history::{

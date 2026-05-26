@@ -82,7 +82,10 @@ mod tests {
             ..Default::default()
         };
         let json = serde_json::to_string(&record).unwrap();
-        assert!(json.contains("\"receiptId\""), "expected camelCase, got {json}");
+        assert!(
+            json.contains("\"receiptId\""),
+            "expected camelCase, got {json}"
+        );
         assert!(json.contains("\"localSequence\""));
         let back: EndpointReceiptIndexRecord = serde_json::from_str(&json).unwrap();
         assert_eq!(back, record);
