@@ -34,6 +34,7 @@ members = [
     "crates/libs/hunt-correlate",
     "crates/libs/clawdstrike-ocsf",
     "crates/libs/clawdstrike-policy-event",
+    "crates/libs/clawdstrike-hushd-config",
     "crates/libs/clawdstrike-logos",
     "crates/libs/logos-ffi",
     "crates/libs/hushspec",
@@ -180,6 +181,7 @@ logos-ffi = { path = "crates/libs/logos-ffi", version = "0.2.7" }
 logos-z3 = { path = "crates/libs/logos-z3", version = "0.2.7" }
 clawdstrike-ocsf = { path = "crates/libs/clawdstrike-ocsf", version = "0.2.7" }
 clawdstrike-policy-event = { path = "crates/libs/clawdstrike-policy-event", version = "0.2.7", default-features = false }
+clawdstrike-hushd-config = { path = "crates/libs/clawdstrike-hushd-config", version = "0.2.7" }
 nono = { path = "infra/vendor/nono", version = "0.11.0", default-features = false }
 
 [profile.release]

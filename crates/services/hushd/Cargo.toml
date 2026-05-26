@@ -32,6 +32,7 @@ clawdstrike-broker-protocol.workspace = true
 hush-multi-agent.workspace = true
 clawdstrike-ocsf.workspace = true
 clawdstrike-policy-event = { workspace = true, features = ["simulate"] }
+clawdstrike-hushd-config.workspace = true
 hush-certification.workspace = true
 spine.workspace = true
 async-nats = "0.40"

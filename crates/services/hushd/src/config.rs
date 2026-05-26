@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
+// The Spine attestation-log config is the single source of truth shared with
+// the desktop agent's runtime-config writer. Keeping both sides on the
+// `clawdstrike_hushd_config::SpineConfig` type prevents the daemon from
+// accepting a YAML shape the agent does not produce (or vice-versa).
+pub use clawdstrike_hushd_config::SpineConfig;
+
 use crate::auth::{ApiKey, AuthStore, Scope};
 use crate::siem::dlq::DeadLetterQueueConfig;
 use crate::siem::exporter::ExporterConfig as SiemExporterConfig;
@@ -957,51 +963,6 @@ impl AuditForwardConfig {
         Ok(out)
     }
 }
-/// Spine attestation log configuration.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SpineConfig {
-    /// Whether to publish eval receipts to Spine (NATS JetStream).
-    #[serde(default)]
-    pub enabled: bool,
-    /// NATS server URL (defaults to `nats://127.0.0.1:4222`).
-    #[serde(default)]
-    pub nats_url: Option<String>,
-    /// Path to a `.creds` file for NATS authentication.
-    #[serde(default)]
-    pub creds_file: Option<String>,
-    /// Bearer token for NATS authentication.
-    #[serde(default)]
-    pub token: Option<String>,
-    /// NKey seed for NATS authentication.
-    #[serde(default)]
-    pub nkey_seed: Option<String>,
-    /// Path to a separate Ed25519 keypair for signing spine envelopes.
-    /// When unset, the daemon's signing key is reused.
-    #[serde(default)]
-    pub keypair_path: Option<String>,
-    /// Subject prefix for NATS subjects (default: `spine`).
-    #[serde(default = "default_spine_subject_prefix")]
-    pub subject_prefix: String,
-}
-
-impl Default for SpineConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            nats_url: None,
-            creds_file: None,
-            token: None,
-            nkey_seed: None,
-            keypair_path: None,
-            subject_prefix: default_spine_subject_prefix(),
-        }
-    }
-}
-
-fn default_spine_subject_prefix() -> String {
-    "spine".to_string()
-}
-
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1943,5 +1904,125 @@ enabled = false
             }
             _ => panic!("expected otlp sink"),
         }
+    }
+
+    /// Contract test: the runtime config the desktop agent writes (modeled by
+    /// `clawdstrike_hushd_config::RuntimeConfig`) must deserialize cleanly into
+    /// `hushd::config::Config`. If hushd ever adds `deny_unknown_fields` to a
+    /// nested struct or renames a field that the agent populates, this test
+    /// will fail at compile or runtime - which is the whole point of the
+    /// shared crate.
+    #[test]
+    fn agent_runtime_config_yaml_round_trips_into_full_config() {
+        use clawdstrike_hushd_config::{
+            DatadogExporterConfig, ExporterSettings, ExportersConfig, GenericWebhookConfig,
+            RuntimeConfig as AgentRuntimeConfig, SiemConfig as AgentSiemConfig,
+            SpineConfig as AgentSpineConfig, WebhookAuthConfig, WebhookExporterConfig,
+        };
+
+        let agent_view = AgentRuntimeConfig {
+            listen: "127.0.0.1:9876".to_string(),
+            policy_path: Some(PathBuf::from("/etc/clawdstrike/policy.yaml")),
+            ruleset: "default".to_string(),
+            signing_key: Some(PathBuf::from("/var/lib/clawdstrike/sign.key")),
+            siem: Some(AgentSiemConfig {
+                enabled: true,
+                exporters: ExportersConfig {
+                    datadog: Some(ExporterSettings {
+                        enabled: true,
+                        config: DatadogExporterConfig {
+                            api_key: "secret".to_string(),
+                            site: "datadoghq.com".to_string(),
+                        },
+                    }),
+                    webhooks: Some(ExporterSettings {
+                        enabled: true,
+                        config: WebhookExporterConfig {
+                            webhooks: vec![GenericWebhookConfig {
+                                url: "https://example.test/hook".to_string(),
+                                method: Some("POST".to_string()),
+                                headers: Default::default(),
+                                auth: Some(WebhookAuthConfig {
+                                    auth_type: "bearer".to_string(),
+                                    token: Some("token".to_string()),
+                                }),
+                                content_type: Some("application/json".to_string()),
+                            }],
+                        },
+                    }),
+                    ..Default::default()
+                },
+            }),
+            spine: Some(AgentSpineConfig {
+                enabled: true,
+                nats_url: Some("nats://127.0.0.1:4222".to_string()),
+                subject_prefix: "spine".to_string(),
+                ..Default::default()
+            }),
+        };
+
+        let yaml = serde_yaml::to_string(&agent_view).expect("serialise agent view");
+        let hushd_view: Config = serde_yaml::from_str(&yaml).unwrap_or_else(|err| {
+            panic!(
+                "agent-written runtime YAML failed to deserialize into hushd Config: {err}\n--- YAML ---\n{yaml}"
+            )
+        });
+
+        assert_eq!(hushd_view.listen, agent_view.listen);
+        assert_eq!(hushd_view.ruleset, agent_view.ruleset);
+        assert_eq!(hushd_view.policy_path, agent_view.policy_path);
+        assert_eq!(hushd_view.signing_key, agent_view.signing_key);
+
+        let spine = agent_view
+            .spine
+            .as_ref()
+            .expect("agent view spine populated");
+        assert_eq!(hushd_view.spine.enabled, spine.enabled);
+        assert_eq!(hushd_view.spine.nats_url, spine.nats_url);
+        assert_eq!(hushd_view.spine.subject_prefix, spine.subject_prefix);
+
+        let siem = agent_view.siem.as_ref().expect("agent view siem populated");
+        assert_eq!(hushd_view.siem.enabled, siem.enabled);
+
+        let dd_agent = siem.exporters.datadog.as_ref().unwrap();
+        let dd_hushd = hushd_view
+            .siem
+            .exporters
+            .datadog
+            .as_ref()
+            .expect("datadog exporter survives round-trip");
+        assert_eq!(dd_hushd.enabled, dd_agent.enabled);
+        assert_eq!(dd_hushd.config.api_key, dd_agent.config.api_key);
+        assert_eq!(dd_hushd.config.site, dd_agent.config.site);
+
+        let wh_hushd = hushd_view
+            .siem
+            .exporters
+            .webhooks
+            .as_ref()
+            .expect("webhook exporter survives round-trip");
+        assert_eq!(wh_hushd.config.webhooks.len(), 1);
+        assert_eq!(wh_hushd.config.webhooks[0].url, "https://example.test/hook");
+    }
+
+    /// On-disk-backward-compat test: a legacy YAML where `keypair_path` is
+    /// stored as a plain `String` (the previous hushd reader shape) must still
+    /// deserialize cleanly now that the shared type uses `Option<PathBuf>`.
+    #[test]
+    fn spine_keypair_path_legacy_string_round_trips() {
+        let yaml = r#"
+listen: "127.0.0.1:9876"
+ruleset: default
+spine:
+  enabled: true
+  keypair_path: "/var/lib/clawdstrike/spine.key"
+  subject_prefix: "spine"
+"#;
+        let cfg: Config = serde_yaml::from_str(yaml).expect("legacy YAML deserializes");
+        assert_eq!(
+            cfg.spine.keypair_path,
+            Some(PathBuf::from("/var/lib/clawdstrike/spine.key"))
+        );
+        assert!(cfg.spine.enabled);
     }
 }

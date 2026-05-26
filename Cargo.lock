@@ -1860,6 +1860,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clawdstrike-hushd-config"
+version = "0.2.7"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "clawdstrike-logos"
 version = "0.2.7"
 dependencies = [
@@ -4035,6 +4044,7 @@ dependencies = [
  "clap",
  "clawdstrike",
  "clawdstrike-broker-protocol",
+ "clawdstrike-hushd-config",
  "clawdstrike-logos",
  "clawdstrike-ocsf",
  "clawdstrike-policy-event",
