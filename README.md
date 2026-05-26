@@ -96,22 +96,29 @@ The agent runs normally. Every tool call hits the engine first. Denials raise a 
 
 For fleet deployments, install the Helm chart. The default install brings up the enforcement + audit core: bundled NATS JetStream, the Spine audit chain (checkpointer + witness + proofs API), and `hushd`. The Control API (cloud enrollment + posture commands) and the kernel/L7 telemetry bridges are off by default; enable them with `--set`.
 
-`hushd` ships fail-closed, so it requires three secrets at install time (API key, admin key, auth pepper). The cleanest path is to create a Kubernetes Secret first and reference it from the chart:
+`hushd` and the Spine checkpointer + witness all ship fail-closed, so they require signing material at install time. The cleanest path is to pre-create Kubernetes Secrets and reference them from the chart:
 
 ```bash
 NS=clawdstrike-system
 kubectl create namespace "$NS"
 
+# hushd: API key, admin key, auth pepper
 kubectl -n "$NS" create secret generic clawdstrike-hushd-auth \
   --from-literal=CLAWDSTRIKE_API_KEY="$(openssl rand -hex 32)" \
   --from-literal=CLAWDSTRIKE_ADMIN_KEY="$(openssl rand -hex 32)" \
   --from-literal=CLAWDSTRIKE_AUTH_PEPPER="$(openssl rand -hex 32)"
 
+# Spine: Ed25519 seeds for the checkpointer and witness signers
+kubectl -n "$NS" create secret generic clawdstrike-spine \
+  --from-literal=SPINE_LOG_SEED_HEX="$(openssl rand -hex 32)" \
+  --from-literal=SPINE_WITNESS_SEED_HEX="$(openssl rand -hex 32)"
+
 helm install clawdstrike \
   oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
   --version 0.2.0 \
   --namespace "$NS" \
-  --set hushd.auth.existingSecret=clawdstrike-hushd-auth
+  --set hushd.auth.existingSecret=clawdstrike-hushd-auth \
+  --set spine.secrets.existingSecret=clawdstrike-spine
 ```
 
 To bring up the full control plane (enrollment, posture commands, signed completion bundles back to the API), enable the Control API. It needs its own Secret (Postgres URL, JWT signing secret, and Stripe billing keys; use placeholder values if you are not running billing):
@@ -128,6 +135,7 @@ helm upgrade clawdstrike \
   --version 0.2.0 \
   --namespace "$NS" \
   --set hushd.auth.existingSecret=clawdstrike-hushd-auth \
+  --set spine.secrets.existingSecret=clawdstrike-spine \
   --set controlApi.enabled=true \
   --set controlApi.secrets.existingSecret=clawdstrike-control-api \
   --set controlApi.env.NATS_PROVISIONING_MODE=mock \
