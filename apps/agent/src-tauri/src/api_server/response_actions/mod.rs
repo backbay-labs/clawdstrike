@@ -16,10 +16,10 @@
 //! `clawdstrike-fs-policy-paths` crate (extracted in Phase 1).
 //!
 //! Sub-files import the parent api_server scope via `use super::*;`, which
-//! re-exports `super::super::*` here so they see all the same symbols the
-//! original single-file module relied on.
+//! sees `super::*` here -- making the parent api_server symbols visible inside
+//! `response_actions` without re-broadcasting them back through this module.
 
-pub(crate) use super::*;
+use super::*;
 
 pub(crate) use clawdstrike_fs_policy_paths::path_is_bounded_persistence_target;
 

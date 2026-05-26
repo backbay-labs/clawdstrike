@@ -99,7 +99,7 @@ pub(crate) fn execute_disable_persistence_rollback(
     Ok(rollback)
 }
 
-pub(crate) fn validate_disable_persistence_restore_target_path(path: &FsPath) -> Result<()> {
+pub(super) fn validate_disable_persistence_restore_target_path(path: &FsPath) -> Result<()> {
     if !path.is_absolute() {
         return Err(anyhow::anyhow!(
             "persistence rollback target path must be absolute: {}",

@@ -19,12 +19,19 @@ pub(crate) fn supported_edr_simulation_action(action: &EndpointDecisionAction) -
     )
 }
 
+// NOTE: `TerminateProcessTree` is intentionally absent from
+// `supported_edr_response_action` and the `default_response_action_reason`
+// match below. The dispatcher has no `TerminateProcessTree =>` execute arm
+// and the handler-level allowlist (`edr/handlers/response/action.rs`)
+// already excludes it from non-dry-run execution. Keeping it out of these
+// tables makes that intent explicit instead of relying on the handler to
+// gate the inconsistency. Simulation continues to support
+// `TerminateProcessTree` (audit-stage policy promotion).
 pub(crate) fn supported_edr_response_action(action: &EndpointDecisionAction) -> bool {
     matches!(
         action,
         EndpointDecisionAction::RestrictEgress
             | EndpointDecisionAction::SuspendProcessTree
-            | EndpointDecisionAction::TerminateProcessTree
             | EndpointDecisionAction::QuarantineFile
             | EndpointDecisionAction::RevokeGrant
             | EndpointDecisionAction::DisablePersistence
@@ -46,7 +53,6 @@ pub(crate) fn default_response_action_reason(
         EndpointDecisionAction::DisablePersistence => "disable endpoint persistence item",
         EndpointDecisionAction::RevokeGrant => "revoke local endpoint grant",
         EndpointDecisionAction::SuspendProcessTree => "suspend endpoint process tree",
-        EndpointDecisionAction::TerminateProcessTree => "terminate endpoint process tree",
         _ => "execute endpoint response",
     }
 }

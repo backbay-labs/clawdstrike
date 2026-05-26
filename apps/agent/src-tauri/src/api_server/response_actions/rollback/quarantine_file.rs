@@ -89,7 +89,7 @@ pub(crate) fn execute_quarantine_file_rollback(
     Ok(rollback)
 }
 
-pub(crate) fn validate_quarantine_restore_target_path(path: &FsPath) -> Result<()> {
+pub(super) fn validate_quarantine_restore_target_path(path: &FsPath) -> Result<()> {
     if !path.is_absolute() {
         return Err(anyhow::anyhow!(
             "rollback target path must be absolute: {}",
