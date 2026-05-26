@@ -20,7 +20,7 @@
 
 > **Status: pre-1.0 beta.** Public APIs are stable; defaults may still tighten before 1.0.
 
-Clawdstrike is a **fail-closed policy engine, a next-gen EDR, and a cryptographic attestation fabric** in one binary. Every boundary where intent becomes action — an AI agent's `tool_call`, a kernel-level `file_access`, a `process_exec`, an outbound `network_flow`, a `dylib_load`, a `launch_persistence` write — lives in the same event taxonomy, runs through the same policy engine, and lands in the same Ed25519-signed causal graph. Most EDRs treat AI agents as a black box. This one threads the agent's intent through the kernel, end to end.
+Clawdstrike is a policy engine, an EDR, and a signed audit chain in one binary. An AI agent's `tool_call` sits in the same event taxonomy as a kernel-level `file_access`, `process_exec`, `network_flow`, `dylib_load`, or `launch_persistence`. One policy engine evaluates them. One Ed25519-signed causal graph records them. Defaults fail closed.
 
 The same engine ships as a Rust crate, a TypeScript SDK, a Python package, a Go module, a CLI, a desktop EDR agent (macOS Endpoint Security + Network Extension; Linux Tetragon + Hubble), and an enterprise control plane.
 
@@ -94,7 +94,7 @@ The agent runs normally. Every tool call hits the engine first. Denials raise a 
 
 ### Cluster: Helm chart and control plane
 
-For fleet deployments, install the Helm chart. The default install brings up the enforcement + audit core: bundled NATS JetStream, the Spine audit chain (checkpointer + witness + proofs API), and `hushd`. The Control API (cloud enrollment + posture commands) and the kernel/L7 telemetry bridges are off by default — turn them on with `--set`.
+For fleet deployments, install the Helm chart. The default install brings up the enforcement + audit core: bundled NATS JetStream, the Spine audit chain (checkpointer + witness + proofs API), and `hushd`. The Control API (cloud enrollment + posture commands) and the kernel/L7 telemetry bridges are off by default; enable them with `--set`.
 
 ```bash
 # Default install: enforcement + audit only (no Control API)
