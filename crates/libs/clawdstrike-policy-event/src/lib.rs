@@ -24,6 +24,7 @@ pub mod ocsf;
 pub mod simulate;
 pub mod stream;
 pub mod synth;
+#[cfg(feature = "simulate")]
 pub mod wire;
 
 pub use event::*;
