@@ -27,7 +27,7 @@ pub(crate) async fn evidence_bundle_archive_response(
     let receipts = evidence_bundle_archive_receipts(state, &stored).await?;
     let archive = EdrEvidenceBundleArchive {
         bundle: stored.bundle.clone(),
-        artifact: EdrEvidenceBundleArtifact::from_stored(&stored),
+        artifact: crate::edr::dto::evidence_bundle_artifact_from_stored(&stored),
         graph: stored.graph,
         receipts,
     };

@@ -86,9 +86,21 @@ pub(crate) async fn select_policy_event_history_from_flight_recorder(
                 };
                 let event_kind_matches =
                     event_kinds.is_empty() || event_kinds.contains(entry.event_kind.as_str());
-                let identity_matches = identity_filters.matches_index_entry(entry);
-                let process_matches = process_filters.matches_index_entry(entry);
-                let target_matches = target_filters.matches_index_entry(entry);
+                let identity_matches =
+                    crate::edr::dto::edr_policy_event_history_identity_filters_matches_index_entry(
+                        &identity_filters,
+                        entry,
+                    );
+                let process_matches =
+                    crate::edr::dto::edr_policy_event_history_process_filters_matches_index_entry(
+                        &process_filters,
+                        entry,
+                    );
+                let target_matches =
+                    crate::edr::dto::edr_policy_event_history_target_filters_matches_index_entry(
+                        &target_filters,
+                        entry,
+                    );
                 time_matches
                     && event_kind_matches
                     && identity_matches

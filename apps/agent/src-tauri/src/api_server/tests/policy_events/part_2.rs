@@ -1503,7 +1503,7 @@
         });
 
         let mut artifact_value =
-            serde_json::to_value(EdrEvidenceBundleArtifact::from_stored(&restored))
+            serde_json::to_value(crate::edr::dto::evidence_bundle_artifact_from_stored(&restored))
                 .unwrap_or_else(|err| panic!("failed to encode evidence bundle artifact: {err}"));
         artifact_value["shadowArtifactHash"] =
             serde_json::Value::String("must not be ignored".to_string());
@@ -1514,7 +1514,7 @@
 
         let mut archive_value = serde_json::to_value(EdrEvidenceBundleArchive {
             bundle: restored.bundle.clone(),
-            artifact: EdrEvidenceBundleArtifact::from_stored(&restored),
+            artifact: crate::edr::dto::evidence_bundle_artifact_from_stored(&restored),
             graph: restored.graph.clone(),
             receipts: Vec::new(),
         })

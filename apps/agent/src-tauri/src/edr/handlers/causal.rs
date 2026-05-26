@@ -376,7 +376,7 @@ pub(crate) async fn agent_edr_graph_slice_export(
         affected_tools,
         graph: exported_graph,
         bundle,
-        artifact: EdrEvidenceBundleArtifact::from_stored(&stored),
+        artifact: crate::edr::dto::evidence_bundle_artifact_from_stored(&stored),
         receipt,
     }))
 }
