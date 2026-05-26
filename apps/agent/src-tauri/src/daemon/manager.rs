@@ -13,8 +13,8 @@ use tokio::process::Child;
 use tokio::sync::{broadcast, Mutex, RwLock};
 
 use super::ready_probe::{
-    health_check_with_client, wait_for_ready_with_client, wait_for_ready_with_client_or_shutdown,
-    ReadyWaitOutcome,
+    health_check_with_client, sleep_or_shutdown, wait_for_ready_with_client,
+    wait_for_ready_with_client_or_shutdown, ReadyWaitOutcome,
 };
 use super::runtime_keypair::cleanup_runtime_enrollment_keypair;
 use super::spawn::{
@@ -321,7 +321,7 @@ impl DaemonManager {
 
                                 let backoff = compute_backoff(restart_streak, next_restart_count);
                                 tracing::info!(backoff_ms = backoff.as_millis() as u64, "Scheduling hushd restart");
-                                if super::ready_probe::sleep_or_shutdown(&mut shutdown_rx, backoff).await {
+                                if sleep_or_shutdown(&mut shutdown_rx, backoff).await {
                                     tracing::debug!("Shutdown requested while waiting to restart hushd");
                                     break 'monitor;
                                 }
