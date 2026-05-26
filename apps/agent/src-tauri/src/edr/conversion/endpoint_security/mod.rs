@@ -4,17 +4,28 @@
 //! `EndpointObservation` / `EndpointProcess` / `EndpointEvent` domain types.
 //! They are stateless: no access to `AgentApiState`.
 
-use crate::api_server::{
-    local_stable_id, non_empty, redact_developer_activity_args,
-    redact_developer_activity_command_line, redact_endpoint_observation_metadata, trimmed_owned,
+mod helpers;
+mod loss;
+mod process;
+
+#[allow(unused_imports)]
+pub(crate) use helpers::{
+    bad_endpoint_security_event_request, endpoint_security_command_line,
+    endpoint_security_file_operation, normalized_endpoint_security_decision,
+    required_endpoint_security_event_string,
 };
+#[allow(unused_imports)]
+pub(crate) use loss::{endpoint_security_event_loss_fields, endpoint_security_event_loss_sensor_state};
+#[allow(unused_imports)]
+pub(crate) use process::{endpoint_security_event_metadata, endpoint_security_event_process};
+
+use crate::api_server::{local_stable_id, trimmed_owned};
 use crate::edr::dto::{EdrEndpointSecurityEvent, EdrEndpointSecurityEventKind};
 use axum::http::StatusCode;
-use clawdstrike_policy_event::edr::{
-    CredentialKind, EndpointEvent, EndpointObservation, EndpointProcess, EndpointProviderKind,
-    EndpointProviderState, EndpointSensorState, FileOperation,
-};
+use clawdstrike_policy_event::edr::{EndpointEvent, EndpointObservation, FileOperation};
 use std::collections::BTreeMap;
+
+use self::helpers::endpoint_security_credential_kind_for_path;
 
 pub(crate) fn endpoint_security_event_observation(
     event: &EdrEndpointSecurityEvent,
@@ -114,7 +125,7 @@ pub(crate) fn endpoint_security_endpoint_event(
                 required_endpoint_security_event_string(event, "image", event.image.as_deref())?;
             Ok(EndpointEvent::ProcessExec {
                 image,
-                args: redact_developer_activity_args(&event.args),
+                args: crate::api_server::redact_developer_activity_args(&event.args),
                 env: BTreeMap::new(),
             })
         }
@@ -175,103 +186,6 @@ pub(crate) fn endpoint_security_endpoint_event(
     }
 }
 
-pub(crate) fn endpoint_security_event_process(
-    event: &EdrEndpointSecurityEvent,
-) -> Result<EndpointProcess, (StatusCode, String)> {
-    let mut process = event.process.clone().unwrap_or_default();
-    if let Some(command_line) = trimmed_owned(process.command_line.as_deref()) {
-        process.command_line = Some(redact_developer_activity_command_line(&command_line));
-    }
-    if process.pid.is_none() {
-        process.pid = event.pid;
-    }
-    if process.ppid.is_none() {
-        process.ppid = event.ppid;
-    }
-    if trimmed_owned(process.process_guid.as_deref()).is_none() {
-        process.process_guid = trimmed_owned(event.process_guid.as_deref());
-    }
-    if trimmed_owned(process.parent_process_guid.as_deref()).is_none() {
-        process.parent_process_guid = trimmed_owned(event.parent_process_guid.as_deref());
-    }
-    if trimmed_owned(process.image.as_deref()).is_none() {
-        process.image = trimmed_owned(event.image.as_deref());
-    }
-    if trimmed_owned(process.command_line.as_deref()).is_none() {
-        process.command_line = trimmed_owned(event.command_line.as_deref())
-            .or_else(|| {
-                process
-                    .image
-                    .as_ref()
-                    .map(|image| endpoint_security_command_line(image, &event.args))
-            })
-            .map(|command_line| redact_developer_activity_command_line(&command_line));
-    }
-    if matches!(event.kind, EdrEndpointSecurityEventKind::EventLoss) {
-        if trimmed_owned(process.image.as_deref()).is_none() {
-            process.image = Some("macos.endpoint_security".to_string());
-        }
-        if trimmed_owned(process.command_line.as_deref()).is_none() {
-            process.command_line = Some("endpoint_security event_loss".to_string());
-        }
-    }
-    if trimmed_owned(process.cwd.as_deref()).is_none() {
-        process.cwd = trimmed_owned(event.cwd.as_deref());
-    }
-    if trimmed_owned(process.image.as_deref()).is_none()
-        && trimmed_owned(process.command_line.as_deref()).is_none()
-    {
-        return Err(bad_endpoint_security_event_request(
-            event,
-            "event must provide process.image, image, or commandLine",
-        ));
-    }
-    Ok(process)
-}
-
-pub(crate) fn endpoint_security_event_metadata(
-    event: &EdrEndpointSecurityEvent,
-) -> BTreeMap<String, serde_json::Value> {
-    let mut metadata = redact_endpoint_observation_metadata(&event.metadata);
-    metadata.insert(
-        "collectorKind".to_string(),
-        serde_json::Value::String("endpoint_security".to_string()),
-    );
-    metadata.insert(
-        "providerId".to_string(),
-        serde_json::Value::String("macos.endpoint_security".to_string()),
-    );
-    metadata.insert(
-        "endpointSecurityEventKind".to_string(),
-        serde_json::Value::String(event.kind.as_str().to_string()),
-    );
-    for (key, value) in [
-        ("endpointSecurityReason", event.reason.as_deref()),
-        ("operation", event.operation.as_deref()),
-        ("decision", event.decision.as_deref()),
-    ] {
-        if let Some(value) = trimmed_owned(value) {
-            metadata.insert(key.to_string(), serde_json::Value::String(value));
-        }
-    }
-    if let Some(value) = event.deadline_missed {
-        metadata.insert("deadlineMissed".to_string(), serde_json::json!(value));
-    }
-    if let Some(value) = event.deadline_ms {
-        metadata.insert("deadlineMs".to_string(), serde_json::json!(value));
-    }
-    if let Some(value) = event.dropped_event_count {
-        metadata.insert("droppedEventCount".to_string(), serde_json::json!(value));
-    }
-    if let Some(value) = event.deadline_miss_count {
-        metadata.insert("deadlineMissCount".to_string(), serde_json::json!(value));
-    }
-    if let Some(value) = event.full_disk_access {
-        metadata.insert("fullDiskAccess".to_string(), serde_json::json!(value));
-    }
-    metadata
-}
-
 fn endpoint_security_event_sequence_hint(event: &EdrEndpointSecurityEvent) -> Option<String> {
     for key in [
         "endpointSecurityGlobalSeqNum",
@@ -301,247 +215,12 @@ fn endpoint_security_event_sequence_hint(event: &EdrEndpointSecurityEvent) -> Op
     None
 }
 
-pub(crate) fn endpoint_security_event_loss_fields(
-    event: &EdrEndpointSecurityEvent,
-) -> BTreeMap<String, serde_json::Value> {
-    let mut fields = BTreeMap::new();
-    if let Some(value) = event.dropped_event_count {
-        fields.insert("droppedEventCount".to_string(), serde_json::json!(value));
-    }
-    if let Some(value) = event.deadline_miss_count {
-        fields.insert("deadlineMissCount".to_string(), serde_json::json!(value));
-    }
-    if let Some(value) = event.deadline_missed {
-        fields.insert("deadlineMissed".to_string(), serde_json::json!(value));
-    }
-    if let Some(value) = event.full_disk_access {
-        fields.insert("fullDiskAccess".to_string(), serde_json::json!(value));
-    }
-    if let Some(reason) = trimmed_owned(event.reason.as_deref()) {
-        fields.insert("reason".to_string(), serde_json::Value::String(reason));
-    }
-    fields
-}
-
-pub(crate) fn endpoint_security_event_loss_sensor_state(
-    events: &[EdrEndpointSecurityEvent],
-) -> Option<EndpointSensorState> {
-    let mut dropped_event_count = 0_u64;
-    let mut deadline_miss_count = 0_u64;
-    let mut full_disk_access = None;
-    let mut saw_degradation_signal = false;
-    let mut degradation_reasons = Vec::new();
-
-    for event in events {
-        let dropped_events = event.dropped_event_count.unwrap_or(0);
-        let deadline_misses = event.deadline_miss_count.unwrap_or(0);
-        dropped_event_count = dropped_event_count.saturating_add(dropped_events);
-        deadline_miss_count = deadline_miss_count.saturating_add(deadline_misses);
-
-        let event_loss = matches!(event.kind, EdrEndpointSecurityEventKind::EventLoss);
-        if event_loss || dropped_events > 0 || deadline_misses > 0 {
-            saw_degradation_signal = true;
-        }
-        if event_loss {
-            degradation_reasons.push("endpoint security event loss reported".to_string());
-        }
-        if dropped_events > 0 {
-            degradation_reasons.push("provider dropped enforcement events".to_string());
-        }
-        if deadline_misses > 0 {
-            degradation_reasons.push("provider authorization deadline misses".to_string());
-        }
-        if event.deadline_missed == Some(true) {
-            saw_degradation_signal = true;
-            if event.deadline_miss_count.is_none() {
-                deadline_miss_count = deadline_miss_count.saturating_add(1);
-            }
-            degradation_reasons.push("provider authorization deadline misses".to_string());
-        }
-        if event.full_disk_access == Some(false) {
-            saw_degradation_signal = true;
-            full_disk_access = Some(false);
-            degradation_reasons.push("missing_full_disk_access".to_string());
-        }
-        if let Some(reason) = trimmed_owned(event.reason.as_deref()) {
-            if event_loss
-                || dropped_events > 0
-                || deadline_misses > 0
-                || event.deadline_missed == Some(true)
-                || event.full_disk_access == Some(false)
-            {
-                degradation_reasons.push(reason);
-            }
-        }
-    }
-
-    if !saw_degradation_signal {
-        return None;
-    }
-    if degradation_reasons.is_empty() {
-        degradation_reasons.push("endpoint security provider degraded".to_string());
-    }
-    degradation_reasons.sort();
-    degradation_reasons.dedup();
-
-    Some(EndpointSensorState {
-        providers: vec![EndpointProviderState {
-            provider_id: "macos.endpoint_security".to_string(),
-            provider_kind: EndpointProviderKind::EndpointSecurity,
-            installed: true,
-            active: true,
-            healthy: false,
-            degraded: true,
-            degradation_reasons,
-            dropped_event_count,
-            deadline_miss_count,
-            full_disk_access,
-            last_seen: Some(chrono::Utc::now()),
-        }],
-    })
-}
-
-pub(crate) fn endpoint_security_command_line(image: &str, args: &[String]) -> String {
-    if args.is_empty() {
-        image.to_string()
-    } else {
-        format!("{image} {}", args.join(" "))
-    }
-}
-
-pub(crate) fn endpoint_security_file_operation(value: Option<&str>) -> Option<FileOperation> {
-    match value
-        .and_then(|value| non_empty(Some(value)))
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("read" | "open" | "auth_open") => Some(FileOperation::Read),
-        Some("write") => Some(FileOperation::Write),
-        Some("create") => Some(FileOperation::Create),
-        Some("delete" | "unlink") => Some(FileOperation::Delete),
-        Some("rename" | "move") => Some(FileOperation::Rename),
-        Some("execute" | "exec") => Some(FileOperation::Execute),
-        Some("chmod") => Some(FileOperation::Chmod),
-        _ => None,
-    }
-}
-
-fn endpoint_security_credential_kind_for_path(path: &str) -> Option<CredentialKind> {
-    let path = path.replace('\\', "/").to_ascii_lowercase();
-    let basename = path.rsplit('/').next().unwrap_or(path.as_str());
-
-    if path.contains("/.ssh/") || matches!(basename, "id_rsa" | "id_ed25519" | "id_ecdsa") {
-        return Some(CredentialKind::SshKey);
-    }
-
-    if path.contains("/.aws/")
-        || path.contains("/.config/gcloud/")
-        || path.contains("/.azure/")
-        || path.contains("/.kube/config")
-        || path.contains("/.pulumi/credentials.json")
-        || path.contains("/.config/pulumi/credentials.json")
-        || path.contains("/.terraform.d/credentials.tfrc.json")
-        || path.contains("/.terraformrc")
-    {
-        return Some(CredentialKind::CloudCredential);
-    }
-
-    if path.contains("/.npmrc")
-        || path.contains("/.pypirc")
-        || path.contains("/.netrc")
-        || path.contains("/.docker/config.json")
-        || path.contains("/.cargo/credentials")
-        || path.contains("/.config/pypoetry/auth.toml")
-        || path.contains("/library/application support/pypoetry/auth.toml")
-        || path.contains("/.config/pip/pip.conf")
-        || path.contains("/.pip/pip.conf")
-        || path.contains("/pip/pip.ini")
-        || path.contains("/.yarnrc.yml")
-        || path.contains("/.pnpmrc")
-        || path.contains("/.m2/settings.xml")
-        || path.contains("/.gradle/gradle.properties")
-        || path.contains("/.nuget/nuget/nuget.config")
-    {
-        return Some(CredentialKind::PackageRegistryToken);
-    }
-
-    if path.contains("/.config/gh/hosts.yml")
-        || path.contains("/.config/gh/config.yml")
-        || path.contains("/.config/glab-cli/hosts.yml")
-        || path.contains("/.config/glab-cli/config.yml")
-        || path.contains("/.config/hub")
-        || path.contains("/.config/git-credential/")
-    {
-        return Some(CredentialKind::ApiToken);
-    }
-
-    if path.contains("/.gnupg/private-keys-v1.d/")
-        || path.contains("/.gnupg/secring.gpg")
-        || path.contains("/.config/sops/age/keys.txt")
-        || path.contains("/.age/key.txt")
-    {
-        return Some(CredentialKind::SigningKey);
-    }
-
-    if basename == "cookies"
-        || basename == "login data"
-        || basename == "local state"
-        || path.contains("/keychains/")
-    {
-        return Some(CredentialKind::BrowserCookie);
-    }
-
-    None
-}
-
-pub(crate) fn normalized_endpoint_security_decision(value: Option<&str>) -> Option<&'static str> {
-    match value
-        .and_then(|value| non_empty(Some(value)))
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("allow" | "allowed" | "permit" | "permitted") => Some("allowed"),
-        Some("deny" | "denied" | "block" | "blocked") => Some("blocked"),
-        _ => None,
-    }
-}
-
-pub(crate) fn required_endpoint_security_event_string(
-    event: &EdrEndpointSecurityEvent,
-    field: &str,
-    value: Option<&str>,
-) -> Result<String, (StatusCode, String)> {
-    trimmed_owned(value).ok_or_else(|| {
-        bad_endpoint_security_event_request(
-            event,
-            &format!(
-                "{field} is required for EndpointSecurity {} events",
-                event.kind.as_str()
-            ),
-        )
-    })
-}
-
-pub(crate) fn bad_endpoint_security_event_request(
-    event: &EdrEndpointSecurityEvent,
-    message: &str,
-) -> (StatusCode, String) {
-    let event_id = event
-        .event_id
-        .as_deref()
-        .and_then(|value| non_empty(Some(value)))
-        .unwrap_or("unknown");
-    (
-        StatusCode::BAD_REQUEST,
-        format!("invalid EndpointSecurity event {event_id}: {message}"),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+    use clawdstrike_policy_event::edr::CredentialKind;
 
     fn process_exec_event(observed_at: &str) -> EdrEndpointSecurityEvent {
         EdrEndpointSecurityEvent {
