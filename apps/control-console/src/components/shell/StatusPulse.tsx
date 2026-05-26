@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 export type StatusPulseTone = "gold" | "teal" | "crimson";
 export type StatusPulseLayout = "card" | "chip";
 
@@ -16,7 +18,7 @@ const TONE_COLOR: Record<StatusPulseTone, string> = {
   crimson: "var(--crimson)",
 };
 
-const SHARED_CONTAINER: React.CSSProperties = {
+const SHARED_CONTAINER: CSSProperties = {
   borderRadius: 8,
   border: "1px solid rgba(27,34,48,0.85)",
   background: "rgba(0,0,0,0.4)",
@@ -75,7 +77,7 @@ export function StatusPulse({
             fontSize: 11,
             letterSpacing: "0.06em",
             color,
-            fontFeatureSettings: mono ? '"tnum"' : "",
+            fontFeatureSettings: mono ? '"tnum"' : undefined,
           }}
         >
           {value}
@@ -114,6 +116,7 @@ export function StatusPulse({
           color,
           letterSpacing: "0.04em",
           lineHeight: 1,
+          fontFeatureSettings: mono ? '"tnum"' : undefined,
         }}
       >
         {value}

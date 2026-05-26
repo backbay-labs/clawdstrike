@@ -40,6 +40,18 @@ describe("StatusPulse", () => {
       const container = screen.getByText("Uptime").closest("div");
       expect(container?.style.flexDirection).toBe("column");
     });
+
+    it("applies tabular number feature settings when mono=true", () => {
+      render(<StatusPulse label="Uptime" value="12d 04h" mono />);
+      const value = screen.getByText("12d 04h");
+      expect(value.style.fontFeatureSettings).toContain("tnum");
+    });
+
+    it("does not apply tabular numbers by default", () => {
+      render(<StatusPulse label="Uptime" value="12d" />);
+      const value = screen.getByText("12d");
+      expect(value.style.fontFeatureSettings).toBe("");
+    });
   });
 
   describe("chip layout", () => {
