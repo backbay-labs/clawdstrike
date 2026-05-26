@@ -94,6 +94,25 @@ describe("useShellPreferences", () => {
     expect(result.current.sidebarCollapsed).toBe(false);
   });
 
+  it("re-hydrates from a cross-tab storage event", async () => {
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+    expect(result.current.sidebarVariant).toBe("expanded");
+
+    // Another tab wrote the new variant; jsdom does not auto-fire storage events
+    // for same-context writes, so we simulate the browser dispatch. (storageArea is
+    // omitted: the test harness stubs localStorage with a non-Storage shim that
+    // jsdom's StorageEvent constructor rejects, and the listener only reads e.key.)
+    localStorage.setItem("cs_sidebar_variant", "rail");
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "cs_sidebar_variant", newValue: "rail" }),
+      );
+    });
+
+    expect(result.current.sidebarVariant).toBe("rail");
+  });
+
   it("dispatches clawdstrike:shell-prefs-changed on setSidebarVariant", async () => {
     const useShellPreferences = await getHook();
     const { result } = renderHook(() => useShellPreferences());
