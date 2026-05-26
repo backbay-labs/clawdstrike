@@ -55,6 +55,7 @@ impl RuntimeConfig {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::siem::{
