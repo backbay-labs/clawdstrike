@@ -35,9 +35,9 @@ pub(crate) fn skipped_control_endpoint_archive_upload_report(
 }
 
 pub(crate) struct ControlArchiveUploadAttemptFailure {
-    pub(crate) http_status: Option<u16>,
-    pub(crate) response_hash: Option<String>,
-    pub(crate) error_hash: Option<String>,
+    http_status: Option<u16>,
+    response_hash: Option<String>,
+    error_hash: Option<String>,
 }
 
 pub(crate) fn required_control_archive_retry_payload_string(

@@ -1,6 +1,7 @@
-// Re-export everything from api_server so sub-modules can use `super::*` to access both
-// the api_server context and each other.
-pub(crate) use super::*;
+// Pull api_server's items into this module's namespace so submodules can resolve
+// shared symbols via `use super::*`. Kept non-`pub` so api_server's surface is not
+// re-exported through `crate::api_server::observations`.
+use super::*;
 
 mod builders;
 mod evaluate;

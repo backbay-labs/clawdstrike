@@ -244,9 +244,9 @@ impl ControlAckPostbackRetrySink {
 }
 
 pub(crate) struct ControlAckPostbackAttemptFailure {
-    pub(crate) http_status: Option<u16>,
-    pub(crate) response_hash: Option<String>,
-    pub(crate) error_hash: Option<String>,
+    http_status: Option<u16>,
+    response_hash: Option<String>,
+    error_hash: Option<String>,
 }
 
 pub(crate) struct ControlAckPostbackRetryAttemptOutcome {
