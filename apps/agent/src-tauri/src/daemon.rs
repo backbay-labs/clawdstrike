@@ -3,6 +3,12 @@
 //! Handles spawning, monitoring, and restarting the hushd daemon.
 
 use anyhow::{Context, Result};
+use clawdstrike_hushd_config::{
+    DatadogExporterConfig, ElasticAuthConfig, ElasticExporterConfig, ExporterSettings,
+    ExportersConfig, GenericWebhookConfig, RuntimeConfig as HushdRuntimeConfig,
+    SiemConfig as HushdRuntimeSiemConfig, SpineConfig as HushdRuntimeSpineConfig,
+    SplunkExporterConfig, SumoLogicExporterConfig, WebhookAuthConfig, WebhookExporterConfig,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
@@ -76,129 +82,6 @@ pub struct DaemonConfig {
     pub policy_path: PathBuf,
     /// Canonical in-memory agent settings (preferred over on-disk reads).
     pub settings: Option<Arc<RwLock<crate::settings::Settings>>>,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeConfig {
-    listen: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    policy_path: Option<PathBuf>,
-    ruleset: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    signing_key: Option<PathBuf>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    siem: Option<HushdRuntimeSiemConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    spine: Option<HushdRuntimeSpineConfig>,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeSiemConfig {
-    enabled: bool,
-    exporters: HushdRuntimeExportersConfig,
-}
-
-#[derive(Debug, Default, Serialize)]
-struct HushdRuntimeExportersConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    splunk: Option<HushdRuntimeExporterSettings<HushdRuntimeSplunkConfig>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    elastic: Option<HushdRuntimeExporterSettings<HushdRuntimeElasticConfig>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    datadog: Option<HushdRuntimeExporterSettings<HushdRuntimeDatadogConfig>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sumo_logic: Option<HushdRuntimeExporterSettings<HushdRuntimeSumoLogicConfig>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    webhooks: Option<HushdRuntimeExporterSettings<HushdRuntimeWebhookExporterConfig>>,
-}
-
-impl HushdRuntimeExportersConfig {
-    fn has_any(&self) -> bool {
-        self.splunk.is_some()
-            || self.elastic.is_some()
-            || self.datadog.is_some()
-            || self.sumo_logic.is_some()
-            || self.webhooks.is_some()
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeExporterSettings<T> {
-    enabled: bool,
-    #[serde(flatten)]
-    config: T,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeSplunkConfig {
-    hec_url: String,
-    hec_token: String,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeElasticConfig {
-    base_url: String,
-    index: String,
-    auth: HushdRuntimeElasticAuthConfig,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeElasticAuthConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    api_key: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeDatadogConfig {
-    api_key: String,
-    site: String,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeSumoLogicConfig {
-    http_source_url: String,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeWebhookExporterConfig {
-    webhooks: Vec<HushdRuntimeGenericWebhookConfig>,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeGenericWebhookConfig {
-    url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    method: Option<String>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    headers: HashMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    auth: Option<HushdRuntimeWebhookAuthConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    content_type: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeWebhookAuthConfig {
-    #[serde(rename = "type")]
-    auth_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    token: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct HushdRuntimeSpineConfig {
-    enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    nats_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    creds_file: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    token: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    nkey_seed: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    keypair_path: Option<PathBuf>,
-    subject_prefix: String,
 }
 
 impl DaemonConfig {
@@ -1717,7 +1600,7 @@ fn cleanup_runtime_enrollment_keypair(daemon_port: u16) -> Result<()> {
 fn build_runtime_siem_config(
     settings: &crate::settings::Settings,
 ) -> Option<HushdRuntimeSiemConfig> {
-    let mut exporters = HushdRuntimeExportersConfig::default();
+    let mut exporters = ExportersConfig::default();
 
     let siem = &settings.integrations.siem;
     let provider = siem.provider.trim().to_ascii_lowercase();
@@ -1729,9 +1612,9 @@ fn build_runtime_siem_config(
         match provider.as_str() {
             "datadog" => {
                 if !endpoint.is_empty() && !api_key.is_empty() {
-                    exporters.datadog = Some(HushdRuntimeExporterSettings {
+                    exporters.datadog = Some(ExporterSettings {
                         enabled: true,
-                        config: HushdRuntimeDatadogConfig {
+                        config: DatadogExporterConfig {
                             api_key: api_key.to_string(),
                             site: normalize_datadog_site(endpoint),
                         },
@@ -1744,9 +1627,9 @@ fn build_runtime_siem_config(
             }
             "splunk" => {
                 if !endpoint.is_empty() && !api_key.is_empty() {
-                    exporters.splunk = Some(HushdRuntimeExporterSettings {
+                    exporters.splunk = Some(ExporterSettings {
                         enabled: true,
-                        config: HushdRuntimeSplunkConfig {
+                        config: SplunkExporterConfig {
                             hec_url: endpoint.to_string(),
                             hec_token: api_key.to_string(),
                         },
@@ -1759,12 +1642,12 @@ fn build_runtime_siem_config(
             }
             "elastic" => {
                 if !endpoint.is_empty() && !api_key.is_empty() {
-                    exporters.elastic = Some(HushdRuntimeExporterSettings {
+                    exporters.elastic = Some(ExporterSettings {
                         enabled: true,
-                        config: HushdRuntimeElasticConfig {
+                        config: ElasticExporterConfig {
                             base_url: endpoint.to_string(),
                             index: "clawdstrike-security".to_string(),
-                            auth: HushdRuntimeElasticAuthConfig {
+                            auth: ElasticAuthConfig {
                                 api_key: Some(api_key.to_string()),
                             },
                         },
@@ -1777,9 +1660,9 @@ fn build_runtime_siem_config(
             }
             "sumo_logic" => {
                 if !endpoint.is_empty() {
-                    exporters.sumo_logic = Some(HushdRuntimeExporterSettings {
+                    exporters.sumo_logic = Some(ExporterSettings {
                         enabled: true,
-                        config: HushdRuntimeSumoLogicConfig {
+                        config: SumoLogicExporterConfig {
                             http_source_url: endpoint.to_string(),
                         },
                     });
@@ -1792,9 +1675,9 @@ fn build_runtime_siem_config(
             "custom" => {
                 if !endpoint.is_empty() {
                     let webhook = build_generic_webhook_exporter(endpoint, Some(api_key));
-                    exporters.webhooks = Some(HushdRuntimeExporterSettings {
+                    exporters.webhooks = Some(ExporterSettings {
                         enabled: true,
-                        config: HushdRuntimeWebhookExporterConfig {
+                        config: WebhookExporterConfig {
                             webhooks: vec![webhook],
                         },
                     });
@@ -1818,12 +1701,10 @@ fn build_runtime_siem_config(
     let webhook_secret = webhooks.secret.trim();
     let webhooks_requested = webhooks.enabled || !webhook_url.is_empty();
     if webhooks_requested && !webhook_url.is_empty() {
-        let exporter = exporters
-            .webhooks
-            .get_or_insert(HushdRuntimeExporterSettings {
-                enabled: true,
-                config: HushdRuntimeWebhookExporterConfig { webhooks: vec![] },
-            });
+        let exporter = exporters.webhooks.get_or_insert(ExporterSettings {
+            enabled: true,
+            config: WebhookExporterConfig { webhooks: vec![] },
+        });
 
         exporter
             .config
@@ -1868,21 +1749,18 @@ fn build_runtime_spine_config(
     })
 }
 
-fn build_generic_webhook_exporter(
-    url: &str,
-    token: Option<&str>,
-) -> HushdRuntimeGenericWebhookConfig {
+fn build_generic_webhook_exporter(url: &str, token: Option<&str>) -> GenericWebhookConfig {
     let token = token.map(str::trim).unwrap_or_default();
     let auth = if token.is_empty() {
         None
     } else {
-        Some(HushdRuntimeWebhookAuthConfig {
+        Some(WebhookAuthConfig {
             auth_type: "bearer".to_string(),
             token: Some(token.to_string()),
         })
     };
 
-    HushdRuntimeGenericWebhookConfig {
+    GenericWebhookConfig {
         url: url.to_string(),
         method: Some("POST".to_string()),
         headers: HashMap::new(),
