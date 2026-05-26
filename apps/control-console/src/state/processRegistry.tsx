@@ -74,14 +74,14 @@ function MonitorSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" />
       <path d="M12 12l9-5M12 12v10M12 12L3 7" opacity={0.4} />
-      <circle cx={12} cy={12} r={2.5} fill="var(--gold)" stroke="none" opacity={0.6} />
+      <circle cx={12} cy={12} r={2.5} fill="currentColor" stroke="none" opacity={0.6} />
     </svg>
   );
 }
@@ -93,7 +93,7 @@ function EventStreamSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -110,7 +110,7 @@ function AuditSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -130,7 +130,7 @@ function PoliciesSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -148,7 +148,7 @@ function SettingsSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--muted)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -169,7 +169,7 @@ function AgentExplorerSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -189,7 +189,7 @@ function ReceiptVerifierSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -208,7 +208,7 @@ function ExecutionProofSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -216,7 +216,7 @@ function ExecutionProofSigil() {
       <path d="M5 3h14v18H5z" />
       <path d="M8 8h8M8 12h5" opacity={0.4} />
       <path d="M9 17l2 2 4-5" stroke="var(--stamp-allowed)" />
-      <circle cx={18} cy={6} r={2} fill="var(--gold)" stroke="none" opacity={0.5} />
+      <circle cx={18} cy={6} r={2} fill="currentColor" stroke="none" opacity={0.5} />
     </svg>
   );
 }
@@ -228,14 +228,14 @@ function PrivacyReportSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       <path d="M12 3l7 3v6c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6l7-3z" />
       <path d="M8 11h8M8 15h5" opacity={0.38} />
-      <circle cx={17} cy={7} r={2} fill="var(--teal)" stroke="none" opacity={0.5} />
+      <circle cx={17} cy={7} r={2} fill="currentColor" stroke="none" opacity={0.5} />
     </svg>
   );
 }
@@ -247,7 +247,7 @@ function CausalGroupsSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -268,7 +268,7 @@ function ProcessCauseSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -278,7 +278,7 @@ function ProcessCauseSigil() {
       <circle cx={6} cy={18} r={2.3} />
       <circle cx={18} cy={18} r={2.3} />
       <path d="M8.2 6h7.6M6 8.2v7.6M8.2 18h7.6" opacity={0.35} />
-      <path d="M8 7.5l8 8.5" stroke="var(--gold)" opacity={0.7} />
+      <path d="M8 7.5l8 8.5" stroke="currentColor" opacity={0.7} />
     </svg>
   );
 }
@@ -290,14 +290,14 @@ function PolicyEditorSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       <path d="M15.5 8.5l-5 5L8 11" opacity={0.4} />
-      <path d="M14 3l2 2-6 6-2-2 6-6z" stroke="var(--teal)" opacity={0.6} />
+      <path d="M14 3l2 2-6 6-2-2 6-6z" stroke="currentColor" opacity={0.6} />
     </svg>
   );
 }
@@ -309,7 +309,7 @@ function RuleImpactSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -320,7 +320,7 @@ function RuleImpactSigil() {
       <path d="M16 18V8" />
       <path d="M20 18V12" opacity={0.55} />
       <path d="M5 18h16" opacity={0.4} />
-      <circle cx={12} cy={4} r={2} fill="var(--teal)" stroke="none" opacity={0.65} />
+      <circle cx={12} cy={4} r={2} fill="currentColor" stroke="none" opacity={0.65} />
     </svg>
   );
 }
@@ -332,7 +332,7 @@ function LocalContainmentSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -340,7 +340,7 @@ function LocalContainmentSigil() {
       <path d="M12 3l7 3v6c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6l7-3z" />
       <path d="M8 12h8" opacity={0.4} />
       <path d="M12 8v8" opacity={0.4} />
-      <circle cx={12} cy={12} r={3} stroke="var(--gold)" />
+      <circle cx={12} cy={12} r={3} stroke="currentColor" />
     </svg>
   );
 }
@@ -352,7 +352,7 @@ function AgentSecretTouchesSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -360,7 +360,7 @@ function AgentSecretTouchesSigil() {
       <path d="M7 10V7a5 5 0 0110 0v3" />
       <rect x={5} y={10} width={14} height={10} rx={2} />
       <path d="M12 14v3" opacity={0.5} />
-      <circle cx={12} cy={14} r={1.2} fill="var(--teal)" stroke="none" opacity={0.7} />
+      <circle cx={12} cy={14} r={1.2} fill="currentColor" stroke="none" opacity={0.7} />
       <path d="M4 20h16" opacity={0.35} />
     </svg>
   );
@@ -373,7 +373,7 @@ function FleetCasesSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -381,7 +381,7 @@ function FleetCasesSigil() {
       <path d="M4 5h16v14H4z" />
       <path d="M8 5V3h8v2" opacity={0.55} />
       <path d="M7 10h10M7 14h7" opacity={0.42} />
-      <path d="M17 13l3 3-3 3" stroke="var(--teal)" />
+      <path d="M17 13l3 3-3 3" stroke="currentColor" />
     </svg>
   );
 }
@@ -393,7 +393,7 @@ function GuardPlaygroundSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -412,7 +412,7 @@ function PostureMapSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -422,7 +422,7 @@ function PostureMapSigil() {
       <circle cx={19} cy={12} r={2} />
       <circle cx={12} cy={19} r={2} />
       <path d="M7 11l3-4M15 7l2 3M17 13l-3 4M9 17l-2-3" opacity={0.4} />
-      <circle cx={12} cy={12} r={1.5} fill="var(--teal)" stroke="none" opacity={0.5} />
+      <circle cx={12} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.5} />
     </svg>
   );
 }
@@ -434,7 +434,7 @@ function ComplianceSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -453,13 +453,13 @@ function ReplaySigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       <circle cx={12} cy={12} r={9} />
-      <polygon points="10,8 16,12 10,16" fill="var(--gold)" stroke="none" opacity={0.5} />
+      <polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none" opacity={0.5} />
     </svg>
   );
 }
@@ -471,7 +471,7 @@ function AgentChatSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -489,14 +489,14 @@ function BrokerWalletSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       <rect x={3} y={6} width={18} height={12} rx={2} />
       <path d="M16 12h3" opacity={0.5} />
-      <circle cx={8} cy={12} r={1.5} fill="var(--gold)" stroke="none" opacity={0.6} />
+      <circle cx={8} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.6} />
     </svg>
   );
 }
@@ -508,15 +508,15 @@ function BrokerMissionControlSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--gold)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       <circle cx={12} cy={12} r={8} />
       <path d="M12 4v4M12 16v4M4 12h4M16 12h4" opacity={0.35} />
-      <path d="M12 12l4-3" stroke="var(--teal)" />
-      <circle cx={12} cy={12} r={1.5} fill="var(--gold)" stroke="none" opacity={0.65} />
+      <path d="M12 12l4-3" stroke="currentColor" />
+      <circle cx={12} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.65} />
     </svg>
   );
 }
@@ -528,7 +528,7 @@ function BrokerTheaterSigil() {
       width={20}
       height={20}
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -540,6 +540,43 @@ function BrokerTheaterSigil() {
     </svg>
   );
 }
+
+/**
+ * Semantic tone for each process — drives the sidebar's icon color via CSS `color`.
+ * gold  = identity/active tools (most apps)
+ * teal  = live telemetry / agent-facing surfaces
+ * muted = system/settings
+ */
+export const PROCESS_TONE: Record<string, "gold" | "teal" | "muted"> = {
+  // teal: live telemetry + agent-facing surfaces
+  "event-stream": "teal",
+  "agent-explorer": "teal",
+  "privacy-report": "teal",
+  "causal-groups": "teal",
+  "process-cause": "teal",
+  "local-containment": "teal",
+  "guard-playground": "teal",
+  "posture-map": "teal",
+  "agent-chat": "teal",
+  "broker-theater": "teal",
+  // muted: system
+  settings: "muted",
+  // gold: everything else
+  monitor: "gold",
+  audit: "gold",
+  policy: "gold",
+  "receipt-verifier": "gold",
+  "execution-proof": "gold",
+  "policy-replay": "gold",
+  "rule-impact": "gold",
+  "agent-secret-touches": "gold",
+  "fleet-cases": "gold",
+  "policy-editor": "gold",
+  "compliance-report": "gold",
+  "replay-mode": "gold",
+  "broker-mission-control": "gold",
+  "broker-wallet": "gold",
+};
 
 /** Map processId → sigil component for use in taskbar & desktop */
 export const PROCESS_ICONS: Record<string, React.ReactNode> = {

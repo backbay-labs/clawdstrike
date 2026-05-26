@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   desktopIconGroups,
   desktopIcons,
+  PROCESS_TONE,
   pinnedAppIds,
   processes,
   startMenuDefaultPinnedIds,
@@ -61,6 +65,28 @@ describe("processRegistry", () => {
     for (const id of startMenuDefaultPinnedIds) {
       expect(processIds.has(id)).toBe(true);
     }
+  });
+
+  it("every desktopIcons processId has a PROCESS_TONE entry", () => {
+    const validTones = new Set(["gold", "teal", "muted"]);
+    for (const icon of desktopIcons) {
+      const tone = PROCESS_TONE[icon.processId];
+      expect(tone, `missing PROCESS_TONE entry for "${icon.processId}"`).toBeDefined();
+      expect(validTones.has(tone), `invalid tone "${tone}" for "${icon.processId}"`).toBe(true);
+    }
+  });
+
+  it("processRegistry source has no hard-coded var(--gold) or var(--teal) on stroke/fill", () => {
+    const __filename = fileURLToPath(import.meta.url);
+    const dir = path.dirname(__filename);
+    const source = readFileSync(path.join(dir, "processRegistry.tsx"), "utf-8");
+    // Matches stroke="var(--gold)" or fill="var(--gold)" and teal equivalents
+    const forbidden = /(?:stroke|fill)="var\(--(gold|teal)\)"/g;
+    const matches = source.match(forbidden);
+    expect(
+      matches,
+      `Found hard-coded color tokens on stroke/fill: ${JSON.stringify(matches)}`,
+    ).toBeNull();
   });
 
   it("exposes proof-at-execution as an operator tool", () => {
