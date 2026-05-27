@@ -62,6 +62,7 @@ export function HeaderBar({ variant, activeProcessId, status, onCmdK }: HeaderBa
     >
       {/* Breadcrumb */}
       <div
+        role="group"
         aria-label="Location breadcrumb"
         style={{
           display: "flex",
@@ -118,8 +119,6 @@ export function HeaderBar({ variant, activeProcessId, status, onCmdK }: HeaderBa
                     flexShrink: 0,
                     width: 13,
                     height: 13,
-                    // Scale the sigil ReactNode (SVG) down to 13px
-                    fontSize: 13,
                     lineHeight: 0,
                   }}
                   aria-hidden="true"
@@ -129,7 +128,7 @@ export function HeaderBar({ variant, activeProcessId, status, onCmdK }: HeaderBa
                       display: "inline-flex",
                       width: 13,
                       height: 13,
-                      transformOrigin: "top left",
+                      transformOrigin: "center",
                       transform: "scale(0.65)",
                       color: "var(--gold)",
                     }}

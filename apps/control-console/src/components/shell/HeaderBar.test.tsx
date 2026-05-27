@@ -157,6 +157,8 @@ describe("HeaderBar — rail variant shows search pill + status chips", () => {
     );
     expect(screen.queryByRole("button", { name: /search apps/i })).toBeNull();
     expect(screen.queryByText("SSE")).toBeNull();
+    expect(screen.queryByText("Violations")).toBeNull();
+    expect(screen.queryByText("Uptime")).toBeNull();
   });
 });
 
