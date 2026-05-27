@@ -2,14 +2,17 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { NavIconButton, NavRowButton, Tooltip } from "./NavItem";
 
-const sigil = <svg data-testid="sigil" />;
+// Size-aware stub sigil — mirrors the real PROCESS_ICONS component shape.
+const Sigil = ({ size = 20 }: { size?: number }) => (
+  <svg data-testid="sigil" width={size} height={size} />
+);
 
 describe("NavRowButton", () => {
   it("renders the label and is a real button", () => {
     render(
       <NavRowButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={false}
         running={false}
@@ -25,7 +28,7 @@ describe("NavRowButton", () => {
     render(
       <NavRowButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={false}
         running={false}
@@ -41,7 +44,7 @@ describe("NavRowButton", () => {
     render(
       <NavRowButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={false}
         running={false}
@@ -58,7 +61,7 @@ describe("NavRowButton", () => {
     render(
       <NavRowButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={true}
         running={false}
@@ -76,7 +79,7 @@ describe("NavRowButton", () => {
     render(
       <NavRowButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={false}
         running={false}
@@ -91,7 +94,7 @@ describe("NavRowButton", () => {
     render(
       <NavRowButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={false}
         running={true}
@@ -106,7 +109,7 @@ describe("NavRowButton", () => {
     render(
       <NavRowButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={true}
         running={true}
@@ -123,7 +126,7 @@ describe("NavIconButton", () => {
     render(
       <NavIconButton
         label="Settings"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="muted"
         active={false}
         running={false}
@@ -139,7 +142,7 @@ describe("NavIconButton", () => {
     render(
       <NavIconButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={true}
         running={false}
@@ -153,7 +156,7 @@ describe("NavIconButton", () => {
     render(
       <NavIconButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={false}
         running={true}
@@ -169,7 +172,7 @@ describe("NavIconButton", () => {
     render(
       <NavIconButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={false}
         running={false}
@@ -186,7 +189,7 @@ describe("NavIconButton", () => {
     render(
       <NavIconButton
         label="Monitor"
-        sigil={sigil}
+        Sigil={Sigil}
         tone="gold"
         active={false}
         running={false}

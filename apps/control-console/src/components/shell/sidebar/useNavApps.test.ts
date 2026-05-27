@@ -35,7 +35,8 @@ describe("useNavApps", () => {
     expect(monitor?.label).toBe("Monitor");
     expect(monitor?.description).toBe("desc:monitor");
     expect(monitor?.tone).toBe("gold");
-    expect(monitor?.sigil).toBeTruthy();
+    // Sigil is a size-aware component (function), not a pre-rendered node.
+    expect(typeof monitor?.Sigil).toBe("function");
     // event-stream is teal in PROCESS_TONE
     const eventStream = result.current[0].apps.find((a) => a.processId === "event-stream");
     expect(eventStream?.tone).toBe("teal");

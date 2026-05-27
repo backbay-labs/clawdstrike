@@ -1,4 +1,5 @@
 import type { ConsoleStatus } from "../../../hooks/useConsoleStatus";
+import type { EffectiveSidebarVariant } from "../../../state/useShellPreferences";
 import { useShellPreferences } from "../../../state/useShellPreferences";
 import { SidebarExpanded } from "./SidebarExpanded";
 import { SidebarRail } from "./SidebarRail";
@@ -9,20 +10,18 @@ export type { ConsoleStatus } from "../../../hooks/useConsoleStatus";
 export interface SidebarProps {
   onCmdK: () => void;
   status: ConsoleStatus;
+  /** Resolved variant (rail/expanded/twopane), computed once by the shell. */
+  variant: EffectiveSidebarVariant;
 }
 
 /**
- * Left navigation shell. Resolves the persisted variant against the collapsed
- * flag, then renders the matching sidebar. Status is passed in to avoid a second
- * SSE subscription.
+ * Left navigation shell. Renders the matching sidebar for the already-resolved
+ * variant. Status is passed in to avoid a second SSE subscription.
  */
-export function Sidebar({ onCmdK, status }: SidebarProps) {
-  const { sidebarVariant, sidebarCollapsed, setSidebarCollapsed } = useShellPreferences();
+export function Sidebar({ onCmdK, status, variant }: SidebarProps) {
+  const setSidebarCollapsed = useShellPreferences((s) => s.setSidebarCollapsed);
 
-  const effectiveVariant =
-    sidebarVariant === "expanded" && sidebarCollapsed ? "rail" : sidebarVariant;
-
-  switch (effectiveVariant) {
+  switch (variant) {
     case "rail":
       return <SidebarRail />;
     case "twopane":

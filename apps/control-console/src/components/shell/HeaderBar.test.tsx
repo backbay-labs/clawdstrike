@@ -102,6 +102,34 @@ describe("HeaderBar — breadcrumb", () => {
     expect(screen.getByText("Tools")).toBeTruthy();
     expect(screen.getByText("Receipts")).toBeTruthy();
   });
+
+  it("renders the active app's sigil at 13px in the breadcrumb leaf", () => {
+    instances.current = [{ windowId: "w1", processId: "monitor" }];
+    focusedId.current = "w1";
+    const { container } = render(
+      <HeaderBar variant="rail" activeProcessId="monitor" status={STATUS_LIVE} onCmdK={() => {}} />,
+    );
+    // The breadcrumb leaf renders a size-aware sigil; assert one is sized to 13.
+    const sigil = Array.from(container.querySelectorAll("svg")).find(
+      (svg) => svg.getAttribute("width") === "13",
+    );
+    expect(sigil).toBeTruthy();
+  });
+
+  it("renders no breadcrumb sigil when there is no active process", () => {
+    const { container } = render(
+      <HeaderBar
+        variant="rail"
+        activeProcessId={undefined}
+        status={STATUS_LIVE}
+        onCmdK={() => {}}
+      />,
+    );
+    const sigil = Array.from(container.querySelectorAll("svg")).find(
+      (svg) => svg.getAttribute("width") === "13",
+    );
+    expect(sigil).toBeUndefined();
+  });
 });
 
 describe("HeaderBar — rail variant shows search pill + status chips", () => {

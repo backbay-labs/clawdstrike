@@ -2,6 +2,21 @@ import { create } from "zustand";
 
 export type SidebarVariant = "rail" | "expanded" | "twopane";
 
+/** The variant actually rendered after resolving the collapsed flag. */
+export type EffectiveSidebarVariant = SidebarVariant;
+
+/**
+ * Resolve the rendered sidebar variant: a collapsed "expanded" sidebar shows as
+ * the icon rail. The single source of truth for this rule, shared by the shell
+ * and the sidebar so they never drift.
+ */
+export function resolveEffectiveVariant(
+  variant: SidebarVariant,
+  collapsed: boolean,
+): EffectiveSidebarVariant {
+  return variant === "expanded" && collapsed ? "rail" : variant;
+}
+
 const SHELL_PREFS_CHANGED_EVENT = "clawdstrike:shell-prefs-changed";
 
 const VARIANT_KEY = "cs_sidebar_variant";

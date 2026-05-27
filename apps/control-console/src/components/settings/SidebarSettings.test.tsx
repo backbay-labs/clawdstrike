@@ -90,9 +90,11 @@ describe("SidebarSettings", () => {
     const { SidebarSettings } = await setup();
     render(<SidebarSettings />);
     const events: Event[] = [];
-    window.addEventListener("clawdstrike:shell-prefs-changed", (e) => events.push(e));
+    const handler = (e: Event) => events.push(e);
+    window.addEventListener("clawdstrike:shell-prefs-changed", handler);
     fireEvent.click(screen.getByRole("radio", { name: /two-pane/i }));
-    window.removeEventListener("clawdstrike:shell-prefs-changed", events[0] as never);
+    // Remove the original handler reference (not the captured Event) to avoid leaks.
+    window.removeEventListener("clawdstrike:shell-prefs-changed", handler);
     expect(events.length).toBeGreaterThan(0);
   });
 

@@ -13,7 +13,10 @@ export function BrandMark({ size = 36, showWordmark = false, version = "0.2.0" }
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      {/* Engraved gold tile */}
+      {/* Engraved gold tile.
+          The base hex (#1a1410 → #0a0807) is intentionally warmer and deeper than
+          --void/--obsidian: the tile reads as forged metal under a gold bloom, not a
+          flat surface chip, so it does not use the surface tokens. */}
       <div
         data-testid="brandmark-tile"
         style={{

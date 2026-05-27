@@ -1,13 +1,16 @@
 import { useState } from "react";
+import { APP_VERSION } from "../../../hooks/useConsoleStatus";
 import { BrandMark } from "../BrandMark";
 
 export interface SidebarHeaderProps {
   collapsed: boolean;
   onToggle?: () => void;
+  /** Wordmark caption version; defaults to the live app version. */
+  version?: string;
 }
 
 /** Brand row at the top of every sidebar variant, with an optional collapse control. */
-export function SidebarHeader({ collapsed, onToggle }: SidebarHeaderProps) {
+export function SidebarHeader({ collapsed, onToggle, version = APP_VERSION }: SidebarHeaderProps) {
   return (
     <div
       style={{
@@ -19,7 +22,7 @@ export function SidebarHeader({ collapsed, onToggle }: SidebarHeaderProps) {
         borderBottom: "1px solid rgba(27,34,48,0.6)",
       }}
     >
-      {collapsed ? <BrandMark size={36} /> : <BrandMark size={36} showWordmark />}
+      {collapsed ? <BrandMark size={36} /> : <BrandMark size={36} showWordmark version={version} />}
       {!collapsed && onToggle && <CollapseButton onToggle={onToggle} />}
     </div>
   );

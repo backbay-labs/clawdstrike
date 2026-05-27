@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { ConsoleStatus } from "../../hooks/useConsoleStatus";
 import { desktopIconGroups, PROCESS_ICONS } from "../../state/processRegistry";
 import { StatusPulse } from "./StatusPulse";
-import { useNavApps } from "./sidebar/useNavApps";
+import { type NavSigil, useNavApps } from "./sidebar/useNavApps";
 
 export interface HeaderBarProps {
   variant: "rail" | "expanded" | "twopane";
@@ -27,13 +27,13 @@ function useGroupLabel(processId: string | undefined): string | null {
 /** The active app's display label from useNavApps (live process state). */
 function useActiveAppLabel(
   activeProcessId: string | undefined,
-): { label: string; sigil: React.ReactNode } | null {
+): { label: string; Sigil: NavSigil | null } | null {
   const groups = useNavApps();
   return useMemo(() => {
     if (!activeProcessId) return null;
     for (const group of groups) {
       const match = group.apps.find((app) => app.processId === activeProcessId);
-      if (match) return { label: match.label, sigil: PROCESS_ICONS[activeProcessId] ?? null };
+      if (match) return { label: match.label, Sigil: PROCESS_ICONS[activeProcessId] ?? null };
     }
     return null;
   }, [groups, activeProcessId]);
@@ -111,30 +111,12 @@ export function HeaderBar({ variant, activeProcessId, status, onCmdK }: HeaderBa
                 overflow: "hidden",
               }}
             >
-              {activeApp.sigil && (
+              {activeApp.Sigil && (
                 <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    flexShrink: 0,
-                    width: 13,
-                    height: 13,
-                    lineHeight: 0,
-                  }}
+                  style={{ display: "flex", alignItems: "center", flexShrink: 0, lineHeight: 0 }}
                   aria-hidden="true"
                 >
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      width: 13,
-                      height: 13,
-                      transformOrigin: "center",
-                      transform: "scale(0.65)",
-                      color: "var(--gold)",
-                    }}
-                  >
-                    {activeApp.sigil}
-                  </span>
+                  <activeApp.Sigil size={13} />
                 </span>
               )}
               <span
@@ -215,7 +197,7 @@ function SearchPill({ onCmdK }: SearchPillProps) {
         background: "rgba(0,0,0,0.4)",
         cursor: "pointer",
         color: "rgba(154,167,181,0.55)",
-        transition: "border-color 150ms ease, color 150ms ease",
+        transition: "border-color 0.14s ease, color 0.14s ease",
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--gold-edge)";

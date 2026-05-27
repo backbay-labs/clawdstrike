@@ -10,6 +10,8 @@ export interface StatusPulseProps {
   layout?: StatusPulseLayout;
   pulse?: boolean;
   mono?: boolean;
+  /** Compact card density (tighter padding, ~13px value) for sidebar footers. */
+  dense?: boolean;
 }
 
 const TONE_COLOR: Record<StatusPulseTone, string> = {
@@ -31,6 +33,7 @@ export function StatusPulse({
   layout = "card",
   pulse = false,
   mono = false,
+  dense = false,
 }: StatusPulseProps) {
   const color = TONE_COLOR[tone];
 
@@ -49,6 +52,7 @@ export function StatusPulse({
         {pulse && (
           <span
             data-testid="pulse-dot"
+            className="cs-animated"
             style={{
               width: 6,
               height: 6,
@@ -86,7 +90,8 @@ export function StatusPulse({
     );
   }
 
-  // card layout (default) — vertical, from SystemPulse design
+  // card layout (default) — vertical, from SystemPulse design. `dense` mirrors
+  // the mock's `small` SystemPulse used in the lighter sidebar footers.
   return (
     <div
       style={{
@@ -94,7 +99,7 @@ export function StatusPulse({
         display: "flex",
         flexDirection: "column",
         gap: 3,
-        padding: "8px 10px",
+        padding: dense ? "6px 8px" : "8px 10px",
       }}
     >
       <span
@@ -111,7 +116,7 @@ export function StatusPulse({
       <span
         className="font-mono"
         style={{
-          fontSize: 15,
+          fontSize: dense ? 13 : 15,
           fontWeight: 500,
           color,
           letterSpacing: "0.04em",

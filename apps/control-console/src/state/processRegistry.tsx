@@ -1,5 +1,5 @@
 import type { ProcessDefinition } from "@backbay/glia-desktop";
-import { lazy } from "react";
+import { type FC, lazy, type ReactNode } from "react";
 
 const Dashboard = lazy(() => import("../pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const Events = lazy(() => import("../pages/Events").then((m) => ({ default: m.Events })));
@@ -65,481 +65,245 @@ const BrokerTheater = lazy(() =>
   import("../pages/BrokerTheater").then((m) => ({ default: m.BrokerTheater })),
 );
 
-/* ── Artifact OS SVG Sigils ── */
+/* ── Artifact OS SVG Sigils ──
+ * Each sigil is a size-aware component (default 20px) so a single source of
+ * truth can serve every density: rail icons (20), nav rows (17), taskbar pills
+ * and titlebars (14), header breadcrumb (13). All draw with `stroke="currentColor"`
+ * so the consumer's `color` drives the tone. Mirrors design source `icons.jsx`. */
 
-function MonitorSigil() {
+interface SigilProps {
+  size?: number;
+}
+
+/** Shared SVG frame: 24-unit viewBox, current-color stroke, sized by `size`. */
+function Sig({ size = 20, children }: SigilProps & { children: ReactNode }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width={20}
-      height={20}
+      width={size}
+      height={size}
       fill="none"
       stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
+      style={{ display: "block" }}
+      aria-hidden="true"
     >
-      <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" />
-      <path d="M12 12l9-5M12 12v10M12 12L3 7" opacity={0.4} />
-      <circle cx={12} cy={12} r={2.5} fill="currentColor" stroke="none" opacity={0.6} />
+      {children}
     </svg>
   );
 }
 
-function EventStreamSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M13 2L4.09 12.96h6.36L9.55 22l8.91-10.96h-6.36L13 2z" />
-    </svg>
-  );
-}
+const MonitorSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" />
+    <path d="M12 12l9-5M12 12v10M12 12L3 7" opacity={0.4} />
+    <circle cx={12} cy={12} r={2.5} fill="currentColor" stroke="none" opacity={0.6} />
+  </Sig>
+);
 
-function AuditSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" />
-      <path d="M14 2v6h6" opacity={0.4} />
-      <line x1={8} y1={13} x2={16} y2={13} opacity={0.5} />
-      <line x1={8} y1={17} x2={13} y2={17} opacity={0.5} />
-    </svg>
-  );
-}
+const EventStreamSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M13 2L4.09 12.96h6.36L9.55 22l8.91-10.96h-6.36L13 2z" />
+  </Sig>
+);
 
-function PoliciesSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      <path d="M9 12l2 2 4-4" stroke="var(--stamp-allowed)" opacity={0.7} />
-    </svg>
-  );
-}
+const AuditSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" />
+    <path d="M14 2v6h6" opacity={0.4} />
+    <line x1={8} y1={13} x2={16} y2={13} opacity={0.5} />
+    <line x1={8} y1={17} x2={13} y2={17} opacity={0.5} />
+  </Sig>
+);
 
-function SettingsSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx={12} cy={12} r={3} />
-      <path
-        d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-        opacity={0.5}
-      />
-    </svg>
-  );
-}
+const PoliciesSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <path d="M9 12l2 2 4-4" stroke="var(--stamp-allowed)" opacity={0.7} />
+  </Sig>
+);
 
-function AgentExplorerSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx={6} cy={6} r={2.5} />
-      <circle cx={18} cy={6} r={2.5} />
-      <circle cx={12} cy={18} r={2.5} />
-      <path d="M8 7.5l3 7M16 7.5l-3 7M8.5 6h7" opacity={0.5} />
-    </svg>
-  );
-}
+const SettingsSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <circle cx={12} cy={12} r={3} />
+    <path
+      d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+      opacity={0.5}
+    />
+  </Sig>
+);
 
-function ReceiptVerifierSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx={12} cy={12} r={8} />
-      <circle cx={12} cy={12} r={4} opacity={0.4} />
-      <path d="M9.5 12l1.5 2 3.5-4" stroke="var(--stamp-allowed)" opacity={0.7} />
-    </svg>
-  );
-}
+const AgentExplorerSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <circle cx={6} cy={6} r={2.5} />
+    <circle cx={18} cy={6} r={2.5} />
+    <circle cx={12} cy={18} r={2.5} />
+    <path d="M8 7.5l3 7M16 7.5l-3 7M8.5 6h7" opacity={0.5} />
+  </Sig>
+);
 
-function ExecutionProofSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 3h14v18H5z" />
-      <path d="M8 8h8M8 12h5" opacity={0.4} />
-      <path d="M9 17l2 2 4-5" stroke="var(--stamp-allowed)" />
-      <circle cx={18} cy={6} r={2} fill="currentColor" stroke="none" opacity={0.5} />
-    </svg>
-  );
-}
+const ReceiptVerifierSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <circle cx={12} cy={12} r={8} />
+    <circle cx={12} cy={12} r={4} opacity={0.4} />
+    <path d="M9.5 12l1.5 2 3.5-4" stroke="var(--stamp-allowed)" opacity={0.7} />
+  </Sig>
+);
 
-function PrivacyReportSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 3l7 3v6c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6l7-3z" />
-      <path d="M8 11h8M8 15h5" opacity={0.38} />
-      <circle cx={17} cy={7} r={2} fill="currentColor" stroke="none" opacity={0.5} />
-    </svg>
-  );
-}
+const ExecutionProofSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M5 3h14v18H5z" />
+    <path d="M8 8h8M8 12h5" opacity={0.4} />
+    <path d="M9 17l2 2 4-5" stroke="var(--stamp-allowed)" />
+    <circle cx={18} cy={6} r={2} fill="currentColor" stroke="none" opacity={0.5} />
+  </Sig>
+);
 
-function CausalGroupsSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx={6} cy={7} r={2.5} />
-      <circle cx={18} cy={7} r={2.5} />
-      <circle cx={12} cy={18} r={2.5} />
-      <path d="M8.2 8.5l2.8 6.7M15.8 8.5l-2.8 6.7M8.5 7h7" opacity={0.45} />
-      <path d="M6 7h12" opacity={0.22} />
-    </svg>
-  );
-}
+const PrivacyReportSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M12 3l7 3v6c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6l7-3z" />
+    <path d="M8 11h8M8 15h5" opacity={0.38} />
+    <circle cx={17} cy={7} r={2} fill="currentColor" stroke="none" opacity={0.5} />
+  </Sig>
+);
 
-function ProcessCauseSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx={6} cy={6} r={2.3} />
-      <circle cx={18} cy={6} r={2.3} />
-      <circle cx={6} cy={18} r={2.3} />
-      <circle cx={18} cy={18} r={2.3} />
-      <path d="M8.2 6h7.6M6 8.2v7.6M8.2 18h7.6" opacity={0.35} />
-      <path d="M8 7.5l8 8.5" stroke="currentColor" opacity={0.7} />
-    </svg>
-  );
-}
+const CausalGroupsSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <circle cx={6} cy={7} r={2.5} />
+    <circle cx={18} cy={7} r={2.5} />
+    <circle cx={12} cy={18} r={2.5} />
+    <path d="M8.2 8.5l2.8 6.7M15.8 8.5l-2.8 6.7M8.5 7h7" opacity={0.45} />
+    <path d="M6 7h12" opacity={0.22} />
+  </Sig>
+);
 
-function PolicyEditorSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      <path d="M15.5 8.5l-5 5L8 11" opacity={0.4} />
-      <path d="M14 3l2 2-6 6-2-2 6-6z" stroke="currentColor" opacity={0.6} />
-    </svg>
-  );
-}
+const ProcessCauseSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <circle cx={6} cy={6} r={2.3} />
+    <circle cx={18} cy={6} r={2.3} />
+    <circle cx={6} cy={18} r={2.3} />
+    <circle cx={18} cy={18} r={2.3} />
+    <path d="M8.2 6h7.6M6 8.2v7.6M8.2 18h7.6" opacity={0.35} />
+    <path d="M8 7.5l8 8.5" stroke="currentColor" opacity={0.7} />
+  </Sig>
+);
 
-function RuleImpactSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 18V6" opacity={0.4} />
-      <path d="M8 18V10" />
-      <path d="M12 18V4" />
-      <path d="M16 18V8" />
-      <path d="M20 18V12" opacity={0.55} />
-      <path d="M5 18h16" opacity={0.4} />
-      <circle cx={12} cy={4} r={2} fill="currentColor" stroke="none" opacity={0.65} />
-    </svg>
-  );
-}
+const PolicyEditorSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <path d="M15.5 8.5l-5 5L8 11" opacity={0.4} />
+    <path d="M14 3l2 2-6 6-2-2 6-6z" stroke="currentColor" opacity={0.6} />
+  </Sig>
+);
 
-function LocalContainmentSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 3l7 3v6c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6l7-3z" />
-      <path d="M8 12h8" opacity={0.4} />
-      <path d="M12 8v8" opacity={0.4} />
-      <circle cx={12} cy={12} r={3} stroke="currentColor" />
-    </svg>
-  );
-}
+const RuleImpactSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M4 18V6" opacity={0.4} />
+    <path d="M8 18V10" />
+    <path d="M12 18V4" />
+    <path d="M16 18V8" />
+    <path d="M20 18V12" opacity={0.55} />
+    <path d="M5 18h16" opacity={0.4} />
+    <circle cx={12} cy={4} r={2} fill="currentColor" stroke="none" opacity={0.65} />
+  </Sig>
+);
 
-function AgentSecretTouchesSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M7 10V7a5 5 0 0110 0v3" />
-      <rect x={5} y={10} width={14} height={10} rx={2} />
-      <path d="M12 14v3" opacity={0.5} />
-      <circle cx={12} cy={14} r={1.2} fill="currentColor" stroke="none" opacity={0.7} />
-      <path d="M4 20h16" opacity={0.35} />
-    </svg>
-  );
-}
+const LocalContainmentSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M12 3l7 3v6c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6l7-3z" />
+    <path d="M8 12h8" opacity={0.4} />
+    <path d="M12 8v8" opacity={0.4} />
+    <circle cx={12} cy={12} r={3} stroke="currentColor" />
+  </Sig>
+);
 
-function FleetCasesSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 5h16v14H4z" />
-      <path d="M8 5V3h8v2" opacity={0.55} />
-      <path d="M7 10h10M7 14h7" opacity={0.42} />
-      <path d="M17 13l3 3-3 3" stroke="currentColor" />
-    </svg>
-  );
-}
+const AgentSecretTouchesSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M7 10V7a5 5 0 0110 0v3" />
+    <rect x={5} y={10} width={14} height={10} rx={2} />
+    <path d="M12 14v3" opacity={0.5} />
+    <circle cx={12} cy={14} r={1.2} fill="currentColor" stroke="none" opacity={0.7} />
+    <path d="M4 20h16" opacity={0.35} />
+  </Sig>
+);
 
-function GuardPlaygroundSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M9 3h6l2 6H7l2-6z" />
-      <path d="M7 9c0 0-1 3-1 6s2 6 6 6 6-3 6-6-1-6-1-6" />
-      <line x1={12} y1={9} x2={12} y2={15} opacity={0.4} />
-    </svg>
-  );
-}
+const FleetCasesSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M4 5h16v14H4z" />
+    <path d="M8 5V3h8v2" opacity={0.55} />
+    <path d="M7 10h10M7 14h7" opacity={0.42} />
+    <path d="M17 13l3 3-3 3" stroke="currentColor" />
+  </Sig>
+);
 
-function PostureMapSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx={5} cy={12} r={2} />
-      <circle cx={12} cy={5} r={2} />
-      <circle cx={19} cy={12} r={2} />
-      <circle cx={12} cy={19} r={2} />
-      <path d="M7 11l3-4M15 7l2 3M17 13l-3 4M9 17l-2-3" opacity={0.4} />
-      <circle cx={12} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.5} />
-    </svg>
-  );
-}
+const GuardPlaygroundSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M9 3h6l2 6H7l2-6z" />
+    <path d="M7 9c0 0-1 3-1 6s2 6 6 6 6-3 6-6-1-6-1-6" />
+    <line x1={12} y1={9} x2={12} y2={15} opacity={0.4} />
+  </Sig>
+);
 
-function ComplianceSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M15 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7l-5-5z" />
-      <path d="M15 2v5h5" opacity={0.4} />
-      <path d="M9 15l2 2 4-4" stroke="var(--stamp-allowed)" opacity={0.7} />
-    </svg>
-  );
-}
+const PostureMapSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <circle cx={5} cy={12} r={2} />
+    <circle cx={12} cy={5} r={2} />
+    <circle cx={19} cy={12} r={2} />
+    <circle cx={12} cy={19} r={2} />
+    <path d="M7 11l3-4M15 7l2 3M17 13l-3 4M9 17l-2-3" opacity={0.4} />
+    <circle cx={12} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.5} />
+  </Sig>
+);
 
-function ReplaySigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx={12} cy={12} r={9} />
-      <polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none" opacity={0.5} />
-    </svg>
-  );
-}
+const ComplianceSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M15 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7l-5-5z" />
+    <path d="M15 2v5h5" opacity={0.4} />
+    <path d="M9 15l2 2 4-4" stroke="var(--stamp-allowed)" opacity={0.7} />
+  </Sig>
+);
 
-function AgentChatSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-      <path d="M8 9h8M8 13h5" opacity={0.4} />
-    </svg>
-  );
-}
+const ReplaySigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <circle cx={12} cy={12} r={9} />
+    <polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none" opacity={0.5} />
+  </Sig>
+);
 
-function BrokerWalletSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x={3} y={6} width={18} height={12} rx={2} />
-      <path d="M16 12h3" opacity={0.5} />
-      <circle cx={8} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.6} />
-    </svg>
-  );
-}
+const AgentChatSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+    <path d="M8 9h8M8 13h5" opacity={0.4} />
+  </Sig>
+);
 
-function BrokerMissionControlSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx={12} cy={12} r={8} />
-      <path d="M12 4v4M12 16v4M4 12h4M16 12h4" opacity={0.35} />
-      <path d="M12 12l4-3" stroke="currentColor" />
-      <circle cx={12} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.65} />
-    </svg>
-  );
-}
+const BrokerWalletSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <rect x={3} y={6} width={18} height={12} rx={2} />
+    <path d="M16 12h3" opacity={0.5} />
+    <circle cx={8} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.6} />
+  </Sig>
+);
 
-function BrokerTheaterSigil() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={20}
-      height={20}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 6h16" opacity={0.35} />
-      <path d="M4 12h10" />
-      <path d="M4 18h16" opacity={0.35} />
-      <circle cx={17} cy={12} r={3} fill="none" />
-    </svg>
-  );
-}
+const BrokerMissionControlSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <circle cx={12} cy={12} r={8} />
+    <path d="M12 4v4M12 16v4M4 12h4M16 12h4" opacity={0.35} />
+    <path d="M12 12l4-3" stroke="currentColor" />
+    <circle cx={12} cy={12} r={1.5} fill="currentColor" stroke="none" opacity={0.65} />
+  </Sig>
+);
+
+const BrokerTheaterSigil: FC<SigilProps> = ({ size }) => (
+  <Sig size={size}>
+    <path d="M4 6h16" opacity={0.35} />
+    <path d="M4 12h10" />
+    <path d="M4 18h16" opacity={0.35} />
+    <circle cx={17} cy={12} r={3} fill="none" />
+  </Sig>
+);
 
 /**
  * Semantic tone for each process — drives the sidebar's icon color via CSS `color`.
@@ -578,33 +342,40 @@ export const PROCESS_TONE: Record<string, "gold" | "teal" | "muted"> = {
   "broker-wallet": "gold",
 };
 
-/** Map processId → sigil component for use in taskbar & desktop */
-export const PROCESS_ICONS: Record<string, React.ReactNode> = {
-  monitor: <MonitorSigil />,
-  "event-stream": <EventStreamSigil />,
-  audit: <AuditSigil />,
-  policy: <PoliciesSigil />,
-  settings: <SettingsSigil />,
-  "agent-explorer": <AgentExplorerSigil />,
-  "receipt-verifier": <ReceiptVerifierSigil />,
-  "execution-proof": <ExecutionProofSigil />,
-  "privacy-report": <PrivacyReportSigil />,
-  "causal-groups": <CausalGroupsSigil />,
-  "process-cause": <ProcessCauseSigil />,
-  "policy-replay": <ReplaySigil />,
-  "rule-impact": <RuleImpactSigil />,
-  "local-containment": <LocalContainmentSigil />,
-  "agent-secret-touches": <AgentSecretTouchesSigil />,
-  "fleet-cases": <FleetCasesSigil />,
-  "policy-editor": <PolicyEditorSigil />,
-  "guard-playground": <GuardPlaygroundSigil />,
-  "posture-map": <PostureMapSigil />,
-  "compliance-report": <ComplianceSigil />,
-  "replay-mode": <ReplaySigil />,
-  "agent-chat": <AgentChatSigil />,
-  "broker-mission-control": <BrokerMissionControlSigil />,
-  "broker-wallet": <BrokerWalletSigil />,
-  "broker-theater": <BrokerTheaterSigil />,
+/** Size-aware sigil component type shared by every PROCESS_ICONS consumer. */
+export type ProcessIcon = FC<SigilProps>;
+
+/**
+ * Map processId → size-aware sigil component for use in the sidebar, taskbar,
+ * header breadcrumb, and window chrome. Consumers render `<Icon size={n} />`
+ * with the density they need rather than scaling a fixed-size node.
+ */
+export const PROCESS_ICONS: Record<string, ProcessIcon> = {
+  monitor: MonitorSigil,
+  "event-stream": EventStreamSigil,
+  audit: AuditSigil,
+  policy: PoliciesSigil,
+  settings: SettingsSigil,
+  "agent-explorer": AgentExplorerSigil,
+  "receipt-verifier": ReceiptVerifierSigil,
+  "execution-proof": ExecutionProofSigil,
+  "privacy-report": PrivacyReportSigil,
+  "causal-groups": CausalGroupsSigil,
+  "process-cause": ProcessCauseSigil,
+  "policy-replay": ReplaySigil,
+  "rule-impact": RuleImpactSigil,
+  "local-containment": LocalContainmentSigil,
+  "agent-secret-touches": AgentSecretTouchesSigil,
+  "fleet-cases": FleetCasesSigil,
+  "policy-editor": PolicyEditorSigil,
+  "guard-playground": GuardPlaygroundSigil,
+  "posture-map": PostureMapSigil,
+  "compliance-report": ComplianceSigil,
+  "replay-mode": ReplaySigil,
+  "agent-chat": AgentChatSigil,
+  "broker-mission-control": BrokerMissionControlSigil,
+  "broker-wallet": BrokerWalletSigil,
+  "broker-theater": BrokerTheaterSigil,
 };
 
 export const processes: ProcessDefinition[] = [

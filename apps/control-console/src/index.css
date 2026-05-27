@@ -244,10 +244,20 @@ body,
   outline-offset: 1px;
 }
 
-/* Sidebar nav buttons carry inline transitions; honor reduced-motion globally. */
+/*
+ * Shell controls carry inline transitions, which cannot themselves hold a
+ * `prefers-reduced-motion` media query. Tag any such control with one of these
+ * classes so the rule below can disable its motion (transition + transform +
+ * animation) for users who request reduced motion. `cs-animated` is for
+ * elements that are not also focus-ring members.
+ */
 @media (prefers-reduced-motion: reduce) {
   .cs-nav-focus,
-  .cs-nav-focus * {
+  .cs-nav-focus *,
+  .cs-animated,
+  .cs-animated * {
     transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
   }
 }

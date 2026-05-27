@@ -18,9 +18,16 @@ vi.mock("@backbay/glia-desktop", () => ({
   }),
 }));
 
-import { useShellPreferences } from "../../../state/useShellPreferences";
+import { resolveEffectiveVariant, useShellPreferences } from "../../../state/useShellPreferences";
 import { Sidebar } from "./Sidebar";
 import { SidebarExpanded } from "./SidebarExpanded";
+
+/** Render the orchestrator with the variant resolved from current store state. */
+function renderSidebar(props: { onCmdK?: () => void } = {}) {
+  const { sidebarVariant, sidebarCollapsed } = useShellPreferences.getState();
+  const variant = resolveEffectiveVariant(sidebarVariant, sidebarCollapsed);
+  return render(<Sidebar onCmdK={props.onCmdK ?? (() => {})} status={STATUS} variant={variant} />);
+}
 
 const STATUS: ConsoleStatus = {
   sseLive: true,
@@ -113,7 +120,7 @@ describe("SidebarExpanded", () => {
 
 describe("Sidebar orchestrator", () => {
   it("renders the expanded sidebar (248px) for the expanded variant", () => {
-    render(<Sidebar onCmdK={() => {}} status={STATUS} />);
+    renderSidebar();
     const aside = screen.getByRole("navigation", { name: /primary navigation/i });
     expect(aside.style.width).toBe("248px");
     // Search bar present only in expanded
@@ -124,7 +131,7 @@ describe("Sidebar orchestrator", () => {
     act(() => {
       useShellPreferences.setState({ sidebarVariant: "expanded", sidebarCollapsed: true });
     });
-    render(<Sidebar onCmdK={() => {}} status={STATUS} />);
+    renderSidebar();
     const aside = screen.getByRole("navigation", { name: /primary navigation/i });
     expect(aside.style.width).toBe("64px");
     // Rail has no search bar
@@ -135,7 +142,7 @@ describe("Sidebar orchestrator", () => {
     act(() => {
       useShellPreferences.setState({ sidebarVariant: "rail", sidebarCollapsed: false });
     });
-    render(<Sidebar onCmdK={() => {}} status={STATUS} />);
+    renderSidebar();
     expect(screen.getByRole("navigation", { name: /primary navigation/i }).style.width).toBe(
       "64px",
     );
@@ -143,7 +150,7 @@ describe("Sidebar orchestrator", () => {
 
   it("clicking the search opens the command palette via onCmdK", () => {
     const onCmdK = vi.fn();
-    render(<Sidebar onCmdK={onCmdK} status={STATUS} />);
+    renderSidebar({ onCmdK });
     fireEvent.click(screen.getByRole("button", { name: /search apps/i }));
     expect(onCmdK).toHaveBeenCalledTimes(1);
   });
@@ -152,7 +159,7 @@ describe("Sidebar orchestrator", () => {
     act(() => {
       useShellPreferences.setState({ sidebarVariant: "rail", sidebarCollapsed: false });
     });
-    render(<Sidebar onCmdK={() => {}} status={STATUS} />);
+    renderSidebar();
     const nav = screen.getByRole("navigation", { name: /primary navigation/i });
     fireEvent.click(within(nav).getByRole("button", { name: "Monitor" }));
     expect(launch).toHaveBeenCalledWith("monitor");

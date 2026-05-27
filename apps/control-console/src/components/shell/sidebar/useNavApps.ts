@@ -1,5 +1,5 @@
 import { useDesktopOS } from "@backbay/glia-desktop";
-import { type ReactNode, useMemo } from "react";
+import { type FC, useMemo } from "react";
 import {
   type DesktopIconGroupId,
   desktopIconGroups,
@@ -9,11 +9,14 @@ import {
 
 export type NavTone = "gold" | "teal" | "muted";
 
+/** Size-aware sigil component; consumers render it at their own density. */
+export type NavSigil = FC<{ size?: number }>;
+
 export interface NavApp {
   processId: string;
   label: string;
   description: string;
-  sigil: ReactNode;
+  Sigil: NavSigil;
   tone: NavTone;
   running: boolean;
   active: boolean;
@@ -46,7 +49,7 @@ export function useNavApps(): NavGroup[] {
         processId: icon.processId,
         label: icon.label,
         description: processes.getDefinition(icon.processId)?.description ?? "",
-        sigil: PROCESS_ICONS[icon.processId],
+        Sigil: PROCESS_ICONS[icon.processId],
         tone: PROCESS_TONE[icon.processId] ?? "gold",
         running: runningIds.has(icon.processId),
         active: icon.processId === activeId,

@@ -52,6 +52,7 @@ export function SidebarSettings() {
             <label
               key={option.value}
               htmlFor={radioId}
+              className="cs-animated"
               style={{
                 display: "flex",
                 alignItems: "flex-start",
@@ -92,7 +93,12 @@ export function SidebarSettings() {
                 }}
               />
 
-              {/* Visually hidden native radio — carries real semantics + keyboard nav */}
+              {/*
+               * Visually hidden native radio — carries real semantics + keyboard nav.
+               * Kept to a 1px footprint (not 0×0) so the gold cs-nav-focus ring has a
+               * box to anchor to when the radio receives keyboard focus; transparent and
+               * non-interactive so the surrounding label remains the click target.
+               */}
               <input
                 id={radioId}
                 type="radio"
@@ -100,11 +106,16 @@ export function SidebarSettings() {
                 value={option.value}
                 checked={active}
                 onChange={() => setSidebarVariant(option.value)}
+                className="cs-nav-focus"
                 style={{
                   position: "absolute",
+                  left: 6,
+                  top: "50%",
+                  transform: "translateY(-50%)",
                   opacity: 0,
-                  width: 0,
-                  height: 0,
+                  width: 1,
+                  height: 1,
+                  margin: 0,
                   pointerEvents: "none",
                 }}
               />

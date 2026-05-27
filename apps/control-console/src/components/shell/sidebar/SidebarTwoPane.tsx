@@ -5,7 +5,7 @@ import { type DesktopIconGroupId, PROCESS_ICONS } from "../../../state/processRe
 import { StatusPulse } from "../StatusPulse";
 import { NavIconButton, NavRowButton } from "./NavItem";
 import { SidebarHeader } from "./SidebarHeader";
-import { useNavApps } from "./useNavApps";
+import { type NavSigil, useNavApps } from "./useNavApps";
 
 export interface SidebarTwoPaneProps {
   status: ConsoleStatus;
@@ -13,7 +13,8 @@ export interface SidebarTwoPaneProps {
 
 const SETTINGS_PROCESS_ID = "settings";
 
-const SECTION_SIGIL: Record<DesktopIconGroupId, React.ReactNode> = {
+/** Representative sigil per section, rendered at 18px in the section rail. */
+const SECTION_SIGIL: Record<DesktopIconGroupId, NavSigil> = {
   core: PROCESS_ICONS["monitor"],
   "policy-ops": PROCESS_ICONS["policy"],
   advanced: PROCESS_ICONS["settings"],
@@ -92,7 +93,7 @@ export function SidebarTwoPane({ status }: SidebarTwoPaneProps) {
               <SectionButton
                 key={group.id}
                 label={group.label}
-                sigil={SECTION_SIGIL[group.id]}
+                Sigil={SECTION_SIGIL[group.id]}
                 active={isActive}
                 onClick={() => setActiveGroup(group.id)}
               />
@@ -109,7 +110,7 @@ export function SidebarTwoPane({ status }: SidebarTwoPaneProps) {
           >
             <NavIconButton
               label={settingsApp.label}
-              sigil={settingsApp.sigil}
+              Sigil={settingsApp.Sigil}
               tone={settingsApp.tone}
               active={settingsApp.active}
               running={settingsApp.running}
@@ -172,7 +173,7 @@ export function SidebarTwoPane({ status }: SidebarTwoPaneProps) {
             <NavRowButton
               key={app.processId}
               label={app.label}
-              sigil={app.sigil}
+              Sigil={app.Sigil}
               tone={app.tone}
               active={app.active}
               running={app.running}
@@ -196,12 +197,14 @@ export function SidebarTwoPane({ status }: SidebarTwoPaneProps) {
             label="SSE"
             value={status.sseLive ? "● LIVE" : "◌"}
             tone={status.sseLive ? "teal" : "crimson"}
+            dense
           />
           <StatusPulse
             label="Violations"
             value={String(status.violations)}
             tone={status.violations > 0 ? "crimson" : "gold"}
             mono
+            dense
           />
         </div>
       </div>
@@ -211,7 +214,7 @@ export function SidebarTwoPane({ status }: SidebarTwoPaneProps) {
 
 interface SectionButtonProps {
   label: string;
-  sigil: React.ReactNode;
+  Sigil: NavSigil;
   active: boolean;
   onClick: () => void;
 }
@@ -220,8 +223,12 @@ interface SectionButtonProps {
  * 44×44 section selector in the rail. Active state: gold gradient fill +
  * inset border + 2px gold left bar (functional state indicator). Idle: muted
  * icon on transparent.
+ *
+ * Hover/active accent here is intentionally always gold — a section is a
+ * navigational grouping, not a single app, so it carries the shell's identity
+ * accent rather than the per-app tone (teal/muted) used by NavIconButton.
  */
-function SectionButton({ label, sigil, active, onClick }: SectionButtonProps) {
+function SectionButton({ label, Sigil, active, onClick }: SectionButtonProps) {
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
   const highlighted = hover || focused;
@@ -259,7 +266,7 @@ function SectionButton({ label, sigil, active, onClick }: SectionButtonProps) {
           transition: "background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease",
         }}
       >
-        {sigil}
+        <Sigil size={18} />
       </button>
 
       {/* 2px gold left bar — functional state indicator (VS Code / Linear convention) */}

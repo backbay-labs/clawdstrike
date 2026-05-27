@@ -135,7 +135,7 @@ describe("SidebarTwoPane — Sidebar orchestrator integration", () => {
     act(() => {
       useShellPreferences.setState({ sidebarVariant: "twopane", sidebarCollapsed: false });
     });
-    render(<Sidebar onCmdK={() => {}} status={STATUS} />);
+    render(<Sidebar onCmdK={() => {}} status={STATUS} variant="twopane" />);
     // Two-pane nav has no search bar (expanded-only feature)
     expect(screen.queryByRole("button", { name: /search apps/i })).toBeNull();
     // But does have section tabs

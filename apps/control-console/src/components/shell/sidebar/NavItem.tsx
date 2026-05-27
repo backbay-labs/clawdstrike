@@ -1,5 +1,5 @@
-import { type KeyboardEvent, type ReactNode, useState } from "react";
-import type { NavTone } from "./useNavApps";
+import { type KeyboardEvent, useState } from "react";
+import type { NavSigil, NavTone } from "./useNavApps";
 
 const IDLE_ICON = "rgba(154,167,181,0.7)";
 const IDLE_ICON_RAIL = "rgba(154,167,181,0.78)";
@@ -51,17 +51,17 @@ const FOCUS_RING_CLASS = "cs-nav-focus";
 
 interface NavIconButtonProps {
   label: string;
-  sigil: ReactNode;
+  Sigil: NavSigil;
   tone: NavTone;
   active: boolean;
   running: boolean;
   onClick: () => void;
 }
 
-/** Icon-only nav entry for the 64px rail. */
+/** Icon-only nav entry for the 64px rail. Renders the sigil at 20px. */
 export function NavIconButton({
   label,
-  sigil,
+  Sigil,
   tone,
   active,
   running,
@@ -77,11 +77,11 @@ export function NavIconButton({
   const background = active
     ? "linear-gradient(180deg, rgba(214,177,90,0.18), rgba(214,177,90,0.06))"
     : highlighted
-      ? "rgba(214,177,90,0.07)"
+      ? "color-mix(in srgb, var(--gold) 7%, transparent)"
       : "transparent";
 
   const boxShadow = active
-    ? "inset 0 1px 0 rgba(214,177,90,0.32), inset 0 0 0 1px rgba(214,177,90,0.18), 0 0 16px rgba(214,177,90,0.12)"
+    ? "inset 0 1px 0 rgba(214,177,90,0.32), inset 0 0 0 1px rgba(214,177,90,0.18), 0 0 16px var(--gold-bloom)"
     : "inset 0 0 0 1px rgba(27,34,48,0)";
 
   return (
@@ -114,7 +114,7 @@ export function NavIconButton({
           transition: "background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease",
         }}
       >
-        {sigil}
+        <Sigil size={20} />
       </button>
       {running && (
         <span
@@ -141,7 +141,7 @@ export function NavIconButton({
 
 interface NavRowButtonProps {
   label: string;
-  sigil: ReactNode;
+  Sigil: NavSigil;
   tone: NavTone;
   active: boolean;
   running: boolean;
@@ -149,10 +149,10 @@ interface NavRowButtonProps {
   compact?: boolean;
 }
 
-/** Full-width labeled nav row for the expanded and two-pane variants. */
+/** Full-width labeled nav row for the expanded and two-pane variants. Sigil at 17px. */
 export function NavRowButton({
   label,
-  sigil,
+  Sigil,
   tone,
   active,
   running,
@@ -170,7 +170,7 @@ export function NavRowButton({
   const background = active
     ? "linear-gradient(90deg, rgba(214,177,90,0.16), rgba(214,177,90,0.03))"
     : highlighted
-      ? "rgba(214,177,90,0.06)"
+      ? "color-mix(in srgb, var(--gold) 6%, transparent)"
       : "transparent";
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -233,7 +233,7 @@ export function NavRowButton({
           transition: "color 0.14s ease",
         }}
       >
-        {sigil}
+        <Sigil size={17} />
       </span>
       <span
         className="font-mono"

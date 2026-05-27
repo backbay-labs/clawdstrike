@@ -58,7 +58,7 @@ export function SidebarRail() {
                 <NavIconButton
                   key={app.processId}
                   label={app.label}
-                  sigil={app.sigil}
+                  Sigil={app.Sigil}
                   tone={app.tone}
                   active={app.active}
                   running={app.running}
@@ -82,7 +82,7 @@ export function SidebarRail() {
         >
           <NavIconButton
             label={settings.label}
-            sigil={settings.sigil}
+            Sigil={settings.Sigil}
             tone={settings.tone}
             active={settings.active}
             running={settings.running}

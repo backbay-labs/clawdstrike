@@ -34,7 +34,7 @@ export function SidebarExpanded({ onCmdK, onCollapse, status }: SidebarExpandedP
         boxShadow: "inset -1px 0 0 rgba(214,177,90,0.05), 4px 0 32px rgba(0,0,0,0.5)",
       }}
     >
-      <SidebarHeader collapsed={false} onToggle={onCollapse} />
+      <SidebarHeader collapsed={false} onToggle={onCollapse} version={status.build} />
       <SidebarSearch onCmdK={onCmdK} />
 
       <div style={{ flex: 1, overflow: "auto", padding: "4px 10px 10px" }}>
@@ -57,7 +57,7 @@ export function SidebarExpanded({ onCmdK, onCollapse, status }: SidebarExpandedP
                 <NavRowButton
                   key={app.processId}
                   label={app.label}
-                  sigil={app.sigil}
+                  Sigil={app.Sigil}
                   tone={app.tone}
                   active={app.active}
                   running={app.running}
@@ -82,15 +82,17 @@ export function SidebarExpanded({ onCmdK, onCollapse, status }: SidebarExpandedP
           label="SSE"
           value={status.sseLive ? "● LIVE" : "◌ DOWN"}
           tone={status.sseLive ? "teal" : "crimson"}
+          dense
         />
         <StatusPulse
           label="Violations"
           value={String(status.violations)}
           tone={status.violations > 0 ? "crimson" : "gold"}
           mono
+          dense
         />
-        <StatusPulse label="Uptime" value={status.uptime} tone="gold" mono />
-        <StatusPulse label="Build" value={status.build} tone="gold" mono />
+        <StatusPulse label="Uptime" value={status.uptime} tone="gold" mono dense />
+        <StatusPulse label="Build" value={status.build} tone="gold" mono dense />
       </div>
     </nav>
   );

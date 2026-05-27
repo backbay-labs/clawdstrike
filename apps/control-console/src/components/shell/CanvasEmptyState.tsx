@@ -44,7 +44,7 @@ export function CanvasEmptyState({ onLaunch }: CanvasEmptyStateProps) {
           letterSpacing: "0.14em",
           textTransform: "uppercase",
           cursor: "pointer",
-          transition: "background 150ms ease, border-color 150ms ease",
+          transition: "background 0.14s ease, border-color 0.14s ease",
         }}
         onMouseEnter={(e) => {
           (e.currentTarget as HTMLButtonElement).style.background = "rgba(214,177,90,0.14)";

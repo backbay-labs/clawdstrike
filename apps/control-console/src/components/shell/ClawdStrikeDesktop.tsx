@@ -9,13 +9,13 @@ import {
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSharedSSE } from "../../context/SSEContext";
 import { useAlertRules } from "../../hooks/useAlertRules";
-import { useConsoleStatus } from "../../hooks/useConsoleStatus";
+import { type ConsoleStatus, useConsoleStatus } from "../../hooks/useConsoleStatus";
 import { useContextMenu } from "../../hooks/useContextMenu";
 import { useLockScreen } from "../../hooks/useLockScreen";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useSoundEffects } from "../../hooks/useSoundEffects";
-import { PROCESS_ICONS } from "../../state/processRegistry";
-import { useShellPreferences } from "../../state/useShellPreferences";
+import { PROCESS_ICONS, type ProcessIcon } from "../../state/processRegistry";
+import { resolveEffectiveVariant, useShellPreferences } from "../../state/useShellPreferences";
 import { CanvasEmptyState } from "./CanvasEmptyState";
 import { CommandPalette } from "./CommandPalette";
 import { ContextMenu } from "./ContextMenu";
@@ -210,8 +210,14 @@ function AutoLaunch() {
   return null;
 }
 
-/** Tiny taskbar crest: a teal live dot + "Console online" — the sidebar owns nav now. */
-function ConsoleCrest() {
+/**
+ * Tiny taskbar crest: a live status dot + label — the sidebar owns nav now.
+ * Teal "Console online" when the SSE stream is live, crimson "Console offline"
+ * when it is down. Live state is load-bearing in an EDR console, so this must
+ * never be a hardcoded green light.
+ */
+function ConsoleCrest({ live }: { live: boolean }) {
+  const tone = live ? "var(--teal)" : "var(--crimson)";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, paddingLeft: 8 }}>
       <span
@@ -220,12 +226,13 @@ function ConsoleCrest() {
           width: 6,
           height: 6,
           borderRadius: "50%",
-          background: "var(--teal)",
-          boxShadow: "0 0 6px var(--teal)",
+          background: tone,
+          boxShadow: `0 0 6px ${tone}`,
         }}
       />
       <span
         className="font-mono"
+        role="status"
         style={{
           fontSize: 9.5,
           letterSpacing: "0.18em",
@@ -234,7 +241,7 @@ function ConsoleCrest() {
           whiteSpace: "nowrap",
         }}
       >
-        Console online
+        {live ? "Console online" : "Console offline"}
       </span>
     </div>
   );
@@ -257,12 +264,12 @@ function TaskbarDivider() {
 
 function RunningAppPill({
   label,
-  sigil,
+  Sigil,
   focused,
   onActivate,
 }: {
   label: string;
-  sigil: React.ReactNode;
+  Sigil: ProcessIcon | undefined;
   focused: boolean;
   onActivate: () => void;
 }) {
@@ -295,7 +302,11 @@ function RunningAppPill({
         (e.currentTarget as HTMLButtonElement).style.opacity = "1";
       }}
     >
-      {sigil && <span style={{ display: "flex", flexShrink: 0 }}>{sigil}</span>}
+      {Sigil && (
+        <span style={{ display: "flex", flexShrink: 0 }}>
+          <Sigil size={14} />
+        </span>
+      )}
       <span
         className="font-mono"
         style={{
@@ -317,11 +328,13 @@ function ComposedTaskbar({
   onMarkAllRead,
   onClearNotifications,
   unreadCount,
+  status,
 }: {
   notifications: import("../../hooks/useNotifications").AppNotification[];
   onMarkAllRead: () => void;
   onClearNotifications: () => void;
   unreadCount: number;
+  status: ConsoleStatus;
 }) {
   const { windows, processes } = useDesktopOS();
 
@@ -338,7 +351,7 @@ function ComposedTaskbar({
 
   return (
     <Taskbar showClock>
-      <ConsoleCrest />
+      <ConsoleCrest live={status.sseLive} />
       <TaskbarDivider />
       <Taskbar.RunningApps>
         {processes.instances.map((instance) => {
@@ -347,7 +360,7 @@ function ComposedTaskbar({
             <RunningAppPill
               key={instance.windowId}
               label={def?.name ?? instance.processId}
-              sigil={PROCESS_ICONS[instance.processId]}
+              Sigil={PROCESS_ICONS[instance.processId]}
               focused={instance.windowId === windows.focusedId}
               onActivate={() => handleClick(instance.windowId)}
             />
@@ -390,8 +403,7 @@ export function ClawdStrikeDesktop() {
     (i) => i.windowId === windows.focusedId,
   )?.processId;
   const { sidebarVariant, sidebarCollapsed } = useShellPreferences();
-  const effectiveVariant =
-    sidebarVariant === "expanded" && sidebarCollapsed ? "rail" : sidebarVariant;
+  const effectiveVariant = resolveEffectiveVariant(sidebarVariant, sidebarCollapsed);
   const hasWindows = windowIds.length > 0;
 
   const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), []);
@@ -465,7 +477,7 @@ export function ClawdStrikeDesktop() {
         }}
       >
         <div style={{ flexShrink: 0, display: "flex" }}>
-          <Sidebar status={status} onCmdK={openCommandPalette} />
+          <Sidebar status={status} onCmdK={openCommandPalette} variant={effectiveVariant} />
         </div>
 
         <main
@@ -521,6 +533,7 @@ export function ClawdStrikeDesktop() {
         onMarkAllRead={markAllRead}
         onClearNotifications={clearNotifications}
         unreadCount={unreadCount}
+        status={status}
       />
     </div>
   );
