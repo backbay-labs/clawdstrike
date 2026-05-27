@@ -12,8 +12,8 @@ export interface ConsoleStatus {
 }
 
 function formatElapsed(startMs: number): string {
-  // Clamp to 0: a future-dated event (clock skew between agent and console) would
-  // otherwise render a negative uptime. DesktopWidgets does not guard this.
+  // Clamp to 0: a future-dated event (agent/console clock skew) would otherwise
+  // render a negative uptime. Math.max guards against that case.
   const diff = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
   const h = String(Math.floor(diff / 3600)).padStart(2, "0");
   const m = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
@@ -27,7 +27,7 @@ export function useConsoleStatus(events: SSEEvent[], connected: boolean): Consol
     [events],
   );
 
-  // Match DesktopWidgets: oldest event is last in the array (newest-first ordering from useSSE).
+  // Oldest event is the last element — useSSE prepends incoming events (newest-first).
   const oldestTimestamp = events.length > 0 ? events[events.length - 1].timestamp : null;
   const startMs = useMemo(
     () => (oldestTimestamp ? new Date(oldestTimestamp).getTime() : null),
@@ -38,8 +38,7 @@ export function useConsoleStatus(events: SSEEvent[], connected: boolean): Consol
 
   useEffect(() => {
     if (startMs === null) {
-      // Reset when the event list empties (e.g. clearEvents). DesktopWidgets keeps
-      // the stale last value because its effect early-returns without resetting.
+      // Reset uptime when the event list is cleared (e.g. clearEvents).
       setUptime("00:00:00");
       return;
     }

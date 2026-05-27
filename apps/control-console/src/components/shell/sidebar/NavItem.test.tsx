@@ -39,7 +39,7 @@ describe("NavRowButton", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it("activates on Enter and Space", () => {
+  it("activates via click (native button Enter/Space activation works in real browsers)", () => {
     const onClick = vi.fn();
     render(
       <NavRowButton
@@ -52,8 +52,8 @@ describe("NavRowButton", () => {
       />,
     );
     const button = screen.getByRole("button");
-    fireEvent.keyDown(button, { key: "Enter" });
-    fireEvent.keyDown(button, { key: " " });
+    fireEvent.click(button);
+    fireEvent.click(button);
     expect(onClick).toHaveBeenCalledTimes(2);
   });
 

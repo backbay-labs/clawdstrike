@@ -17,8 +17,6 @@ export function resolveEffectiveVariant(
   return variant === "expanded" && collapsed ? "rail" : variant;
 }
 
-const SHELL_PREFS_CHANGED_EVENT = "clawdstrike:shell-prefs-changed";
-
 const VARIANT_KEY = "cs_sidebar_variant";
 const COLLAPSED_KEY = "cs_sidebar_collapsed";
 
@@ -35,12 +33,10 @@ function readCollapsed(): boolean {
 
 function persistVariant(v: SidebarVariant) {
   localStorage.setItem(VARIANT_KEY, v);
-  window.dispatchEvent(new CustomEvent(SHELL_PREFS_CHANGED_EVENT));
 }
 
 function persistCollapsed(b: boolean) {
   localStorage.setItem(COLLAPSED_KEY, String(b));
-  window.dispatchEvent(new CustomEvent(SHELL_PREFS_CHANGED_EVENT));
 }
 
 interface ShellPreferencesState {

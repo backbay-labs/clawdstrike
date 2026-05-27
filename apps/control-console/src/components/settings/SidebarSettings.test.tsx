@@ -86,23 +86,11 @@ describe("SidebarSettings", () => {
     expect(localStorage.getItem("cs_sidebar_variant")).toBe("rail");
   });
 
-  it("dispatches clawdstrike:shell-prefs-changed on variant change", async () => {
-    const { SidebarSettings } = await setup();
-    render(<SidebarSettings />);
-    const events: Event[] = [];
-    const handler = (e: Event) => events.push(e);
-    window.addEventListener("clawdstrike:shell-prefs-changed", handler);
-    fireEvent.click(screen.getByRole("radio", { name: /two-pane/i }));
-    // Remove the original handler reference (not the captured Event) to avoid leaks.
-    window.removeEventListener("clawdstrike:shell-prefs-changed", handler);
-    expect(events.length).toBeGreaterThan(0);
-  });
-
   it("renders description text for each option", async () => {
     const { SidebarSettings } = await setup();
     render(<SidebarSettings />);
     expect(screen.getByText(/maximum canvas space/i)).toBeTruthy();
     expect(screen.getByText(/balanced density/i)).toBeTruthy();
-    expect(screen.getByText(/secondary context drawer/i)).toBeTruthy();
+    expect(screen.getByText(/section rail with a scrollable app list/i)).toBeTruthy();
   });
 });

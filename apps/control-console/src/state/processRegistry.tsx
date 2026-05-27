@@ -773,18 +773,6 @@ export const desktopIconGroups: DesktopIconGroup[] = (
   icons: desktopIcons.filter((icon) => icon.group === groupId),
 }));
 
-export const allApps = desktopIcons;
-
-export const startMenuDefaultPinnedIds = [
-  "monitor",
-  "broker-mission-control",
-  "broker-wallet",
-  "agent-explorer",
-  "audit",
-  "event-stream",
-  "settings",
-];
-
 export const pinnedAppIds = [
   "monitor",
   "broker-mission-control",

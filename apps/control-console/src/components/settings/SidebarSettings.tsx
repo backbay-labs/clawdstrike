@@ -20,7 +20,7 @@ const VARIANT_OPTIONS: VariantOption[] = [
   {
     value: "twopane",
     label: "Two-Pane",
-    description: "Wide panel with a secondary context drawer. Deep-dive sessions.",
+    description: "Section rail with a scrollable app list. Deep-dive sessions.",
   },
 ];
 

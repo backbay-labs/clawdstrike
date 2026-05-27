@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { APP_VERSION } from "../../hooks/useConsoleStatus";
 
 export interface BrandMarkProps {
   size?: number;
@@ -6,7 +7,11 @@ export interface BrandMarkProps {
   version?: string;
 }
 
-export function BrandMark({ size = 36, showWordmark = false, version = "0.2.0" }: BrandMarkProps) {
+export function BrandMark({
+  size = 36,
+  showWordmark = false,
+  version = APP_VERSION,
+}: BrandMarkProps) {
   // Unique id per instance prevents linearGradient id collisions when rendered twice
   const uid = useId().replace(/:/g, "");
   const gradientId = `cg-${uid}`;

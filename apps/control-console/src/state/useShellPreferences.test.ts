@@ -112,30 +112,4 @@ describe("useShellPreferences", () => {
 
     expect(result.current.sidebarVariant).toBe("rail");
   });
-
-  it("dispatches clawdstrike:shell-prefs-changed on setSidebarVariant", async () => {
-    const useShellPreferences = await getHook();
-    const { result } = renderHook(() => useShellPreferences());
-    const events: Event[] = [];
-    const handler = (e: Event) => events.push(e);
-    window.addEventListener("clawdstrike:shell-prefs-changed", handler);
-
-    act(() => result.current.setSidebarVariant("rail"));
-
-    window.removeEventListener("clawdstrike:shell-prefs-changed", handler);
-    expect(events.length).toBeGreaterThan(0);
-  });
-
-  it("dispatches clawdstrike:shell-prefs-changed on toggleSidebarCollapsed", async () => {
-    const useShellPreferences = await getHook();
-    const { result } = renderHook(() => useShellPreferences());
-    const events: Event[] = [];
-    const handler = (e: Event) => events.push(e);
-    window.addEventListener("clawdstrike:shell-prefs-changed", handler);
-
-    act(() => result.current.toggleSidebarCollapsed());
-
-    window.removeEventListener("clawdstrike:shell-prefs-changed", handler);
-    expect(events.length).toBeGreaterThan(0);
-  });
 });

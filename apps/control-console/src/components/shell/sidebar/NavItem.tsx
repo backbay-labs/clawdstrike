@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useState } from "react";
+import { useState } from "react";
 import type { NavSigil, NavTone } from "./useNavApps";
 
 const IDLE_ICON = "rgba(154,167,181,0.7)";
@@ -173,18 +173,10 @@ export function NavRowButton({
       ? "color-mix(in srgb, var(--gold) 6%, transparent)"
       : "transparent";
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onClick();
-    }
-  };
-
   return (
     <button
       type="button"
       onClick={onClick}
-      onKeyDown={handleKeyDown}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onFocus={() => setFocused(true)}
