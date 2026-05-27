@@ -181,9 +181,11 @@ function SidebarFooter({ status, collapsed }: { status: ConsoleStatus; collapsed
         <StatusPulse label="Build" value={status.build} tone="gold" mono dense />
       </div>
 
-      {/* Collapsed compact pulse: SSE dot + violations count. */}
+      {/* Collapsed compact pulse: SSE dot + violations count. Fades in (rather
+          than popping) as the expanded cards fade out. */}
       {collapsed && (
         <div
+          className="cs-fade-in cs-animated"
           style={{
             display: "flex",
             flexDirection: "column",

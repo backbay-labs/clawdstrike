@@ -50,6 +50,21 @@ describe("KeyboardShortcuts — sidebar toggle", () => {
     expect(onToggleSidebar).toHaveBeenCalledTimes(1);
   });
 
+  it("⌘\\ (meta) invokes onToggleSidebar on macOS", () => {
+    const onToggleSidebar = vi.fn();
+    render(
+      <KeyboardShortcuts
+        onToggleCommandPalette={() => {}}
+        onLock={() => {}}
+        onToggleSidebar={onToggleSidebar}
+      />,
+    );
+    // macOS fires metaKey (Cmd), not ctrlKey. The matcher treats Cmd OR Ctrl as
+    // the primary modifier, so the ⌘-labeled binding must fire here.
+    press("\\", { meta: true });
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
+
   it("does not fire the sidebar toggle without a modifier", () => {
     const onToggleSidebar = vi.fn();
     render(
@@ -63,7 +78,7 @@ describe("KeyboardShortcuts — sidebar toggle", () => {
     expect(onToggleSidebar).not.toHaveBeenCalled();
   });
 
-  it("⌘\\ (meta) does not collide with the command palette or lock bindings", () => {
+  it("⌘\\ does not collide with the command palette or lock bindings", () => {
     const onToggleCommandPalette = vi.fn();
     const onLock = vi.fn();
     const onToggleSidebar = vi.fn();
@@ -74,11 +89,23 @@ describe("KeyboardShortcuts — sidebar toggle", () => {
         onToggleSidebar={onToggleSidebar}
       />,
     );
-    // The handler matches ctrlKey; the meta variant is treated equivalently by
-    // the OS on mac, but here we assert ⌘\\ does not trip ⌘K or ⌘L.
-    press("\\", { ctrl: true });
+    // ⌘\\ (meta) routes only to the sidebar toggle — not ⌘K or ⌘L.
+    press("\\", { meta: true });
     expect(onToggleCommandPalette).not.toHaveBeenCalled();
     expect(onLock).not.toHaveBeenCalled();
     expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it("⌘K (meta) opens the command palette on macOS", () => {
+    const onToggleCommandPalette = vi.fn();
+    render(
+      <KeyboardShortcuts
+        onToggleCommandPalette={onToggleCommandPalette}
+        onLock={() => {}}
+        onToggleSidebar={() => {}}
+      />,
+    );
+    press("k", { meta: true });
+    expect(onToggleCommandPalette).toHaveBeenCalledTimes(1);
   });
 });

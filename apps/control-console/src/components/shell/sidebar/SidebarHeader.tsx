@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { APP_VERSION } from "../../../hooks/useConsoleStatus";
 import { BrandMark } from "../BrandMark";
+import { Tooltip } from "./NavItem";
 
 export interface SidebarHeaderProps {
   collapsed: boolean;
@@ -63,6 +64,7 @@ interface CollapseToggleProps {
 function CollapseToggle({ collapsed, onToggle, shortcut }: CollapseToggleProps) {
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const highlighted = hover || focused;
 
   const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
@@ -84,6 +86,7 @@ function CollapseToggle({ collapsed, onToggle, shortcut }: CollapseToggleProps) 
       }}
     >
       <button
+        ref={buttonRef}
         type="button"
         onClick={onToggle}
         onFocus={() => setFocused(true)}
@@ -133,41 +136,13 @@ function CollapseToggle({ collapsed, onToggle, shortcut }: CollapseToggleProps) 
         </svg>
       </button>
       {/*
-       * Custom hover tooltip only in the collapsed rail, where there is room to
-       * the right and discoverability of the expand control matters most. In the
-       * expanded state the chevron is self-evident and the native `title`
-       * (with the shortcut) still covers it, avoiding a tooltip that would hang
-       * past the sidebar edge over the canvas.
+       * Collapsed: a clip-proof portal tooltip carries the headline "Expand
+       * sidebar (⌘\\)" discoverability hint to the RIGHT of the rail, escaping
+       * the nav's overflow:hidden. Expanded: the chevron is self-evident and the
+       * native `title` (with the shortcut) covers it, so we skip the floating
+       * tooltip that would otherwise hang past the sidebar edge over the canvas.
        */}
-      {collapsed && highlighted && (
-        <span
-          role="tooltip"
-          style={{
-            position: "absolute",
-            left: "calc(100% + 8px)",
-            top: "50%",
-            transform: "translateY(-50%)",
-            background: "rgba(11,13,16,0.97)",
-            border: "1px solid var(--gold-edge)",
-            borderRadius: 8,
-            padding: "5px 9px",
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-            fontFamily: "var(--glia-font-mono)",
-            fontSize: 10,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "var(--text)",
-            boxShadow: "0 6px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(214,177,90,0.15)",
-            zIndex: 60,
-          }}
-        >
-          {label}
-          {shortcut && (
-            <span style={{ marginLeft: 8, color: "var(--muted)", fontSize: 9.5 }}>{shortcut}</span>
-          )}
-        </span>
-      )}
+      {collapsed && highlighted && <Tooltip label={label} kbd={shortcut} anchorRef={buttonRef} />}
     </div>
   );
 }

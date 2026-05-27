@@ -235,6 +235,23 @@ body,
   }
 }
 
+/*
+ * Subtle opacity fade-in for content that mounts on a state change (e.g. the
+ * collapsed sidebar's compact status footer), so it eases in instead of popping.
+ * Pairs with `cs-animated` so `prefers-reduced-motion` disables it.
+ */
+@keyframes csFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.cs-fade-in {
+  animation: csFadeIn 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* Sidebar nav keyboard focus ring — gold, only on keyboard navigation. */
 .cs-nav-focus:focus {
   outline: none;

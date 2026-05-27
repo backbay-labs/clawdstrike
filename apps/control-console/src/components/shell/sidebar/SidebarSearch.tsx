@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Tooltip } from "./NavItem";
 
 export interface SidebarSearchProps {
@@ -13,11 +13,13 @@ const MORPH = "cubic-bezier(0.22,1,0.36,1)";
 export function SidebarSearch({ onCmdK, collapsed = false }: SidebarSearchProps) {
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const highlighted = hover || focused;
 
   return (
     <div style={{ position: "relative", margin: collapsed ? "10px 8px 8px" : "10px 12px 8px" }}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={onCmdK}
         onMouseEnter={() => setHover(true)}
@@ -95,7 +97,7 @@ export function SidebarSearch({ onCmdK, collapsed = false }: SidebarSearchProps)
           ⌘ K
         </span>
       </button>
-      {collapsed && highlighted && <Tooltip label="Search" kbd="⌘K" />}
+      {collapsed && highlighted && <Tooltip label="Search" kbd="⌘K" anchorRef={buttonRef} />}
     </div>
   );
 }

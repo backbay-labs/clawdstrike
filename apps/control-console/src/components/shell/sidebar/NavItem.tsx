@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { type RefObject, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { NavSigil, NavTone } from "./useNavApps";
 
 const IDLE_ICON = "rgba(154,167,181,0.7)";
@@ -14,30 +15,81 @@ function accentFor(tone: NavTone): string {
 interface TooltipProps {
   label: string;
   kbd?: string;
+  /**
+   * Trigger element to anchor against. When provided, the tooltip renders in a
+   * portal on `document.body` with `position: fixed`, escaping the sidebar's
+   * (and column wrapper's) `overflow: hidden` so it is never clipped — it always
+   * appears just to the RIGHT of the trigger. Without a ref it falls back to an
+   * absolutely-positioned label inside the trigger's relative container.
+   */
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
-/** Right-anchored hover label for the icon rail. */
-export function Tooltip({ label, kbd }: TooltipProps) {
+/** Shared tooltip skin so the portal and inline fallback look identical. */
+const TOOLTIP_SKIN = {
+  background: "rgba(11,13,16,0.97)",
+  border: "1px solid var(--gold-edge)",
+  borderRadius: 8,
+  padding: "5px 9px",
+  whiteSpace: "nowrap" as const,
+  pointerEvents: "none" as const,
+  fontFamily: "var(--glia-font-mono)",
+  fontSize: 10.5,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+  color: "var(--text)",
+  boxShadow: "0 6px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(214,177,90,0.15)",
+  zIndex: 9000,
+};
+
+/**
+ * Right-anchored hover label for the icon rail and collapsed nav. Renders to a
+ * body portal when given an `anchorRef` so it clears clipping ancestors.
+ */
+export function Tooltip({ label, kbd, anchorRef }: TooltipProps) {
+  // Track the anchor's viewport rect so the fixed-position portal follows it.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = anchorRef?.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    // 10px to the right of the trigger, vertically centered on it.
+    setPos({ top: rect.top + rect.height / 2, left: rect.right + 10 });
+  }, [anchorRef]);
+
+  // Portal path: clip-proof, anchored to the live trigger rect.
+  if (anchorRef && typeof document !== "undefined") {
+    return createPortal(
+      <span
+        role="tooltip"
+        style={{
+          ...TOOLTIP_SKIN,
+          position: "fixed",
+          top: pos?.top ?? 0,
+          left: pos?.left ?? 0,
+          transform: "translateY(-50%)",
+          // Hidden for one frame until the rect is measured, then revealed.
+          visibility: pos ? "visible" : "hidden",
+        }}
+      >
+        {label}
+        {kbd && <span style={{ marginLeft: 8, color: "var(--muted)", fontSize: 9.5 }}>{kbd}</span>}
+      </span>,
+      document.body,
+    );
+  }
+
+  // Inline fallback (no anchor): absolutely positioned within the relative parent.
   return (
     <span
       role="tooltip"
       style={{
+        ...TOOLTIP_SKIN,
         position: "absolute",
         left: "calc(100% + 10px)",
         top: "50%",
         transform: "translateY(-50%)",
-        background: "rgba(11,13,16,0.97)",
-        border: "1px solid var(--gold-edge)",
-        borderRadius: 8,
-        padding: "5px 9px",
-        whiteSpace: "nowrap",
-        pointerEvents: "none",
-        fontFamily: "var(--glia-font-mono)",
-        fontSize: 10.5,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: "var(--text)",
-        boxShadow: "0 6px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(214,177,90,0.15)",
         zIndex: 50,
       }}
     >
@@ -69,6 +121,7 @@ export function NavIconButton({
 }: NavIconButtonProps) {
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const accent = accentFor(tone);
   const highlighted = hover || focused;
 
@@ -91,6 +144,7 @@ export function NavIconButton({
       onMouseLeave={() => setHover(false)}
     >
       <button
+        ref={buttonRef}
         type="button"
         onClick={onClick}
         onFocus={() => setFocused(true)}
@@ -134,7 +188,7 @@ export function NavIconButton({
           }}
         />
       )}
-      {(hover || focused) && <Tooltip label={label} />}
+      {(hover || focused) && <Tooltip label={label} anchorRef={buttonRef} />}
     </div>
   );
 }
@@ -168,6 +222,7 @@ export function NavRowButton({
 }: NavRowButtonProps) {
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const accent = accentFor(tone);
   const highlighted = hover || focused;
 
@@ -183,6 +238,7 @@ export function NavRowButton({
   return (
     <div style={{ position: "relative" }}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={onClick}
         onMouseEnter={() => setHover(true)}
@@ -294,7 +350,7 @@ export function NavRowButton({
           />
         )}
       </button>
-      {collapsed && highlighted && <Tooltip label={label} />}
+      {collapsed && highlighted && <Tooltip label={label} anchorRef={buttonRef} />}
     </div>
   );
 }

@@ -511,7 +511,13 @@ export function ClawdStrikeDesktop() {
           transition: "grid-template-columns 0.22s cubic-bezier(0.22,1,0.36,1)",
         }}
       >
-        <div style={{ minWidth: 0, display: "flex", overflow: "hidden" }}>
+        {/*
+         * No overflow:hidden here — the nav animates its own width in lockstep
+         * with the grid track (same curve + duration), so nothing spills into
+         * <main>, and right-escaping tooltips (rail nav items, the collapsed
+         * Expand toggle) must not be clipped by this wrapper.
+         */}
+        <div style={{ minWidth: 0, display: "flex" }}>
           <Sidebar
             status={status}
             onCmdK={openCommandPalette}

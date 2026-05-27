@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { NavIconButton, NavRowButton, Tooltip } from "./NavItem";
 
@@ -252,13 +253,54 @@ describe("NavIconButton", () => {
     fireEvent.focus(screen.getByRole("button"));
     expect(screen.getByRole("tooltip").textContent).toContain("Monitor");
   });
+
+  it("renders the tooltip in a body portal (outside the nav item) so it escapes clipping", () => {
+    const { container } = render(
+      <NavIconButton
+        label="Monitor"
+        Sigil={Sigil}
+        tone="gold"
+        active={false}
+        running={false}
+        onClick={() => {}}
+      />,
+    );
+    fireEvent.focus(screen.getByRole("button"));
+    const tip = screen.getByRole("tooltip");
+    // The clip-proof fix: the tooltip is NOT a descendant of the rendered nav
+    // item subtree; it is portaled to document.body and positioned fixed.
+    expect(container.contains(tip)).toBe(false);
+    expect(tip.style.position).toBe("fixed");
+  });
 });
 
 describe("Tooltip", () => {
-  it("renders the label and optional kbd hint", () => {
+  it("renders the label and optional kbd hint (inline fallback, no anchor)", () => {
     render(<Tooltip label="Search" kbd="⌘ K" />);
     const tip = screen.getByRole("tooltip");
     expect(tip.textContent).toContain("Search");
     expect(tip.textContent).toContain("⌘ K");
+    // No anchor → inline, absolutely-positioned within the relative parent.
+    expect(tip.style.position).toBe("absolute");
+  });
+
+  it("portals to document.body with position:fixed when given an anchorRef", () => {
+    function Harness() {
+      const ref = useRef<HTMLButtonElement>(null);
+      return (
+        <div data-testid="harness">
+          <button ref={ref} type="button">
+            anchor
+          </button>
+          <Tooltip label="Expand sidebar" kbd="⌘\" anchorRef={ref} />
+        </div>
+      );
+    }
+    const { getByTestId } = render(<Harness />);
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toContain("Expand sidebar");
+    expect(tip.style.position).toBe("fixed");
+    // Escapes the harness subtree (rendered to document.body).
+    expect(getByTestId("harness").contains(tip)).toBe(false);
   });
 });
