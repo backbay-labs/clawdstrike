@@ -6,16 +6,26 @@ export type SidebarVariant = "rail" | "expanded" | "twopane";
 export type EffectiveSidebarVariant = SidebarVariant;
 
 /**
- * Resolve the rendered sidebar variant: a collapsed "expanded" sidebar shows as
- * the icon rail. The single source of truth for this rule, shared by the shell
- * and the sidebar so they never drift.
+ * Resolve the rendered sidebar variant. The collapsed flag no longer swaps the
+ * component: a collapsed "expanded" sidebar stays "expanded" and animates its
+ * own width down to a rail-like 64px (see {@link SidebarExpanded}), so the
+ * open/close transition can morph smoothly instead of hot-swapping components.
+ * The standalone icon rail is reserved for the user-chosen "rail" variant.
+ *
+ * Kept as the single source of truth for the variant rule so the shell and the
+ * sidebar never drift; the `collapsed` flag is consumed directly where width is
+ * computed.
  */
 export function resolveEffectiveVariant(
   variant: SidebarVariant,
-  collapsed: boolean,
+  _collapsed: boolean,
 ): EffectiveSidebarVariant {
-  return variant === "expanded" && collapsed ? "rail" : variant;
+  return variant;
 }
+
+/** Pixel width of the expanded sidebar in its open and collapsed states. */
+export const SIDEBAR_EXPANDED_WIDTH = 248;
+export const SIDEBAR_COLLAPSED_WIDTH = 64;
 
 const VARIANT_KEY = "cs_sidebar_variant";
 const COLLAPSED_KEY = "cs_sidebar_collapsed";

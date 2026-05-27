@@ -22,11 +22,19 @@ import { resolveEffectiveVariant, useShellPreferences } from "../../../state/use
 import { Sidebar } from "./Sidebar";
 import { SidebarExpanded } from "./SidebarExpanded";
 
-/** Render the orchestrator with the variant resolved from current store state. */
+/** Render the orchestrator with the variant + collapsed resolved from current store state. */
 function renderSidebar(props: { onCmdK?: () => void } = {}) {
   const { sidebarVariant, sidebarCollapsed } = useShellPreferences.getState();
   const variant = resolveEffectiveVariant(sidebarVariant, sidebarCollapsed);
-  return render(<Sidebar onCmdK={props.onCmdK ?? (() => {})} status={STATUS} variant={variant} />);
+  const collapsed = sidebarVariant === "expanded" && sidebarCollapsed;
+  return render(
+    <Sidebar
+      onCmdK={props.onCmdK ?? (() => {})}
+      status={STATUS}
+      variant={variant}
+      collapsed={collapsed}
+    />,
+  );
 }
 
 const STATUS: ConsoleStatus = {
@@ -47,20 +55,20 @@ beforeEach(() => {
 
 describe("SidebarExpanded", () => {
   it("renders all three group labels", () => {
-    render(<SidebarExpanded onCmdK={() => {}} onCollapse={() => {}} status={STATUS} />);
+    render(<SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} />);
     expect(screen.getByText("Operations")).toBeTruthy();
     expect(screen.getByText("Policy + Runtime")).toBeTruthy();
     expect(screen.getByText("Tools")).toBeTruthy();
   });
 
   it("renders nav rows for apps including Monitor and Policies", () => {
-    render(<SidebarExpanded onCmdK={() => {}} onCollapse={() => {}} status={STATUS} />);
+    render(<SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} />);
     expect(screen.getByRole("button", { name: "Monitor" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Policies" })).toBeTruthy();
   });
 
   it("launches the process when a nav row is clicked", () => {
-    render(<SidebarExpanded onCmdK={() => {}} onCollapse={() => {}} status={STATUS} />);
+    render(<SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} />);
     fireEvent.click(screen.getByRole("button", { name: /monitor/i }));
     expect(launch).toHaveBeenCalledWith("monitor");
   });
@@ -68,30 +76,23 @@ describe("SidebarExpanded", () => {
   it("marks the focused app's row with aria-current=page", () => {
     instances.current = [{ windowId: "w1", processId: "monitor" }];
     focusedId.current = "w1";
-    render(<SidebarExpanded onCmdK={() => {}} onCollapse={() => {}} status={STATUS} />);
+    render(<SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} />);
     const monitor = screen.getByRole("button", { name: /monitor/i });
     expect(monitor.getAttribute("aria-current")).toBe("page");
   });
 
   it("calls onCmdK when the search bar is clicked", () => {
     const onCmdK = vi.fn();
-    render(<SidebarExpanded onCmdK={onCmdK} onCollapse={() => {}} status={STATUS} />);
+    render(<SidebarExpanded onCmdK={onCmdK} onToggleCollapse={() => {}} status={STATUS} />);
     fireEvent.click(screen.getByRole("button", { name: /search apps/i }));
     expect(onCmdK).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onCollapse when the collapse chevron is clicked", () => {
-    const onCollapse = vi.fn();
-    render(<SidebarExpanded onCmdK={() => {}} onCollapse={onCollapse} status={STATUS} />);
-    fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
-    expect(onCollapse).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders SSE, Violations, Uptime, and Build pulses in the footer", () => {
+  it("renders SSE, Violations, Uptime, and Build pulses in the footer when expanded", () => {
     render(
       <SidebarExpanded
         onCmdK={() => {}}
-        onCollapse={() => {}}
+        onToggleCollapse={() => {}}
         status={{ sseLive: true, violations: 3, uptime: "02:00:00", build: "9.9.9" }}
       />,
     );
@@ -109,12 +110,103 @@ describe("SidebarExpanded", () => {
     render(
       <SidebarExpanded
         onCmdK={() => {}}
-        onCollapse={() => {}}
+        onToggleCollapse={() => {}}
         status={{ sseLive: false, violations: 0, uptime: "00:00:00", build: "0.2.0" }}
       />,
     );
     const sseValue = screen.getByText("◌ DOWN");
     expect(sseValue.style.color).toBe("var(--crimson)");
+  });
+
+  it("morphs to a 64px rail-like width when collapsed", () => {
+    render(
+      <SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} collapsed />,
+    );
+    const nav = screen.getByRole("navigation", { name: /primary navigation/i });
+    expect(nav.style.width).toBe("64px");
+  });
+
+  it("keeps nav rows mounted (icon-only) when collapsed", () => {
+    render(
+      <SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} collapsed />,
+    );
+    // Same nav nodes persist for the morph; Monitor still resolves by aria-label.
+    expect(screen.getByRole("button", { name: "Monitor" })).toBeTruthy();
+  });
+
+  it("shows the compact SSE + violations pulse when collapsed", () => {
+    render(
+      <SidebarExpanded
+        onCmdK={() => {}}
+        onToggleCollapse={() => {}}
+        status={{ sseLive: true, violations: 2, uptime: "01:00:00", build: "0.2.0" }}
+        collapsed
+      />,
+    );
+    expect(screen.getByTestId("sidebar-collapsed-sse")).toBeTruthy();
+    expect(screen.getByTestId("sidebar-collapsed-violations").textContent).toBe("2");
+  });
+
+  it("drives the width morph via a CSS transition tagged for reduced-motion", () => {
+    // The morph is a pure CSS width transition on a `cs-animated` element, which
+    // the global `@media (prefers-reduced-motion: reduce)` rule disables — so
+    // the reduced-motion path renders instantly with no JS-driven animation.
+    render(<SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} />);
+    const nav = screen.getByRole("navigation", { name: /primary navigation/i });
+    expect(nav.classList.contains("cs-animated")).toBe(true);
+    expect(nav.style.transition).toContain("width");
+  });
+});
+
+describe("SidebarExpanded — collapse/expand toggle", () => {
+  it("renders a 'Collapse sidebar' toggle with aria-expanded=true when open", () => {
+    render(<SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} />);
+    const toggle = screen.getByRole("button", { name: /collapse sidebar/i });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("renders an 'Expand sidebar' toggle with aria-expanded=false when collapsed", () => {
+    render(
+      <SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} collapsed />,
+    );
+    const toggle = screen.getByRole("button", { name: /expand sidebar/i });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("calls onToggleCollapse when the toggle is clicked (expanded)", () => {
+    const onToggleCollapse = vi.fn();
+    render(
+      <SidebarExpanded onCmdK={() => {}} onToggleCollapse={onToggleCollapse} status={STATUS} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onToggleCollapse when the toggle is clicked (collapsed → expand)", () => {
+    const onToggleCollapse = vi.fn();
+    render(
+      <SidebarExpanded
+        onCmdK={() => {}}
+        onToggleCollapse={onToggleCollapse}
+        status={STATUS}
+        collapsed
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /expand sidebar/i }));
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces the keyboard shortcut hint in the toggle title", () => {
+    render(
+      <SidebarExpanded
+        onCmdK={() => {}}
+        onToggleCollapse={() => {}}
+        status={STATUS}
+        toggleShortcut="⌘\"
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: /collapse sidebar/i });
+    expect(toggle.getAttribute("title")).toContain("⌘\\");
   });
 });
 
@@ -123,22 +215,24 @@ describe("Sidebar orchestrator", () => {
     renderSidebar();
     const aside = screen.getByRole("navigation", { name: /primary navigation/i });
     expect(aside.style.width).toBe("248px");
-    // Search bar present only in expanded
+    // Search bar present in expanded
     expect(screen.getByRole("button", { name: /search apps/i })).toBeTruthy();
   });
 
-  it("renders the rail (64px) when an expanded sidebar is collapsed", () => {
+  it("morphs the expanded sidebar to 64px (not the standalone rail) when collapsed", () => {
     act(() => {
       useShellPreferences.setState({ sidebarVariant: "expanded", sidebarCollapsed: true });
     });
     renderSidebar();
     const aside = screen.getByRole("navigation", { name: /primary navigation/i });
     expect(aside.style.width).toBe("64px");
-    // Rail has no search bar
-    expect(screen.queryByRole("button", { name: /search apps/i })).toBeNull();
+    // The persistent expand control must be present so the user can reopen it.
+    expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeTruthy();
+    // Search is still mounted (icon-only) for the morph — its accessible name persists.
+    expect(screen.getByRole("button", { name: /search apps/i })).toBeTruthy();
   });
 
-  it("renders the rail (64px) for the rail variant", () => {
+  it("renders the standalone rail (64px) for the rail variant", () => {
     act(() => {
       useShellPreferences.setState({ sidebarVariant: "rail", sidebarCollapsed: false });
     });
@@ -146,6 +240,9 @@ describe("Sidebar orchestrator", () => {
     expect(screen.getByRole("navigation", { name: /primary navigation/i }).style.width).toBe(
       "64px",
     );
+    // The user-chosen rail variant must NOT carry a collapse/expand toggle.
+    expect(screen.queryByRole("button", { name: /expand sidebar/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /collapse sidebar/i })).toBeNull();
   });
 
   it("clicking the search opens the command palette via onCmdK", () => {
@@ -153,6 +250,12 @@ describe("Sidebar orchestrator", () => {
     renderSidebar({ onCmdK });
     fireEvent.click(screen.getByRole("button", { name: /search apps/i }));
     expect(onCmdK).toHaveBeenCalledTimes(1);
+  });
+
+  it("clicking the toggle persists the collapsed flag through the store", () => {
+    renderSidebar();
+    fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
+    expect(useShellPreferences.getState().sidebarCollapsed).toBe(true);
   });
 
   it("rail variant launches a pinned app on icon click", () => {

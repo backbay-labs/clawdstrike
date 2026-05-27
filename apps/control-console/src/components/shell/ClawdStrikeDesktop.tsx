@@ -15,7 +15,13 @@ import { useLockScreen } from "../../hooks/useLockScreen";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useSoundEffects } from "../../hooks/useSoundEffects";
 import { PROCESS_ICONS, type ProcessIcon } from "../../state/processRegistry";
-import { resolveEffectiveVariant, useShellPreferences } from "../../state/useShellPreferences";
+import {
+  resolveEffectiveVariant,
+  SIDEBAR_COLLAPSED_WIDTH,
+  SIDEBAR_EXPANDED_WIDTH,
+  type SidebarVariant,
+  useShellPreferences,
+} from "../../state/useShellPreferences";
 import { CanvasEmptyState } from "./CanvasEmptyState";
 import { CommandPalette } from "./CommandPalette";
 import { ContextMenu } from "./ContextMenu";
@@ -28,6 +34,26 @@ import { NotificationCenter } from "./NotificationCenter";
 import { SSENotifier } from "./SSENotifier";
 import { SSETrayItem } from "./SSETrayItem";
 import { Sidebar } from "./sidebar/Sidebar";
+
+/** Fixed widths of the standalone sidebar variants (rail icon column; two-pane = section rail + app list). */
+const RAIL_WIDTH = 64;
+const TWOPANE_WIDTH = 60 + 220;
+
+/**
+ * Pixel width of the sidebar column for a given variant + collapsed flag. Drives
+ * the shell grid track so `<main>` reflows in lockstep with the sidebar's own
+ * width morph (both share the same duration + easing, so they never diverge).
+ */
+function sidebarColumnWidth(variant: SidebarVariant, collapsed: boolean): number {
+  switch (variant) {
+    case "rail":
+      return RAIL_WIDTH;
+    case "twopane":
+      return TWOPANE_WIDTH;
+    case "expanded":
+      return collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH;
+  }
+}
 
 function LoadingFallback() {
   return (
@@ -402,8 +428,12 @@ export function ClawdStrikeDesktop() {
   const activeProcessId = processes.instances.find(
     (i) => i.windowId === windows.focusedId,
   )?.processId;
-  const { sidebarVariant, sidebarCollapsed } = useShellPreferences();
+  const { sidebarVariant, sidebarCollapsed, toggleSidebarCollapsed } = useShellPreferences();
   const effectiveVariant = resolveEffectiveVariant(sidebarVariant, sidebarCollapsed);
+  // The collapse morph only applies to the expanded variant; rail/two-pane are fixed layouts.
+  const collapsible = sidebarVariant === "expanded";
+  const expandedCollapsed = collapsible && sidebarCollapsed;
+  const sidebarWidth = sidebarColumnWidth(sidebarVariant, sidebarCollapsed);
   const hasWindows = windowIds.length > 0;
 
   const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), []);
@@ -466,23 +496,32 @@ export function ClawdStrikeDesktop() {
           The taskbar is position:fixed, so reserve its height to keep the sidebar
           footer and window region clear of it. */}
       <div
+        className="cs-animated"
         style={{
           flex: 1,
-          display: "flex",
-          flexDirection: "row",
+          // Grid drives the sidebar column width so <main> reflows smoothly as
+          // the sidebar morphs (impeccable-endorsed size animation). The track
+          // shares the sidebar's own duration + easing so they stay in lockstep.
+          display: "grid",
+          gridTemplateColumns: `${sidebarWidth}px 1fr`,
           minHeight: 0,
           position: "relative",
           zIndex: 1,
           paddingBottom: "var(--glia-spacing-taskbar-height, 44px)",
+          transition: "grid-template-columns 0.22s cubic-bezier(0.22,1,0.36,1)",
         }}
       >
-        <div style={{ flexShrink: 0, display: "flex" }}>
-          <Sidebar status={status} onCmdK={openCommandPalette} variant={effectiveVariant} />
+        <div style={{ minWidth: 0, display: "flex", overflow: "hidden" }}>
+          <Sidebar
+            status={status}
+            onCmdK={openCommandPalette}
+            variant={effectiveVariant}
+            collapsed={expandedCollapsed}
+          />
         </div>
 
         <main
           style={{
-            flex: 1,
             display: "flex",
             flexDirection: "column",
             minWidth: 0,
@@ -519,6 +558,10 @@ export function ClawdStrikeDesktop() {
       <KeyboardShortcuts
         onToggleCommandPalette={() => setCommandPaletteOpen((v) => !v)}
         onLock={lock}
+        onToggleSidebar={() => {
+          // Only the expanded variant collapses; rail/two-pane are fixed layouts.
+          if (collapsible) toggleSidebarCollapsed();
+        }}
       />
       <CommandPalette
         open={commandPaletteOpen}

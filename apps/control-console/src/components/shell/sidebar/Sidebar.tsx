@@ -7,19 +7,26 @@ import { SidebarTwoPane } from "./SidebarTwoPane";
 
 export type { ConsoleStatus } from "../../../hooks/useConsoleStatus";
 
+/** Keyboard shortcut that toggles the collapsed state (VS Code parity). */
+export const SIDEBAR_TOGGLE_SHORTCUT = "⌘\\";
+
 export interface SidebarProps {
   onCmdK: () => void;
   status: ConsoleStatus;
   /** Resolved variant (rail/expanded/twopane), computed once by the shell. */
   variant: EffectiveSidebarVariant;
+  /** Collapsed flag — only meaningful for the expanded variant. */
+  collapsed: boolean;
 }
 
 /**
  * Left navigation shell. Renders the matching sidebar for the already-resolved
- * variant. Status is passed in to avoid a second SSE subscription.
+ * variant. For the expanded variant the collapsed flag drives an in-place width
+ * morph rather than a component swap. Status is passed in to avoid a second SSE
+ * subscription.
  */
-export function Sidebar({ onCmdK, status, variant }: SidebarProps) {
-  const setSidebarCollapsed = useShellPreferences((s) => s.setSidebarCollapsed);
+export function Sidebar({ onCmdK, status, variant, collapsed }: SidebarProps) {
+  const toggleSidebarCollapsed = useShellPreferences((s) => s.toggleSidebarCollapsed);
 
   switch (variant) {
     case "rail":
@@ -30,8 +37,10 @@ export function Sidebar({ onCmdK, status, variant }: SidebarProps) {
       return (
         <SidebarExpanded
           onCmdK={onCmdK}
-          onCollapse={() => setSidebarCollapsed(true)}
+          onToggleCollapse={toggleSidebarCollapsed}
           status={status}
+          collapsed={collapsed}
+          toggleShortcut={SIDEBAR_TOGGLE_SHORTCUT}
         />
       );
   }

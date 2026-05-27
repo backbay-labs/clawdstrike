@@ -4,12 +4,19 @@ import { APP_VERSION } from "../../hooks/useConsoleStatus";
 export interface BrandMarkProps {
   size?: number;
   showWordmark?: boolean;
+  /**
+   * When true, the wordmark stays mounted but is faded + width-collapsed so it
+   * can animate out during a sidebar collapse rather than popping. Requires
+   * `showWordmark`.
+   */
+  wordmarkHidden?: boolean;
   version?: string;
 }
 
 export function BrandMark({
   size = 36,
   showWordmark = false,
+  wordmarkHidden = false,
   version = APP_VERSION,
 }: BrandMarkProps) {
   // Unique id per instance prevents linearGradient id collisions when rendered twice
@@ -75,7 +82,26 @@ export function BrandMark({
       </div>
 
       {showWordmark && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+        <div
+          className="cs-animated"
+          aria-hidden={wordmarkHidden || undefined}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            // Fade + clip toward the tile rather than reflowing the label.
+            // `maxWidth` keeps it from forcing the rail wider mid-animation.
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            minWidth: 0,
+            maxWidth: wordmarkHidden ? 0 : 160,
+            opacity: wordmarkHidden ? 0 : 1,
+            transform: wordmarkHidden ? "translateX(-6px)" : "translateX(0)",
+            pointerEvents: wordmarkHidden ? "none" : undefined,
+            transition:
+              "opacity 0.2s cubic-bezier(0.22,1,0.36,1), transform 0.2s cubic-bezier(0.22,1,0.36,1), max-width 0.22s cubic-bezier(0.22,1,0.36,1)",
+          }}
+        >
           {/* Solid gold — gradient text is explicitly banned for wordmarks */}
           <span
             className="font-display"
