@@ -30,6 +30,21 @@ export function DesktopWallpaper() {
         pointerEvents: "none",
       }}
     >
+      {/* dot grid — faint forged lattice, masked to a central bloom */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: 0.5,
+          backgroundImage: "radial-gradient(rgba(214,177,90,0.05) 1px, transparent 1px)",
+          backgroundSize: "32px 32px",
+          maskImage: "radial-gradient(ellipse at center, black 30%, transparent 80%)",
+          WebkitMaskImage: "radial-gradient(ellipse at center, black 30%, transparent 80%)",
+          pointerEvents: "none",
+        }}
+      />
+
       {/* noise grain overlay */}
       <div
         aria-hidden
@@ -42,6 +57,27 @@ export function DesktopWallpaper() {
           pointerEvents: "none",
         }}
       />
+
+      {/* engraved brand watermark — solid gold wordmark, never gradient text */}
+      <div
+        aria-hidden
+        className="font-display"
+        style={{
+          position: "absolute",
+          bottom: "8%",
+          right: "4%",
+          fontWeight: 600,
+          fontSize: 240,
+          letterSpacing: "-0.04em",
+          lineHeight: 0.8,
+          color: "var(--gold)",
+          opacity: 0.04,
+          userSelect: "none",
+          pointerEvents: "none",
+        }}
+      >
+        cs
+      </div>
     </div>
   );
 }

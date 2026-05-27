@@ -9,22 +9,25 @@ import {
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSharedSSE } from "../../context/SSEContext";
 import { useAlertRules } from "../../hooks/useAlertRules";
+import { useConsoleStatus } from "../../hooks/useConsoleStatus";
 import { useContextMenu } from "../../hooks/useContextMenu";
 import { useLockScreen } from "../../hooks/useLockScreen";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useSoundEffects } from "../../hooks/useSoundEffects";
-import { desktopIconGroups, PROCESS_ICONS } from "../../state/processRegistry";
+import { PROCESS_ICONS } from "../../state/processRegistry";
+import { useShellPreferences } from "../../state/useShellPreferences";
+import { CanvasEmptyState } from "./CanvasEmptyState";
 import { CommandPalette } from "./CommandPalette";
 import { ContextMenu } from "./ContextMenu";
 import { DesktopWallpaper } from "./DesktopWallpaper";
-import { DesktopWidgets } from "./DesktopWidgets";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { HeaderBar } from "./HeaderBar";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { LockScreen } from "./LockScreen";
 import { NotificationCenter } from "./NotificationCenter";
 import { SSENotifier } from "./SSENotifier";
 import { SSETrayItem } from "./SSETrayItem";
-import { StartMenu } from "./StartMenu";
+import { Sidebar } from "./sidebar/Sidebar";
 
 function LoadingFallback() {
   return (
@@ -165,104 +168,6 @@ function WindowContainer() {
   );
 }
 
-function DesktopSurface() {
-  const { processes } = useDesktopOS();
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        zIndex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        gap: 14,
-        padding: 24,
-        userSelect: "none",
-      }}
-    >
-      {desktopIconGroups.map((group) => (
-        <section key={group.id} style={{ width: "100%" }}>
-          <div
-            className="font-mono"
-            style={{
-              marginBottom: 8,
-              fontSize: 10,
-              textTransform: "uppercase",
-              letterSpacing: "0.14em",
-              color: "rgba(154,167,181,0.5)",
-            }}
-          >
-            {group.label}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignContent: "flex-start",
-              gap: 16,
-            }}
-          >
-            {group.icons.map((icon) => {
-              const def = processes.getDefinition(icon.processId);
-              const sigil = PROCESS_ICONS[icon.processId];
-              return (
-                <button
-                  key={icon.id}
-                  type="button"
-                  onDoubleClick={() => processes.launch(icon.processId)}
-                  className="hover-desktop-icon"
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 6,
-                    width: 84,
-                    padding: "8px 4px",
-                    border: "none",
-                    borderRadius: 8,
-                    background: "transparent",
-                    cursor: "pointer",
-                    color: "var(--text)",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 40,
-                      height: 40,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "linear-gradient(180deg, var(--graphite), var(--obsidian))",
-                      border: "1px solid var(--gold-edge)",
-                      borderRadius: 12,
-                    }}
-                  >
-                    {sigil ?? (typeof def?.icon === "string" ? def.icon : null)}
-                  </span>
-                  <span
-                    className="font-mono"
-                    style={{
-                      fontSize: 10,
-                      letterSpacing: "0.06em",
-                      textTransform: "uppercase",
-                      textAlign: "center",
-                      lineHeight: 1.3,
-                      color: "var(--muted)",
-                    }}
-                  >
-                    {icon.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
 const PATH_TO_PROCESS: Record<string, string> = {
   "/events": "event-stream",
   "/audit": "audit",
@@ -305,6 +210,108 @@ function AutoLaunch() {
   return null;
 }
 
+/** Tiny taskbar crest: a teal live dot + "Console online" — the sidebar owns nav now. */
+function ConsoleCrest() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, paddingLeft: 8 }}>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: "var(--teal)",
+          boxShadow: "0 0 6px var(--teal)",
+        }}
+      />
+      <span
+        className="font-mono"
+        style={{
+          fontSize: 9.5,
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
+          color: "rgba(154,167,181,0.5)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Console online
+      </span>
+    </div>
+  );
+}
+
+function TaskbarDivider() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 1,
+        height: 18,
+        background: "rgba(27,34,48,0.7)",
+        margin: "0 2px",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+function RunningAppPill({
+  label,
+  sigil,
+  focused,
+  onActivate,
+}: {
+  label: string;
+  sigil: React.ReactNode;
+  focused: boolean;
+  onActivate: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onActivate}
+      className="cs-nav-focus"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "5px 12px 5px 9px",
+        borderRadius: 8,
+        cursor: "pointer",
+        background: focused
+          ? "linear-gradient(180deg, rgba(214,177,90,0.14), rgba(214,177,90,0.04))"
+          : "rgba(18,21,27,0.6)",
+        border: focused ? "1px solid var(--gold-edge)" : "1px solid rgba(27,34,48,0.7)",
+        color: focused ? "var(--gold)" : "var(--muted)",
+        boxShadow: focused ? "inset 0 1px 0 rgba(214,177,90,0.15)" : "none",
+        transition: "opacity 0.12s ease",
+        whiteSpace: "nowrap",
+        maxWidth: 180,
+      }}
+      onMouseEnter={(e) => {
+        if (!focused) (e.currentTarget as HTMLButtonElement).style.opacity = "0.82";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.opacity = "1";
+      }}
+    >
+      {sigil && <span style={{ display: "flex", flexShrink: 0 }}>{sigil}</span>}
+      <span
+        className="font-mono"
+        style={{
+          fontSize: 10.5,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
 function ComposedTaskbar({
   notifications,
   onMarkAllRead,
@@ -331,50 +338,19 @@ function ComposedTaskbar({
 
   return (
     <Taskbar showClock>
-      <StartMenu />
+      <ConsoleCrest />
+      <TaskbarDivider />
       <Taskbar.RunningApps>
         {processes.instances.map((instance) => {
           const def = processes.getDefinition(instance.processId);
-          const sigil = PROCESS_ICONS[instance.processId];
-          const isFocused = instance.windowId === windows.focusedId;
-
           return (
-            <div
+            <RunningAppPill
               key={instance.windowId}
-              onClick={() => handleClick(instance.windowId)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleClick(instance.windowId);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "4px 12px",
-                borderRadius: "var(--radius-control)",
-                cursor: "pointer",
-                background: isFocused ? "var(--gold-bloom)" : "rgba(18,21,27,0.6)",
-                border: isFocused ? "1px solid var(--gold-edge)" : "1px solid rgba(27,34,48,0.5)",
-                transition: "all 0.15s ease",
-                whiteSpace: "nowrap",
-                maxWidth: 180,
-              }}
-            >
-              {sigil && <span style={{ display: "flex", flexShrink: 0 }}>{sigil}</span>}
-              <span
-                className="font-mono"
-                style={{
-                  fontSize: 11,
-                  letterSpacing: "0.04em",
-                  color: isFocused ? "var(--gold)" : "var(--muted)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {def?.name ?? instance.processId}
-              </span>
-            </div>
+              label={def?.name ?? instance.processId}
+              sigil={PROCESS_ICONS[instance.processId]}
+              focused={instance.windowId === windows.focusedId}
+              onActivate={() => handleClick(instance.windowId)}
+            />
           );
         })}
       </Taskbar.RunningApps>
@@ -406,6 +382,20 @@ export function ClawdStrikeDesktop() {
     hide: hideContextMenu,
   } = useContextMenu();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  const { processes, windows } = useDesktopOS();
+  const windowIds = useWindowIds();
+  const status = useConsoleStatus(events, connected);
+  const activeProcessId = processes.instances.find(
+    (i) => i.windowId === windows.focusedId,
+  )?.processId;
+  const { sidebarVariant, sidebarCollapsed } = useShellPreferences();
+  const effectiveVariant =
+    sidebarVariant === "expanded" && sidebarCollapsed ? "rail" : sidebarVariant;
+  const hasWindows = windowIds.length > 0;
+
+  const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), []);
+  const launchMonitor = useCallback(() => processes.launch("monitor"), [processes]);
 
   // Persistent alert evaluation — runs regardless of which windows are open
   useAlertRules(events);
@@ -460,18 +450,54 @@ export function ClawdStrikeDesktop() {
       {/* Lock screen (outermost overlay) */}
       <LockScreen locked={locked} onUnlock={unlock} />
 
-      {/* Desktop area */}
+      {/* Shell row: sidebar (launcher) + canvas (header over the window manager).
+          The taskbar is position:fixed, so reserve its height to keep the sidebar
+          footer and window region clear of it. */}
       <div
         style={{
           flex: 1,
+          display: "flex",
+          flexDirection: "row",
+          minHeight: 0,
           position: "relative",
-          paddingBottom: "var(--glia-spacing-taskbar-height, 48px)",
+          zIndex: 1,
+          paddingBottom: "var(--glia-spacing-taskbar-height, 44px)",
         }}
-        onContextMenu={handleDesktopContextMenu}
       >
-        <DesktopSurface />
-        <DesktopWidgets events={events} connected={connected} />
-        <WindowContainer />
+        <div style={{ flexShrink: 0, display: "flex" }}>
+          <Sidebar status={status} onCmdK={openCommandPalette} />
+        </div>
+
+        <main
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            minWidth: 0,
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <HeaderBar
+            variant={effectiveVariant}
+            activeProcessId={activeProcessId}
+            status={status}
+            onCmdK={openCommandPalette}
+          />
+
+          {/* Window region — frosted header sits above; windows float freely below it */}
+          <div
+            style={{ flex: 1, position: "relative", minHeight: 0 }}
+            onContextMenu={handleDesktopContextMenu}
+          >
+            <WindowContainer />
+            {!hasWindows && (
+              <div style={{ position: "absolute", inset: 0, display: "flex" }}>
+                <CanvasEmptyState onLaunch={launchMonitor} />
+              </div>
+            )}
+          </div>
+        </main>
       </div>
 
       {/* System services */}

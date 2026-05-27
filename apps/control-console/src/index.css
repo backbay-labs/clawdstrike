@@ -62,7 +62,7 @@
   --glia-color-textMuted: rgba(154, 167, 181, 0.5);
   --glia-color-desktopBg: var(--void);
 
-  --glia-spacing-taskbar-height: 48px;
+  --glia-spacing-taskbar-height: 44px;
   --glia-radius-window: var(--radius-window);
 }
 
@@ -157,6 +157,16 @@ body,
 }
 
 /* ── Keyframes ── */
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
 
 @keyframes breathe-teal {
   0%,
