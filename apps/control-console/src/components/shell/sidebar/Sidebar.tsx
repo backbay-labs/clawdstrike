@@ -2,6 +2,7 @@ import type { ConsoleStatus } from "../../../hooks/useConsoleStatus";
 import { useShellPreferences } from "../../../state/useShellPreferences";
 import { SidebarExpanded } from "./SidebarExpanded";
 import { SidebarRail } from "./SidebarRail";
+import { SidebarTwoPane } from "./SidebarTwoPane";
 
 export type { ConsoleStatus } from "../../../hooks/useConsoleStatus";
 
@@ -24,8 +25,8 @@ export function Sidebar({ onCmdK, status }: SidebarProps) {
   switch (effectiveVariant) {
     case "rail":
       return <SidebarRail />;
-    // Task 4 replaces this with the dedicated SidebarTwoPane branch.
     case "twopane":
+      return <SidebarTwoPane status={status} />;
     case "expanded":
       return (
         <SidebarExpanded
