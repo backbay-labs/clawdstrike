@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { BrandMark } from "./BrandMark";
 
 describe("BrandMark", () => {
@@ -71,5 +71,36 @@ describe("BrandMark", () => {
     expect(tile).toBeTruthy();
     expect(tile?.style.width).toBe("48px");
     expect(tile?.style.height).toBe("48px");
+  });
+
+  it("renders the tile as a static (non-button) mark by default", () => {
+    render(<BrandMark />);
+    expect(document.querySelector("button[data-testid='brandmark-tile']")).toBeNull();
+    expect(document.querySelector("div[data-testid='brandmark-tile']")).toBeTruthy();
+  });
+
+  it("renders the mark as the collapse/expand toggle button when onToggle is provided", () => {
+    render(<BrandMark onToggle={() => {}} />);
+    const button = screen.getByRole("button");
+    expect(button.getAttribute("data-testid")).toBe("brandmark-tile");
+  });
+
+  it("toggle reads 'Collapse sidebar' with aria-expanded=true when not collapsed", () => {
+    render(<BrandMark onToggle={() => {}} toggleCollapsed={false} />);
+    const button = screen.getByRole("button", { name: /collapse sidebar/i });
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("toggle reads 'Expand sidebar' with aria-expanded=false when collapsed", () => {
+    render(<BrandMark onToggle={() => {}} toggleCollapsed />);
+    const button = screen.getByRole("button", { name: /expand sidebar/i });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("calls onToggle when the mark is clicked", () => {
+    const onToggle = vi.fn();
+    render(<BrandMark onToggle={onToggle} />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(onToggle).toHaveBeenCalledOnce();
   });
 });

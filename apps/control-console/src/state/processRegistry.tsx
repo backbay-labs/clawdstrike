@@ -773,12 +773,13 @@ export const desktopIconGroups: DesktopIconGroup[] = (
   icons: desktopIcons.filter((icon) => icon.group === groupId),
 }));
 
+// Rail / quick-launch pins, matching the approved design mock so the collapsed
+// rail shows the same Operations icons (Monitor, Agent Explorer, Audit, Mission
+// Control). Other groups have no pins here and fall back to their first few.
 export const pinnedAppIds = [
   "monitor",
-  "broker-mission-control",
-  "broker-wallet",
   "agent-explorer",
+  "broker-mission-control",
   "audit",
-  "event-stream",
   "settings",
 ];

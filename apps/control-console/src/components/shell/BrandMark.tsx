@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { type CSSProperties, useId, useState } from "react";
 import { APP_VERSION } from "../../hooks/useConsoleStatus";
 
 export interface BrandMarkProps {
@@ -11,6 +11,16 @@ export interface BrandMarkProps {
    */
   wordmarkHidden?: boolean;
   version?: string;
+  /**
+   * When provided, the engraved tile becomes the sidebar's collapse/expand
+   * toggle — the mark itself is the control, so no separate chevron is needed.
+   * Omit it (rail / two-pane variants) and the tile renders as a static mark.
+   */
+  onToggle?: () => void;
+  /** Drives the toggle's wording + `aria-expanded` (true ⇒ currently collapsed). */
+  toggleCollapsed?: boolean;
+  /** Keyboard shortcut hint surfaced in the toggle's title (e.g. "⌘\\"). */
+  toggleShortcut?: string;
 }
 
 export function BrandMark({
@@ -18,70 +28,107 @@ export function BrandMark({
   showWordmark = false,
   wordmarkHidden = false,
   version = APP_VERSION,
+  onToggle,
+  toggleCollapsed = false,
+  toggleShortcut,
 }: BrandMarkProps) {
   // Unique id per instance prevents linearGradient id collisions when rendered twice
   const uid = useId().replace(/:/g, "");
   const gradientId = `cg-${uid}`;
+  const [highlighted, setHighlighted] = useState(false);
+
+  // The base hex (#1a1410 → #0a0807) is intentionally warmer and deeper than
+  // --void/--obsidian: the tile reads as forged metal under a gold bloom, not a
+  // flat surface chip, so it does not use the surface tokens.
+  const tileBase: CSSProperties = {
+    width: size,
+    height: size,
+    borderRadius: 9,
+    background:
+      "radial-gradient(circle at 30% 25%, rgba(214,177,90,0.35), rgba(214,177,90,0.05) 60%, transparent 70%), linear-gradient(180deg, #1a1410, #0a0807)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    overflow: "hidden",
+    position: "relative",
+  };
+
+  const glyph = (
+    // C glyph — gradient fill on a graphic element is intentional and allowed
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="24" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#f3d889" />
+          <stop offset="1" stopColor="#a07e2c" />
+        </linearGradient>
+      </defs>
+      {/* C arc */}
+      <path
+        d="M18 6.5C16.5 4.5 14.4 3.5 12 3.5C7.3 3.5 3.5 7.3 3.5 12C3.5 16.7 7.3 20.5 12 20.5C14.4 20.5 16.5 19.5 18 17.5"
+        stroke={`url(#${gradientId})`}
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      {/* Claw accent */}
+      <path
+        d="M11 9.5L13 12L11 14.5"
+        stroke="var(--crimson)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.9"
+      />
+    </svg>
+  );
+
+  const restBorder = "1px solid rgba(214,177,90,0.42)";
+  const restShadow = "inset 0 1px 0 rgba(255,220,140,0.18), 0 0 14px rgba(214,177,90,0.18)";
+
+  const tile = onToggle ? (
+    <button
+      type="button"
+      data-testid="brandmark-tile"
+      onClick={onToggle}
+      onMouseEnter={() => setHighlighted(true)}
+      onMouseLeave={() => setHighlighted(false)}
+      onFocus={() => setHighlighted(true)}
+      onBlur={() => setHighlighted(false)}
+      aria-label={toggleCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+      aria-expanded={!toggleCollapsed}
+      title={`${toggleCollapsed ? "Expand" : "Collapse"} sidebar${
+        toggleShortcut ? ` (${toggleShortcut})` : ""
+      }`}
+      className="cs-nav-focus cs-animated"
+      style={{
+        ...tileBase,
+        padding: 0,
+        cursor: "pointer",
+        // The mark brightens + lifts on hover/focus so it reads as the toggle.
+        border: `1px solid ${highlighted ? "rgba(214,177,90,0.65)" : "rgba(214,177,90,0.42)"}`,
+        boxShadow: highlighted
+          ? "inset 0 1px 0 rgba(255,220,140,0.25), 0 0 18px rgba(214,177,90,0.34)"
+          : restShadow,
+        transform: highlighted ? "scale(1.05)" : "scale(1)",
+        transition: "border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease",
+      }}
+    >
+      {glyph}
+    </button>
+  ) : (
+    <div
+      data-testid="brandmark-tile"
+      style={{ ...tileBase, border: restBorder, boxShadow: restShadow }}
+    >
+      {glyph}
+    </div>
+  );
 
   return (
     // No gap when the wordmark is hidden (collapsed rail), so the tile centers
     // cleanly instead of being nudged left by a reserved gap before a 0-width label.
     <div style={{ display: "flex", alignItems: "center", gap: wordmarkHidden ? 0 : 10 }}>
-      {/* Engraved gold tile.
-          The base hex (#1a1410 → #0a0807) is intentionally warmer and deeper than
-          --void/--obsidian: the tile reads as forged metal under a gold bloom, not a
-          flat surface chip, so it does not use the surface tokens. */}
-      <div
-        data-testid="brandmark-tile"
-        style={{
-          width: size,
-          height: size,
-          borderRadius: 9,
-          background:
-            "radial-gradient(circle at 30% 25%, rgba(214,177,90,0.35), rgba(214,177,90,0.05) 60%, transparent 70%), linear-gradient(180deg, #1a1410, #0a0807)",
-          border: "1px solid rgba(214,177,90,0.42)",
-          boxShadow: "inset 0 1px 0 rgba(255,220,140,0.18), 0 0 14px rgba(214,177,90,0.18)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
-        {/* C glyph — gradient fill on a graphic element is intentional and allowed */}
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <defs>
-            <linearGradient
-              id={gradientId}
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="24"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop offset="0" stopColor="#f3d889" />
-              <stop offset="1" stopColor="#a07e2c" />
-            </linearGradient>
-          </defs>
-          {/* C arc */}
-          <path
-            d="M18 6.5C16.5 4.5 14.4 3.5 12 3.5C7.3 3.5 3.5 7.3 3.5 12C3.5 16.7 7.3 20.5 12 20.5C14.4 20.5 16.5 19.5 18 17.5"
-            stroke={`url(#${gradientId})`}
-            strokeWidth="2.2"
-            strokeLinecap="round"
-          />
-          {/* Claw accent */}
-          <path
-            d="M11 9.5L13 12L11 14.5"
-            stroke="var(--crimson)"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity="0.9"
-          />
-        </svg>
-      </div>
+      {tile}
 
       {showWordmark && (
         <div
