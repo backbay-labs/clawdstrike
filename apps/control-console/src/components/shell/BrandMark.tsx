@@ -24,7 +24,9 @@ export function BrandMark({
   const gradientId = `cg-${uid}`;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    // No gap when the wordmark is hidden (collapsed rail), so the tile centers
+    // cleanly instead of being nudged left by a reserved gap before a 0-width label.
+    <div style={{ display: "flex", alignItems: "center", gap: wordmarkHidden ? 0 : 10 }}>
       {/* Engraved gold tile.
           The base hex (#1a1410 → #0a0807) is intentionally warmer and deeper than
           --void/--obsidian: the tile reads as forged metal under a gold bloom, not a

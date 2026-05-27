@@ -201,12 +201,6 @@ interface NavRowButtonProps {
   running: boolean;
   onClick: () => void;
   compact?: boolean;
-  /**
-   * Collapse the row to an icon-only target: the label fades + clips and the
-   * icon centers, so the same DOM node morphs smoothly between the expanded and
-   * collapsed states. A hover/focus tooltip replaces the label.
-   */
-  collapsed?: boolean;
 }
 
 /** Full-width labeled nav row for the expanded and two-pane variants. Sigil at 17px. */
@@ -218,11 +212,9 @@ export function NavRowButton({
   running,
   onClick,
   compact = false,
-  collapsed = false,
 }: NavRowButtonProps) {
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const accent = accentFor(tone);
   const highlighted = hover || focused;
 
@@ -236,121 +228,87 @@ export function NavRowButton({
       : "transparent";
 
   return (
-    <div style={{ position: "relative" }}>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={onClick}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        aria-current={active ? "page" : undefined}
-        aria-label={collapsed ? label : undefined}
-        className={FOCUS_RING_CLASS}
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      aria-current={active ? "page" : undefined}
+      className={FOCUS_RING_CLASS}
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        width: "100%",
+        padding: compact ? "7px 10px" : "9px 12px",
+        borderRadius: 9,
+        border: "none",
+        textAlign: "left",
+        cursor: "pointer",
+        background,
+        color: labelColor,
+        boxShadow: active ? "inset 0 0 0 1px rgba(214,177,90,0.22)" : "none",
+        transition: "background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease",
+      }}
+    >
+      {active && (
+        <span
+          aria-hidden="true"
+          data-testid="nav-active-indicator"
+          style={{
+            position: "absolute",
+            left: -1,
+            top: 6,
+            bottom: 6,
+            width: 2,
+            background: "var(--gold)",
+            borderRadius: 2,
+            boxShadow: "0 0 8px var(--gold)",
+          }}
+        />
+      )}
+      <span
         style={{
-          position: "relative",
+          flexShrink: 0,
           display: "flex",
           alignItems: "center",
-          gap: collapsed ? 0 : 12,
-          width: "100%",
-          // Center the icon when collapsed; keep the labeled padding otherwise.
-          padding: collapsed ? "9px 0" : compact ? "7px 10px" : "9px 12px",
-          justifyContent: collapsed ? "center" : "flex-start",
-          borderRadius: 9,
-          border: "none",
-          textAlign: "left",
-          cursor: "pointer",
-          background,
-          color: labelColor,
-          boxShadow: active ? "inset 0 0 0 1px rgba(214,177,90,0.22)" : "none",
-          overflow: "hidden",
-          transition: "background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease",
+          color: iconColor,
+          transition: "color 0.14s ease",
         }}
       >
-        {active && (
-          <span
-            aria-hidden="true"
-            data-testid="nav-active-indicator"
-            style={{
-              position: "absolute",
-              left: -1,
-              top: 6,
-              bottom: 6,
-              width: 2,
-              background: "var(--gold)",
-              borderRadius: 2,
-              boxShadow: "0 0 8px var(--gold)",
-            }}
-          />
-        )}
+        <Sigil size={17} />
+      </span>
+      <span
+        className="font-mono"
+        style={{
+          fontSize: 11.5,
+          letterSpacing: "0.05em",
+          textTransform: "uppercase",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          flex: 1,
+        }}
+      >
+        {label}
+      </span>
+      {running && (
         <span
+          aria-hidden="true"
+          data-testid="nav-running-dot"
           style={{
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: active ? "var(--gold)" : "var(--teal)",
+            boxShadow: active ? "0 0 6px var(--gold)" : "0 0 6px var(--teal)",
             flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            color: iconColor,
-            transition: "color 0.14s ease",
           }}
-        >
-          <Sigil size={17} />
-        </span>
-        <span
-          className="font-mono cs-animated"
-          aria-hidden={collapsed || undefined}
-          style={{
-            fontSize: 11.5,
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            // Collapse the label's track to zero so it folds toward the icon
-            // instead of being abruptly removed (which would snap the row width).
-            flex: collapsed ? "0 0 0px" : 1,
-            width: collapsed ? 0 : undefined,
-            opacity: collapsed ? 0 : 1,
-            transform: collapsed ? "translateX(-4px)" : "translateX(0)",
-            transition:
-              "opacity 0.18s cubic-bezier(0.22,1,0.36,1), transform 0.18s cubic-bezier(0.22,1,0.36,1), flex-basis 0.2s cubic-bezier(0.22,1,0.36,1)",
-          }}
-        >
-          {label}
-        </span>
-        {running && !collapsed && (
-          <span
-            aria-hidden="true"
-            data-testid="nav-running-dot"
-            style={{
-              width: 5,
-              height: 5,
-              borderRadius: "50%",
-              background: active ? "var(--gold)" : "var(--teal)",
-              boxShadow: active ? "0 0 6px var(--gold)" : "0 0 6px var(--teal)",
-              flexShrink: 0,
-            }}
-          />
-        )}
-        {/* When collapsed, the running marker moves to a left edge bar (rail style). */}
-        {running && collapsed && (
-          <span
-            aria-hidden="true"
-            data-testid="nav-running-dot"
-            style={{
-              position: "absolute",
-              left: 2,
-              top: "50%",
-              transform: "translateY(-50%)",
-              width: 3,
-              height: 14,
-              borderRadius: 2,
-              background: active ? "var(--gold)" : "var(--teal)",
-              boxShadow: active ? "0 0 6px var(--gold)" : "0 0 6px var(--teal)",
-            }}
-          />
-        )}
-      </button>
-      {collapsed && highlighted && <Tooltip label={label} anchorRef={buttonRef} />}
-    </div>
+        />
+      )}
+    </button>
   );
 }

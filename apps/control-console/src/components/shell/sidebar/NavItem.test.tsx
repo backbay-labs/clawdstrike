@@ -121,59 +121,6 @@ describe("NavRowButton", () => {
   });
 });
 
-describe("NavRowButton — collapsed (icon-only morph)", () => {
-  it("keeps an accessible name via aria-label when the visible label is folded", () => {
-    render(
-      <NavRowButton
-        label="Monitor"
-        Sigil={Sigil}
-        tone="gold"
-        active={false}
-        running={false}
-        onClick={() => {}}
-        collapsed
-      />,
-    );
-    // The label text node is aria-hidden; the button itself carries aria-label.
-    const button = screen.getByRole("button", { name: "Monitor" });
-    expect(button.getAttribute("aria-label")).toBe("Monitor");
-  });
-
-  it("still launches on click when collapsed", () => {
-    const onClick = vi.fn();
-    render(
-      <NavRowButton
-        label="Monitor"
-        Sigil={Sigil}
-        tone="gold"
-        active={false}
-        running={false}
-        onClick={onClick}
-        collapsed
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Monitor" }));
-    expect(onClick).toHaveBeenCalledTimes(1);
-  });
-
-  it("preserves the active-state aria-current when collapsed", () => {
-    render(
-      <NavRowButton
-        label="Monitor"
-        Sigil={Sigil}
-        tone="gold"
-        active={true}
-        running={false}
-        onClick={() => {}}
-        collapsed
-      />,
-    );
-    expect(screen.getByRole("button", { name: "Monitor" }).getAttribute("aria-current")).toBe(
-      "page",
-    );
-  });
-});
-
 describe("NavIconButton", () => {
   it("renders an accessible button labeled by the app and fires onClick", () => {
     const onClick = vi.fn();

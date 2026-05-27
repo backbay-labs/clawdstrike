@@ -96,14 +96,17 @@ describe("SidebarExpanded", () => {
         status={{ sseLive: true, violations: 3, uptime: "02:00:00", build: "9.9.9" }}
       />,
     );
-    expect(screen.getByText("SSE")).toBeTruthy();
-    expect(screen.getByText("● LIVE")).toBeTruthy();
-    expect(screen.getByText("Violations")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
-    expect(screen.getByText("Uptime")).toBeTruthy();
-    expect(screen.getByText("02:00:00")).toBeTruthy();
-    expect(screen.getByText("Build")).toBeTruthy();
-    expect(screen.getByText("9.9.9")).toBeTruthy();
+    // Scope to the expanded layer — the (hidden) collapsed layer also carries a
+    // violations count, which would otherwise collide on the bare number.
+    const layer = within(screen.getByTestId("sidebar-layer-expanded"));
+    expect(layer.getByText("SSE")).toBeTruthy();
+    expect(layer.getByText("● LIVE")).toBeTruthy();
+    expect(layer.getByText("Violations")).toBeTruthy();
+    expect(layer.getByText("3")).toBeTruthy();
+    expect(layer.getByText("Uptime")).toBeTruthy();
+    expect(layer.getByText("02:00:00")).toBeTruthy();
+    expect(layer.getByText("Build")).toBeTruthy();
+    expect(layer.getByText("9.9.9")).toBeTruthy();
   });
 
   it("shows SSE DOWN in crimson when offline", () => {
@@ -126,12 +129,40 @@ describe("SidebarExpanded", () => {
     expect(nav.style.width).toBe("64px");
   });
 
-  it("keeps nav rows mounted (icon-only) when collapsed", () => {
+  it("renders the polished 44x44 NavIconButton rail body when collapsed", () => {
     render(
       <SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} collapsed />,
     );
-    // Same nav nodes persist for the morph; Monitor still resolves by aria-label.
-    expect(screen.getByRole("button", { name: "Monitor" })).toBeTruthy();
+    // The visible (collapsed) layer must show icon-rail buttons, not folded rows.
+    const layer = within(screen.getByTestId("sidebar-layer-collapsed"));
+    const monitor = layer.getByRole("button", { name: "Monitor" }) as HTMLButtonElement;
+    // NavIconButton geometry: 44×44 rounded icon target (vs labeled NavRowButton).
+    expect(monitor.style.width).toBe("44px");
+    expect(monitor.style.height).toBe("44px");
+  });
+
+  it("shows the gold active treatment on the focused app when collapsed", () => {
+    instances.current = [{ windowId: "w1", processId: "monitor" }];
+    focusedId.current = "w1";
+    render(
+      <SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} collapsed />,
+    );
+    const layer = within(screen.getByTestId("sidebar-layer-collapsed"));
+    const monitor = layer.getByRole("button", { name: "Monitor" }) as HTMLButtonElement;
+    expect(monitor.getAttribute("aria-current")).toBe("page");
+    // Active = gold gradient fill + gold icon + gold bloom (the rail treatment).
+    expect(monitor.style.background).toContain("linear-gradient");
+    expect(monitor.style.color).toBe("var(--gold)");
+    expect(monitor.style.boxShadow).toContain("rgba(214,177,90");
+  });
+
+  it("launches the app from the collapsed rail icon", () => {
+    render(
+      <SidebarExpanded onCmdK={() => {}} onToggleCollapse={() => {}} status={STATUS} collapsed />,
+    );
+    const layer = within(screen.getByTestId("sidebar-layer-collapsed"));
+    fireEvent.click(layer.getByRole("button", { name: "Monitor" }));
+    expect(launch).toHaveBeenCalledWith("monitor");
   });
 
   it("shows the compact SSE + violations pulse when collapsed", () => {
@@ -219,7 +250,7 @@ describe("Sidebar orchestrator", () => {
     expect(screen.getByRole("button", { name: /search apps/i })).toBeTruthy();
   });
 
-  it("morphs the expanded sidebar to 64px (not the standalone rail) when collapsed", () => {
+  it("morphs the expanded sidebar to a 64px polished rail when collapsed", () => {
     act(() => {
       useShellPreferences.setState({ sidebarVariant: "expanded", sidebarCollapsed: true });
     });
@@ -228,8 +259,12 @@ describe("Sidebar orchestrator", () => {
     expect(aside.style.width).toBe("64px");
     // The persistent expand control must be present so the user can reopen it.
     expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeTruthy();
-    // Search is still mounted (icon-only) for the morph — its accessible name persists.
-    expect(screen.getByRole("button", { name: /search apps/i })).toBeTruthy();
+    // Collapsed rail uses the polished 44×44 NavIconButton (matches SidebarRail),
+    // and — like the standalone rail — has NO inline search row.
+    const layer = within(screen.getByTestId("sidebar-layer-collapsed"));
+    const monitor = layer.getByRole("button", { name: "Monitor" }) as HTMLButtonElement;
+    expect(monitor.style.width).toBe("44px");
+    expect(screen.queryByRole("button", { name: /search apps/i })).toBeNull();
   });
 
   it("renders the standalone rail (64px) for the rail variant", () => {
