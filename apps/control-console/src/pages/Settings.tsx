@@ -4,6 +4,7 @@ import {
   AlertRules,
   ConnectionSettings,
   MultiInstance,
+  SidebarSettings,
   SiemSettings,
   SoundSettings,
   ThemeToggle,
@@ -24,7 +25,8 @@ type SettingsSection =
   | "sound"
   | "alerts"
   | "instances"
-  | "theme";
+  | "theme"
+  | "sidebar";
 
 type SettingsProps = {
   initialSection?: SettingsSection;
@@ -52,6 +54,7 @@ const SECTION_ORDER: Array<{ id: SettingsSection; label: string; description: st
   { id: "alerts", label: "Alerts", description: "Configure violation alert rules." },
   { id: "instances", label: "Instances", description: "Manage multiple hushd connections." },
   { id: "theme", label: "Theme", description: "Switch between dark and light mode." },
+  { id: "sidebar", label: "Sidebar", description: "Choose the sidebar layout variant." },
 ];
 
 const PATH_TO_SECTION: Record<string, SettingsSection> = {
@@ -205,6 +208,11 @@ export function Settings({ initialSection }: SettingsProps) {
       {activeSection === "theme" && (
         <SectionPanel title="Theme">
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
+        </SectionPanel>
+      )}
+      {activeSection === "sidebar" && (
+        <SectionPanel title="Sidebar">
+          <SidebarSettings />
         </SectionPanel>
       )}
 
