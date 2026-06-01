@@ -4,7 +4,8 @@ use hush_core::{
 };
 
 use super::super::stable_id;
-use super::{camel_debug_to_snake, hex_strings_match, EndpointDecisionReceipt};
+use super::common::{camel_debug_to_snake, hex_strings_match};
+use super::EndpointDecisionReceipt;
 
 impl EndpointDecisionReceipt {
     pub fn to_receipt(&self) -> Result<Receipt> {
