@@ -1,8 +1,6 @@
 #![allow(clippy::needless_pass_by_value)]
 //! `hush pkg` subcommands — package management for `.cpkg` archives.
 
-use std::io::Write;
-
 #[cfg(test)]
 use clawdstrike::pkg::archive;
 #[cfg(test)]
@@ -22,6 +20,7 @@ const MAX_REGISTRY_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
 mod audit_stats;
 mod auth;
 mod command;
+mod dispatch;
 mod init;
 mod install;
 mod list_verify_info;
@@ -38,6 +37,7 @@ mod yank;
 
 use audit_stats::{cmd_pkg_audit, cmd_pkg_stats};
 pub use command::{CliPkgType, OrgCommands, PkgCommands, TrustedPublisherCommands};
+pub use dispatch::cmd_pkg;
 use init::cmd_pkg_init;
 use install::cmd_pkg_install;
 #[cfg(test)]
@@ -64,80 +64,6 @@ use trusted_publishers::cmd_pkg_trusted_publishers;
 #[cfg(test)]
 use util::{truncate_with_ellipsis, urlencoding_simple};
 use yank::cmd_pkg_yank;
-
-// ---------------------------------------------------------------------------
-// Dispatcher
-// ---------------------------------------------------------------------------
-
-pub fn cmd_pkg(command: PkgCommands, stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCode {
-    match command {
-        PkgCommands::Init { pkg_type, name } => cmd_pkg_init(&pkg_type, &name, stdout, stderr),
-        PkgCommands::Pack { path } => cmd_pkg_pack(path.as_deref(), stdout, stderr),
-        PkgCommands::Install {
-            source,
-            version,
-            registry,
-            trust_level,
-            allow_unverified,
-        } => cmd_pkg_install(
-            &source,
-            version.as_deref(),
-            registry.as_deref(),
-            trust_level.as_deref(),
-            allow_unverified,
-            stdout,
-            stderr,
-        ),
-        PkgCommands::List => cmd_pkg_list(stdout, stderr),
-        PkgCommands::Verify {
-            name,
-            version,
-            trust_level,
-            registry,
-        } => cmd_pkg_verify(
-            &name,
-            &version,
-            &trust_level,
-            registry.as_deref(),
-            stdout,
-            stderr,
-        ),
-        PkgCommands::Info { name, version } => cmd_pkg_info(&name, &version, stdout, stderr),
-        PkgCommands::Test { path, filter } => {
-            cmd_pkg_test(path.as_deref(), filter.as_deref(), stdout, stderr)
-        }
-        PkgCommands::Login { registry } => cmd_pkg_login(registry.as_deref(), stdout, stderr),
-        PkgCommands::Publish {
-            path,
-            registry,
-            oidc,
-        } => cmd_pkg_publish(path.as_deref(), registry.as_deref(), oidc, stdout, stderr),
-        PkgCommands::Search {
-            query,
-            limit,
-            page,
-            registry,
-        } => cmd_pkg_search(&query, limit, page, registry.as_deref(), stdout, stderr),
-        PkgCommands::Audit {
-            name,
-            registry,
-            limit,
-        } => cmd_pkg_audit(&name, registry.as_deref(), limit, stdout, stderr),
-        PkgCommands::Yank {
-            name,
-            version,
-            registry,
-        } => cmd_pkg_yank(&name, &version, registry.as_deref(), stdout, stderr),
-        PkgCommands::Stats { name, registry } => {
-            cmd_pkg_stats(&name, registry.as_deref(), stdout, stderr)
-        }
-        PkgCommands::TrustedPublishers { command } => {
-            cmd_pkg_trusted_publishers(command, stdout, stderr)
-        }
-        PkgCommands::Org { command } => cmd_pkg_org(command, stdout, stderr),
-        PkgCommands::Mirror { command } => crate::mirror::cmd_mirror(command, stdout, stderr),
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests
