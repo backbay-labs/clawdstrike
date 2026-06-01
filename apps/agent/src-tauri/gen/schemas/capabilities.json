@@ -1,1 +1,1 @@
-{}
+{"agent-capability":{"identifier":"agent-capability","description":"Clawdstrike Agent capabilities. The agent app uses Tauri as a tray-only wrapper (no windows configured); this deny-everything baseline keeps the Tauri command surface closed by default. Permissions should be added explicitly as features land.","local":true,"permissions":[],"platforms":["linux","macOS","windows"]}}
