@@ -2324,21 +2324,23 @@ impl RuleSet {
         let id = name.strip_prefix("clawdstrike:").unwrap_or(name);
 
         let yaml = match id {
-            "default" => Some(include_str!("../rulesets/default.yaml")),
-            "strict" => Some(include_str!("../rulesets/strict.yaml")),
-            "ai-agent" => Some(include_str!("../rulesets/ai-agent.yaml")),
-            "ai-agent-posture" => Some(include_str!("../rulesets/ai-agent-posture.yaml")),
-            "cicd" => Some(include_str!("../rulesets/cicd.yaml")),
-            "permissive" => Some(include_str!("../rulesets/permissive.yaml")),
-            "remote-desktop" => Some(include_str!("../rulesets/remote-desktop.yaml")),
-            "remote-desktop-strict" => Some(include_str!("../rulesets/remote-desktop-strict.yaml")),
-            "remote-desktop-permissive" => {
-                Some(include_str!("../rulesets/remote-desktop-permissive.yaml"))
+            "default" => Some(include_str!("../../rulesets/default.yaml")),
+            "strict" => Some(include_str!("../../rulesets/strict.yaml")),
+            "ai-agent" => Some(include_str!("../../rulesets/ai-agent.yaml")),
+            "ai-agent-posture" => Some(include_str!("../../rulesets/ai-agent-posture.yaml")),
+            "cicd" => Some(include_str!("../../rulesets/cicd.yaml")),
+            "permissive" => Some(include_str!("../../rulesets/permissive.yaml")),
+            "remote-desktop" => Some(include_str!("../../rulesets/remote-desktop.yaml")),
+            "remote-desktop-strict" => {
+                Some(include_str!("../../rulesets/remote-desktop-strict.yaml"))
             }
+            "remote-desktop-permissive" => Some(include_str!(
+                "../../rulesets/remote-desktop-permissive.yaml"
+            )),
             #[cfg(feature = "full")]
-            "spider-sense" => Some(include_str!("../rulesets/spider-sense.yaml")),
+            "spider-sense" => Some(include_str!("../../rulesets/spider-sense.yaml")),
             "origin-enclaves-example" => {
-                Some(include_str!("../rulesets/origin-enclaves-example.yaml"))
+                Some(include_str!("../../rulesets/origin-enclaves-example.yaml"))
             }
             _ => None,
         }?;
