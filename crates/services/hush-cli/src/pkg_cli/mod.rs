@@ -18,9 +18,11 @@ use crate::ExitCode;
 const PLUGIN_MANIFEST_FILENAME: &str = "clawdstrike.plugin.toml";
 const MAX_REGISTRY_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
 
+mod auth;
 mod command;
 mod util;
 
+use auth::{add_trusted_publisher_signed_payload, build_caller_auth_headers};
 pub use command::{CliPkgType, OrgCommands, PkgCommands, TrustedPublisherCommands};
 use util::{format_number, tempdir_for_download, truncate_with_ellipsis, urlencoding_simple};
 
@@ -1656,52 +1658,6 @@ fn verify_install_trust(
             false
         }
     }
-}
-
-struct CallerAuthHeaders {
-    key_hex: String,
-    sig_hex: String,
-    ts: String,
-}
-
-fn encode_signed_field(value: &str) -> String {
-    format!("{}:{value}", value.len())
-}
-
-fn add_trusted_publisher_signed_payload(
-    package_name: &str,
-    provider: &str,
-    repository: &str,
-    workflow: Option<&str>,
-    environment: Option<&str>,
-) -> String {
-    format!(
-        "trusted-publisher:add:v2:name={};provider={};repository={};workflow={};environment={}",
-        encode_signed_field(package_name),
-        encode_signed_field(provider),
-        encode_signed_field(repository),
-        encode_signed_field(workflow.unwrap_or("")),
-        encode_signed_field(environment.unwrap_or("")),
-    )
-}
-
-fn build_caller_auth_headers(
-    cfg: &RegistryConfig,
-    payload: &str,
-    stderr: &mut dyn Write,
-) -> Result<CallerAuthHeaders, ExitCode> {
-    let keypair = load_or_generate_publisher_keypair(cfg, stderr).map_err(|e| {
-        let _ = writeln!(stderr, "Error: {e}");
-        ExitCode::RuntimeError
-    })?;
-    let ts = chrono::Utc::now().to_rfc3339();
-    let msg = format!("clawdstrike-registry-auth:v1:{payload}:{ts}");
-    let sig = keypair.sign(msg.as_bytes()).to_hex();
-    Ok(CallerAuthHeaders {
-        key_hex: keypair.public_key().to_hex(),
-        sig_hex: sig,
-        ts,
-    })
 }
 
 // ---------------------------------------------------------------------------
