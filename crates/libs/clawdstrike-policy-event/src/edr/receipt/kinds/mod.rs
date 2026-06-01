@@ -4,6 +4,7 @@ mod graph_slice;
 mod policy_decision;
 mod policy_delta;
 mod policy_event;
+mod privacy;
 mod sensor_state;
 mod simulation;
 
@@ -13,5 +14,6 @@ pub(crate) use graph_slice::*;
 pub(crate) use policy_decision::*;
 pub(crate) use policy_delta::*;
 pub(crate) use policy_event::*;
+pub(crate) use privacy::*;
 pub(crate) use sensor_state::*;
 pub(crate) use simulation::*;
