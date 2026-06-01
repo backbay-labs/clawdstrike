@@ -1,3 +1,6 @@
+mod deception_cleanup;
+mod deception_materialization;
+mod deception_rotation;
 mod detection;
 mod evidence_bundle;
 mod graph_slice;
@@ -10,6 +13,9 @@ mod provider_degradation;
 mod sensor_state;
 mod simulation;
 
+pub(crate) use deception_cleanup::*;
+pub(crate) use deception_materialization::*;
+pub(crate) use deception_rotation::*;
 pub(crate) use detection::*;
 pub(crate) use evidence_bundle::*;
 pub(crate) use graph_slice::*;
