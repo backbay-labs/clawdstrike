@@ -100,6 +100,15 @@ the coupled pairs, with the formally-verified engine last.
 | 7 | `response_actions.rs` | ☐ pending | — |
 | 8 | `policies.rs` | ☐ pending | — |
 
+**Steps 1–4 are complete and verified; steps 5–8 are not started** (the four target
+files remain monolithic). The steps land **incrementally**: each step is an
+independent, behavior-preserving relocation gated and committed on its own, so a PR
+may carry a contiguous prefix of the table rather than all eight at once. The current
+branch delivers **steps 1–4 only** — scope and title it accordingly (e.g. "god-file
+decomposition: steps 1–4"), not as the finished eight-file deliverable. Steps 5–8
+(including the formally-verified `engine.rs`, which adds the `formal-diff-tests` gate)
+are tracked here as follow-on work.
+
 Per-file gate (must hold before marking a step done and committing):
 `cargo fmt --all -- --check` + `cargo build -p <crate>` + `cargo test -p <crate>` +
 `cargo clippy -p <crate> -- -D warnings`, plus `cargo build --workspace` for files with
@@ -117,8 +126,17 @@ external importers. For #6, additionally `cargo test -p formal-diff-tests`.
 
 ## Definition of done
 
-- All 8 files decomposed; no resulting file > ~600 lines (a couple of dense
+**Per step (what makes a single step landable):**
+
+- The step's file is decomposed; no resulting file > ~600 lines (a couple of dense
   validator clusters may land ~800 and are flagged for an optional further split).
-- Workspace builds; all tests pass; clippy clean with `-D warnings`.
-- Review agents report **no P0/P1/P2** findings across the diff.
-- Single PR opened; bot/review comments resolved to a thumbs-up / "no more issues".
+- Workspace builds; all tests pass; clippy clean with `-D warnings` (per-file gate above).
+- Review agents report **no P0/P1/P2** findings across that step's diff.
+- Bot/review comments resolved to a thumbs-up / "no more issues".
+
+**Initiative (the full eight-file goal — reached only once steps 5–8 also land):**
+
+- All 8 files decomposed under the per-step bar above.
+- A PR carrying the full set (or the final contiguous steps) is **not** titled or
+  evaluated as "all 8 done" until the status table shows steps 1–8 complete. Until
+  then, PRs land a contiguous prefix and are scoped to the steps they actually carry.
