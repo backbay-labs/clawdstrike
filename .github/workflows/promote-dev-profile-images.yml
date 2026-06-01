@@ -91,7 +91,7 @@ jobs:
 
       - name: Setup kubectl
         if: steps.commit.outputs.changed == 'true' && env.EKS_CLUSTER_NAME != '' && env.EKS_ROLE_ARN != ''
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@v5
 
       - name: Configure AWS credentials (OIDC)
         if: steps.commit.outputs.changed == 'true' && env.EKS_CLUSTER_NAME != '' && env.EKS_ROLE_ARN != ''
