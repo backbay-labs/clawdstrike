@@ -35,7 +35,7 @@
     "jsdom": "^25.0.0",
     "tailwindcss": "^4.1.18",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14",
+    "vite": "^8.0.15",
     "vitest": "^4.1.7"
   },
   "license": "Apache-2.0",
