@@ -44,6 +44,16 @@ pub use response::*;
 pub use sensor_state::*;
 pub use simulation::*;
 
+mod util;
+
+pub(crate) use util::{
+    evidence_hash_for_value, hostname_from_url_like, insert_json, normalize_hostname,
+    normalize_path_string, reconstruct_path, response_execution_id_from_effect_digest,
+    response_execution_id_from_effects, response_execution_transition_id_from_reason_hash,
+    stable_id, telemetry_privacy_report_id_from_evidence_hashes,
+    telemetry_privacy_report_id_from_values,
+};
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead as _, BufReader, ErrorKind, Read as _, Seek as _, SeekFrom, Write as _};
@@ -61,8 +71,6 @@ use crate::event::{
     PolicyEventData, PolicyEventType, SecretEventData, ToolEventData,
 };
 
-pub(crate) const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-pub(crate) const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 pub(crate) const ENDPOINT_FLIGHT_RECORDER_HISTORY_INDEX_SCHEMA_VERSION: u8 = 10;
 pub(crate) const ENDPOINT_FLIGHT_RECORDER_GRAPH_INDEX_SCHEMA_VERSION: u8 = 1;
 pub(crate) const ENDPOINT_FLIGHT_RECORDER_GRAPH_EDGE_INDEX_SCHEMA_VERSION: u8 = 1;
@@ -2225,213 +2233,6 @@ fn set_file_permissions(path: &Path, permissions_octal: u32) -> std::io::Result<
 #[cfg(not(unix))]
 fn set_file_permissions(_path: &Path, _permissions_octal: u32) -> std::io::Result<()> {
     Ok(())
-}
-
-fn normalize_path_string(path: &str) -> String {
-    let replaced = path.replace('\\', "/");
-    let is_absolute = replaced.starts_with('/');
-    let normalized = replaced
-        .split('/')
-        .filter(|part| !part.is_empty() && *part != ".")
-        .collect::<Vec<_>>()
-        .join("/");
-
-    if is_absolute {
-        format!("/{normalized}")
-    } else {
-        normalized
-    }
-}
-
-fn normalize_hostname(host: &str) -> String {
-    host.trim()
-        .trim_matches(['[', ']'])
-        .trim_end_matches('.')
-        .to_ascii_lowercase()
-}
-
-fn hostname_from_url_like(url: &str) -> Option<String> {
-    let trimmed = url.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let without_scheme = trimmed
-        .split_once("://")
-        .map(|(_, rest)| rest)
-        .unwrap_or(trimmed);
-    let authority = without_scheme
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or(without_scheme)
-        .rsplit('@')
-        .next()
-        .unwrap_or(without_scheme)
-        .trim();
-    if authority.is_empty() {
-        return None;
-    }
-    let host = if authority.starts_with('[') {
-        let end = authority.find(']')?;
-        &authority[..=end]
-    } else {
-        authority.split(':').next().unwrap_or(authority)
-    };
-    let normalized = normalize_hostname(host);
-    (!normalized.is_empty()).then_some(normalized)
-}
-
-fn stable_id<'a>(prefix: &str, parts: impl IntoIterator<Item = &'a str>) -> String {
-    let mut hash = FNV_OFFSET;
-    for part in parts {
-        for byte in part.as_bytes() {
-            hash ^= u64::from(*byte);
-            hash = hash.wrapping_mul(FNV_PRIME);
-        }
-        hash ^= 0xff;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    format!("{prefix}:{hash:016x}")
-}
-
-fn evidence_hash_for_value(value: impl AsRef<str>) -> String {
-    sha256(value.as_ref().as_bytes()).to_hex_prefixed()
-}
-
-pub(crate) fn insert_json<T: Serialize>(
-    map: &mut BTreeMap<String, serde_json::Value>,
-    key: &str,
-    value: T,
-) {
-    if let Ok(value) = serde_json::to_value(value) {
-        if !value.is_null() {
-            map.insert(key.to_string(), value);
-        }
-    }
-}
-
-fn telemetry_privacy_report_id_from_values(
-    privacy_mode: &str,
-    raw_artifact_upload_permitted: bool,
-    raw_artifact_approval_id: Option<&str>,
-    raw_artifact_approval_reason_hash: Option<&str>,
-    projection_content_hash: &str,
-    count_values: [&str; 7],
-) -> String {
-    let privacy_mode_hash = sha256(privacy_mode.as_bytes()).to_hex_prefixed();
-    let raw_permitted = raw_artifact_upload_permitted.to_string();
-    let raw_permitted_hash = sha256(raw_permitted.as_bytes()).to_hex_prefixed();
-    let observation_count_hash = sha256(count_values[0].as_bytes()).to_hex_prefixed();
-    let field_count_hash = sha256(count_values[1].as_bytes()).to_hex_prefixed();
-    let hash_only_count_hash = sha256(count_values[2].as_bytes()).to_hex_prefixed();
-    let metadata_only_count_hash = sha256(count_values[3].as_bytes()).to_hex_prefixed();
-    let redacted_count_hash = sha256(count_values[4].as_bytes()).to_hex_prefixed();
-    let raw_suppressed_count_hash = sha256(count_values[5].as_bytes()).to_hex_prefixed();
-    let local_only_count_hash = sha256(count_values[6].as_bytes()).to_hex_prefixed();
-    let projection_content_hash_hash = sha256(projection_content_hash.as_bytes()).to_hex_prefixed();
-    let mut evidence_hashes = vec![
-        privacy_mode_hash.as_str(),
-        raw_permitted_hash.as_str(),
-        projection_content_hash_hash.as_str(),
-        observation_count_hash.as_str(),
-        field_count_hash.as_str(),
-        hash_only_count_hash.as_str(),
-        metadata_only_count_hash.as_str(),
-        redacted_count_hash.as_str(),
-        raw_suppressed_count_hash.as_str(),
-        local_only_count_hash.as_str(),
-    ];
-    let raw_artifact_approval_id_hash =
-        raw_artifact_approval_id.map(|value| sha256(value.as_bytes()).to_hex_prefixed());
-    let raw_artifact_approval_reason_hash_hash =
-        raw_artifact_approval_reason_hash.map(|value| sha256(value.as_bytes()).to_hex_prefixed());
-    let empty_hash = sha256(b"").to_hex_prefixed();
-    if raw_artifact_upload_permitted {
-        evidence_hashes.push(
-            raw_artifact_approval_id_hash
-                .as_deref()
-                .unwrap_or(empty_hash.as_str()),
-        );
-        evidence_hashes.push(
-            raw_artifact_approval_reason_hash_hash
-                .as_deref()
-                .unwrap_or(empty_hash.as_str()),
-        );
-    }
-    telemetry_privacy_report_id_from_evidence_hashes(evidence_hashes)
-}
-
-fn telemetry_privacy_report_id_from_evidence_hashes<'a>(
-    evidence_hashes: impl IntoIterator<Item = &'a str>,
-) -> String {
-    stable_id("telemetry_privacy_report", evidence_hashes)
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ResponseExecutionEffectBindingEntry {
-    key: String,
-    value_hash: String,
-}
-
-fn response_execution_id_from_effects(
-    response_action_id: &str,
-    evidence_bundle_id: &str,
-    effects: &[EndpointResponseExecutionEffect],
-) -> Result<String> {
-    let effect_binding_digest = response_execution_effect_binding_digest_from_effects(effects)?
-        .ok_or_else(|| anyhow!("response execution effect binding requires at least one effect"))?;
-    Ok(response_execution_id_from_effect_digest(
-        response_action_id,
-        evidence_bundle_id,
-        effect_binding_digest.as_str(),
-    ))
-}
-
-fn response_execution_id_from_effect_digest(
-    response_action_id: &str,
-    evidence_bundle_id: &str,
-    effect_binding_digest: &str,
-) -> String {
-    stable_id(
-        "response_execution",
-        [
-            response_action_id,
-            evidence_bundle_id,
-            effect_binding_digest,
-        ],
-    )
-}
-
-fn response_execution_transition_id_from_reason_hash(
-    prefix: &str,
-    response_action_id: &str,
-    evidence_bundle_id: &str,
-    rollback_ref: &str,
-    reason_hash: &str,
-) -> String {
-    stable_id(
-        prefix,
-        [
-            response_action_id,
-            evidence_bundle_id,
-            rollback_ref,
-            reason_hash,
-        ],
-    )
-}
-
-fn reconstruct_path(from: &str, to: &str, previous: &BTreeMap<String, String>) -> Vec<String> {
-    let mut path = vec![to.to_string()];
-    let mut cursor = to;
-    while let Some(prev) = previous.get(cursor) {
-        path.push(prev.clone());
-        if prev == from {
-            break;
-        }
-        cursor = prev;
-    }
-    path.reverse();
-    path
 }
 
 #[cfg(test)]
