@@ -10,33 +10,33 @@
     clippy::unwrap_used
 )]
 
-    use super::*;
-    use crate::atoms::ActionKind;
-    use clawdstrike::guards::{
-        EgressAllowlistConfig, ForbiddenPathConfig, McpToolConfig, PathAllowlistConfig,
-        PromptInjectionConfig, SecretLeakConfig, ShellCommandConfig,
-    };
-    use clawdstrike::policy::{GuardConfigs, Policy, RuleSet, VerificationSettings};
-    use hush_proxy::policy::PolicyAction;
-    use logos_ffi::AgentId;
+use super::*;
+use crate::atoms::ActionKind;
+use clawdstrike::guards::{
+    EgressAllowlistConfig, ForbiddenPathConfig, McpToolConfig, PathAllowlistConfig,
+    PromptInjectionConfig, SecretLeakConfig, ShellCommandConfig,
+};
+use clawdstrike::policy::{GuardConfigs, Policy, RuleSet, VerificationSettings};
+use hush_proxy::policy::PolicyAction;
+use logos_ffi::AgentId;
 
-    fn agent() -> AgentId {
-        AgentId::new("test-agent")
-    }
+fn agent() -> AgentId {
+    AgentId::new("test-agent")
+}
 
-    fn formula_verifier() -> PolicyVerifier {
-        PolicyVerifier::new()
-    }
+fn formula_verifier() -> PolicyVerifier {
+    PolicyVerifier::new()
+}
 
-    fn simple_forbidden_path(path: &str) -> ForbiddenPathConfig {
-        ForbiddenPathConfig {
-            enabled: true,
-            patterns: Some(vec![path.to_string()]),
-            exceptions: vec![],
-            additional_patterns: vec![],
-            remove_patterns: vec![],
-        }
+fn simple_forbidden_path(path: &str) -> ForbiddenPathConfig {
+    ForbiddenPathConfig {
+        enabled: true,
+        patterns: Some(vec![path.to_string()]),
+        exceptions: vec![],
+        additional_patterns: vec![],
+        remove_patterns: vec![],
     }
+}
 
 include!("core.rs");
 include!("inheritance.rs");

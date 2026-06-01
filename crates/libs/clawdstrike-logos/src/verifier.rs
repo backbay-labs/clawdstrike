@@ -28,11 +28,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::compiler::{DefaultPolicyCompiler, PolicyCompiler};
 
+mod analysis;
+mod inheritance;
+mod load_time;
 mod report;
 mod verifier_core;
-mod inheritance;
 mod witness;
-mod load_time;
 
 // Public surface: re-exported so external callers keep using
 // `clawdstrike_logos::verifier::<Item>` regardless of the submodule layout.
@@ -49,6 +50,7 @@ pub use verifier_core::PolicyVerifier;
 
 // Internal cross-module resolution: each submodule reaches the others' private
 // helpers through these globs + its own `use super::*`.
+pub(crate) use analysis::*;
 pub(crate) use inheritance::*;
 // `load_time`'s pub(crate) helpers (e.g. `verify_policy_at_load_time_with_parent`)
 // are reached only from `mod tests { use super::* }`; nothing in a non-test build
@@ -56,6 +58,11 @@ pub(crate) use inheritance::*;
 #[allow(unused_imports)]
 pub(crate) use load_time::*;
 pub(crate) use report::*;
+// `verifier_core` now exposes only the `PolicyVerifier` struct (re-exported
+// above); its former free helpers moved to `analysis`. The glob carries no
+// names today but is kept for symmetry and future additions, so it is unused
+// in non-test builds.
+#[allow(unused_imports)]
 pub(crate) use verifier_core::*;
 pub(crate) use witness::*;
 

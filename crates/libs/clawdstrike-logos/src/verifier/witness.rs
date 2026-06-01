@@ -42,7 +42,10 @@ pub(crate) fn default_domain_probe(base_policy: &DomainPolicy) -> String {
     seed.to_string()
 }
 
-pub(crate) fn default_mcp_probe(base_cfg: &McpToolConfig, child_cfg: Option<&McpToolConfig>) -> String {
+pub(crate) fn default_mcp_probe(
+    base_cfg: &McpToolConfig,
+    child_cfg: Option<&McpToolConfig>,
+) -> String {
     let seed = "__clawdstrike_inheritance_probe__";
     if !mcp_probe_in_use(base_cfg, child_cfg, seed) {
         return seed.to_string();
@@ -233,7 +236,9 @@ pub(crate) fn regex_class_samples(class: &Class) -> Vec<String> {
     }
 }
 
-pub(crate) fn regex_unicode_class_char(range: &regex_syntax::hir::ClassUnicodeRange) -> Option<char> {
+pub(crate) fn regex_unicode_class_char(
+    range: &regex_syntax::hir::ClassUnicodeRange,
+) -> Option<char> {
     preferred_unicode_candidates()
         .into_iter()
         .find(|candidate| *candidate >= range.start() && *candidate <= range.end())
@@ -271,7 +276,11 @@ pub(crate) fn regex_look_samples(look: Look) -> Vec<String> {
     }
 }
 
-pub(crate) fn regex_sample_cross_product(left: Vec<String>, right: Vec<String>, limit: usize) -> Vec<String> {
+pub(crate) fn regex_sample_cross_product(
+    left: Vec<String>,
+    right: Vec<String>,
+    limit: usize,
+) -> Vec<String> {
     if left.is_empty() || right.is_empty() {
         return Vec::new();
     }
