@@ -26,6 +26,7 @@ mod command;
 mod init;
 mod pack;
 mod scaffold;
+mod search;
 mod trust;
 mod util;
 mod yank;
@@ -40,13 +41,16 @@ use pack::{archive_file_name, cmd_pkg_pack, pack_source_dir_without_embedded_arc
 use scaffold::sanitize_cargo_package_name;
 #[cfg(test)]
 use scaffold::scaffold_package;
+use search::cmd_pkg_search;
 #[cfg(test)]
 use trust::checkpoint_signature_message;
 use trust::{
     required_registry_public_key_for_trust, verify_attestation_against_hash, verify_install_trust,
     verify_transparency_proof, InstalledIdentity, RegistryAttestation, RegistryProof,
 };
-use util::{format_number, tempdir_for_download, truncate_with_ellipsis, urlencoding_simple};
+#[cfg(test)]
+use util::truncate_with_ellipsis;
+use util::{format_number, tempdir_for_download, urlencoding_simple};
 use yank::cmd_pkg_yank;
 
 // ---------------------------------------------------------------------------
@@ -1764,108 +1768,6 @@ fn cmd_trusted_publisher_remove(
     }
 
     let _ = writeln!(stdout, "Removed trusted publisher {} from {}", id, package);
-    ExitCode::Ok
-}
-
-// ---------------------------------------------------------------------------
-// pkg search
-// ---------------------------------------------------------------------------
-
-fn cmd_pkg_search(
-    query: &str,
-    limit: usize,
-    page: usize,
-    registry: Option<&str>,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> ExitCode {
-    let cfg = RegistryConfig::load(registry);
-    let offset = page * limit;
-    let url = format!(
-        "{}/api/v1/search?q={}&limit={}&offset={}",
-        cfg.registry_url.trim_end_matches('/'),
-        urlencoding_simple(query),
-        limit,
-        offset
-    );
-
-    let client = match reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
-    let resp = match client.get(&url).send() {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: search request failed: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().unwrap_or_default();
-        let _ = writeln!(stderr, "Error: registry returned HTTP {status}: {body}");
-        return ExitCode::RuntimeError;
-    }
-
-    let resp_json: serde_json::Value = match resp.json() {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: invalid response from registry: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
-    let results = match resp_json.get("packages").and_then(|r| r.as_array()) {
-        Some(r) => r,
-        None => {
-            let _ = writeln!(stdout, "No packages found.");
-            return ExitCode::Ok;
-        }
-    };
-
-    if results.is_empty() {
-        let _ = writeln!(stdout, "No packages found.");
-        return ExitCode::Ok;
-    }
-
-    let _ = writeln!(stdout, "{:<40} {:<12} DESCRIPTION", "NAME", "VERSION");
-    let _ = writeln!(stdout, "{}", "-".repeat(80));
-
-    for result in results {
-        let name = result.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-        let version = result
-            .get("latest_version")
-            .and_then(|v| v.as_str())
-            .unwrap_or("?");
-        let description = result
-            .get("description")
-            .and_then(|d| d.as_str())
-            .unwrap_or("");
-        let desc_display = truncate_with_ellipsis(description, 37);
-        let _ = writeln!(stdout, "{:<40} {:<12} {}", name, version, desc_display);
-    }
-
-    let total = resp_json
-        .get("total")
-        .and_then(|t| t.as_u64())
-        .unwrap_or(results.len() as u64);
-    let showing_end = offset + results.len();
-    let _ = writeln!(
-        stdout,
-        "\nShowing {}-{} of {} results",
-        offset + 1,
-        showing_end,
-        total
-    );
-
     ExitCode::Ok
 }
 
