@@ -10,28 +10,29 @@ use globset::GlobBuilder;
 
 use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
 use crate::guards::{
-    ComputerUseConfig, ComputerUseGuard, EgressAllowlistConfig, EgressAllowlistGuard,
-    ForbiddenPathConfig, ForbiddenPathGuard, Guard, InputInjectionCapabilityConfig,
-    InputInjectionCapabilityGuard, JailbreakConfig, JailbreakGuard, McpToolConfig, McpToolGuard,
-    PatchIntegrityConfig, PatchIntegrityGuard, PathAllowlistConfig, PathAllowlistGuard,
-    PromptInjectionConfig, PromptInjectionGuard, RemoteDesktopSideChannelConfig,
-    RemoteDesktopSideChannelGuard, SecretLeakConfig, SecretLeakGuard, ShellCommandConfig,
+    ComputerUseGuard, EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig,
+    ForbiddenPathGuard, Guard, InputInjectionCapabilityGuard, JailbreakConfig, JailbreakGuard,
+    McpToolConfig, McpToolGuard, PatchIntegrityGuard, PathAllowlistGuard, PromptInjectionConfig,
+    PromptInjectionGuard, RemoteDesktopSideChannelGuard, SecretLeakConfig, SecretLeakGuard,
     ShellCommandGuard,
 };
 use crate::placeholders::env_var_for_placeholder;
-use crate::posture::{validate_posture_config, PostureConfig};
+use crate::posture::validate_posture_config;
 
 mod async_config;
 mod broker;
+mod guard_configs;
 mod origins;
 mod resolver;
 mod settings;
+mod types;
 
 pub use async_config::{
     AsyncCachePolicyConfig, AsyncCircuitBreakerPolicyConfig, AsyncExecutionMode,
     AsyncGuardPolicyConfig, AsyncRateLimitPolicyConfig, AsyncRetryPolicyConfig, TimeoutBehavior,
 };
 pub use broker::{BrokerConfig, BrokerMethod, BrokerProviderPolicy};
+pub use guard_configs::GuardConfigs;
 pub use origins::{
     BridgePolicy, BridgeTarget, OriginBudgets, OriginDataPolicy, OriginDefaultBehavior,
     OriginMatch, OriginProfile, OriginsConfig,
@@ -41,6 +42,7 @@ pub use resolver::{
     ResolvedPolicySource,
 };
 pub use settings::{CustomGuardSpec, PolicySettings, VerificationSettings};
+pub use types::{MergeStrategy, Policy, PolicyLoadVerificationInput, PolicyValidationOptions};
 
 pub(crate) use settings::merge_verification_settings;
 
@@ -52,78 +54,6 @@ pub const POLICY_SCHEMA_VERSION: &str = "1.5.0";
 pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] =
     &["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
 
-/// Options controlling how strictly a policy is validated.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PolicyValidationOptions {
-    /// Whether placeholders like `${VAR}` must reference an existing environment variable.
-    ///
-    /// When `false`, placeholder syntax is still validated, but missing env vars are allowed.
-    pub require_env: bool,
-}
-
-impl PolicyValidationOptions {
-    pub const STRICT: Self = Self { require_env: true };
-    pub const LAX: Self = Self { require_env: false };
-}
-
-impl Default for PolicyValidationOptions {
-    fn default() -> Self {
-        Self::STRICT
-    }
-}
-
-/// Strategy for merging policies when using extends
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MergeStrategy {
-    /// Replace base entirely with child values
-    Replace,
-    /// Shallow merge: child values override base at top level
-    Merge,
-    /// Deep merge: recursively merge nested structures
-    #[default]
-    DeepMerge,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Policy {
-    #[serde(default = "default_version")]
-    pub version: String,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub extends: Option<String>,
-    #[serde(default)]
-    pub merge_strategy: MergeStrategy,
-    #[serde(default)]
-    pub guards: GuardConfigs,
-    #[serde(default)]
-    pub custom_guards: Vec<PolicyCustomGuardSpec>,
-    #[serde(default)]
-    pub settings: PolicySettings,
-    #[serde(default)]
-    pub posture: Option<PostureConfig>,
-    #[serde(default)]
-    pub origins: Option<OriginsConfig>,
-    #[serde(default)]
-    pub broker: Option<BrokerConfig>,
-}
-
-/// Fully materialized policy load context passed to an optional verifier hook.
-///
-/// `effective_policy` is the validated policy that will be returned to the
-/// caller. For inherited policies, `source_policy` is the raw child policy and
-/// `parent_policy` is the resolved base policy that was merged into it.
-#[derive(Clone, Debug)]
-pub struct PolicyLoadVerificationInput {
-    pub effective_policy: Policy,
-    pub source_policy: Option<Policy>,
-    pub parent_policy: Option<Policy>,
-}
-
 type PolicyLoadVerifier =
     dyn Fn(&PolicyLoadVerificationInput) -> Result<()> + Send + Sync + 'static;
 
@@ -134,87 +64,6 @@ where
     F: Fn(&PolicyLoadVerificationInput) -> Result<()> + Send + Sync + 'static,
 {
     POLICY_LOAD_VERIFIER.set(Box::new(verifier)).is_ok()
-}
-
-fn default_version() -> String {
-    POLICY_SCHEMA_VERSION.to_string()
-}
-
-impl Default for Policy {
-    fn default() -> Self {
-        Self {
-            version: default_version(),
-            name: String::new(),
-            description: String::new(),
-            extends: None,
-            merge_strategy: MergeStrategy::default(),
-            guards: GuardConfigs::default(),
-            custom_guards: Vec::new(),
-            settings: PolicySettings::default(),
-            posture: None,
-            origins: None,
-            broker: None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GuardConfigs {
-    #[serde(default)]
-    pub forbidden_path: Option<ForbiddenPathConfig>,
-    #[serde(default)]
-    pub path_allowlist: Option<PathAllowlistConfig>,
-    #[serde(default)]
-    pub egress_allowlist: Option<EgressAllowlistConfig>,
-    #[serde(default)]
-    pub secret_leak: Option<SecretLeakConfig>,
-    #[serde(default)]
-    pub patch_integrity: Option<PatchIntegrityConfig>,
-    #[serde(default)]
-    pub shell_command: Option<ShellCommandConfig>,
-    #[serde(default)]
-    pub mcp_tool: Option<McpToolConfig>,
-    #[serde(default)]
-    pub prompt_injection: Option<PromptInjectionConfig>,
-    /// Tracks explicitly provided prompt-injection object keys when compiling
-    /// partial HushSpec overlays so merge preserves inherited values.
-    #[serde(skip)]
-    pub prompt_injection_present_fields: BTreeSet<String>,
-    #[serde(default)]
-    pub jailbreak: Option<JailbreakConfig>,
-    /// Tracks explicitly provided jailbreak object keys when compiling partial
-    /// HushSpec overlays so merge preserves inherited values.
-    #[serde(skip)]
-    pub jailbreak_present_fields: BTreeSet<String>,
-    #[serde(default)]
-    pub computer_use: Option<ComputerUseConfig>,
-    #[serde(default)]
-    pub remote_desktop_side_channel: Option<RemoteDesktopSideChannelConfig>,
-    #[serde(default)]
-    pub input_injection_capability: Option<InputInjectionCapabilityConfig>,
-    #[cfg(feature = "full")]
-    #[serde(default)]
-    pub spider_sense: Option<crate::async_guards::threat_intel::SpiderSensePolicyConfig>,
-    /// Tracks explicitly provided spider_sense object keys during YAML parse.
-    /// This is used to preserve deep-merge semantics for default-valued fields.
-    #[cfg(feature = "full")]
-    #[serde(skip)]
-    pub spider_sense_present_fields: BTreeSet<String>,
-    /// Spider-Sense passthrough config in `policy-event` builds.
-    ///
-    /// `policy-event` consumers only need schema compatibility and should not
-    /// reject valid 1.3 policies because runtime-only Spider-Sense types are
-    /// unavailable outside `full` builds.
-    #[cfg(all(feature = "policy-event", not(feature = "full")))]
-    #[serde(default)]
-    pub spider_sense: Option<serde_json::Value>,
-    /// Custom (plugin-shaped) guards.
-    ///
-    /// Note: for now, only a small reserved set of built-in packages is supported. Unknown
-    /// packages must fail closed.
-    #[serde(default)]
-    pub custom: Vec<CustomGuardSpec>,
 }
 
 impl GuardConfigs {
