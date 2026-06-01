@@ -5,6 +5,7 @@ mod policy_decision;
 mod policy_delta;
 mod policy_event;
 mod privacy;
+mod provider_degradation;
 mod sensor_state;
 mod simulation;
 
@@ -15,5 +16,6 @@ pub(crate) use policy_decision::*;
 pub(crate) use policy_delta::*;
 pub(crate) use policy_event::*;
 pub(crate) use privacy::*;
+pub(crate) use provider_degradation::*;
 pub(crate) use sensor_state::*;
 pub(crate) use simulation::*;
