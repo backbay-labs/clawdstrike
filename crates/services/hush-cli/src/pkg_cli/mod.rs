@@ -8,9 +8,9 @@ use hush_core::Hash;
 
 use clawdstrike::pkg::archive;
 use clawdstrike::pkg::integrity::sign_package;
-use clawdstrike::pkg::manifest::{parse_pkg_manifest_toml, PkgManifest};
 #[cfg(test)]
 use clawdstrike::pkg::manifest::PkgType;
+use clawdstrike::pkg::manifest::{parse_pkg_manifest_toml, PkgManifest};
 #[cfg(test)]
 use clawdstrike::pkg::merkle::LeafData;
 use clawdstrike::pkg::store::{compute_content_fingerprint, PackageStore, StoreMetadata};
@@ -28,13 +28,14 @@ mod pack;
 mod scaffold;
 mod trust;
 mod util;
+mod yank;
 
 use auth::{add_trusted_publisher_signed_payload, build_caller_auth_headers};
 pub use command::{CliPkgType, OrgCommands, PkgCommands, TrustedPublisherCommands};
 use init::cmd_pkg_init;
-use pack::{archive_file_name, cmd_pkg_pack, pack_source_dir_without_embedded_archives};
 #[cfg(test)]
 use pack::validate_pack_contents;
+use pack::{archive_file_name, cmd_pkg_pack, pack_source_dir_without_embedded_archives};
 #[cfg(feature = "wasm-plugin-runtime")]
 use scaffold::sanitize_cargo_package_name;
 #[cfg(test)]
@@ -46,6 +47,7 @@ use trust::{
     verify_transparency_proof, InstalledIdentity, RegistryAttestation, RegistryProof,
 };
 use util::{format_number, tempdir_for_download, truncate_with_ellipsis, urlencoding_simple};
+use yank::cmd_pkg_yank;
 
 // ---------------------------------------------------------------------------
 // Dispatcher
@@ -2067,80 +2069,6 @@ fn cmd_pkg_stats(
         }
     }
 
-    ExitCode::Ok
-}
-
-// ---------------------------------------------------------------------------
-// pkg yank
-// ---------------------------------------------------------------------------
-
-fn cmd_pkg_yank(
-    name: &str,
-    version: &str,
-    registry: Option<&str>,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> ExitCode {
-    let cfg = RegistryConfig::load(registry);
-
-    let auth_token = match &cfg.auth_token {
-        Some(t) => t.clone(),
-        None => {
-            let _ = writeln!(
-                stderr,
-                "Error: not authenticated. Run `clawdstrike pkg login` first."
-            );
-            return ExitCode::ConfigError;
-        }
-    };
-
-    let url = format!(
-        "{}/api/v1/packages/{}/{}",
-        cfg.registry_url.trim_end_matches('/'),
-        urlencoding_simple(name),
-        urlencoding_simple(version)
-    );
-
-    let client = match reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
-    let payload = format!("yank:{name}:{version}");
-    let caller = match build_caller_auth_headers(&cfg, &payload, stderr) {
-        Ok(c) => c,
-        Err(code) => return code,
-    };
-
-    let resp = match client
-        .delete(&url)
-        .bearer_auth(&auth_token)
-        .header("X-Clawdstrike-Caller-Key", &caller.key_hex)
-        .header("X-Clawdstrike-Caller-Sig", &caller.sig_hex)
-        .header("X-Clawdstrike-Caller-Ts", &caller.ts)
-        .send()
-    {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: yank request failed: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().unwrap_or_default();
-        let _ = writeln!(stderr, "Error: registry returned HTTP {status}: {body}");
-        return ExitCode::RuntimeError;
-    }
-
-    let _ = writeln!(stdout, "Yanked {} v{}", name, version);
     ExitCode::Ok
 }
 
