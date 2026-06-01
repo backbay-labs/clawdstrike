@@ -1,23 +1,18 @@
 //! Policy configuration and rulesets
 
-use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 use crate::error::Result;
-use crate::guards::{
-    ComputerUseGuard, EgressAllowlistGuard, ForbiddenPathGuard, Guard,
-    InputInjectionCapabilityGuard, JailbreakGuard, McpToolGuard, PatchIntegrityGuard,
-    PathAllowlistGuard, PromptInjectionGuard, RemoteDesktopSideChannelGuard, SecretLeakGuard,
-    ShellCommandGuard,
-};
 
 mod async_config;
 mod broker;
 mod guard_configs;
+mod guards;
 mod load;
 mod merge;
 mod origins;
 mod resolver;
+mod ruleset;
 mod settings;
 mod types;
 mod validate;
@@ -36,10 +31,12 @@ pub use resolver::{
     LocalPolicyResolver, PolicyCustomGuardSpec, PolicyLocation, PolicyResolver,
     ResolvedPolicySource,
 };
+pub use ruleset::RuleSet;
 pub use settings::{CustomGuardSpec, PolicySettings, VerificationSettings};
 pub use types::{MergeStrategy, Policy, PolicyLoadVerificationInput, PolicyValidationOptions};
 pub use validate::{policy_version_supports_broker, policy_version_supports_origins};
 
+pub(crate) use guards::PolicyGuards;
 pub(crate) use settings::merge_verification_settings;
 
 /// Current policy schema version.
@@ -60,197 +57,6 @@ where
     F: Fn(&PolicyLoadVerificationInput) -> Result<()> + Send + Sync + 'static,
 {
     POLICY_LOAD_VERIFIER.set(Box::new(verifier)).is_ok()
-}
-
-impl Policy {
-    /// Create guards from this policy
-    pub(crate) fn create_guards(&self) -> PolicyGuards {
-        PolicyGuards {
-            forbidden_path: self
-                .guards
-                .forbidden_path
-                .clone()
-                .map(ForbiddenPathGuard::with_config)
-                .unwrap_or_default(),
-            path_allowlist: self
-                .guards
-                .path_allowlist
-                .clone()
-                .map(PathAllowlistGuard::with_config)
-                .unwrap_or_default(),
-            egress_allowlist: self
-                .guards
-                .egress_allowlist
-                .clone()
-                .map(EgressAllowlistGuard::with_config)
-                .unwrap_or_default(),
-            secret_leak: self
-                .guards
-                .secret_leak
-                .clone()
-                .map(SecretLeakGuard::with_config)
-                .unwrap_or_default(),
-            patch_integrity: self
-                .guards
-                .patch_integrity
-                .clone()
-                .map(PatchIntegrityGuard::with_config)
-                .unwrap_or_default(),
-            shell_command: self
-                .guards
-                .shell_command
-                .clone()
-                .map(|cfg| ShellCommandGuard::with_config(cfg, self.guards.forbidden_path.clone()))
-                .unwrap_or_default(),
-            mcp_tool: self
-                .guards
-                .mcp_tool
-                .clone()
-                .map(McpToolGuard::with_config)
-                .unwrap_or_default(),
-            prompt_injection: self
-                .guards
-                .prompt_injection
-                .clone()
-                .map(PromptInjectionGuard::with_config)
-                .unwrap_or_default(),
-            jailbreak: self
-                .guards
-                .jailbreak
-                .clone()
-                .map(JailbreakGuard::with_config)
-                .unwrap_or_default(),
-            computer_use: self
-                .guards
-                .computer_use
-                .clone()
-                .map(ComputerUseGuard::with_config)
-                .unwrap_or_default(),
-            remote_desktop_side_channel: self
-                .guards
-                .remote_desktop_side_channel
-                .clone()
-                .map(RemoteDesktopSideChannelGuard::with_config)
-                .unwrap_or_default(),
-            input_injection_capability: self
-                .guards
-                .input_injection_capability
-                .clone()
-                .map(InputInjectionCapabilityGuard::with_config)
-                .unwrap_or_default(),
-        }
-    }
-}
-
-/// Guards instantiated from a policy
-pub(crate) struct PolicyGuards {
-    pub forbidden_path: ForbiddenPathGuard,
-    pub path_allowlist: PathAllowlistGuard,
-    pub egress_allowlist: EgressAllowlistGuard,
-    pub secret_leak: SecretLeakGuard,
-    pub patch_integrity: PatchIntegrityGuard,
-    pub shell_command: ShellCommandGuard,
-    pub mcp_tool: McpToolGuard,
-    pub prompt_injection: PromptInjectionGuard,
-    pub jailbreak: JailbreakGuard,
-    pub computer_use: ComputerUseGuard,
-    pub remote_desktop_side_channel: RemoteDesktopSideChannelGuard,
-    pub input_injection_capability: InputInjectionCapabilityGuard,
-}
-
-impl PolicyGuards {
-    /// Built-in guards, in a stable evaluation order.
-    pub(crate) fn builtin_guards_in_order(&self) -> impl ExactSizeIterator<Item = &dyn Guard> + '_ {
-        [
-            &self.forbidden_path as &dyn Guard,
-            &self.path_allowlist as &dyn Guard,
-            &self.egress_allowlist as &dyn Guard,
-            &self.secret_leak as &dyn Guard,
-            &self.patch_integrity as &dyn Guard,
-            &self.shell_command as &dyn Guard,
-            &self.mcp_tool as &dyn Guard,
-            &self.prompt_injection as &dyn Guard,
-            &self.jailbreak as &dyn Guard,
-            &self.computer_use as &dyn Guard,
-            &self.remote_desktop_side_channel as &dyn Guard,
-            &self.input_injection_capability as &dyn Guard,
-        ]
-        .into_iter()
-    }
-}
-
-/// Named ruleset with pre-configured policies
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RuleSet {
-    /// Ruleset identifier
-    pub id: String,
-    /// Human-readable name
-    pub name: String,
-    /// Description
-    pub description: String,
-    /// The policy
-    pub policy: Policy,
-}
-
-impl RuleSet {
-    pub fn yaml_by_name(name: &str) -> Option<(&'static str, String)> {
-        let id = name.strip_prefix("clawdstrike:").unwrap_or(name);
-
-        let yaml = match id {
-            "default" => Some(include_str!("../../rulesets/default.yaml")),
-            "strict" => Some(include_str!("../../rulesets/strict.yaml")),
-            "ai-agent" => Some(include_str!("../../rulesets/ai-agent.yaml")),
-            "ai-agent-posture" => Some(include_str!("../../rulesets/ai-agent-posture.yaml")),
-            "cicd" => Some(include_str!("../../rulesets/cicd.yaml")),
-            "permissive" => Some(include_str!("../../rulesets/permissive.yaml")),
-            "remote-desktop" => Some(include_str!("../../rulesets/remote-desktop.yaml")),
-            "remote-desktop-strict" => {
-                Some(include_str!("../../rulesets/remote-desktop-strict.yaml"))
-            }
-            "remote-desktop-permissive" => Some(include_str!(
-                "../../rulesets/remote-desktop-permissive.yaml"
-            )),
-            #[cfg(feature = "full")]
-            "spider-sense" => Some(include_str!("../../rulesets/spider-sense.yaml")),
-            "origin-enclaves-example" => {
-                Some(include_str!("../../rulesets/origin-enclaves-example.yaml"))
-            }
-            _ => None,
-        }?;
-
-        Some((yaml, id.to_string()))
-    }
-
-    pub fn by_name(name: &str) -> Result<Option<Self>> {
-        let Some((yaml, id)) = Self::yaml_by_name(name) else {
-            return Ok(None);
-        };
-
-        let policy = Policy::from_yaml_with_extends(yaml, None)?;
-        Ok(Some(Self {
-            id,
-            name: policy.name.clone(),
-            description: policy.description.clone(),
-            policy,
-        }))
-    }
-
-    pub fn list() -> &'static [&'static str] {
-        &[
-            "default",
-            "strict",
-            "ai-agent",
-            "ai-agent-posture",
-            "cicd",
-            "permissive",
-            "remote-desktop",
-            "remote-desktop-strict",
-            "remote-desktop-permissive",
-            #[cfg(feature = "full")]
-            "spider-sense",
-            "origin-enclaves-example",
-        ]
-    }
 }
 
 #[cfg(test)]
