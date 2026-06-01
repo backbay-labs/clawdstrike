@@ -91,7 +91,7 @@ the coupled pairs, with the formally-verified engine last.
 
 | Step | File | Status | Commit |
 |------|------|--------|--------|
-| 1 | `verifier.rs` | ☐ pending | — |
+| 1 | `verifier.rs` | ☑ done (verified) | `b4002a48f..f10adf75c` |
 | 2 | `pkg_cli.rs` | ☐ pending | — |
 | 3 | `edr/mod.rs` | ☐ pending | — |
 | 4 | `edr/receipt/mod.rs` | ☐ pending | — |
@@ -101,9 +101,19 @@ the coupled pairs, with the formally-verified engine last.
 | 8 | `policies.rs` | ☐ pending | — |
 
 Per-file gate (must hold before marking a step done and committing):
-`cargo build -p <crate>` + `cargo test -p <crate>` + `cargo clippy -p <crate> --all-features -- -D warnings`,
-plus `cargo build --workspace` for files with external importers. For #6, additionally
-`cargo test -p formal-diff-tests`.
+`cargo fmt --all -- --check` + `cargo build -p <crate>` + `cargo test -p <crate>` +
+`cargo clippy -p <crate> -- -D warnings`, plus `cargo build --workspace` for files with
+external importers. For #6, additionally `cargo test -p formal-diff-tests`.
+
+> **Gate notes (learned on step 1):**
+> - **`cargo fmt --all -- --check` is part of the gate** (CI runs it). Newly-split files
+>   and de-indented `include!` test files must be fmt-clean. rustfmt does not follow
+>   `include!`, so de-indent those theme files by hand.
+> - **Default features only.** The `z3` feature (and thus `--all-features`) cannot compile
+>   in this environment (no system `z3.h`). z3-gated code is moved by careful inspection
+>   and its `#[cfg(feature = "z3")]` attributes preserved verbatim, not compile-verified.
+> - **Enforce the ~600-line target.** Split dense clusters proactively rather than leaving
+>   a file 50+ lines over (a non-sanctioned >600 file is a P2).
 
 ## Definition of done
 
