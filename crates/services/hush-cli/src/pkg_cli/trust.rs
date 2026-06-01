@@ -7,7 +7,7 @@ use hush_core::{PublicKey, Signature};
 
 use clawdstrike::pkg::merkle::{verify_inclusion_proof, InclusionProof, LeafData};
 
-use super::urlencoding_simple;
+use super::util::urlencoding_simple;
 use crate::registry_config::RegistryConfig;
 
 /// Verify trust level of a registry-installed package.

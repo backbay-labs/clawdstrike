@@ -9,7 +9,7 @@ use hush_core::Hash;
 use clawdstrike::pkg::archive;
 use clawdstrike::pkg::manifest::{parse_pkg_manifest_toml, PkgManifest, PkgType};
 
-use super::tempdir_for_download;
+use super::util::tempdir_for_download;
 use crate::ExitCode;
 
 pub(super) fn archive_file_name(name: &str, version: &str) -> String {

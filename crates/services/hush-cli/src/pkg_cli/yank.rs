@@ -2,7 +2,8 @@
 
 use std::io::Write;
 
-use super::{build_caller_auth_headers, urlencoding_simple};
+use super::auth::build_caller_auth_headers;
+use super::util::urlencoding_simple;
 use crate::registry_config::RegistryConfig;
 use crate::ExitCode;
 
