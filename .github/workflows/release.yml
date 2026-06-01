@@ -764,7 +764,7 @@ jobs:
 
       - name: Download native wheel artifacts
         if: needs.pypi-detect.outputs.none_missing == 'false'
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           pattern: pypi-native-wheels-*
           path: packages/sdk/hush-py/dist
@@ -1216,7 +1216,7 @@ jobs:
           echo "Created and pushed missing tag ${TAG}"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
