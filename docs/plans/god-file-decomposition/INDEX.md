@@ -94,7 +94,7 @@ the coupled pairs, with the formally-verified engine last.
 | 1 | `verifier.rs` | ☑ done (verified) | `b4002a48f..f10adf75c` |
 | 2 | `pkg_cli.rs` | ☑ done (verified) | `c9bcf1ff3..7d144cd50` |
 | 3 | `edr/mod.rs` | ☑ done (verified) | `15c63e245..1b777a474` |
-| 4 | `edr/receipt/mod.rs` | ☐ pending | — |
+| 4 | `edr/receipt/mod.rs` | ☑ done (verified) | `edfc3d464..fe1b9d692` |
 | 5 | `policy.rs` | ☐ pending | — |
 | 6 | `engine.rs` | ☐ pending | — |
 | 7 | `response_actions.rs` | ☐ pending | — |
