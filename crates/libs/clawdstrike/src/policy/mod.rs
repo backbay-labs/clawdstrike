@@ -3,7 +3,7 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::OnceLock;
 
 use globset::GlobBuilder;
@@ -18,9 +18,31 @@ use crate::guards::{
     RemoteDesktopSideChannelGuard, SecretLeakConfig, SecretLeakGuard, ShellCommandConfig,
     ShellCommandGuard,
 };
-use crate::origin::{OriginProvider, ProvenanceConfidence, SpaceType, Visibility};
 use crate::placeholders::env_var_for_placeholder;
 use crate::posture::{validate_posture_config, PostureConfig};
+
+mod async_config;
+mod broker;
+mod origins;
+mod resolver;
+mod settings;
+
+pub use async_config::{
+    AsyncCachePolicyConfig, AsyncCircuitBreakerPolicyConfig, AsyncExecutionMode,
+    AsyncGuardPolicyConfig, AsyncRateLimitPolicyConfig, AsyncRetryPolicyConfig, TimeoutBehavior,
+};
+pub use broker::{BrokerConfig, BrokerMethod, BrokerProviderPolicy};
+pub use origins::{
+    BridgePolicy, BridgeTarget, OriginBudgets, OriginDataPolicy, OriginDefaultBehavior,
+    OriginMatch, OriginProfile, OriginsConfig,
+};
+pub use resolver::{
+    LocalPolicyResolver, PolicyCustomGuardSpec, PolicyLocation, PolicyResolver,
+    ResolvedPolicySource,
+};
+pub use settings::{CustomGuardSpec, PolicySettings, VerificationSettings};
+
+pub(crate) use settings::merge_verification_settings;
 
 /// Current policy schema version.
 ///
@@ -29,13 +51,6 @@ use crate::posture::{validate_posture_config, PostureConfig};
 pub const POLICY_SCHEMA_VERSION: &str = "1.5.0";
 pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] =
     &["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
-fn default_true() -> bool {
-    true
-}
-
-fn default_json_object() -> serde_json::Value {
-    serde_json::Value::Object(serde_json::Map::new())
-}
 
 /// Options controlling how strictly a policy is validated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,110 +69,6 @@ impl PolicyValidationOptions {
 impl Default for PolicyValidationOptions {
     fn default() -> Self {
         Self::STRICT
-    }
-}
-
-/// Policy-driven custom guard configuration (`policy.custom_guards[]`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PolicyCustomGuardSpec {
-    /// Installed guard id (resolved via `CustomGuardRegistry`).
-    pub id: String,
-    /// Enable/disable this custom guard.
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Factory configuration (JSON object).
-    #[serde(default = "default_json_object")]
-    pub config: serde_json::Value,
-}
-
-/// Location context for resolving policy `extends`.
-///
-/// This is used by `PolicyResolver` implementations to resolve relative references and enforce
-/// security rules around remote resolution.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PolicyLocation {
-    /// No location context (inline YAML).
-    None,
-    /// A local file path.
-    File(PathBuf),
-    /// A remote URL (without fragment).
-    Url(String),
-    /// A file path within a git repository.
-    Git {
-        repo: String,
-        commit: String,
-        path: String,
-    },
-    /// A built-in ruleset identifier.
-    Ruleset { id: String },
-    /// An installed package reference.
-    Package { name: String, version: String },
-}
-
-/// A resolved policy source returned by a `PolicyResolver`.
-#[derive(Clone, Debug)]
-pub struct ResolvedPolicySource {
-    /// Canonical key for cycle detection (stable across equivalent references).
-    pub key: String,
-    /// YAML content.
-    pub yaml: String,
-    /// Location context for resolving nested `extends`.
-    pub location: PolicyLocation,
-}
-
-/// Extends resolver interface.
-///
-/// Implementations may resolve local files, built-in rulesets, and/or remote sources.
-pub trait PolicyResolver {
-    fn resolve(&self, reference: &str, from: &PolicyLocation) -> Result<ResolvedPolicySource>;
-}
-
-/// Default resolver that supports only built-in rulesets and local filesystem paths.
-#[derive(Clone, Debug, Default)]
-pub struct LocalPolicyResolver;
-
-impl LocalPolicyResolver {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl PolicyResolver for LocalPolicyResolver {
-    fn resolve(&self, reference: &str, from: &PolicyLocation) -> Result<ResolvedPolicySource> {
-        if let Some((yaml, id)) = RuleSet::yaml_by_name(reference) {
-            return Ok(ResolvedPolicySource {
-                key: format!("ruleset:{}", id),
-                yaml: yaml.to_string(),
-                location: PolicyLocation::Ruleset { id },
-            });
-        }
-
-        let extends_path = match from {
-            PolicyLocation::File(base_path) => base_path
-                .parent()
-                .unwrap_or(base_path.as_path())
-                .join(reference),
-            _ => PathBuf::from(reference),
-        };
-
-        if !extends_path.exists() {
-            return Err(Error::ConfigError(format!(
-                "Unknown ruleset or file not found: {}",
-                reference
-            )));
-        }
-
-        let yaml = std::fs::read_to_string(&extends_path)?;
-        let key = std::fs::canonicalize(&extends_path)
-            .map(|p| format!("file:{}", p.display()))
-            .unwrap_or_else(|_| format!("file:{}", extends_path.display()));
-
-        Ok(ResolvedPolicySource {
-            key,
-            yaml,
-            location: PolicyLocation::File(extends_path),
-        })
     }
 }
 
@@ -471,440 +382,6 @@ fn merge_jailbreak_config(
         merged.detector.max_input_bytes = child.detector.max_input_bytes;
     }
     merged
-}
-
-fn default_custom_guard_enabled() -> bool {
-    true
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TimeoutBehavior {
-    Allow,
-    Deny,
-    Warn,
-    Defer,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AsyncExecutionMode {
-    Parallel,
-    Sequential,
-    Background,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AsyncCachePolicyConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ttl_seconds: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_size_mb: Option<u64>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AsyncRateLimitPolicyConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requests_per_second: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requests_per_minute: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub burst: Option<u32>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AsyncCircuitBreakerPolicyConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub failure_threshold: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reset_timeout_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub success_threshold: Option<u32>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AsyncRetryPolicyConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_retries: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initial_backoff_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_backoff_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub multiplier: Option<f64>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AsyncGuardPolicyConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub on_timeout: Option<TimeoutBehavior>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub execution_mode: Option<AsyncExecutionMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache: Option<AsyncCachePolicyConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rate_limit: Option<AsyncRateLimitPolicyConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub circuit_breaker: Option<AsyncCircuitBreakerPolicyConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retry: Option<AsyncRetryPolicyConfig>,
-}
-
-/// A plugin-shaped guard reference in policy (`guards.custom[]`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CustomGuardSpec {
-    pub package: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(default = "default_custom_guard_enabled")]
-    pub enabled: bool,
-    #[serde(default)]
-    pub config: serde_json::Value,
-    #[serde(default, rename = "async", skip_serializing_if = "Option::is_none")]
-    pub async_config: Option<AsyncGuardPolicyConfig>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PolicySettings {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fail_fast: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub verbose_logging: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_timeout_secs: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub verification: Option<VerificationSettings>,
-}
-
-/// Load-time formal verification settings (consistency, completeness,
-/// inheritance soundness). When `strict` is true, failure blocks policy loading.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct VerificationSettings {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub strict: bool,
-    /// Cache results by content hash. Default: `true`.
-    #[serde(default = "default_cache_enabled")]
-    pub cache: bool,
-}
-
-fn default_cache_enabled() -> bool {
-    true
-}
-
-impl Default for VerificationSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            strict: false,
-            cache: true,
-        }
-    }
-}
-
-impl VerificationSettings {
-    pub fn merge_with(&self, child: &Self) -> Self {
-        Self {
-            // Verification settings are monotonic across extends: a child may
-            // request stronger verification, but cannot weaken a parent gate.
-            enabled: self.enabled || child.enabled,
-            strict: self.strict || child.strict,
-            // Cache disablement is also monotonic for safety: if either side
-            // opts out of caching, the merged policy stays uncached.
-            cache: self.cache && child.cache,
-        }
-    }
-}
-
-fn merge_verification_settings(
-    base: &Option<VerificationSettings>,
-    child: &Option<VerificationSettings>,
-) -> Option<VerificationSettings> {
-    match (base, child) {
-        (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
-        (Some(base), None) => Some(base.clone()),
-        (None, Some(child_cfg)) => Some(child_cfg.clone()),
-        (None, None) => None,
-    }
-}
-
-fn default_timeout() -> u64 {
-    3600 // 1 hour
-}
-
-impl PolicySettings {
-    pub fn effective_fail_fast(&self) -> bool {
-        self.fail_fast.unwrap_or(false)
-    }
-
-    pub fn effective_verbose_logging(&self) -> bool {
-        self.verbose_logging.unwrap_or(false)
-    }
-
-    pub fn effective_session_timeout_secs(&self) -> u64 {
-        self.session_timeout_secs.unwrap_or(default_timeout())
-    }
-
-    pub fn effective_verification(&self) -> VerificationSettings {
-        self.verification.clone().unwrap_or_default()
-    }
-
-    pub fn merge_with(&self, child: &Self) -> Self {
-        Self {
-            fail_fast: child.fail_fast.or(self.fail_fast),
-            verbose_logging: child.verbose_logging.or(self.verbose_logging),
-            session_timeout_secs: child.session_timeout_secs.or(self.session_timeout_secs),
-            verification: merge_verification_settings(&self.verification, &child.verification),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum BrokerMethod {
-    GET,
-    POST,
-    PUT,
-    PATCH,
-    DELETE,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BrokerConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub providers: Vec<BrokerProviderPolicy>,
-}
-
-impl BrokerConfig {
-    pub fn merge_with(&self, child: &Self) -> Self {
-        let mut providers = self.providers.clone();
-        for child_provider in &child.providers {
-            if let Some(position) = providers
-                .iter()
-                .position(|provider| provider.name == child_provider.name)
-            {
-                providers[position] = child_provider.clone();
-            } else {
-                providers.push(child_provider.clone());
-            }
-        }
-
-        Self {
-            enabled: child.enabled,
-            providers,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BrokerProviderPolicy {
-    pub name: String,
-    pub host: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub port: Option<u16>,
-    #[serde(default)]
-    pub exact_paths: Vec<String>,
-    #[serde(default)]
-    pub methods: Vec<BrokerMethod>,
-    pub secret_ref: String,
-    #[serde(default)]
-    pub allowed_headers: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_body_bytes: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub require_body_sha256: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stream_response: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub require_intent_preview: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_executions: Option<u32>,
-    #[serde(default)]
-    pub approval_required_risk_levels: Vec<String>,
-    #[serde(default)]
-    pub approval_required_data_classes: Vec<String>,
-}
-
-/// Default behavior when no origin profile matches.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OriginDefaultBehavior {
-    /// Deny all actions from unmatched origins.
-    #[default]
-    Deny,
-    /// Apply a minimal read-only profile.
-    MinimalProfile,
-}
-
-/// Configuration for origin-aware policy enforcement.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OriginsConfig {
-    /// Default behavior when no profile matches.
-    /// `None` means the field was omitted (inherits from parent during merge).
-    /// Defaults to `Deny` at resolution time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_behavior: Option<OriginDefaultBehavior>,
-    /// Named origin profiles.
-    #[serde(default)]
-    pub profiles: Vec<OriginProfile>,
-}
-
-impl OriginsConfig {
-    /// Returns the effective default behavior, defaulting to `Deny` if unset.
-    pub fn effective_default_behavior(&self) -> &OriginDefaultBehavior {
-        self.default_behavior
-            .as_ref()
-            .unwrap_or(&OriginDefaultBehavior::Deny)
-    }
-
-    /// Merge with a child config: child profiles replace base profiles by ID, or append if new.
-    /// Child's `default_behavior` takes precedence only if explicitly set; otherwise
-    /// the base value is preserved.
-    pub fn merge_with(&self, child: &Self) -> Self {
-        let mut profiles = self.profiles.clone();
-        for child_profile in &child.profiles {
-            if let Some(pos) = profiles.iter().position(|p| p.id == child_profile.id) {
-                profiles[pos] = child_profile.clone();
-            } else {
-                profiles.push(child_profile.clone());
-            }
-        }
-        Self {
-            default_behavior: child
-                .default_behavior
-                .clone()
-                .or_else(|| self.default_behavior.clone()),
-            profiles,
-        }
-    }
-}
-
-/// An origin profile defining security posture for a matched origin.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OriginProfile {
-    /// Unique profile identifier.
-    pub id: String,
-    /// Match rules for this profile.
-    pub match_rules: OriginMatch,
-    /// Optional posture state name to initialize (must reference a state in PostureConfig).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub posture: Option<String>,
-    /// MCP tool surface projection for this origin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mcp: Option<McpToolConfig>,
-    /// Egress policy for this origin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub egress: Option<EgressAllowlistConfig>,
-    /// Data policy for this origin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<OriginDataPolicy>,
-    /// Budget overrides for this origin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub budgets: Option<OriginBudgets>,
-    /// Bridge policy for cross-origin transitions.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bridge_policy: Option<BridgePolicy>,
-    /// Human-readable explanation of this profile's purpose.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub explanation: Option<String>,
-}
-
-/// Match rules for selecting an origin profile.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OriginMatch {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<OriginProvider>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tenant_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub space_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub space_type: Option<SpaceType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub visibility: Option<Visibility>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_participants: Option<bool>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sensitivity: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub actor_role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provenance_confidence: Option<ProvenanceConfidence>,
-}
-
-/// Data handling policy for an origin.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OriginDataPolicy {
-    #[serde(default)]
-    pub allow_external_sharing: bool,
-    #[serde(default)]
-    pub redact_before_send: bool,
-    #[serde(default)]
-    pub block_sensitive_outputs: bool,
-}
-
-/// Budget overrides for an origin.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OriginBudgets {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mcp_tool_calls: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub egress_calls: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shell_commands: Option<u64>,
-}
-
-/// Bridge policy controlling cross-origin transitions.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BridgePolicy {
-    #[serde(default)]
-    pub allow_cross_origin: bool,
-    #[serde(default)]
-    pub allowed_targets: Vec<BridgeTarget>,
-    #[serde(default)]
-    pub require_approval: bool,
-}
-
-/// A target specification for bridge transitions.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BridgeTarget {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<OriginProvider>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub space_type: Option<SpaceType>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub visibility: Option<Visibility>,
 }
 
 #[cfg(feature = "full")]
@@ -2385,6 +1862,7 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+    use crate::origin::{OriginProvider, ProvenanceConfidence, SpaceType, Visibility};
     use std::sync::Mutex;
     use tempfile::tempdir;
 
