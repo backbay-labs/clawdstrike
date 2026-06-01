@@ -25,8 +25,8 @@
   },
   "dependencies": {
     "@clawdstrike/adapter-core": "^0.2.7",
-    "js-yaml": "^4.1.0",
-    "lru-cache": "^11.2.2"
+    "js-yaml": "^4.2.0",
+    "lru-cache": "^11.5.1"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

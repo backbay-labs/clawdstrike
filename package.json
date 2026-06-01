@@ -32,9 +32,9 @@
     "packages/dev/vite-plugin-clawdstrike"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^2.4.4",
+    "@biomejs/biome": "^2.4.16",
     "@types/three": "^0.184.1",
-    "lru-cache": "^11.2.2",
+    "lru-cache": "^11.5.1",
     "vitest": "^4.1.7"
   },
   "engines": {

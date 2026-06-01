@@ -22,7 +22,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-rnd": "^10.5.3",
-    "zustand": "^5.0.13"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
