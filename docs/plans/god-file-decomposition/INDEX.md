@@ -106,13 +106,17 @@ gated and committed on its own, so a PR may carry a contiguous prefix of the tab
 rather than all eight at once. Step 6 (`engine.rs`) additionally passes the
 `formal-diff-tests` gate after every cut.
 
-> **Note (step 8 tests):** the plan proposed co-locating each test cluster inside its
-> owning child module. The landed refactor instead keeps the original `#[cfg(test)] mod
-> tests` block intact in `policies/mod.rs` (a single sibling test module, `use super::*`),
-> with the tested private items widened to `pub(crate)` and re-exported via the module-root
-> globs — the same pattern used in steps 5–7. Tests are byte-for-byte unchanged.
-> `fleet_rule_diff` and `impact_validation` each landed as a sub-directory
-> (`mod` + `helpers`/`receipts`, and `mod` + `simulation_receipt`) to keep every file ≤600.
+> **Note (step 8, post-review):** an independent review panel flagged two P1s and a P2 on
+> the initial `policies` landing (tests dumped in `mod.rs`; module-root glob re-exports; an
+> oversized `validate/mod.rs`). All three were fixed as pure relocation
+> (`dd857f443`, `b9ebe0041`, `872d8cc12`): the 13 tests are now **co-located in their owning
+> child modules** (3 `policy_distribution` contract tests stay in `policies/mod.rs`,
+> break-glass → `guard.rs`, impact/identity → `impact_validation/`, fleet rule-diff →
+> `fleet_rule_diff/helpers.rs`), the module-root globs are replaced with **narrow named
+> re-exports** (`pub(in crate::routes::policies)`), and `policy/validate/mod.rs` (613) was
+> split into `validate/checks.rs` (now 488). `fleet_rule_diff` and `impact_validation`
+> remain sub-directories to keep every file ≤600. Tests are byte-for-byte unchanged
+> (24 response_actions + 13 policies route tests pass).
 
 Per-file gate (must hold before marking a step done and committing):
 `cargo fmt --all -- --check` + `cargo build -p <crate>` + `cargo test -p <crate>` +
