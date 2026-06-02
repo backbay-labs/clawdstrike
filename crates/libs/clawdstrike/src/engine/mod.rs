@@ -4,24 +4,22 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
-use hush_core::receipt::{Provenance, Verdict, ViolationRef};
-use hush_core::{sha256, Hash, Keypair, Receipt, SignedReceipt};
+use hush_core::receipt::ViolationRef;
+use hush_core::{sha256, Hash, Keypair};
 
 use crate::async_guards::{AsyncGuard, AsyncGuardRuntime};
 use crate::enclave::EnclaveResolver;
 use crate::error::{Error, Result};
-use crate::guards::{
-    CustomGuardRegistry, Guard, GuardAction, GuardContext, GuardResult, McpDefaultAction, Severity,
-};
+use crate::guards::{Guard, GuardAction, GuardContext, GuardResult, McpDefaultAction, Severity};
 use crate::origin::OriginContext;
 use crate::origin_runtime::{
     normalize_origin_budgets, origin_budget_counters, OriginFingerprint, OriginRuntimeState,
 };
 use crate::output_sanitizer::OutputSanitizer;
 use crate::pipeline::{builtin_stage_for_guard_name, EvaluationPath, EvaluationStage};
-use crate::policy::{OriginDefaultBehavior, Policy, PolicyGuards, RuleSet};
+use crate::policy::{OriginDefaultBehavior, Policy, PolicyGuards};
 use crate::posture::{
     elapsed_since_timestamp, Capability, PostureBudgetCounter, PostureProgram, PostureRuntimeState,
     PostureTransitionRecord, RuntimeTransitionTrigger,
@@ -29,10 +27,13 @@ use crate::posture::{
 
 mod aggregate;
 mod bridge;
+mod construct;
+mod receipts;
 mod types;
 
 pub(crate) use aggregate::aggregate_overall;
 use bridge::{check_bridge_policy, format_origin_brief, BridgeCheckResult};
+pub use construct::HushEngineBuilder;
 pub use types::{
     EngineStats, GuardEvaluationMetadata, GuardReport, GuardResolvedEnclave, PostureAwareReport,
 };
@@ -86,161 +87,45 @@ enum PreparedEvaluation {
 /// The main security enforcement engine
 pub struct HushEngine {
     /// Active policy
-    policy: Policy,
+    pub(crate) policy: Policy,
     /// Instantiated guards
-    guards: PolicyGuards,
+    pub(crate) guards: PolicyGuards,
     /// Policy-driven custom guards (evaluated after built-ins)
-    custom_guards: Vec<Box<dyn Guard>>,
+    pub(crate) custom_guards: Vec<Box<dyn Guard>>,
     /// Additional guards appended at runtime (evaluated after built-ins)
-    extra_guards: Vec<Box<dyn Guard>>,
+    pub(crate) extra_guards: Vec<Box<dyn Guard>>,
     /// Signing keypair (optional)
-    keypair: Option<Keypair>,
+    pub(crate) keypair: Option<Keypair>,
     /// Session state
-    state: Arc<RwLock<EngineState>>,
+    pub(crate) state: Arc<RwLock<EngineState>>,
     /// Sticky configuration error (fail-closed).
-    config_error: Option<String>,
+    pub(crate) config_error: Option<String>,
     /// Async guard runtime
-    async_runtime: Arc<AsyncGuardRuntime>,
+    pub(crate) async_runtime: Arc<AsyncGuardRuntime>,
     /// Async guards instantiated from policy
-    async_guards: Vec<Arc<dyn AsyncGuard>>,
+    pub(crate) async_guards: Vec<Arc<dyn AsyncGuard>>,
     /// Async guard initialization error (fail closed)
-    async_guard_init_error: Option<String>,
+    pub(crate) async_guard_init_error: Option<String>,
     /// Compiled posture program (if policy posture is configured)
-    posture_program: Option<PostureProgram>,
+    pub(crate) posture_program: Option<PostureProgram>,
 }
 
 /// Engine session state
 #[derive(Default)]
-struct EngineState {
+pub(crate) struct EngineState {
     /// Number of actions checked
-    action_count: u64,
+    pub(crate) action_count: u64,
     /// Number of violations
-    violation_count: u64,
+    pub(crate) violation_count: u64,
     /// Recent violations
-    violations: Vec<ViolationRef>,
+    pub(crate) violations: Vec<ViolationRef>,
     /// Last internal evaluation path observed for a check.
-    last_evaluation_path: Option<EvaluationPath>,
+    pub(crate) last_evaluation_path: Option<EvaluationPath>,
     /// Aggregate count of observed stage paths (for receipt summary).
-    evaluation_path_counts: HashMap<String, u64>,
+    pub(crate) evaluation_path_counts: HashMap<String, u64>,
 }
 
 impl HushEngine {
-    /// Create a new engine with default policy
-    pub fn new() -> Self {
-        Self::with_policy(Policy::default())
-    }
-
-    pub fn builder(policy: Policy) -> HushEngineBuilder {
-        HushEngineBuilder {
-            policy,
-            custom_guard_registry: None,
-            keypair: None,
-        }
-    }
-
-    /// Create with a specific policy
-    pub fn with_policy(policy: Policy) -> Self {
-        let guards = policy.create_guards();
-        let async_runtime = Arc::new(AsyncGuardRuntime::new());
-        let (async_guards, async_guard_init_error) =
-            match crate::async_guards::registry::build_async_guards(&policy) {
-                Ok(v) => (v, None),
-                Err(e) => (Vec::new(), Some(e.to_string())),
-            };
-
-        let (custom_guards, mut config_error) = match build_custom_guards_from_policy(&policy, None)
-        {
-            Ok(v) => (v, None),
-            Err(e) => (Vec::new(), Some(e.to_string())),
-        };
-
-        let posture_program = match policy.posture.as_ref() {
-            Some(config) => match PostureProgram::from_config(config) {
-                Ok(program) => Some(program),
-                Err(err) => {
-                    config_error = Some(err);
-                    None
-                }
-            },
-            None => None,
-        };
-
-        Self {
-            policy,
-            guards,
-            custom_guards,
-            extra_guards: Vec::new(),
-            keypair: None,
-            state: Arc::new(RwLock::new(EngineState::default())),
-            config_error,
-            async_runtime,
-            async_guards,
-            async_guard_init_error,
-            posture_program,
-        }
-    }
-
-    /// Create from a named ruleset
-    pub fn from_ruleset(name: &str) -> Result<Self> {
-        let ruleset = RuleSet::by_name(name)?
-            .ok_or_else(|| Error::ConfigError(format!("Unknown ruleset: {}", name)))?;
-        Ok(Self::with_policy(ruleset.policy))
-    }
-
-    /// Set the signing keypair
-    pub fn with_keypair(mut self, keypair: Keypair) -> Self {
-        self.keypair = Some(keypair);
-        self
-    }
-
-    /// Generate a new signing keypair
-    pub fn with_generated_keypair(mut self) -> Self {
-        self.keypair = Some(Keypair::generate());
-        self
-    }
-
-    /// Append an additional guard (evaluated after all built-in guards).
-    ///
-    /// Note: when `fail_fast` is enabled, guards after the first violation (including extras)
-    /// will not run.
-    pub fn with_extra_guard<G>(mut self, guard: G) -> Self
-    where
-        G: Guard + 'static,
-    {
-        self.extra_guards.push(Box::new(guard));
-        self
-    }
-
-    /// Append an additional guard (evaluated after all built-in guards).
-    ///
-    /// Note: when `fail_fast` is enabled, guards after the first violation (including extras)
-    /// will not run.
-    pub fn with_extra_guard_box(mut self, guard: Box<dyn Guard>) -> Self {
-        self.extra_guards.push(guard);
-        self
-    }
-
-    /// Append an additional guard (evaluated after all built-in guards).
-    ///
-    /// Note: when `fail_fast` is enabled, guards after the first violation (including extras)
-    /// will not run.
-    pub fn add_extra_guard<G>(&mut self, guard: G) -> &mut Self
-    where
-        G: Guard + 'static,
-    {
-        self.extra_guards.push(Box::new(guard));
-        self
-    }
-
-    /// Append an additional guard (evaluated after all built-in guards).
-    ///
-    /// Note: when `fail_fast` is enabled, guards after the first violation (including extras)
-    /// will not run.
-    pub fn add_extra_guard_box(&mut self, guard: Box<dyn Guard>) -> &mut Self {
-        self.extra_guards.push(guard);
-        self
-    }
-
     /// Get the policy hash (derived from the policy YAML).
     ///
     /// Note: this does not include any runtime `extra_guards`.
@@ -1375,162 +1260,6 @@ impl HushEngine {
 
         Some(record)
     }
-
-    /// Create a receipt for the current session
-    pub async fn create_receipt(&self, content_hash: Hash) -> Result<Receipt> {
-        let state = self.state.read().await;
-
-        let verdict = if state.violation_count == 0 {
-            Verdict::pass()
-        } else {
-            Verdict::fail()
-        };
-
-        let provenance = Provenance {
-            clawdstrike_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-            provider: None,
-            policy_hash: Some(self.policy_hash()?),
-            ruleset: Some(self.policy.name.clone()),
-            violations: state.violations.clone(),
-        };
-
-        let mut receipt = Receipt::new(content_hash, verdict).with_provenance(provenance);
-
-        if let Some(path) = state.last_evaluation_path.as_ref() {
-            let observed_paths = state.evaluation_path_counts.clone();
-            receipt = receipt.merge_metadata(serde_json::json!({
-                "clawdstrike": {
-                    "evaluation": {
-                        "last_path": path.path_string(),
-                        "last": path,
-                        "observed_paths": observed_paths,
-                    }
-                }
-            }));
-        }
-
-        if !self.extra_guards.is_empty() {
-            let extra_guards: Vec<&str> = self.extra_guards.iter().map(|g| g.name()).collect();
-            receipt = receipt.merge_metadata(serde_json::json!({
-                "clawdstrike": {
-                    "extra_guards": extra_guards,
-                }
-            }));
-        }
-
-        Ok(receipt)
-    }
-
-    /// Create a receipt enriched with the origin/enclave metadata from a guard report.
-    pub async fn create_receipt_for_report(
-        &self,
-        content_hash: Hash,
-        report: &GuardReport,
-    ) -> Result<Receipt> {
-        let receipt = self.create_receipt(content_hash).await?;
-        Ok(merge_report_metadata_into_receipt(
-            receipt,
-            report.metadata.as_ref(),
-        ))
-    }
-
-    /// Create and sign a receipt
-    pub async fn create_signed_receipt(&self, content_hash: Hash) -> Result<SignedReceipt> {
-        let keypair = self
-            .keypair
-            .as_ref()
-            .ok_or_else(|| Error::ConfigError("No signing keypair configured".into()))?;
-
-        let receipt = self.create_receipt(content_hash).await?;
-        SignedReceipt::sign(receipt, keypair).map_err(Error::from)
-    }
-
-    /// Create and sign a receipt enriched with per-report origin metadata.
-    pub async fn create_signed_receipt_for_report(
-        &self,
-        content_hash: Hash,
-        report: &GuardReport,
-    ) -> Result<SignedReceipt> {
-        let keypair = self
-            .keypair
-            .as_ref()
-            .ok_or_else(|| Error::ConfigError("No signing keypair configured".into()))?;
-
-        let receipt = self.create_receipt_for_report(content_hash, report).await?;
-        SignedReceipt::sign(receipt, keypair).map_err(Error::from)
-    }
-
-    /// Get session statistics
-    pub async fn stats(&self) -> EngineStats {
-        let state = self.state.read().await;
-        EngineStats {
-            action_count: state.action_count,
-            violation_count: state.violation_count,
-        }
-    }
-
-    /// Reset session state
-    pub async fn reset(&self) {
-        let mut state = self.state.write().await;
-        *state = EngineState::default();
-        info!("Engine state reset");
-    }
-}
-
-pub struct HushEngineBuilder {
-    policy: Policy,
-    custom_guard_registry: Option<CustomGuardRegistry>,
-    keypair: Option<Keypair>,
-}
-
-impl HushEngineBuilder {
-    pub fn with_custom_guard_registry(mut self, registry: CustomGuardRegistry) -> Self {
-        self.custom_guard_registry = Some(registry);
-        self
-    }
-
-    pub fn with_keypair(mut self, keypair: Keypair) -> Self {
-        self.keypair = Some(keypair);
-        self
-    }
-
-    pub fn with_generated_keypair(mut self) -> Self {
-        self.keypair = Some(Keypair::generate());
-        self
-    }
-
-    pub fn build(self) -> Result<HushEngine> {
-        let guards = self.policy.create_guards();
-        let async_runtime = Arc::new(AsyncGuardRuntime::new());
-        let (async_guards, async_guard_init_error) =
-            match crate::async_guards::registry::build_async_guards(&self.policy) {
-                Ok(v) => (v, None),
-                Err(e) => (Vec::new(), Some(e.to_string())),
-            };
-        let custom_guards =
-            build_custom_guards_from_policy(&self.policy, self.custom_guard_registry.as_ref())?;
-        let posture_program = self
-            .policy
-            .posture
-            .as_ref()
-            .map(PostureProgram::from_config)
-            .transpose()
-            .map_err(Error::ConfigError)?;
-
-        Ok(HushEngine {
-            policy: self.policy,
-            guards,
-            custom_guards,
-            extra_guards: Vec::new(),
-            keypair: self.keypair,
-            state: Arc::new(RwLock::new(EngineState::default())),
-            config_error: None,
-            async_runtime,
-            async_guards,
-            async_guard_init_error,
-            posture_program,
-        })
-    }
 }
 
 /// Simple tool name matching (supports trailing `*` wildcard).
@@ -1587,70 +1316,6 @@ fn output_send_payload<'a>(action: &'a GuardAction<'a>) -> OutputSendPayload<'a>
         );
     };
     OutputSendPayload::Valid(OutputSendValue { text })
-}
-
-fn merge_report_metadata_into_receipt(
-    mut receipt: Receipt,
-    metadata: Option<&GuardEvaluationMetadata>,
-) -> Receipt {
-    let Some(metadata) = metadata else {
-        return receipt;
-    };
-
-    if let Some(origin) = metadata.origin.as_ref() {
-        if let Ok(origin_json) = serde_json::to_value(origin) {
-            receipt = receipt.merge_metadata(serde_json::json!({
-                "clawdstrike": {
-                    "origin": origin_json,
-                }
-            }));
-        }
-    }
-
-    if let Some(enclave) = metadata.enclave.as_ref() {
-        receipt = receipt.merge_metadata(serde_json::json!({
-            "clawdstrike": {
-                "enclave": {
-                    "profile_id": enclave.profile_id,
-                    "resolution_path": enclave.resolution_path,
-                }
-            }
-        }));
-    }
-
-    receipt
-}
-
-fn build_custom_guards_from_policy(
-    policy: &Policy,
-    registry: Option<&CustomGuardRegistry>,
-) -> Result<Vec<Box<dyn Guard>>> {
-    let mut out: Vec<Box<dyn Guard>> = Vec::new();
-
-    for spec in &policy.custom_guards {
-        if !spec.enabled {
-            continue;
-        }
-
-        let Some(registry) = registry else {
-            return Err(Error::ConfigError(format!(
-                "Policy requires custom guard {} but no CustomGuardRegistry was provided",
-                spec.id
-            )));
-        };
-
-        let config = crate::placeholders::resolve_placeholders_in_json(spec.config.clone())?;
-        let guard = registry.build(&spec.id, config)?;
-        out.push(guard);
-    }
-
-    Ok(out)
-}
-
-impl Default for HushEngine {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[cfg(test)]

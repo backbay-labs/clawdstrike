@@ -10,6 +10,7 @@ pub(super) use std::time::Duration;
 pub(super) use crate::async_guards::{
     http::HttpClient, AsyncGuard, AsyncGuardConfig, AsyncGuardError,
 };
+pub(super) use crate::guards::CustomGuardRegistry;
 pub(super) use crate::policy::{AsyncExecutionMode, TimeoutBehavior};
 
 struct TestExtraGuard {
