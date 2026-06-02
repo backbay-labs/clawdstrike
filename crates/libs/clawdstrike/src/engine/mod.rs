@@ -8,7 +8,6 @@ use tracing::{debug, info, warn};
 
 use hush_core::receipt::{Provenance, Verdict, ViolationRef};
 use hush_core::{sha256, Hash, Keypair, Receipt, SignedReceipt};
-use serde::{Deserialize, Serialize};
 
 use crate::async_guards::{AsyncGuard, AsyncGuardRuntime};
 use crate::enclave::EnclaveResolver;
@@ -28,49 +27,15 @@ use crate::posture::{
     PostureTransitionRecord, RuntimeTransitionTrigger,
 };
 
-/// Per-guard evidence + an aggregated verdict.
-#[must_use]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GuardReport {
-    pub overall: GuardResult,
-    pub per_guard: Vec<GuardResult>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub evaluation_path: Option<EvaluationPath>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<GuardEvaluationMetadata>,
-}
+mod aggregate;
+mod bridge;
+mod types;
 
-#[must_use]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GuardEvaluationMetadata {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub origin: Option<OriginContext>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enclave: Option<GuardResolvedEnclave>,
-}
-
-#[must_use]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GuardResolvedEnclave {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub profile_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub resolution_path: Vec<String>,
-}
-
-/// Guard report plus posture runtime updates.
-#[must_use]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PostureAwareReport {
-    pub guard_report: GuardReport,
-    pub posture_before: String,
-    pub posture_after: String,
-    pub budgets_before: HashMap<String, PostureBudgetCounter>,
-    pub budgets_after: HashMap<String, PostureBudgetCounter>,
-    pub budget_deltas: HashMap<String, i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transition: Option<PostureTransitionRecord>,
-}
+pub(crate) use aggregate::aggregate_overall;
+use bridge::{check_bridge_policy, format_origin_brief, BridgeCheckResult};
+pub use types::{
+    EngineStats, GuardEvaluationMetadata, GuardReport, GuardResolvedEnclave, PostureAwareReport,
+};
 
 #[derive(Clone, Debug)]
 struct PosturePrecheck {
@@ -1685,111 +1650,6 @@ fn build_custom_guards_from_policy(
 impl Default for HushEngine {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Session statistics
-#[derive(Clone, Debug)]
-pub struct EngineStats {
-    pub action_count: u64,
-    pub violation_count: u64,
-}
-
-fn severity_to_core(s: &Severity) -> crate::core::CoreSeverity {
-    match s {
-        Severity::Info => crate::core::CoreSeverity::Info,
-        Severity::Warning => crate::core::CoreSeverity::Warning,
-        Severity::Error => crate::core::CoreSeverity::Error,
-        Severity::Critical => crate::core::CoreSeverity::Critical,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Cross-Origin Bridge Helpers (Phase 1b)
-// ---------------------------------------------------------------------------
-
-/// Result of checking a bridge policy for a cross-origin transition.
-enum BridgeCheckResult {
-    /// The transition is allowed.
-    Allow,
-    /// The transition requires approval (denied with Warning severity).
-    RequireApproval,
-    /// The transition is denied with the given reason.
-    Deny(String),
-}
-
-/// Check the bridge policy on the **session's** enclave (source) to determine
-/// whether bridging to the given target origin is allowed.
-fn check_bridge_policy(
-    source_enclave: &crate::enclave::ResolvedEnclave,
-    target_origin: &OriginContext,
-) -> BridgeCheckResult {
-    let Some(ref bridge) = source_enclave.bridge_policy else {
-        return BridgeCheckResult::Deny("no bridge policy configured".to_string());
-    };
-
-    if !bridge.allow_cross_origin {
-        return BridgeCheckResult::Deny("cross-origin transitions disabled".to_string());
-    }
-
-    // Check if target matches any allowed target.
-    // An empty allowed_targets list means "all targets are allowed".
-    let target_matches = bridge.allowed_targets.is_empty()
-        || bridge.allowed_targets.iter().any(|t| {
-            // Use to_string() comparison to match EnclaveResolver behavior
-            // and avoid Custom("slack") != Slack inconsistency.
-            let provider_ok = t
-                .provider
-                .as_ref()
-                .is_none_or(|p| p.to_string() == target_origin.provider.to_string());
-            let space_type_ok = t.space_type.as_ref().is_none_or(|st| {
-                target_origin
-                    .space_type
-                    .as_ref()
-                    .is_some_and(|tst| tst.to_string() == st.to_string())
-            });
-            let tags_ok =
-                t.tags.is_empty() || t.tags.iter().all(|tag| target_origin.tags.contains(tag));
-            let visibility_ok = t.visibility.as_ref().is_none_or(|v| {
-                target_origin
-                    .visibility
-                    .as_ref()
-                    .is_some_and(|tv| tv.to_string() == v.to_string())
-            });
-            provider_ok && space_type_ok && tags_ok && visibility_ok
-        });
-
-    if !target_matches {
-        return BridgeCheckResult::Deny(
-            "target origin does not match any allowed bridge target".to_string(),
-        );
-    }
-
-    if bridge.require_approval {
-        return BridgeCheckResult::RequireApproval;
-    }
-
-    BridgeCheckResult::Allow
-}
-
-/// Format an origin context briefly for error messages.
-fn format_origin_brief(origin: &OriginContext) -> String {
-    let mut parts = vec![format!("provider={}", origin.provider)];
-    if let Some(ref id) = origin.space_id {
-        parts.push(format!("space_id={}", id));
-    }
-    parts.join(",")
-}
-
-fn aggregate_overall(results: &[GuardResult]) -> GuardResult {
-    let tuples: Vec<(bool, crate::core::CoreSeverity, bool)> = results
-        .iter()
-        .map(|r| (r.allowed, severity_to_core(&r.severity), r.is_sanitized()))
-        .collect();
-
-    match crate::core::aggregate::aggregate_index(&tuples) {
-        Some(idx) => results[idx].clone(),
-        None => GuardResult::allow("engine"),
     }
 }
 
