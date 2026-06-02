@@ -27,6 +27,7 @@ use crate::posture::{
 
 mod aggregate;
 mod bridge;
+mod check_api;
 mod construct;
 mod receipts;
 mod types;
@@ -74,12 +75,12 @@ impl PosturePrecheck {
     }
 }
 
-struct PreparedContext {
-    context: GuardContext,
-    metadata: Option<GuardEvaluationMetadata>,
+pub(crate) struct PreparedContext {
+    pub(crate) context: GuardContext,
+    pub(crate) metadata: Option<GuardEvaluationMetadata>,
 }
 
-enum PreparedEvaluation {
+pub(crate) enum PreparedEvaluation {
     Continue(Box<PreparedContext>),
     Complete(Box<GuardReport>),
 }
@@ -149,95 +150,8 @@ impl HushEngine {
         self.keypair.as_ref()
     }
 
-    /// Check a file access action
-    pub async fn check_file_access(
-        &self,
-        path: &str,
-        context: &GuardContext,
-    ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::FileAccess(path), context)
-            .await
-    }
-
-    /// Check a file write action
-    pub async fn check_file_write(
-        &self,
-        path: &str,
-        content: &[u8],
-        context: &GuardContext,
-    ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::FileWrite(path, content), context)
-            .await
-    }
-
-    /// Check a network egress action
-    pub async fn check_egress(
-        &self,
-        host: &str,
-        port: u16,
-        context: &GuardContext,
-    ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::NetworkEgress(host, port), context)
-            .await
-    }
-
-    /// Check a shell command action
-    pub async fn check_shell(&self, command: &str, context: &GuardContext) -> Result<GuardResult> {
-        self.check_action(&GuardAction::ShellCommand(command), context)
-            .await
-    }
-
-    /// Check an MCP tool invocation
-    pub async fn check_mcp_tool(
-        &self,
-        tool: &str,
-        args: &serde_json::Value,
-        context: &GuardContext,
-    ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::McpTool(tool, args), context)
-            .await
-    }
-
-    /// Check untrusted text (e.g. fetched web content) for prompt-injection signals.
-    ///
-    /// This uses `GuardAction::Custom("untrusted_text", ...)` and is evaluated by `PromptInjectionGuard`.
-    pub async fn check_untrusted_text(
-        &self,
-        source: Option<&str>,
-        text: &str,
-        context: &GuardContext,
-    ) -> Result<GuardResult> {
-        let payload = match source {
-            Some(source) => serde_json::json!({ "source": source, "text": text }),
-            None => serde_json::json!({ "text": text }),
-        };
-
-        self.check_action(&GuardAction::Custom("untrusted_text", &payload), context)
-            .await
-    }
-
-    /// Check a patch action
-    pub async fn check_patch(
-        &self,
-        path: &str,
-        diff: &str,
-        context: &GuardContext,
-    ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::Patch(path, diff), context)
-            .await
-    }
-
-    /// Check any action against all applicable guards
-    pub async fn check_action(
-        &self,
-        action: &GuardAction<'_>,
-        context: &GuardContext,
-    ) -> Result<GuardResult> {
-        Ok(self.check_action_report(action, context).await?.overall)
-    }
-
     /// Record a one-result evaluation and return a single-guard report.
-    async fn single_result_report(
+    pub(crate) async fn single_result_report(
         &self,
         result: GuardResult,
         metadata: Option<GuardEvaluationMetadata>,
@@ -262,7 +176,7 @@ impl HushEngine {
         }
     }
 
-    fn build_report_metadata(
+    pub(crate) fn build_report_metadata(
         origin: Option<&OriginContext>,
         enclave: Option<&crate::enclave::ResolvedEnclave>,
     ) -> Option<GuardEvaluationMetadata> {
@@ -277,32 +191,13 @@ impl HushEngine {
         Some(GuardEvaluationMetadata { origin, enclave })
     }
 
-    fn report_metadata_for_context(context: &GuardContext) -> Option<GuardEvaluationMetadata> {
+    pub(crate) fn report_metadata_for_context(
+        context: &GuardContext,
+    ) -> Option<GuardEvaluationMetadata> {
         Self::build_report_metadata(context.origin.as_ref(), context.enclave.as_ref())
     }
 
-    /// Check any action and return per-guard evidence plus the aggregated verdict.
-    pub async fn check_action_report(
-        &self,
-        action: &GuardAction<'_>,
-        context: &GuardContext,
-    ) -> Result<GuardReport> {
-        if let Some(msg) = self.config_error.as_ref() {
-            return Err(Error::ConfigError(msg.clone()));
-        }
-        if let Some(msg) = self.async_guard_init_error.as_ref() {
-            return Err(Error::ConfigError(msg.clone()));
-        }
-        let prepared = match self.prepare_origin_context(context, None).await? {
-            PreparedEvaluation::Continue(prepared) => *prepared,
-            PreparedEvaluation::Complete(report) => return Ok(*report),
-        };
-
-        self.check_action_report_prepared(action, prepared, None)
-            .await
-    }
-
-    async fn prepare_origin_context(
+    pub(crate) async fn prepare_origin_context(
         &self,
         context: &GuardContext,
         origin_state: Option<&mut Option<OriginRuntimeState>>,
@@ -470,7 +365,7 @@ impl HushEngine {
         })))
     }
 
-    async fn check_action_report_prepared(
+    pub(crate) async fn check_action_report_prepared(
         &self,
         action: &GuardAction<'_>,
         prepared: PreparedContext,
