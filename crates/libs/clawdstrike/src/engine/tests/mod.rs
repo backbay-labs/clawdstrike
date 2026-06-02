@@ -11,7 +11,8 @@ pub(super) use crate::async_guards::{
     http::HttpClient, AsyncGuard, AsyncGuardConfig, AsyncGuardError,
 };
 pub(super) use crate::error::Error;
-pub(super) use crate::guards::CustomGuardRegistry;
+pub(super) use crate::guards::{CustomGuardRegistry, GuardAction, GuardResult, Severity};
+pub(super) use crate::origin_runtime::OriginRuntimeState;
 pub(super) use crate::policy::{AsyncExecutionMode, TimeoutBehavior};
 pub(super) use crate::posture::{PostureRuntimeState, PostureTransitionRecord};
 
