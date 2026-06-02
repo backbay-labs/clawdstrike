@@ -97,17 +97,14 @@ the coupled pairs, with the formally-verified engine last.
 | 4 | `edr/receipt/mod.rs` | ☑ done (verified) | `edfc3d464..fe1b9d692` |
 | 5 | `policy.rs` | ☑ done (verified) | `b31020693..6a51b4dc0` |
 | 6 | `engine.rs` | ☑ done (verified) | `5adfd170d..d5587014d` |
-| 7 | `response_actions.rs` | ☐ pending | — |
+| 7 | `response_actions.rs` | ☑ done (verified) | `dddc1a0f3..9c26a4c20` |
 | 8 | `policies.rs` | ☐ pending | — |
 
-**Steps 1–6 are complete and verified; step 7 has landed its tests extraction
-(the response_actions impl split is in progress); step 8 is not started.** The steps
+**Steps 1–7 are complete and verified; step 8 is not started.** The steps
 land **incrementally**: each step is an independent, behavior-preserving relocation
 gated and committed on its own, so a PR may carry a contiguous prefix of the table
 rather than all eight at once. Step 6 (`engine.rs`) additionally passes the
-`formal-diff-tests` gate after every cut. Remaining follow-on: finish the
-`response_actions/` impl modules (dto/handlers/access/create/ack/publish/delivery/
-execute/fetch per the tree below) and then step 8 (`policies.rs`).
+`formal-diff-tests` gate after every cut. Remaining follow-on: step 8 (`policies.rs`).
 
 Per-file gate (must hold before marking a step done and committing):
 `cargo fmt --all -- --check` + `cargo build -p <crate>` + `cargo test -p <crate>` +
