@@ -26,6 +26,12 @@ const POLICY_PROPOSAL_SIMULATION_RECEIPT_FAMILY: &str = "simulation";
 const POLICY_PROPOSAL_SIMULATION_RULE_ID: &str = "endpoint.policy_event_impact";
 const POLICY_PROPOSAL_SIMULATION_PROCESS_NODE_ID: &str = "policy_event_stream";
 
+mod guard;
+mod yaml_diff;
+
+pub(crate) use guard::*;
+pub(crate) use yaml_diff::*;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/policies/deploy", post(deploy_policy))
@@ -2137,54 +2143,6 @@ impl PolicyProposalRow {
     }
 }
 
-fn ensure_policy_author(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
-    Ok(())
-}
-
-fn ensure_policy_deployer(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
-    if auth.role == "admin" || auth.role == "owner" {
-        return Ok(());
-    }
-    Err(ApiError::Forbidden)
-}
-
-fn require_direct_policy_deploy_break_glass(req: &DeployPolicyRequest) -> Result<&str, ApiError> {
-    if !req.break_glass {
-        return Err(ApiError::Conflict(
-            "direct policy deployment bypasses proposal simulation receipts; use /api/v1/policies/proposals or set break_glass=true with break_glass_reason for emergency recovery"
-                .to_string(),
-        ));
-    }
-    req.break_glass_reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|reason| !reason.is_empty())
-        .ok_or_else(|| {
-            ApiError::BadRequest(
-                "break_glass_reason is required for direct policy deployment".to_string(),
-            )
-        })
-}
-
-fn append_policy_proposal_approval_note(
-    existing: &serde_json::Value,
-    actor_id: &str,
-    note: Option<&str>,
-) -> serde_json::Value {
-    let mut notes = existing.as_object().cloned().unwrap_or_default();
-    notes.insert(
-        actor_id.to_string(),
-        serde_json::json!({
-            "note": note,
-            "recordedAt": Utc::now().to_rfc3339(),
-        }),
-    );
-    serde_json::Value::Object(notes)
-}
-
 struct VerifiedPolicyProposalSimulationReceipt {
     signed_receipt: serde_json::Value,
     signed_receipt_sha256: String,
@@ -2701,34 +2659,6 @@ fn endpoint_decision_evidence_value_hashes(
     Ok(hashes)
 }
 
-fn require_non_empty_policy_impact_field(field: &str, value: String) -> Result<String, ApiError> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(ApiError::BadRequest(format!("{field} must not be empty")));
-    }
-    Ok(trimmed.to_string())
-}
-
-fn validate_non_negative_policy_impact_count(field: &str, value: i64) -> Result<(), ApiError> {
-    if value < 0 {
-        return Err(ApiError::BadRequest(format!(
-            "{field} must be greater than or equal to 0"
-        )));
-    }
-    Ok(())
-}
-
-fn normalize_policy_impact_sha256(field: &str, value: &str) -> Result<String, ApiError> {
-    let trimmed = value.trim();
-    let digest = trimmed.strip_prefix("0x").unwrap_or(trimmed);
-    if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        return Err(ApiError::BadRequest(format!(
-            "{field} must be a SHA-256 hex digest"
-        )));
-    }
-    Ok(digest.to_ascii_lowercase())
-}
-
 async fn build_policy_proposal_preview(
     db: &PgPool,
     tenant_id: Uuid,
@@ -3223,71 +3153,6 @@ fn top_policy_proposal_history_counts(
         .collect()
 }
 
-fn top_level_policy_change_summary(
-    base_value: Option<&serde_yaml::Value>,
-    proposed_value: &serde_yaml::Value,
-) -> serde_json::Value {
-    let base_keys = yaml_mapping_keys(base_value);
-    let proposed_keys = yaml_mapping_keys(Some(proposed_value));
-
-    let added = sorted_difference(&proposed_keys, &base_keys);
-    let removed = sorted_difference(&base_keys, &proposed_keys);
-    let common = base_keys
-        .intersection(&proposed_keys)
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let changed = common
-        .into_iter()
-        .filter(|key| {
-            yaml_mapping_value(base_value, key) != yaml_mapping_value(Some(proposed_value), key)
-        })
-        .collect::<Vec<_>>();
-    let unchanged_count = proposed_keys
-        .iter()
-        .filter(|key| {
-            base_keys.contains(*key)
-                && yaml_mapping_value(base_value, key)
-                    == yaml_mapping_value(Some(proposed_value), key)
-        })
-        .count();
-
-    serde_json::json!({
-        "added": added,
-        "removed": removed,
-        "changed": changed,
-        "unchangedCount": unchanged_count,
-    })
-}
-
-fn yaml_mapping_keys(value: Option<&serde_yaml::Value>) -> BTreeSet<String> {
-    let Some(serde_yaml::Value::Mapping(map)) = value else {
-        return BTreeSet::new();
-    };
-    map.keys().map(yaml_key_label).collect()
-}
-
-fn yaml_mapping_value<'a>(
-    value: Option<&'a serde_yaml::Value>,
-    key_label: &str,
-) -> Option<&'a serde_yaml::Value> {
-    let Some(serde_yaml::Value::Mapping(map)) = value else {
-        return None;
-    };
-    map.iter()
-        .find(|(key, _)| yaml_key_label(key) == key_label)
-        .map(|(_, value)| value)
-}
-
-fn yaml_key_label(key: &serde_yaml::Value) -> String {
-    key.as_str()
-        .map(str::to_string)
-        .unwrap_or_else(|| serde_yaml::to_string(key).unwrap_or_else(|_| format!("{key:?}")))
-}
-
-fn sorted_difference(left: &BTreeSet<String>, right: &BTreeSet<String>) -> Vec<String> {
-    left.difference(right).cloned().collect()
-}
-
 impl From<policy_distribution::EffectiveAgentPolicy> for PreviewEffectivePolicyResponse {
     fn from(policy: policy_distribution::EffectiveAgentPolicy) -> Self {
         Self {
@@ -3319,16 +3184,6 @@ impl From<policy_distribution::EffectivePolicyAttachment> for PreviewPolicyAttac
             checksum_sha256: attachment.checksum_sha256,
         }
     }
-}
-
-fn policy_preview_error(err: String) -> ApiError {
-    if err.contains("invalid policy YAML") || err.contains("policy YAML root must be a mapping") {
-        return ApiError::BadRequest(err);
-    }
-    if err.contains("unresolved policy_ref") {
-        return ApiError::Conflict(err);
-    }
-    ApiError::Internal(err)
 }
 
 #[cfg(test)]
