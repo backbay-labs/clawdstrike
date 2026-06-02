@@ -35,45 +35,76 @@ mod preview_builder;
 mod proposals;
 mod yaml_diff;
 
-pub(crate) use deploy::*;
-pub(crate) use dto::*;
-pub(crate) use fleet_rule_diff::*;
-pub(crate) use guard::*;
-pub(crate) use impact_validation::*;
-pub(crate) use preview_builder::*;
-pub(crate) use proposals::*;
-pub(crate) use yaml_diff::*;
+// Narrow named re-exports so sibling modules can share these items via the
+// `crate::routes::policies` scope without glob re-exports. Visibility is kept
+// module-private (`pub(in crate::routes::policies)`); the only externally
+// consumed item is `router()`.
+pub(in crate::routes::policies) use deploy::{
+    distribute_prepared_policy_to_fleet, prepare_active_policy_deployment,
+};
+pub(in crate::routes::policies) use dto::{
+    ApprovePolicyProposalResponse, AttachPolicyProposalImpactRequest,
+    CollectPolicyProposalFleetRuleDiffRequest, CollectPolicyProposalFleetRuleDiffResponse,
+    CreatePolicyProposalRequest, CreatePolicyProposalResponse, DeployPolicyRequest,
+    DeployPolicyResponse, DispatchPolicyProposalFleetRuleDiffRequest,
+    DispatchPolicyProposalFleetRuleDiffResponse, PolicyProposalResponse,
+    PolicyProposalSimulationReceiptAttachment, PreviewEffectivePolicyResponse,
+    PreviewPolicyRequest, PreviewPolicyResponse, ReviewPolicyProposalRequest,
+};
+pub(in crate::routes::policies) use fleet_rule_diff::{
+    latest_policy_rule_diff_receipts_by_endpoint, CollectedPolicyRuleDiffReceipt,
+};
+pub(in crate::routes::policies) use guard::{
+    append_policy_proposal_approval_note, ensure_policy_author, ensure_policy_deployer,
+    normalize_policy_impact_sha256, policy_preview_error, require_direct_policy_deploy_break_glass,
+    require_non_empty_policy_impact_field, validate_non_negative_policy_impact_count,
+};
+pub(in crate::routes::policies) use impact_validation::{
+    ensure_policy_proposal_deployable_impact, validate_policy_proposal_impact,
+    validate_policy_proposal_simulation_receipt_value, VerifiedPolicyProposalSimulationReceipt,
+};
+pub(in crate::routes::policies) use preview_builder::{
+    active_policy_candidate_from_base, build_policy_proposal_preview,
+};
+pub(in crate::routes::policies) use proposals::{
+    fetch_policy_proposal_row, fetch_policy_proposal_row_for_update, policy_proposal_from_row,
+    proposal_response_from_row, PolicyProposalRow,
+};
+pub(in crate::routes::policies) use yaml_diff::top_level_policy_change_summary;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/policies/deploy", post(deploy_policy))
-        .route("/policies/preview", post(preview_policy))
+        .route("/policies/deploy", post(deploy::deploy_policy))
+        .route("/policies/preview", post(deploy::preview_policy))
         .route(
             "/policies/proposals",
-            get(list_policy_proposals).post(create_policy_proposal),
+            get(proposals::list_policy_proposals).post(proposals::create_policy_proposal),
         )
-        .route("/policies/proposals/{id}", get(get_policy_proposal))
+        .route(
+            "/policies/proposals/{id}",
+            get(proposals::get_policy_proposal),
+        )
         .route(
             "/policies/proposals/{id}/approve-deploy",
-            post(approve_policy_proposal),
+            post(proposals::approve_policy_proposal),
         )
         .route(
             "/policies/proposals/{id}/impact",
-            post(attach_policy_proposal_impact),
+            post(impact_validation::attach_policy_proposal_impact),
         )
         .route(
             "/policies/proposals/{id}/fleet-rule-diff/dispatch",
-            post(dispatch_policy_proposal_fleet_rule_diff_validation),
+            post(fleet_rule_diff::dispatch_policy_proposal_fleet_rule_diff_validation),
         )
         .route(
             "/policies/proposals/{id}/fleet-rule-diff/collect",
-            post(collect_policy_proposal_fleet_rule_diff_validation),
+            post(fleet_rule_diff::collect_policy_proposal_fleet_rule_diff_validation),
         )
         .route(
             "/policies/proposals/{id}/reject",
-            post(reject_policy_proposal),
+            post(proposals::reject_policy_proposal),
         )
-        .route("/policies/active", get(get_active_policy))
+        .route("/policies/active", get(deploy::get_active_policy))
 }
 
 #[cfg(test)]
