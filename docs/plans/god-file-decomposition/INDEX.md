@@ -98,13 +98,21 @@ the coupled pairs, with the formally-verified engine last.
 | 5 | `policy.rs` | ☑ done (verified) | `b31020693..6a51b4dc0` |
 | 6 | `engine.rs` | ☑ done (verified) | `5adfd170d..d5587014d` |
 | 7 | `response_actions.rs` | ☑ done (verified) | `dddc1a0f3..9c26a4c20` |
-| 8 | `policies.rs` | ☐ pending | — |
+| 8 | `policies.rs` | ☑ done (verified) | `a3b2acfb2..8fac9a43c` |
 
-**Steps 1–7 are complete and verified; step 8 is not started.** The steps
+**All eight steps are complete and verified.** The steps
 land **incrementally**: each step is an independent, behavior-preserving relocation
 gated and committed on its own, so a PR may carry a contiguous prefix of the table
 rather than all eight at once. Step 6 (`engine.rs`) additionally passes the
-`formal-diff-tests` gate after every cut. Remaining follow-on: step 8 (`policies.rs`).
+`formal-diff-tests` gate after every cut.
+
+> **Note (step 8 tests):** the plan proposed co-locating each test cluster inside its
+> owning child module. The landed refactor instead keeps the original `#[cfg(test)] mod
+> tests` block intact in `policies/mod.rs` (a single sibling test module, `use super::*`),
+> with the tested private items widened to `pub(crate)` and re-exported via the module-root
+> globs — the same pattern used in steps 5–7. Tests are byte-for-byte unchanged.
+> `fleet_rule_diff` and `impact_validation` each landed as a sub-directory
+> (`mod` + `helpers`/`receipts`, and `mod` + `simulation_receipt`) to keep every file ≤600.
 
 Per-file gate (must hold before marking a step done and committing):
 `cargo fmt --all -- --check` + `cargo build -p <crate>` + `cargo test -p <crate>` +
