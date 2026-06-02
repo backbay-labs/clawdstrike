@@ -228,7 +228,7 @@ fn resolve_request_origin_enclave(
     request
         .origin
         .as_ref()
-        .and_then(|origin| policy.origins.as_ref().map(|origins| (origin, origins)))
+        .zip(policy.origins.as_ref())
         .and_then(|(origin, origins)| EnclaveResolver::resolve(origin, origins).ok())
 }
 
