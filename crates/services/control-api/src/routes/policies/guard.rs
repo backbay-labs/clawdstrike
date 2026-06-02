@@ -95,3 +95,53 @@ pub(crate) fn policy_preview_error(err: String) -> ApiError {
     }
     ApiError::Internal(err)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn direct_deploy_request(break_glass: bool, reason: Option<&str>) -> DeployPolicyRequest {
+        DeployPolicyRequest {
+            policy_yaml: "version: \"1.0.0\"\nrules: []\n".to_string(),
+            description: None,
+            break_glass,
+            break_glass_reason: reason.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_requires_break_glass_flag() {
+        let req = direct_deploy_request(false, Some("emergency recovery"));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Err(ApiError::Conflict(message)) => {
+                assert!(message.contains("proposal simulation receipts"));
+            }
+            Ok(_) => panic!("direct deploy without break_glass unexpectedly succeeded"),
+            Err(err) => panic!("unexpected direct deploy error: {err}"),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_requires_break_glass_reason() {
+        let req = direct_deploy_request(true, Some("   "));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Err(ApiError::BadRequest(message)) => {
+                assert!(message.contains("break_glass_reason"));
+            }
+            Ok(_) => panic!("direct deploy without reason unexpectedly succeeded"),
+            Err(err) => panic!("unexpected direct deploy error: {err}"),
+        }
+    }
+
+    #[test]
+    fn direct_policy_deploy_accepts_explicit_break_glass_reason() {
+        let req = direct_deploy_request(true, Some("  emergency recovery  "));
+
+        match require_direct_policy_deploy_break_glass(&req) {
+            Ok(reason) => assert_eq!(reason, "emergency recovery"),
+            Err(err) => panic!("direct deploy break-glass rejected valid reason: {err}"),
+        }
+    }
+}

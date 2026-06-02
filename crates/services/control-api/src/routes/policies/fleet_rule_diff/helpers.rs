@@ -247,3 +247,104 @@ pub(crate) fn latest_policy_rule_diff_receipts_by_endpoint(
     });
     receipts
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fleet_rule_diff_dispatch_reservation_marks_intent_before_publish() {
+        let preview = serde_json::json!({
+            "fleetRuleDiffValidation": {
+                "status": "ready_for_endpoint_receipt_collection",
+                "planSha256": "abc123"
+            }
+        });
+        let reserved = reserve_policy_rule_diff_dispatch(
+            preview,
+            Some("abc123"),
+            &[
+                serde_json::json!({ "endpointAgentId": "endpoint-a" }),
+                serde_json::json!({ "endpointAgentId": "endpoint-b" }),
+            ],
+        )
+        .expect("dispatch reservation");
+
+        assert_eq!(reserved["fleetRuleDiffValidation"]["status"], "dispatching");
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["validationPlanSha256"],
+            "abc123"
+        );
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["requestedEndpointCount"],
+            2
+        );
+        assert_eq!(
+            reserved["fleetRuleDiffValidation"]["dispatchReservation"]["requestedEndpointIds"],
+            serde_json::json!(["endpoint-a", "endpoint-b"])
+        );
+    }
+
+    #[test]
+    fn fleet_rule_diff_default_collection_keeps_latest_dispatch_per_endpoint() {
+        let old_endpoint_a = Uuid::from_u128(1);
+        let endpoint_b = Uuid::from_u128(2);
+        let latest_endpoint_a = Uuid::from_u128(3);
+        let preview = serde_json::json!({
+            "fleetRuleDiffValidation": {
+                "dispatches": [
+                    {
+                        "endpointAgentId": "endpoint-a",
+                        "responseActionId": old_endpoint_a
+                    },
+                    {
+                        "endpointAgentId": "endpoint-b",
+                        "responseActionId": endpoint_b
+                    },
+                    {
+                        "endpointAgentId": "endpoint-a",
+                        "responseActionId": latest_endpoint_a
+                    }
+                ]
+            }
+        });
+
+        let ids = policy_rule_diff_dispatch_response_action_ids(&preview)
+            .expect("dispatch response action ids");
+
+        assert_eq!(ids, vec![latest_endpoint_a, endpoint_b]);
+    }
+
+    #[test]
+    fn fleet_rule_diff_collection_aggregates_latest_receipt_per_endpoint() {
+        let observed = |seconds| {
+            DateTime::parse_from_rfc3339(&format!("2026-05-20T00:00:{seconds:02}Z"))
+                .expect("timestamp")
+                .with_timezone(&Utc)
+        };
+        let receipt_for =
+            |response_action_id: Uuid, endpoint_agent_id: &str, observed_at: DateTime<Utc>| {
+                CollectedPolicyRuleDiffReceipt {
+                    response_action_id,
+                    endpoint_agent_id: endpoint_agent_id.to_string(),
+                    observed_at,
+                    impact: serde_json::json!({}),
+                    receipt: serde_json::json!({}),
+                    public_key: "public-key".to_string(),
+                }
+            };
+
+        let endpoint_a_old = Uuid::from_u128(10);
+        let endpoint_a_latest = Uuid::from_u128(11);
+        let endpoint_b = Uuid::from_u128(12);
+        let receipts = latest_policy_rule_diff_receipts_by_endpoint(vec![
+            receipt_for(endpoint_a_old, "endpoint-a", observed(1)),
+            receipt_for(endpoint_b, "endpoint-b", observed(2)),
+            receipt_for(endpoint_a_latest, "endpoint-a", observed(3)),
+        ]);
+
+        assert_eq!(receipts.len(), 2);
+        assert_eq!(receipts[0].response_action_id, endpoint_b);
+        assert_eq!(receipts[1].response_action_id, endpoint_a_latest);
+    }
+}
