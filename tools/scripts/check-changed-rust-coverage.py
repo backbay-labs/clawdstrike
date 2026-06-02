@@ -274,6 +274,10 @@ HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 MISSING_LCOV_ALLOWLIST = {
     normalize("crates/libs/hush-core/src/lib.rs"),
     normalize("crates/services/hush-cli/src/tests.rs"),
+    # Pure re-export facade after the EDR god-file decomposition: only module
+    # declarations + `pub use`/`pub(crate) use` re-exports + schema-version consts,
+    # so llvm-cov emits no record for it.
+    normalize("crates/libs/clawdstrike-policy-event/src/edr/mod.rs"),
     # macOS-only collectors are cfg-gated and do not emit LCOV on Linux CI runners
     normalize("apps/agent/src-tauri/src/macos/collector.rs"),
     normalize("apps/agent/src-tauri/src/macos/mod.rs"),
