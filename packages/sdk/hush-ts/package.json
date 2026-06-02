@@ -58,14 +58,14 @@
     "@clawdstrike/wasm": "0.2.7",
     "@noble/ed25519": "^3.0.0",
     "@noble/hashes": "^2.0.1",
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.2.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.2.0",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=20.19.0"
