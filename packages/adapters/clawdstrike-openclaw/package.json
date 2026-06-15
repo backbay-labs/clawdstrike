@@ -39,13 +39,13 @@
     "chalk": "^5.3.0",
     "commander": "^15.0.0",
     "glob": "^13.0.1",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.2.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^25.2.0",
+    "@types/node": "^25.9.3",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.8"
   },
   "peerDependencies": {
     "openclaw": ">=2025.0.0"

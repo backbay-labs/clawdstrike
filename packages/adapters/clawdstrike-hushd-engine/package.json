@@ -24,9 +24,9 @@
     "@clawdstrike/adapter-core": "^0.2.7"
   },
   "devDependencies": {
-    "@types/node": "^25.2.0",
+    "@types/node": "^25.9.3",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.8"
   },
   "files": [
     "dist",

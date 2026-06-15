@@ -24,12 +24,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clack/prompts": "^1.4.0"
+    "@clack/prompts": "^1.5.1"
   },
   "devDependencies": {
     "typescript": "^6.0.3",
     "tsup": "^8.5.1",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=20.19.0"
