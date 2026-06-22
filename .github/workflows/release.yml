@@ -60,7 +60,7 @@ jobs:
     timeout-minutes: 30
     needs: resolve-version
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -136,7 +136,7 @@ jobs:
     timeout-minutes: 60
     needs: [resolve-version, preflight]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -241,7 +241,7 @@ jobs:
     timeout-minutes: 45
     needs: [resolve-version, preflight]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -452,7 +452,7 @@ jobs:
     timeout-minutes: 30
     needs: [resolve-version, preflight, publish-npm]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -525,7 +525,7 @@ jobs:
       version: ${{ steps.detect.outputs.version }}
       none_missing: ${{ steps.detect.outputs.none_missing }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -618,7 +618,7 @@ jobs:
             cibw_archs_windows: "AMD64"
             artifact: pypi-native-wheels-windows
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -737,7 +737,7 @@ jobs:
       needs.preflight.result == 'success' &&
       needs.pypi-detect.result == 'success'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -838,7 +838,7 @@ jobs:
             artifact: hush-windows-x86_64.exe
             archive: ""
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Strawberry Perl (Windows)
         if: runner.os == 'Windows'
@@ -937,7 +937,7 @@ jobs:
             os: windows-latest
             artifact: hushd-windows-x86_64.exe
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Strawberry Perl (Windows)
         if: runner.os == 'Windows'
@@ -1016,7 +1016,7 @@ jobs:
       CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256: ${{ vars.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 || secrets.CLAWDSTRIKE_SYSTEM_EXTENSION_BUNDLE_SHA256 }}
       NOTARIZE_OUT_DIR: ${{ github.workspace }}/.github-artifacts/clawdstrike-notarization
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -1187,7 +1187,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
