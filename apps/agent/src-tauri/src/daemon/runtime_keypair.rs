@@ -19,6 +19,10 @@ pub(super) fn materialize_runtime_signing_keypair(
     runtime_parent: &Path,
     daemon_port: u16,
 ) -> Result<PathBuf> {
+pub(super) fn materialize_runtime_signing_keypair(
+    runtime_parent: &Path,
+    daemon_port: u16,
+) -> Result<PathBuf> {
     let key_path = runtime_signing_keypair_path(runtime_parent, daemon_port);
     if key_path.exists() {
         return Ok(key_path);
@@ -26,14 +30,16 @@ pub(super) fn materialize_runtime_signing_keypair(
 
     let keypair = hush_core::Keypair::generate();
     let normalized = format!("{}\n", keypair.to_hex());
-    crate::security::fs::write_private_atomic(
+    match crate::security::fs::write_private_atomic(
         &key_path,
         normalized.as_bytes(),
         "runtime hushd signing keypair",
-    )?;
-    Ok(key_path)
+    ) {
+        Ok(()) => Ok(key_path),
+        Err(e) if key_path.exists() => Ok(key_path),
+        Err(e) => Err(e.into()),
+    }
 }
-
 pub(super) fn materialize_runtime_enrollment_keypair(
     runtime_parent: &Path,
     daemon_port: u16,
