@@ -6,6 +6,7 @@ use tracing::{debug, info};
 use crate::error::{Error, Result};
 
 /// Re-export generated protobuf types.
+#[allow(clippy::large_enum_variant, clippy::result_large_err)]
 pub mod proto {
     tonic::include_proto!("observer");
 }
