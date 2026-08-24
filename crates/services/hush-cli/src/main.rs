@@ -1920,7 +1920,7 @@ async fn cmd_check(
     };
 
     let lines = vec![
-        format!("{}", verdict.badge()),
+        verdict.badge().to_string(),
         format!("  Action:  {}", action_type),
         format!("  Target:  {}", target),
         format!("  Guard:   {}", result.guard),
@@ -2164,7 +2164,7 @@ fn cmd_verify(
             ui::Verdict::Fail
         };
         let mut lines = vec![
-            format!("{}", sig_verdict.badge()),
+            sig_verdict.badge().to_string(),
             format!("  Receipt:   {}", receipt),
             format!("  Timestamp: {}", summary.timestamp),
         ];
@@ -2176,7 +2176,7 @@ fn cmd_verify(
     } else {
         let verdict = ui::Verdict::Invalid;
         let lines = vec![
-            format!("{}", verdict.badge()),
+            verdict.badge().to_string(),
             format!("  Errors: {}", result.errors.join(", ")),
         ];
         ui::render_box("Verify Result", &lines, stderr);

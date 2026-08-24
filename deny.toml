@@ -37,44 +37,56 @@ unmaintained = "all"
 yanked = "warn"
 ignore = [
     # RUSTSEC-2024-0375 / `atty` unmaintained.
-    # Owner: @security-team, Expiry: 2026-06-30.
+    # Owner: @security-team, Expiry: 2026-12-31.
     # Transitively pulled via `rust-xmlsec` (SAML stack); no maintained drop-in path yet.
     "RUSTSEC-2024-0375",
     # RUSTSEC-2025-0141 / `bincode` unmaintained.
-    # Owner: @policy-runtime, Expiry: 2026-06-30.
+    # Owner: @policy-runtime, Expiry: 2026-12-31.
     # `regorus` currently depends on `bincode` 2.x; migration tracked upstream.
     "RUSTSEC-2025-0141",
     # RUSTSEC-2025-0134 / `rustls-pemfile` unmaintained.
-    # Owner: @messaging-platform, Expiry: 2026-06-30.
-    # Transitive via `async-nats`; migration to `rustls-pki-types` APIs tracked.
+    # Owner: @messaging-platform, Expiry: 2026-12-31.
+    # Transitive via `async-nats` 0.40; migration to `rustls-pki-types` APIs tracked
+    # with the async-nats 0.50 rustls-webpki upgrade.
     "RUSTSEC-2025-0134",
     # RUSTSEC-2024-0436 / `paste` unmaintained.
-    # Owner: @deps-maintainers, Expiry: 2026-06-30.
+    # Owner: @deps-maintainers, Expiry: 2026-12-31.
     # Pulled transitively through the Alloy stack; no maintained drop-in yet.
     "RUSTSEC-2024-0436",
     # RUSTSEC-2025-0119 / `number_prefix` unmaintained.
-    # Owner: @deps-maintainers, Expiry: 2026-06-30.
+    # Owner: @deps-maintainers, Expiry: 2026-12-31.
     # Transitive via indicatif 0.17 → number_prefix 0.4; no patched release yet.
     "RUSTSEC-2025-0119",
-    # RUSTSEC-2026-0049 / `rustls-webpki` CRL distribution-point matching.
-    # Owner: @messaging-platform, Expiry: 2026-08-31.
+    # RUSTSEC-2026-0173 / `proc-macro-error2` unmaintained.
+    # Owner: @deps-maintainers, Expiry: 2026-12-31.
+    # Transitive via alloy-sol-macro; wait for Alloy to drop the crate.
+    "RUSTSEC-2026-0173",
+    # RUSTSEC-2026-0049 / `rustls-webpki` 0.102.8 CRL distribution-point matching.
+    # Owner: @messaging-platform, Expiry: 2026-12-31.
     # Transitive via async-nats 0.40 → rustls-webpki 0.102.8. Limited impact
     # (requires compromised trusted issuing authority). Patched copy at
     # infra/vendor/rustls-webpki (0.103.13) reserved for future [patch.crates-io]
-    # once async-nats upgrades its rustls stack.
+    # once async-nats upgrades its rustls stack (0.50+ uses rustls-webpki ^0.103).
     "RUSTSEC-2026-0049",
     # RUSTSEC-2026-0098 / `rustls-webpki` URI name constraints.
-    # Owner: @messaging-platform, Expiry: 2026-08-31. Same transitive source/path
+    # Owner: @messaging-platform, Expiry: 2026-12-31. Same transitive source/path
     # as RUSTSEC-2026-0049.
     "RUSTSEC-2026-0098",
     # RUSTSEC-2026-0099 / `rustls-webpki` wildcard name constraints.
-    # Owner: @messaging-platform, Expiry: 2026-08-31. Same transitive source/path
+    # Owner: @messaging-platform, Expiry: 2026-12-31. Same transitive source/path
     # as RUSTSEC-2026-0049.
     "RUSTSEC-2026-0099",
     # RUSTSEC-2026-0104 / `rustls-webpki` reachable panic in CRL parsing.
-    # Owner: @messaging-platform, Expiry: 2026-08-31. Same transitive source/path
+    # Owner: @messaging-platform, Expiry: 2026-12-31. Same transitive source/path
     # as RUSTSEC-2026-0049.
     "RUSTSEC-2026-0104",
+    # RUSTSEC-2026-0222 / `wasmtime` store/engine type-index mix-up (GHSA-hgjw-h833-99q9).
+    # Owner: @policy-runtime, Expiry: 2026-12-31.
+    # Patched lines are 36.0.13+, 46.0.2+, or 47.0.3+. wasmtime 46+ requires Rust
+    # 1.94 and would raise workspace MSRV (1.93). Our plugin runtime constructs one
+    # Engine per invocation and does not mix objects across engines (the advisory
+    # precondition). Take 46.0.3+ when MSRV moves to 1.94.
+    "RUSTSEC-2026-0222",
 ]
 
 [sources]

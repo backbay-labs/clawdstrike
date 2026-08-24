@@ -666,7 +666,13 @@ jobs:
         run: cargo deny check
 
       - name: Run cargo-deny for desktop Tauri crate
-        run: cargo deny check --metadata-path desktop-tauri-metadata.json licenses sources
+        run: |
+          # cargo-deny 0.20 moved --metadata-path from `check` onto the root command.
+          if cargo deny --help 2>&1 | grep -q -- '--metadata-path'; then
+            cargo deny --metadata-path desktop-tauri-metadata.json check licenses sources
+          else
+            cargo deny check --metadata-path desktop-tauri-metadata.json licenses sources
+          fi
 
   coverage:
     name: Code Coverage

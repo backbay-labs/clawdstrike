@@ -32,7 +32,12 @@ description = "Run cargo-deny checks"
 run = """
 cargo deny check
 cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --format-version 1 --locked > /tmp/desktop-tauri-metadata.json
-cargo deny check --metadata-path /tmp/desktop-tauri-metadata.json licenses sources
+# cargo-deny 0.20 moved --metadata-path from `check` onto the root command.
+if cargo deny --help 2>&1 | grep -q -- '--metadata-path'; then
+  cargo deny --metadata-path /tmp/desktop-tauri-metadata.json check licenses sources
+else
+  cargo deny check --metadata-path /tmp/desktop-tauri-metadata.json licenses sources
+fi
 """
 
 [tasks.doc]
