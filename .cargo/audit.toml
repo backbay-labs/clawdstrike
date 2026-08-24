@@ -19,150 +19,162 @@
 [advisories]
 ignore = [
     # RUSTSEC-2024-0375 — `atty` unmaintained.
-    # Owner: @security-team, Expiry: 2026-06-30
+    # Owner: @security-team, Expiry: 2026-12-31
     # Transitively pulled via `rust-xmlsec` (SAML stack); no maintained drop-in yet.
     "RUSTSEC-2024-0375",
 
+    # RUSTSEC-2021-0145 — `atty` unsound unaligned read.
+    # Owner: @security-team, Expiry: 2026-12-31
+    # Same transitive path as RUSTSEC-2024-0375; remove once `atty` is gone.
+    "RUSTSEC-2021-0145",
+
     # RUSTSEC-2025-0141 — `bincode` unmaintained.
-    # Owner: @policy-runtime, Expiry: 2026-06-30
+    # Owner: @policy-runtime, Expiry: 2026-12-31
     # `regorus` currently depends on bincode 2.x; migration tracked upstream.
     "RUSTSEC-2025-0141",
 
-    # RUSTSEC-2024-0388 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0388 — `derivative` unmaintained.
+    # Owner: @deps-maintainers, Expiry: 2026-12-31
+    # Transitive via Alloy/EAS stack.
     "RUSTSEC-2024-0388",
 
-    # RUSTSEC-2024-0411 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0411 — `gdkwayland-sys` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0411",
 
-    # RUSTSEC-2024-0412 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0412 — `gdk` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0412",
 
-    # RUSTSEC-2024-0413 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0413 — `atk` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0413",
 
-    # RUSTSEC-2024-0414 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0414 — `gdkx11-sys` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0414",
 
-    # RUSTSEC-2024-0415 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0415 — `gtk` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0415",
 
-    # RUSTSEC-2024-0416 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0416 — `atk-sys` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0416",
 
-    # RUSTSEC-2024-0417 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0417 — `gdkx11` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0417",
 
-    # RUSTSEC-2024-0418 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0418 — `gdk-sys` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0418",
 
-    # RUSTSEC-2024-0419 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0419 — `gtk3-macros` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0419",
 
-    # RUSTSEC-2024-0420 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0420 — `gtk-sys` unmaintained (GTK3).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2024-0420",
 
-    # RUSTSEC-2024-0429 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0429 — `glib` unsound iterator impls.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
+    # Transitive via Linux Tauri/WRY GTK3 stack.
     "RUSTSEC-2024-0429",
 
     # RUSTSEC-2024-0436 — `paste` unmaintained.
-    # Owner: @deps-maintainers, Expiry: 2026-06-30
+    # Owner: @deps-maintainers, Expiry: 2026-12-31
     # Pulled transitively through the Alloy stack; no maintained drop-in yet.
     "RUSTSEC-2024-0436",
 
-    # RUSTSEC-2025-0057 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2025-0057 — `fxhash` unmaintained.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
+    # Transitive via `kuchikiki` in desktop/agent Tauri stacks.
     "RUSTSEC-2025-0057",
 
     # RUSTSEC-2025-0134 — `rustls-pemfile` unmaintained.
-    # Owner: @messaging-platform, Expiry: 2026-06-30
-    # Transitive via `async-nats`; migration to `rustls-pki-types` APIs tracked.
+    # Owner: @messaging-platform, Expiry: 2026-12-31
+    # Transitive via `async-nats` 0.40; migration tracked with rustls-webpki upgrade.
     "RUSTSEC-2025-0134",
 
-    # RUSTSEC-2024-0370 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2024-0370 — `proc-macro-error` unmaintained.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
+    # Transitive via Linux Tauri/WRY GTK3 macro stack.
     "RUSTSEC-2024-0370",
 
-    # RUSTSEC-2021-0145 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
-    "RUSTSEC-2021-0145",
-
-    # RUSTSEC-2025-0075 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2025-0075 — `unic-char-range` unmaintained.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2025-0075",
 
-    # RUSTSEC-2025-0080 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2025-0080 — `unic-common` unmaintained.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2025-0080",
 
-    # RUSTSEC-2025-0081 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2025-0081 — `unic-char-property` unmaintained.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2025-0081",
 
-    # RUSTSEC-2025-0098 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2025-0098 — `unic-ucd-version` unmaintained.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2025-0098",
 
-    # RUSTSEC-2025-0100 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2025-0100 — `unic-ucd-ident` unmaintained.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
     "RUSTSEC-2025-0100",
 
     # RUSTSEC-2025-0119 — `number_prefix` unmaintained.
-    # Owner: @deps-maintainers, Expiry: 2026-06-30
-    # Transitive via indicatif 0.17 → number_prefix 0.4; no patched release yet.
+    # Owner: @deps-maintainers, Expiry: 2026-12-31
+    # Transitive via indicatif 0.17 → number_prefix 0.4.
     "RUSTSEC-2025-0119",
 
-    # RUSTSEC-2026-0097 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2026-0173 — `proc-macro-error2` unmaintained.
+    # Owner: @deps-maintainers, Expiry: 2026-12-31
+    # Transitive via alloy-sol-macro.
+    "RUSTSEC-2026-0173",
+
+    # RUSTSEC-2026-0097 — `rand` 0.7.3 unsound with a custom logger.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
+    # Transitive via older Tauri/workbench/agent stacks; not present in workspace lock.
     "RUSTSEC-2026-0097",
 
-    # RUSTSEC-2026-0105 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
+    # RUSTSEC-2026-0105 — `core2` unmaintained (all versions yanked).
+    # Owner: @desktop-platform, Expiry: 2026-12-31
+    # Yanked-only transitive via workbench libp2p/Stronghold. CI does not deny yanked
+    # on app lockfiles; this ignore covers the unmaintained advisory.
     "RUSTSEC-2026-0105",
 
-    # RUSTSEC-2026-0118 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
-    "RUSTSEC-2026-0118",
-
-    # RUSTSEC-2026-0119 — pending triage from prior workflow ignore.
-    # Owner: TODO, Expiry: 2026-08-01
-    "RUSTSEC-2026-0119",
-
-    # RUSTSEC-2017-0008 — transitive via portable-pty -> serial in workbench PTY stack.
-    # Owner: @workbench-team (tracking: SEC-PTY-001), Expiry: 2026-08-01
-    # Mitigated by command hardening (shell/env allowlists + backend-minted
-    # capability tokens bound to trusted-window context).
+    # RUSTSEC-2017-0008 — `serial` unmaintained.
+    # Owner: @workbench-team, Expiry: 2026-12-31
+    # Transitive via portable-pty in the workbench PTY stack. Mitigated by command
+    # hardening (shell/env allowlists + backend-minted capability tokens).
     "RUSTSEC-2017-0008",
-
-    # aws-lc-rs advisories (2026-03-23). Transitive via rustls.
-    # Awaiting patched release. Owner: @deps-maintainers, Expiry: 2026-08-01
-    "RUSTSEC-2026-0044",
-    "RUSTSEC-2026-0045",
-    "RUSTSEC-2026-0046",
-    "RUSTSEC-2026-0047",
-    "RUSTSEC-2026-0048",
-    "RUSTSEC-2026-0049",
-    "RUSTSEC-2026-0067",
-    "RUSTSEC-2026-0068",
 
     # rustls-webpki 0.102.8 advisories pulled in via async-nats 0.40.
     # Limited impact (require compromised trusted issuing authority for
     # the cert-validation paths; CRL panic gated by malformed CRL input).
-    # Owner: @messaging-platform, Expiry: 2026-08-31
+    # Owner: @messaging-platform, Expiry: 2026-12-31
     # Patched copy reserved at infra/vendor/rustls-webpki (0.103.13)
     # for future [patch.crates-io] once async-nats upgrades its stack.
+    "RUSTSEC-2026-0049",
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
     "RUSTSEC-2026-0104",
+
+    # RUSTSEC-2026-0222 — `wasmtime` store/engine type-index mix-up.
+    # Owner: @policy-runtime, Expiry: 2026-12-31
+    # Patched wasmtime 46+ requires Rust 1.94; workspace MSRV is 1.93.
+    # Plugin runtime uses one Engine per call and does not mix stores.
+    "RUSTSEC-2026-0222",
+
+    # RUSTSEC-2026-0194 / RUSTSEC-2026-0195 — `quick-xml` DoS in NsReader.
+    # Owner: @desktop-platform, Expiry: 2026-12-31
+    # Patched >=0.41.0; Tauri/WRY still pin 0.37–0.39. Not in workspace lock.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+
+    # RUSTSEC-2026-0253 — `lru` 0.16.4 pop() panic-safety UAF.
+    # Owner: @deps-maintainers, Expiry: 2026-12-31
+    # Patched >=0.18.2; alloy-provider still pins 0.16.x.
+    "RUSTSEC-2026-0253",
 ]
