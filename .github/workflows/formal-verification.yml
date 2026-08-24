@@ -335,7 +335,7 @@ jobs:
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
       - name: Cache Lake packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.elan/toolchains
@@ -396,7 +396,7 @@ jobs:
           ocaml-compiler: '5.2'
 
       - name: Cache opam packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.opam
           key: ${{ runner.os }}-opam-aeneas-${{ hashFiles('.github/workflows/formal-verification.yml') }}
