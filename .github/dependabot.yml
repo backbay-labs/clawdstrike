@@ -105,6 +105,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -117,6 +128,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -129,6 +151,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -141,6 +174,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript", "examples"]
 
   - package-ecosystem: "npm"
@@ -153,6 +197,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -165,6 +220,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -177,6 +243,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -189,6 +266,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -201,6 +289,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -213,6 +312,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -225,6 +335,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -237,6 +358,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -249,6 +381,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -261,6 +404,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -273,6 +427,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -285,6 +450,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -297,6 +473,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -309,6 +496,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -321,6 +519,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   - package-ecosystem: "npm"
@@ -333,6 +542,17 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "javascript"]
 
   # Python dependencies.
