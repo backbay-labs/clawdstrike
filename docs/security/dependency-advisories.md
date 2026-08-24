@@ -11,7 +11,6 @@ Policy gates:
 | RUSTSEC-2024-0375 | `atty` (unmaintained) | Temporary exception (transitive via `rust-xmlsec`) | `@security-team` | 2026-12-31 | Upstream SAML stack migration away from `atty` |
 | RUSTSEC-2021-0145 | `atty` (unsound) | Temporary exception (same transitive path as above) | `@security-team` | 2026-12-31 | Remove once `atty` is fully eliminated |
 | RUSTSEC-2025-0141 | `bincode` (unmaintained) | Temporary exception (transitive via `regorus`) | `@policy-runtime` | 2026-12-31 | Track `regorus` migration away from `bincode` 2.x |
-| RUSTSEC-2024-0388 | `derivative` (unmaintained) | Temporary exception (transitive via Alloy/EAS stack) | `@deps-maintainers` | 2026-12-31 | Track upstream Alloy dependency updates |
 | RUSTSEC-2024-0411 | `gdkwayland-sys` (unmaintained) | Temporary exception (transitive via Linux Tauri/WRY GTK3 stack) | `@desktop-platform` | 2026-12-31 | Remove once Tauri/WRY Linux backend no longer depends on GTK3 crates |
 | RUSTSEC-2024-0412 | `gdk` (unmaintained) | Temporary exception (transitive via Linux Tauri/WRY GTK3 stack) | `@desktop-platform` | 2026-12-31 | Remove once Tauri/WRY Linux backend no longer depends on GTK3 crates |
 | RUSTSEC-2024-0413 | `atk` (unmaintained) | Temporary exception (transitive via Linux Tauri/WRY GTK3 stack) | `@desktop-platform` | 2026-12-31 | Remove once Tauri/WRY Linux backend no longer depends on GTK3 crates |

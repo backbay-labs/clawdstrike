@@ -44,10 +44,6 @@ ignore = [
     # Owner: @policy-runtime, Expiry: 2026-12-31.
     # `regorus` currently depends on `bincode` 2.x; migration tracked upstream.
     "RUSTSEC-2025-0141",
-    # RUSTSEC-2024-0388 / `derivative` unmaintained.
-    # Owner: @deps-maintainers, Expiry: 2026-12-31.
-    # Transitive via the Alloy/EAS stack; no maintained drop-in yet.
-    "RUSTSEC-2024-0388",
     # RUSTSEC-2025-0134 / `rustls-pemfile` unmaintained.
     # Owner: @messaging-platform, Expiry: 2026-12-31.
     # Transitive via `async-nats` 0.40; migration to `rustls-pki-types` APIs tracked
