@@ -10,7 +10,7 @@ name = "hush_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }
 hush-core = { workspace = true }
 clawdstrike = { workspace = true, features = ["full"] }
 clawdstrike-logos = { workspace = true }
