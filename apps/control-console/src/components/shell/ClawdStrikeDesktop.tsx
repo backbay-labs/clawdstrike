@@ -9,22 +9,51 @@ import {
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSharedSSE } from "../../context/SSEContext";
 import { useAlertRules } from "../../hooks/useAlertRules";
+import { type ConsoleStatus, useConsoleStatus } from "../../hooks/useConsoleStatus";
 import { useContextMenu } from "../../hooks/useContextMenu";
 import { useLockScreen } from "../../hooks/useLockScreen";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useSoundEffects } from "../../hooks/useSoundEffects";
-import { desktopIconGroups, PROCESS_ICONS } from "../../state/processRegistry";
+import { PROCESS_ICONS, type ProcessIcon } from "../../state/processRegistry";
+import {
+  resolveEffectiveVariant,
+  SIDEBAR_COLLAPSED_WIDTH,
+  SIDEBAR_EXPANDED_WIDTH,
+  type SidebarVariant,
+  useShellPreferences,
+} from "../../state/useShellPreferences";
+import { CanvasEmptyState } from "./CanvasEmptyState";
 import { CommandPalette } from "./CommandPalette";
 import { ContextMenu } from "./ContextMenu";
 import { DesktopWallpaper } from "./DesktopWallpaper";
-import { DesktopWidgets } from "./DesktopWidgets";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { HeaderBar } from "./HeaderBar";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { LockScreen } from "./LockScreen";
 import { NotificationCenter } from "./NotificationCenter";
 import { SSENotifier } from "./SSENotifier";
 import { SSETrayItem } from "./SSETrayItem";
-import { StartMenu } from "./StartMenu";
+import { Sidebar } from "./sidebar/Sidebar";
+
+/** Fixed widths of the standalone sidebar variants (rail icon column; two-pane = section rail + app list). */
+const RAIL_WIDTH = 64;
+const TWOPANE_WIDTH = 60 + 220;
+
+/**
+ * Pixel width of the sidebar column for a given variant + collapsed flag. Drives
+ * the shell grid track so `<main>` reflows in lockstep with the sidebar's own
+ * width morph (both share the same duration + easing, so they never diverge).
+ */
+function sidebarColumnWidth(variant: SidebarVariant, collapsed: boolean): number {
+  switch (variant) {
+    case "rail":
+      return RAIL_WIDTH;
+    case "twopane":
+      return TWOPANE_WIDTH;
+    case "expanded":
+      return collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH;
+  }
+}
 
 function LoadingFallback() {
   return (
@@ -165,104 +194,6 @@ function WindowContainer() {
   );
 }
 
-function DesktopSurface() {
-  const { processes } = useDesktopOS();
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        zIndex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        gap: 14,
-        padding: 24,
-        userSelect: "none",
-      }}
-    >
-      {desktopIconGroups.map((group) => (
-        <section key={group.id} style={{ width: "100%" }}>
-          <div
-            className="font-mono"
-            style={{
-              marginBottom: 8,
-              fontSize: 10,
-              textTransform: "uppercase",
-              letterSpacing: "0.14em",
-              color: "rgba(154,167,181,0.5)",
-            }}
-          >
-            {group.label}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignContent: "flex-start",
-              gap: 16,
-            }}
-          >
-            {group.icons.map((icon) => {
-              const def = processes.getDefinition(icon.processId);
-              const sigil = PROCESS_ICONS[icon.processId];
-              return (
-                <button
-                  key={icon.id}
-                  type="button"
-                  onDoubleClick={() => processes.launch(icon.processId)}
-                  className="hover-desktop-icon"
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 6,
-                    width: 84,
-                    padding: "8px 4px",
-                    border: "none",
-                    borderRadius: 8,
-                    background: "transparent",
-                    cursor: "pointer",
-                    color: "var(--text)",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 40,
-                      height: 40,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "linear-gradient(180deg, var(--graphite), var(--obsidian))",
-                      border: "1px solid var(--gold-edge)",
-                      borderRadius: 12,
-                    }}
-                  >
-                    {sigil ?? (typeof def?.icon === "string" ? def.icon : null)}
-                  </span>
-                  <span
-                    className="font-mono"
-                    style={{
-                      fontSize: 10,
-                      letterSpacing: "0.06em",
-                      textTransform: "uppercase",
-                      textAlign: "center",
-                      lineHeight: 1.3,
-                      color: "var(--muted)",
-                    }}
-                  >
-                    {icon.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
 const PATH_TO_PROCESS: Record<string, string> = {
   "/events": "event-stream",
   "/audit": "audit",
@@ -305,16 +236,131 @@ function AutoLaunch() {
   return null;
 }
 
+/**
+ * Tiny taskbar crest: a live status dot + label — the sidebar owns nav now.
+ * Teal "Console online" when the SSE stream is live, crimson "Console offline"
+ * when it is down. Live state is load-bearing in an EDR console, so this must
+ * never be a hardcoded green light.
+ */
+function ConsoleCrest({ live }: { live: boolean }) {
+  const tone = live ? "var(--teal)" : "var(--crimson)";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, paddingLeft: 8 }}>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: tone,
+          boxShadow: `0 0 6px ${tone}`,
+        }}
+      />
+      <span
+        className="font-mono"
+        role="status"
+        style={{
+          fontSize: 9.5,
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
+          color: "rgba(154,167,181,0.5)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {live ? "Console online" : "Console offline"}
+      </span>
+    </div>
+  );
+}
+
+function TaskbarDivider() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 1,
+        height: 18,
+        background: "rgba(27,34,48,0.7)",
+        margin: "0 2px",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+function RunningAppPill({
+  label,
+  Sigil,
+  focused,
+  onActivate,
+}: {
+  label: string;
+  Sigil: ProcessIcon | undefined;
+  focused: boolean;
+  onActivate: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onActivate}
+      className="cs-nav-focus"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "5px 12px 5px 9px",
+        borderRadius: 8,
+        cursor: "pointer",
+        background: focused
+          ? "linear-gradient(180deg, rgba(214,177,90,0.14), rgba(214,177,90,0.04))"
+          : "rgba(18,21,27,0.6)",
+        border: focused ? "1px solid var(--gold-edge)" : "1px solid rgba(27,34,48,0.7)",
+        color: focused ? "var(--gold)" : "var(--muted)",
+        boxShadow: focused ? "inset 0 1px 0 rgba(214,177,90,0.15)" : "none",
+        transition: "opacity 0.12s ease",
+        whiteSpace: "nowrap",
+        maxWidth: 180,
+      }}
+      onMouseEnter={(e) => {
+        if (!focused) (e.currentTarget as HTMLButtonElement).style.opacity = "0.82";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.opacity = "1";
+      }}
+    >
+      {Sigil && (
+        <span style={{ display: "flex", flexShrink: 0 }}>
+          <Sigil size={14} />
+        </span>
+      )}
+      <span
+        className="font-mono"
+        style={{
+          fontSize: 10.5,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
 function ComposedTaskbar({
   notifications,
   onMarkAllRead,
   onClearNotifications,
   unreadCount,
+  status,
 }: {
   notifications: import("../../hooks/useNotifications").AppNotification[];
   onMarkAllRead: () => void;
   onClearNotifications: () => void;
   unreadCount: number;
+  status: ConsoleStatus;
 }) {
   const { windows, processes } = useDesktopOS();
 
@@ -331,50 +377,19 @@ function ComposedTaskbar({
 
   return (
     <Taskbar showClock>
-      <StartMenu />
+      <ConsoleCrest live={status.sseLive} />
+      <TaskbarDivider />
       <Taskbar.RunningApps>
         {processes.instances.map((instance) => {
           const def = processes.getDefinition(instance.processId);
-          const sigil = PROCESS_ICONS[instance.processId];
-          const isFocused = instance.windowId === windows.focusedId;
-
           return (
-            <div
+            <RunningAppPill
               key={instance.windowId}
-              onClick={() => handleClick(instance.windowId)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleClick(instance.windowId);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "4px 12px",
-                borderRadius: "var(--radius-control)",
-                cursor: "pointer",
-                background: isFocused ? "var(--gold-bloom)" : "rgba(18,21,27,0.6)",
-                border: isFocused ? "1px solid var(--gold-edge)" : "1px solid rgba(27,34,48,0.5)",
-                transition: "all 0.15s ease",
-                whiteSpace: "nowrap",
-                maxWidth: 180,
-              }}
-            >
-              {sigil && <span style={{ display: "flex", flexShrink: 0 }}>{sigil}</span>}
-              <span
-                className="font-mono"
-                style={{
-                  fontSize: 11,
-                  letterSpacing: "0.04em",
-                  color: isFocused ? "var(--gold)" : "var(--muted)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {def?.name ?? instance.processId}
-              </span>
-            </div>
+              label={def?.name ?? instance.processId}
+              Sigil={PROCESS_ICONS[instance.processId]}
+              focused={instance.windowId === windows.focusedId}
+              onActivate={() => handleClick(instance.windowId)}
+            />
           );
         })}
       </Taskbar.RunningApps>
@@ -406,6 +421,23 @@ export function ClawdStrikeDesktop() {
     hide: hideContextMenu,
   } = useContextMenu();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  const { processes, windows } = useDesktopOS();
+  const windowIds = useWindowIds();
+  const status = useConsoleStatus(events, connected);
+  const activeProcessId = processes.instances.find(
+    (i) => i.windowId === windows.focusedId,
+  )?.processId;
+  const { sidebarVariant, sidebarCollapsed, toggleSidebarCollapsed } = useShellPreferences();
+  const effectiveVariant = resolveEffectiveVariant(sidebarVariant, sidebarCollapsed);
+  // The collapse morph only applies to the expanded variant; rail/two-pane are fixed layouts.
+  const collapsible = sidebarVariant === "expanded";
+  const expandedCollapsed = collapsible && sidebarCollapsed;
+  const sidebarWidth = sidebarColumnWidth(sidebarVariant, sidebarCollapsed);
+  const hasWindows = windowIds.length > 0;
+
+  const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), []);
+  const launchMonitor = useCallback(() => processes.launch("monitor"), [processes]);
 
   // Persistent alert evaluation — runs regardless of which windows are open
   useAlertRules(events);
@@ -460,18 +492,69 @@ export function ClawdStrikeDesktop() {
       {/* Lock screen (outermost overlay) */}
       <LockScreen locked={locked} onUnlock={unlock} />
 
-      {/* Desktop area */}
+      {/* Shell row: sidebar (launcher) + canvas (header over the window manager).
+          The taskbar is position:fixed, so reserve its height to keep the sidebar
+          footer and window region clear of it. */}
       <div
+        className="cs-animated"
         style={{
           flex: 1,
+          // Grid drives the sidebar column width so <main> reflows smoothly as
+          // the sidebar morphs (impeccable-endorsed size animation). The track
+          // shares the sidebar's own duration + easing so they stay in lockstep.
+          display: "grid",
+          gridTemplateColumns: `${sidebarWidth}px 1fr`,
+          minHeight: 0,
           position: "relative",
-          paddingBottom: "var(--glia-spacing-taskbar-height, 48px)",
+          zIndex: 1,
+          paddingBottom: "var(--glia-spacing-taskbar-height, 44px)",
+          transition: "grid-template-columns 0.22s cubic-bezier(0.22,1,0.36,1)",
         }}
-        onContextMenu={handleDesktopContextMenu}
       >
-        <DesktopSurface />
-        <DesktopWidgets events={events} connected={connected} />
-        <WindowContainer />
+        {/*
+         * No overflow:hidden here — the nav animates its own width in lockstep
+         * with the grid track (same curve + duration), so nothing spills into
+         * <main>, and right-escaping tooltips (rail nav items, the collapsed
+         * Expand toggle) must not be clipped by this wrapper.
+         */}
+        <div style={{ minWidth: 0, display: "flex" }}>
+          <Sidebar
+            status={status}
+            onCmdK={openCommandPalette}
+            variant={effectiveVariant}
+            collapsed={expandedCollapsed}
+          />
+        </div>
+
+        <main
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            minWidth: 0,
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <HeaderBar
+            variant={effectiveVariant}
+            activeProcessId={activeProcessId}
+            status={status}
+            onCmdK={openCommandPalette}
+          />
+
+          {/* Window region — frosted header sits above; windows float freely below it */}
+          <div
+            style={{ flex: 1, position: "relative", minHeight: 0 }}
+            onContextMenu={handleDesktopContextMenu}
+          >
+            <WindowContainer />
+            {!hasWindows && (
+              <div style={{ position: "absolute", inset: 0, display: "flex" }}>
+                <CanvasEmptyState onLaunch={launchMonitor} />
+              </div>
+            )}
+          </div>
+        </main>
       </div>
 
       {/* System services */}
@@ -481,6 +564,10 @@ export function ClawdStrikeDesktop() {
       <KeyboardShortcuts
         onToggleCommandPalette={() => setCommandPaletteOpen((v) => !v)}
         onLock={lock}
+        onToggleSidebar={() => {
+          // Only the expanded variant collapses; rail/two-pane are fixed layouts.
+          if (collapsible) toggleSidebarCollapsed();
+        }}
       />
       <CommandPalette
         open={commandPaletteOpen}
@@ -495,6 +582,7 @@ export function ClawdStrikeDesktop() {
         onMarkAllRead={markAllRead}
         onClearNotifications={clearNotifications}
         unreadCount={unreadCount}
+        status={status}
       />
     </div>
   );

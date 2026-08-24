@@ -62,7 +62,7 @@
   --glia-color-textMuted: rgba(154, 167, 181, 0.5);
   --glia-color-desktopBg: var(--void);
 
-  --glia-spacing-taskbar-height: 48px;
+  --glia-spacing-taskbar-height: 44px;
   --glia-radius-window: var(--radius-window);
 }
 
@@ -158,6 +158,16 @@ body,
 
 /* ── Keyframes ── */
 
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 @keyframes breathe-teal {
   0%,
   100% {
@@ -222,5 +232,32 @@ body,
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+/* Sidebar nav keyboard focus ring — gold, only on keyboard navigation. */
+.cs-nav-focus:focus {
+  outline: none;
+}
+.cs-nav-focus:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+/*
+ * Shell controls carry inline transitions, which cannot themselves hold a
+ * `prefers-reduced-motion` media query. Tag any such control with one of these
+ * classes so the rule below can disable its motion (transition + transform +
+ * animation) for users who request reduced motion. `cs-animated` is for
+ * elements that are not also focus-ring members.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .cs-nav-focus,
+  .cs-nav-focus *,
+  .cs-animated,
+  .cs-animated * {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
   }
 }

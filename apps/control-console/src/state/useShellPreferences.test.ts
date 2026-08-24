@@ -1,0 +1,115 @@
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Each test gets a fresh module so zustand state doesn't bleed between tests.
+// We achieve isolation by resetting the store between tests.
+beforeEach(() => {
+  localStorage.clear();
+  vi.resetModules();
+});
+
+afterEach(() => {
+  localStorage.clear();
+});
+
+async function getHook() {
+  const { useShellPreferences } = await import("./useShellPreferences");
+  return useShellPreferences;
+}
+
+describe("useShellPreferences", () => {
+  it("has correct default values", async () => {
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+    expect(result.current.sidebarVariant).toBe("expanded");
+    expect(result.current.sidebarCollapsed).toBe(false);
+  });
+
+  it("setSidebarVariant updates state and persists to localStorage", async () => {
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+
+    act(() => result.current.setSidebarVariant("rail"));
+
+    expect(result.current.sidebarVariant).toBe("rail");
+    expect(localStorage.getItem("cs_sidebar_variant")).toBe("rail");
+  });
+
+  it("setSidebarVariant persists twopane variant", async () => {
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+
+    act(() => result.current.setSidebarVariant("twopane"));
+
+    expect(result.current.sidebarVariant).toBe("twopane");
+    expect(localStorage.getItem("cs_sidebar_variant")).toBe("twopane");
+  });
+
+  it("setSidebarCollapsed persists to localStorage", async () => {
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+
+    act(() => result.current.setSidebarCollapsed(true));
+
+    expect(result.current.sidebarCollapsed).toBe(true);
+    expect(localStorage.getItem("cs_sidebar_collapsed")).toBe("true");
+  });
+
+  it("toggleSidebarCollapsed flips the collapsed state", async () => {
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+
+    act(() => result.current.toggleSidebarCollapsed());
+    expect(result.current.sidebarCollapsed).toBe(true);
+
+    act(() => result.current.toggleSidebarCollapsed());
+    expect(result.current.sidebarCollapsed).toBe(false);
+  });
+
+  it("hydrates sidebarVariant from localStorage on init", async () => {
+    localStorage.setItem("cs_sidebar_variant", "rail");
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+    expect(result.current.sidebarVariant).toBe("rail");
+  });
+
+  it("hydrates sidebarCollapsed from localStorage on init", async () => {
+    localStorage.setItem("cs_sidebar_collapsed", "true");
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+    expect(result.current.sidebarCollapsed).toBe(true);
+  });
+
+  it("ignores invalid stored sidebarVariant and falls back to default", async () => {
+    localStorage.setItem("cs_sidebar_variant", "not-a-real-variant");
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+    expect(result.current.sidebarVariant).toBe("expanded");
+  });
+
+  it("ignores invalid stored sidebarCollapsed and falls back to default", async () => {
+    localStorage.setItem("cs_sidebar_collapsed", "maybe");
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+    expect(result.current.sidebarCollapsed).toBe(false);
+  });
+
+  it("re-hydrates from a cross-tab storage event", async () => {
+    const useShellPreferences = await getHook();
+    const { result } = renderHook(() => useShellPreferences());
+    expect(result.current.sidebarVariant).toBe("expanded");
+
+    // Another tab wrote the new variant; jsdom does not auto-fire storage events
+    // for same-context writes, so we simulate the browser dispatch. (storageArea is
+    // omitted: the test harness stubs localStorage with a non-Storage shim that
+    // jsdom's StorageEvent constructor rejects, and the listener only reads e.key.)
+    localStorage.setItem("cs_sidebar_variant", "rail");
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "cs_sidebar_variant", newValue: "rail" }),
+      );
+    });
+
+    expect(result.current.sidebarVariant).toBe("rail");
+  });
+});
