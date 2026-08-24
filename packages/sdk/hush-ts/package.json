@@ -57,15 +57,15 @@
     "@clawdstrike/adapter-core": "^0.2.7",
     "@clawdstrike/wasm": "0.2.7",
     "@noble/ed25519": "^3.0.0",
-    "@noble/hashes": "^2.0.1",
+    "@noble/hashes": "^2.3.0",
     "js-yaml": "^4.3.1"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^25.2.0",
+    "@types/node": "^25.9.5",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=20.19.0"
