@@ -30,7 +30,7 @@
     "motion": "^12.33.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.18.2",
+    "react-router-dom": "^7.0.0",
     "tailwind-merge": "^3.0.0",
     "three": "^0.170.0"
   },
