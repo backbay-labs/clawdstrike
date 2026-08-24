@@ -1347,7 +1347,7 @@ impl Config {
             }
             for hook in &mut webhooks.config.webhooks {
                 hook.url = expand_env_refs(&hook.url)?;
-                for (_k, v) in hook.headers.iter_mut() {
+                for v in hook.headers.values_mut() {
                     *v = expand_env_refs(v)?;
                 }
                 if let Some(v) = &hook.content_type {

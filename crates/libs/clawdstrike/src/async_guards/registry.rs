@@ -148,13 +148,9 @@ fn async_config_for_spec(spec: Option<&AsyncGuardPolicyConfig>) -> Result<AsyncG
 }
 
 fn rate_limit_for_policy(cfg: &AsyncRateLimitPolicyConfig) -> Option<RateLimitConfig> {
-    let requests_per_second = if let Some(rps) = cfg.requests_per_second {
-        rps
-    } else if let Some(rpm) = cfg.requests_per_minute {
-        rpm / 60.0
-    } else {
-        return None;
-    };
+    let requests_per_second = cfg
+        .requests_per_second
+        .or_else(|| cfg.requests_per_minute.map(|rpm| rpm / 60.0))?;
 
     let burst = cfg.burst.unwrap_or(1).max(1);
 
