@@ -148,13 +148,9 @@ fn async_config_for_spec(spec: Option<&AsyncGuardPolicyConfig>) -> Result<AsyncG
 }
 
 fn rate_limit_for_policy(cfg: &AsyncRateLimitPolicyConfig) -> Option<RateLimitConfig> {
-    let requests_per_second = if let Some(rps) = cfg.requests_per_second {
-        rps
-    } else if let Some(rpm) = cfg.requests_per_minute {
-        rpm / 60.0
-    } else {
-        return None;
-    };
+    let requests_per_second = cfg
+        .requests_per_second
+        .or_else(|| cfg.requests_per_minute.map(|rpm| rpm / 60.0))?;
 
     let burst = cfg.burst.unwrap_or(1).max(1);
 
@@ -237,6 +233,36 @@ mod tests {
 
         let guards = build_async_guards(&policy).expect("build async guards");
         assert_eq!(guards.len(), 1, "custom spider-sense should be skipped");
+    }
+
+    #[test]
+    fn rate_limit_prefers_requests_per_second() {
+        let cfg = AsyncRateLimitPolicyConfig {
+            requests_per_second: Some(12.0),
+            requests_per_minute: Some(600.0),
+            burst: Some(3),
+        };
+        let limit = rate_limit_for_policy(&cfg).expect("rps should map");
+        assert!((limit.requests_per_second - 12.0).abs() < f64::EPSILON);
+        assert_eq!(limit.burst, 3);
+    }
+
+    #[test]
+    fn rate_limit_converts_requests_per_minute() {
+        let cfg = AsyncRateLimitPolicyConfig {
+            requests_per_second: None,
+            requests_per_minute: Some(120.0),
+            burst: None,
+        };
+        let limit = rate_limit_for_policy(&cfg).expect("rpm should map");
+        assert!((limit.requests_per_second - 2.0).abs() < f64::EPSILON);
+        assert_eq!(limit.burst, 1);
+    }
+
+    #[test]
+    fn rate_limit_requires_a_rate() {
+        let cfg = AsyncRateLimitPolicyConfig::default();
+        assert!(rate_limit_for_policy(&cfg).is_none());
     }
 
     #[test]

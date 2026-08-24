@@ -132,7 +132,7 @@ pub fn cmd_policy_verify(
     let _ = writeln!(stdout);
     let _ = writeln!(stdout, "Policy Verification Report");
     let _ = writeln!(stdout, "==========================");
-    let _ = writeln!(stdout, "Policy: {}", &policy_ref);
+    let _ = writeln!(stdout, "Policy: {}", policy_ref);
     let _ = writeln!(stdout, "Schema: v{}", effective_policy.version);
 
     if let Some(ref extends_name) = loaded.original_extends {

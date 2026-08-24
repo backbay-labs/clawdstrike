@@ -1347,7 +1347,7 @@ impl Config {
             }
             for hook in &mut webhooks.config.webhooks {
                 hook.url = expand_env_refs(&hook.url)?;
-                for (_k, v) in hook.headers.iter_mut() {
+                for v in hook.headers.values_mut() {
                     *v = expand_env_refs(v)?;
                 }
                 if let Some(v) = &hook.content_type {
@@ -2024,5 +2024,57 @@ spine:
             Some(PathBuf::from("/var/lib/clawdstrike/spine.key"))
         );
         assert!(cfg.spine.enabled);
+    }
+
+    #[test]
+    fn expand_env_refs_rewrites_generic_webhook_headers() {
+        std::env::set_var("CLAWDSTRIKE_TEST_WEBHOOK_TOKEN", "expanded-token");
+        let mut headers = std::collections::HashMap::new();
+        headers.insert(
+            "authorization".to_string(),
+            "${CLAWDSTRIKE_TEST_WEBHOOK_TOKEN}".to_string(),
+        );
+
+        let mut config = Config::default();
+        config.siem.exporters.webhooks = Some(ExporterSettings {
+            enabled: true,
+            runtime: SiemExporterConfig::default(),
+            filter: EventFilter::default(),
+            dlq: None,
+            queue_capacity: 10_000,
+            config: WebhookExporterConfig {
+                slack: None,
+                teams: None,
+                webhooks: vec![crate::siem::exporters::webhooks::GenericWebhookConfig {
+                    url: "https://example.test/hook".to_string(),
+                    method: Some("POST".to_string()),
+                    headers,
+                    auth: None,
+                    content_type: None,
+                    body_template: None,
+                }],
+                min_severity: None,
+                include_guards: vec![],
+                exclude_guards: vec![],
+                timeout_ms: 30_000,
+            },
+        });
+
+        config
+            .expand_env_refs()
+            .expect("webhook header env refs should expand");
+        let hook = &config
+            .siem
+            .exporters
+            .webhooks
+            .as_ref()
+            .expect("webhooks exporter")
+            .config
+            .webhooks[0];
+        assert_eq!(
+            hook.headers.get("authorization").map(String::as_str),
+            Some("expanded-token")
+        );
+        std::env::remove_var("CLAWDSTRIKE_TEST_WEBHOOK_TOKEN");
     }
 }

@@ -386,7 +386,7 @@ async fn test_audit_query() {
 
     // First, make some actions to audit
     client
-        .post(format!("{}/api/v1/check", &url))
+        .post(format!("{}/api/v1/check", url))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/test/file.txt"
@@ -397,7 +397,7 @@ async fn test_audit_query() {
 
     // Query audit log
     let resp = client
-        .get(format!("{}/api/v1/audit?limit=10", &url))
+        .get(format!("{}/api/v1/audit?limit=10", url))
         .send()
         .await
         .expect("Failed to query audit");
