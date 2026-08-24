@@ -116,7 +116,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.should_run == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Helm
         uses: azure/setup-helm@v5

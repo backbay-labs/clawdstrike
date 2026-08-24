@@ -74,7 +74,7 @@ jobs:
     timeout-minutes: 90
     needs: resolve-version
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Helm
         uses: azure/setup-helm@v5
@@ -155,7 +155,7 @@ jobs:
     if: ${{ github.event.inputs.run_openclaw_macos == 'true' || vars.ENABLE_MACOS_OPENCLAW_SMOKE == 'true' }}
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Run OpenClaw smoke (if prerequisites exist)
         shell: bash

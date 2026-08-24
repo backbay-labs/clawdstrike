@@ -52,7 +52,7 @@ jobs:
       matrix:
         bin: [spine-checkpointer, spine-witness, spine-proofs-api]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -120,7 +120,7 @@ jobs:
           - image: eas-anchor
             dockerfile: infra/docker/Dockerfile.eas-anchor
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
