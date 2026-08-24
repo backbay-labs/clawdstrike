@@ -236,6 +236,36 @@ mod tests {
     }
 
     #[test]
+    fn rate_limit_prefers_requests_per_second() {
+        let cfg = AsyncRateLimitPolicyConfig {
+            requests_per_second: Some(12.0),
+            requests_per_minute: Some(600.0),
+            burst: Some(3),
+        };
+        let limit = rate_limit_for_policy(&cfg).expect("rps should map");
+        assert!((limit.requests_per_second - 12.0).abs() < f64::EPSILON);
+        assert_eq!(limit.burst, 3);
+    }
+
+    #[test]
+    fn rate_limit_converts_requests_per_minute() {
+        let cfg = AsyncRateLimitPolicyConfig {
+            requests_per_second: None,
+            requests_per_minute: Some(120.0),
+            burst: None,
+        };
+        let limit = rate_limit_for_policy(&cfg).expect("rpm should map");
+        assert!((limit.requests_per_second - 2.0).abs() < f64::EPSILON);
+        assert_eq!(limit.burst, 1);
+    }
+
+    #[test]
+    fn rate_limit_requires_a_rate() {
+        let cfg = AsyncRateLimitPolicyConfig::default();
+        assert!(rate_limit_for_policy(&cfg).is_none());
+    }
+
+    #[test]
     fn disabled_first_class_spider_does_not_shadow_custom_spider() {
         let mut policy = Policy::default();
         policy.guards.spider_sense = Some(
