@@ -1,6 +1,7 @@
 export { AlertRules } from "./AlertRules";
 export { ConnectionSettings } from "./ConnectionSettings";
 export { MultiInstance } from "./MultiInstance";
+export { SidebarSettings } from "./SidebarSettings";
 export { SiemSettings } from "./SiemSettings";
 export { SoundSettings } from "./SoundSettings";
 export { ThemeToggle } from "./ThemeToggle";

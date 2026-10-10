@@ -1,14 +1,14 @@
 import { useDesktopOS } from "@backbay/glia-desktop";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PROCESS_ICONS, processes } from "../../state/processRegistry";
+import { PROCESS_ICONS, type ProcessIcon, processes } from "../../state/processRegistry";
 import { NoiseGrain } from "../ui";
 
 interface Command {
   id: string;
   name: string;
   description: string;
-  icon?: React.ReactNode;
+  Icon?: ProcessIcon;
   action: () => void;
 }
 
@@ -31,7 +31,7 @@ export function CommandPalette({
       id: p.id,
       name: p.name,
       description: p.description || "",
-      icon: PROCESS_ICONS[p.id],
+      Icon: PROCESS_ICONS[p.id],
       action: () => {
         procManager.launch(p.id);
         onClose();
@@ -148,7 +148,11 @@ export function CommandPalette({
                       background: i === selectedIdx ? "var(--gold-bloom)" : "transparent",
                     }}
                   >
-                    {cmd.icon && <span style={{ display: "flex", flexShrink: 0 }}>{cmd.icon}</span>}
+                    {cmd.Icon && (
+                      <span style={{ display: "flex", flexShrink: 0 }}>
+                        <cmd.Icon size={20} />
+                      </span>
+                    )}
                     <div>
                       <div className="font-mono" style={{ fontSize: 13, color: "var(--text)" }}>
                         {cmd.name}

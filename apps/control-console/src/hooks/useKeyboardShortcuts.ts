@@ -2,6 +2,11 @@ import { useEffect } from "react";
 
 export interface Shortcut {
   key: string;
+  /**
+   * Primary modifier. Matches EITHER ⌘ (metaKey) or Ctrl (ctrlKey) so the
+   * "⌘"-labeled shortcuts (⌘K, ⌘L, ⌘1–5, ⌘\\) fire on macOS via Cmd while
+   * continuing to work via the physical Control key on Windows/Linux.
+   */
   ctrl?: boolean;
   alt?: boolean;
   shift?: boolean;
@@ -21,10 +26,14 @@ export function useKeyboardShortcuts(shortcuts: Shortcut[]): void {
         }
       }
 
+      // The primary modifier is satisfied by Cmd OR Ctrl (mac uses Cmd; the
+      // labels say "⌘" but Ctrl must keep working on other platforms).
+      const primaryModifier = e.metaKey || e.ctrlKey;
+
       for (const s of shortcuts) {
         if (
           e.key.toLowerCase() === s.key.toLowerCase() &&
-          !!e.ctrlKey === !!s.ctrl &&
+          primaryModifier === !!s.ctrl &&
           !!e.altKey === !!s.alt &&
           !!e.shiftKey === !!s.shift
         ) {
