@@ -53,7 +53,7 @@ jobs:
         run: cargo build -p hush-ffi --release
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: packages/sdk/hush-go/go.mod
 
