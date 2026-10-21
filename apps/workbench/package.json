@@ -71,7 +71,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@playwright/test": "^1.55.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@tauri-apps/cli": "^2.0.0",
