@@ -56,6 +56,9 @@ const SPIDER_SENSE_HANDLED_KEYS = new Set([
   "embedding_model",
   "embedding_api_url",
   "embedding_api_key",
+  "llm_api_url",
+  "llm_api_key",
+  "llm_model",
 ]);
 
 
@@ -652,6 +655,9 @@ export function GuardCard({
                       embedding_api_url: guardConfig.embedding_api_url as string | undefined,
                       embedding_api_key: guardConfig.embedding_api_key as string | undefined,
                       embedding_model: guardConfig.embedding_model as string | undefined,
+                      llm_api_url: guardConfig.llm_api_url as string | undefined,
+                      llm_api_key: guardConfig.llm_api_key as string | undefined,
+                      llm_model: guardConfig.llm_model as string | undefined,
                     }}
                     onChange={(updates) => {
                       for (const [k, v] of Object.entries(updates)) {

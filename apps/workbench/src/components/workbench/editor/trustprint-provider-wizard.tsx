@@ -14,12 +14,22 @@ import {
   IconArrowRight,
   IconArrowLeft,
   IconCircleDot,
+  IconShieldLock,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import {
   testEmbeddingConnection,
   type ConnectionTestResult,
 } from "@/lib/workbench/trustprint-connection";
+import { OrcaRouterProviderPanel } from "./orcarouter-provider-panel";
+import { createOrcaRouterClient } from "@/lib/orcarouter/client";
+import {
+  ORCAROUTER_PROVIDER_ID,
+  orcaRouterChatCompletionsUrl,
+  orcaRouterEmbeddingsUrl,
+  resolveOrcaRouterOrigins,
+} from "@/lib/orcarouter/provider";
+import type { OrcaRouterCredential } from "@/lib/orcarouter/credentials";
 
 
 interface ModelOption {
@@ -36,9 +46,23 @@ interface EmbeddingProvider {
   icon: string;
   description: string;
   models: ModelOption[];
+  /** Model list comes from the provider's live catalogue, not this array. */
+  dynamicModels?: boolean;
 }
 
+const ORCAROUTER_ORIGINS = resolveOrcaRouterOrigins();
+
 const EMBEDDING_PROVIDERS: EmbeddingProvider[] = [
+  {
+    id: ORCAROUTER_PROVIDER_ID,
+    name: "OrcaRouter Cyber Inference",
+    url: orcaRouterEmbeddingsUrl(ORCAROUTER_ORIGINS),
+    icon: "IconShieldLock",
+    description:
+      "Cyber inference gateway for authorized security work — live model catalogue, API key or OAuth connect",
+    models: [],
+    dynamicModels: true,
+  },
   {
     id: "openai",
     name: "OpenAI",
@@ -90,6 +114,7 @@ const ICON_MAP: Record<string, typeof IconBrain> = {
   IconSparkles,
   IconCompass,
   IconSettings,
+  IconShieldLock,
 };
 
 
@@ -99,12 +124,18 @@ export interface TrustprintProviderWizardProps {
     embedding_api_url?: string;
     embedding_api_key?: string;
     embedding_model?: string;
+    llm_api_url?: string;
+    llm_api_key?: string;
+    llm_model?: string;
   };
   /** Callback when config changes */
   onChange: (updates: Partial<{
     embedding_api_url: string;
     embedding_api_key: string;
     embedding_model: string;
+    llm_api_url: string;
+    llm_api_key: string;
+    llm_model: string;
   }>) => void;
   /** Compact inline mode for guard card */
   compact?: boolean;
@@ -392,6 +423,7 @@ function StepTest({
   url,
   apiKey,
   model,
+  onTest,
   onBack,
   onSave,
   onSkip,
@@ -399,6 +431,8 @@ function StepTest({
   url: string;
   apiKey: string;
   model: string;
+  /** Provider-specific test path; defaults to the generic embedding probe. */
+  onTest?: (model: string) => Promise<ConnectionTestResult>;
   onBack: () => void;
   onSave: () => void;
   onSkip: () => void;
@@ -410,7 +444,9 @@ function StepTest({
     setTesting(true);
     setResult(null);
     try {
-      const res = await testEmbeddingConnection(url, apiKey, model);
+      const res = onTest
+        ? await onTest(model)
+        : await testEmbeddingConnection(url, apiKey, model);
       setResult(res);
     } catch (err) {
       setResult({
@@ -420,7 +456,7 @@ function StepTest({
     } finally {
       setTesting(false);
     }
-  }, [url, apiKey, model]);
+  }, [apiKey, model, onTest, url]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -698,20 +734,58 @@ export function TrustprintProviderWizard({
     config.embedding_model && selectedProviderId === "custom" ? config.embedding_model : "",
   );
 
+  // OrcaRouter keeps its own credential seam and catalogue-driven selection.
+  const [orcaSelection, setOrcaSelection] = useState<{ embeddingModel: string; chatModel: string }>({
+    embeddingModel: config.embedding_model ?? "",
+    chatModel: config.llm_model ?? "",
+  });
+  const [orcaCredential, setOrcaCredential] = useState<OrcaRouterCredential | null>(null);
+
     const provider = useMemo(
     () => EMBEDDING_PROVIDERS.find((p) => p.id === selectedProviderId) ?? null,
     [selectedProviderId],
   );
+  const isOrcaRouter = provider?.id === ORCAROUTER_PROVIDER_ID;
 
   const resolvedUrl = useMemo(() => {
     if (!provider) return "";
+    if (isOrcaRouter) return orcaRouterEmbeddingsUrl(ORCAROUTER_ORIGINS);
     return provider.id === "custom" ? customUrl : provider.url;
-  }, [provider, customUrl]);
+  }, [provider, customUrl, isOrcaRouter]);
 
   const resolvedModel = useMemo(() => {
     if (!provider) return "";
+    if (isOrcaRouter) return orcaSelection.embeddingModel;
     return provider.id === "custom" ? customModel : selectedModel;
-  }, [provider, customModel, selectedModel]);
+  }, [provider, customModel, selectedModel, isOrcaRouter, orcaSelection]);
+
+  const orcaConnectionTest = useCallback(
+    async (model: string): Promise<ConnectionTestResult> => {
+      if (!orcaCredential?.apiKey) {
+        return { success: false, error: "Add an OrcaRouter key or connect an account first" };
+      }
+      const startedAt = performance.now();
+      try {
+        const client = createOrcaRouterClient({
+          origins: ORCAROUTER_ORIGINS,
+          apiKey: orcaCredential.apiKey,
+        });
+        const result = await client.embed(model, "ClawdStrike connection test");
+        return {
+          success: true,
+          latencyMs: Math.round(performance.now() - startedAt),
+          dimensions: result.embedding.length,
+          modelName: result.model,
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : "OrcaRouter connection failed",
+        };
+      }
+    },
+    [orcaCredential],
+  );
 
   // Handlers
   const handleSelectProvider = useCallback((p: EmbeddingProvider) => {
@@ -722,15 +796,46 @@ export function TrustprintProviderWizard({
   }, []);
 
   const commitConfig = useCallback(() => {
-    onChange({
-      embedding_api_url: resolvedUrl,
-      embedding_api_key: apiKey,
-      embedding_model: resolvedModel,
-    });
+    if (isOrcaRouter) {
+      const updates: Partial<{
+        embedding_api_url: string;
+        embedding_api_key: string;
+        embedding_model: string;
+        llm_api_url: string;
+        llm_api_key: string;
+        llm_model: string;
+      }> = {
+        embedding_api_url: orcaRouterEmbeddingsUrl(ORCAROUTER_ORIGINS),
+        embedding_api_key: orcaCredential?.apiKey ?? "",
+        embedding_model: orcaSelection.embeddingModel,
+      };
+      if (orcaSelection.chatModel) {
+        // The deep path needs URL, key and model together.
+        updates.llm_api_url = orcaRouterChatCompletionsUrl(ORCAROUTER_ORIGINS);
+        updates.llm_api_key = orcaCredential?.apiKey ?? "";
+        updates.llm_model = orcaSelection.chatModel;
+      }
+      onChange(updates);
+    } else {
+      onChange({
+        embedding_api_url: resolvedUrl,
+        embedding_api_key: apiKey,
+        embedding_model: resolvedModel,
+      });
+    }
     if (compact) {
       setExpanded(false);
     }
-  }, [onChange, resolvedUrl, apiKey, resolvedModel, compact]);
+  }, [
+    apiKey,
+    compact,
+    isOrcaRouter,
+    onChange,
+    orcaCredential,
+    orcaSelection,
+    resolvedModel,
+    resolvedUrl,
+  ]);
 
   // Compact mode
   if (compact && !expanded) {
@@ -764,7 +869,42 @@ export function TrustprintProviderWizard({
         />
       )}
 
-      {step === 2 && provider && (
+      {step === 2 && provider && isOrcaRouter && (
+        <div className="flex flex-col gap-4">
+          <OrcaRouterProviderPanel
+            selection={orcaSelection}
+            onSelectionChange={setOrcaSelection}
+            onCredential={setOrcaCredential}
+          />
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-[#6f7f9a] hover:text-[#ece7dc] bg-[#131721] border border-[#2d3240] transition-colors"
+            >
+              <IconArrowLeft size={13} stroke={1.5} />
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              disabled={!orcaCredential || !orcaSelection.embeddingModel}
+              data-testid="orcarouter-next"
+              className={cn(
+                "flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-medium transition-all",
+                orcaCredential && orcaSelection.embeddingModel
+                  ? "bg-[#d4a84b] text-[#05060a] hover:bg-[#e8c36a]"
+                  : "bg-[#131721] text-[#6f7f9a] border border-[#2d3240] opacity-50 cursor-not-allowed",
+              )}
+            >
+              Next
+              <IconArrowRight size={13} stroke={2} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && provider && !isOrcaRouter && (
         <StepCredentials
           apiKey={apiKey}
           selectedModel={selectedModel}
@@ -781,8 +921,9 @@ export function TrustprintProviderWizard({
       {step === 3 && (
         <StepTest
           url={resolvedUrl}
-          apiKey={apiKey}
+          apiKey={isOrcaRouter ? (orcaCredential?.apiKey ?? "") : apiKey}
           model={resolvedModel}
+          onTest={isOrcaRouter ? orcaConnectionTest : undefined}
           onBack={() => setStep(2)}
           onSave={commitConfig}
           onSkip={commitConfig}

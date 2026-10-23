@@ -144,6 +144,14 @@ export interface SpiderSenseConfig {
    */
   embedding_api_key?: string;
   embedding_model?: string;
+  /**
+   * Optional LLM deep-path endpoint for ambiguous cases. `llm_api_url`,
+   * `llm_api_key` and `llm_model` are written together; leaving them unset
+   * keeps the deep path disabled.
+   */
+  llm_api_url?: string;
+  llm_api_key?: string;
+  llm_model?: string;
   similarity_threshold?: number;
   ambiguity_band?: number;
   top_k?: number;

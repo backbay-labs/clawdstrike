@@ -1,0 +1,24 @@
+{
+  "_comment": "Recorded from GET https://api.orcarouter.ai/v1/models on 2026-10-23 for the workbench UI evidence run. Model ids and advertised metadata only; no credentials.",
+  "data": [
+    { "id": "orcarouter/free", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/fusion", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/fusion-flash", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/fusion-mini", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/orcacode-review", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/open-code", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/test-cache-glm52-opus", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/simple-test", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/intco-qa", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "orcarouter/auto", "supported_endpoint_types": ["openai", "openai-response", "anthropic", "gemini"] },
+    { "id": "deepseek/deepseek-v4-pro-0813", "supported_endpoint_types": ["openai", "anthropic", "openai-response"], "architecture": { "input_modalities": ["text"] } },
+    { "id": "orca/orcacyber-ultra-1.0", "supported_endpoint_types": ["openai"], "architecture": { "input_modalities": ["text"] } },
+    { "id": "orca/orcacyber-zero-1.0", "supported_endpoint_types": ["openai"], "architecture": { "input_modalities": ["text"] } },
+    { "id": "deepseek/deepseek-v4.1-flash", "supported_endpoint_types": ["openai", "openai-response", "anthropic"], "architecture": { "input_modalities": ["text", "image"] } },
+    { "id": "deepseek/deepseek-v4-flash-vision-exp", "supported_endpoint_types": ["openai", "openai-response", "anthropic"], "architecture": { "input_modalities": ["text", "image"] } },
+    { "id": "orca/orcacyber-zero-1.5", "supported_endpoint_types": ["openai"], "architecture": { "input_modalities": ["text"] } },
+    { "id": "deepseek/deepseek-v4-flash", "supported_endpoint_types": ["openai", "openai-response"], "architecture": { "input_modalities": ["text"] } },
+    { "id": "deepseek/deepseek-v4-pro", "supported_endpoint_types": ["openai", "openai-response"], "architecture": { "input_modalities": ["text"] } },
+    { "id": "deepseek/deepseek-v4-flash-0731", "supported_endpoint_types": ["openai", "anthropic", "openai-response"], "architecture": { "input_modalities": ["text"] } }
+  ]
+}
