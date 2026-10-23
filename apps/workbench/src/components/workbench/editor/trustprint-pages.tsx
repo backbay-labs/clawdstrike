@@ -21,6 +21,9 @@ export function TrustprintProvidersPage() {
     embedding_api_url: "",
     embedding_api_key: "",
     embedding_model: "",
+    llm_api_url: "",
+    llm_api_key: "",
+    llm_model: "",
   });
   const handleChange = useCallback(
     (updates: Partial<typeof config>) => {

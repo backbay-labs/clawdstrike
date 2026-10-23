@@ -1,4 +1,11 @@
+import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
+
+// Prefer an explicit browser path (CI images often ship a system Chromium and
+// no Playwright browser download), then fall back to Playwright's own browser.
+const chromiumExecutable =
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ??
+  (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined);
 
 export default defineConfig({
   testDir: ".",
@@ -13,9 +20,17 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    launchOptions: chromiumExecutable
+      ? { executablePath: chromiumExecutable, args: ["--no-sandbox"] }
+      : undefined,
   },
   webServer: {
-    command: "npm run dev -- --host 127.0.0.1 --port 1421",
+    // E2E normally runs against the dev server; point
+    // PLAYWRIGHT_WEB_SERVER_COMMAND at `npm run preview -- …` to run the same
+    // specs against a production build instead.
+    command:
+      process.env.PLAYWRIGHT_WEB_SERVER_COMMAND ??
+      "npm run dev -- --host 127.0.0.1 --port 1421",
     url: "http://127.0.0.1:1421",
     timeout: 120_000,
     reuseExistingServer: !process.env.CI,

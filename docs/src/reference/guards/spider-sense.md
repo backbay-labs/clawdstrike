@@ -64,6 +64,54 @@ Provider-specific request/response handling is selected from the endpoint host:
 - OpenAI-compatible (default)
 - Cohere (`host` contains `cohere`)
 - Voyage (`host` contains `voyage`)
+- OrcaRouter (`host` is `api.orcarouter.ai` — see below)
+
+### OrcaRouter Cyber Inference
+
+[OrcaRouter](https://www.orcarouter.ai) is a named, OpenAI-compatible inference
+gateway for authorized security work, including dedicated cyber models for
+business-verified security teams
+([cyber catalogue](https://www.orcarouter.ai/models?tier=cyber)).
+
+Both Spider-Sense stages can run through it. The Workbench configures this for
+you (Trustprint → OrcaRouter Cyber Inference), and the resulting policy is
+ordinary Spider-Sense config:
+
+```yaml
+guards:
+  spider_sense:
+    embedding_api_url: "https://api.orcarouter.ai/v1/embeddings"
+    embedding_api_key: "${ORCAROUTER_API_KEY}"
+    embedding_model: "orcarouter/auto"
+    # Optional deep path (ambiguous-case reasoning)
+    llm_api_url: "https://api.orcarouter.ai/v1/chat/completions"
+    llm_api_key: "${ORCAROUTER_API_KEY}"
+    llm_model: "orcarouter/auto"
+```
+
+Model tiers, in the order the Workbench presents them:
+
+| Tier | Model id | Notes |
+| --- | --- | --- |
+| Default | `orcarouter/auto` | Gateway-chosen general model; works for embeddings and chat |
+| Dedicated cyber | `orca/orcacyber-ultra-1.0`, `orca/orcacyber-zero-1.5` (`orca/orcacyber-zero-1.0` also accepted; the bare `orcacyber-*` ids are recognised too) | Authorized security inference for business-verified security teams |
+| General fallback | `orcarouter/fusion` | Used only when the default is unavailable |
+
+Model lists in the Workbench come from `GET https://api.orcarouter.ai/v1/models`
+and are filtered by the capability each field needs, so an embedding-only model
+never appears in the deep-path selector and vice versa.
+
+Credentials can be supplied either way:
+
+- paste an existing key (`sk-orca-…`), or
+- use **Connect with OrcaRouter** (OAuth 2.0 + PKCE, out-of-band code). The
+  exchange happens on `https://www.orcarouter.ai`; the result is a durable
+  `sk-orca-…` key, not a refresh token. Revoke it from the OrcaRouter console at
+  any time and reconnect.
+
+The guard treats the key as a normal bearer secret; `llm_api_key` and
+`embedding_api_key` should come from the environment or the broker, never from a
+committed policy file.
 
 ## Async Runtime Controls (`guards.spider_sense.async`)
 

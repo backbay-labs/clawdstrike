@@ -18,8 +18,11 @@
     "dogfood:live": "bash ../../scripts/workbench-live-dogfood.sh",
     "dogfood:missions": "bash ../../scripts/workbench-mission-control-dogfood.sh",
     "test:e2e": "playwright test",
+    "test:e2e:evidence": "PLAYWRIGHT_WEB_SERVER_COMMAND='npm run evidence:preview' playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "evidence:build": "vite build --config e2e/vite.evidence.config.ts",
+    "evidence:preview": "npm run evidence:build && vite preview --outDir dist-evidence --host 127.0.0.1 --port 1421 --strictPort"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

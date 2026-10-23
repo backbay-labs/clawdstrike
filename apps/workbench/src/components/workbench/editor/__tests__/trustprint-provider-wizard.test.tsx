@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TrustprintProviderWizard } from "../trustprint-provider-wizard";
 import type { ConnectionTestResult } from "@/lib/workbench/trustprint-connection";
+import { secureStore } from "@/features/settings/secure-store";
 
 
 const connectionMocks = vi.hoisted(() => ({
@@ -54,6 +55,14 @@ beforeEach(() => {
     dimensions: 1536,
     modelName: "text-embedding-3-small",
   });
+});
+
+afterEach(async () => {
+  vi.unstubAllGlobals();
+  // The panel talks to the real secure store (in-memory fallback in jsdom),
+  // so clear anything a test saved.
+  await secureStore.delete("orcarouter_api_key");
+  await secureStore.delete("orcarouter_credential_meta");
 });
 
 describe("TrustprintProviderWizard", () => {
@@ -427,5 +436,152 @@ describe("TrustprintProviderWizard", () => {
     expect(screen.getByText("Provider")).toBeInTheDocument();
     expect(screen.getByText("Credentials")).toBeInTheDocument();
     expect(screen.getByText("Test")).toBeInTheDocument();
+  });
+});
+
+// ---- OrcaRouter Cyber Inference ----
+
+const ORCAROUTER_CATALOG = {
+  data: [
+    {
+      id: "orcarouter/auto",
+      name: "OrcaRouter Auto",
+      supported_endpoint_types: ["openai"],
+      architecture: { input_modalities: ["text"] },
+    },
+    {
+      id: "text-embedding-3-small",
+      name: "text-embedding-3-small",
+      supported_endpoint_types: ["openai", "embeddings"],
+      architecture: { input_modalities: ["text"] },
+    },
+  ],
+};
+
+function stubOrcaRouterFetch() {
+  const fetchFn = vi.fn<typeof fetch>(async (input) => {
+    const url = String(input);
+    if (url.endsWith("/models")) {
+      return new Response(JSON.stringify(ORCAROUTER_CATALOG), { status: 200 });
+    }
+    if (url.endsWith("/embeddings")) {
+      return new Response(
+        JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3], index: 0 }], model: "orcarouter/auto" }),
+        { status: 200 },
+      );
+    }
+    return new Response("{}", { status: 200 });
+  });
+  vi.stubGlobal("fetch", fetchFn);
+  return fetchFn;
+}
+
+async function connectViaApiKey(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("provider-card-orcarouter"));
+  await user.click(screen.getByRole("button", { name: /next/i }));
+  await user.type(screen.getByTestId("orcarouter-api-key-input"), "sk-orca-wizardkey123456");
+  await user.click(screen.getByTestId("orcarouter-save-key"));
+  await waitFor(() =>
+    expect(screen.getByTestId("orcarouter-masked-key")).toBeInTheDocument(),
+  );
+}
+
+describe("TrustprintProviderWizard — OrcaRouter Cyber Inference", () => {
+  it("offers OrcaRouter as a named provider with the required display name", () => {
+    renderWizard();
+    const card = screen.getByTestId("provider-card-orcarouter");
+    expect(card).toHaveTextContent("OrcaRouter Cyber Inference");
+    expect(card).toHaveTextContent(/Cyber inference gateway/);
+  });
+
+  it("step 2 shows API key and Connect with OrcaRouter, not a free-text model box", async () => {
+    stubOrcaRouterFetch();
+    const user = userEvent.setup();
+    renderWizard();
+
+    await user.click(screen.getByTestId("provider-card-orcarouter"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(screen.getByTestId("orcarouter-auth-tab-api-key")).toBeInTheDocument();
+    expect(screen.getByTestId("orcarouter-auth-tab-pkce")).toHaveTextContent(/Connect with OrcaRouter/);
+    // Models are catalogue-driven; no free-text model entry for OrcaRouter.
+    expect(screen.queryByPlaceholderText("e.g., text-embedding-3-small")).not.toBeInTheDocument();
+    expect(screen.getByTestId("orcarouter-next")).toBeDisabled();
+  });
+
+  it("commits embedding_* and llm_* config from the OrcaRouter catalogue selection", async () => {
+    const fetchFn = stubOrcaRouterFetch();
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderWizard({ onChange });
+
+    await connectViaApiKey(user);
+
+    await user.click(await screen.findByTestId("orcarouter-embedding-model-trigger"));
+    await user.click(
+      screen.getByTestId("orcarouter-embedding-model-option-text-embedding-3-small"),
+    );
+    await user.click(screen.getByTestId("orcarouter-chat-model-trigger"));
+    await user.click(screen.getByTestId("orcarouter-chat-model-option-orcarouter/auto"));
+
+    await waitFor(() => expect(screen.getByTestId("orcarouter-next")).not.toBeDisabled());
+    await user.click(screen.getByTestId("orcarouter-next"));
+
+    await user.click(screen.getByText(/skip test/i));
+
+    expect(onChange).toHaveBeenCalledWith({
+      embedding_api_url: "https://api.orcarouter.ai/v1/embeddings",
+      embedding_api_key: "sk-orca-wizardkey123456",
+      embedding_model: "text-embedding-3-small",
+      llm_api_url: "https://api.orcarouter.ai/v1/chat/completions",
+      llm_api_key: "sk-orca-wizardkey123456",
+      llm_model: "orcarouter/auto",
+    });
+    expect(fetchFn).toHaveBeenCalledWith(
+      "https://api.orcarouter.ai/v1/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer sk-orca-wizardkey123456" }),
+      }),
+    );
+  });
+
+  it("runs the connection test through the OrcaRouter client", async () => {
+    stubOrcaRouterFetch();
+    const user = userEvent.setup();
+    renderWizard();
+
+    await connectViaApiKey(user);
+    await user.click(await screen.findByTestId("orcarouter-embedding-model-trigger"));
+    await user.click(
+      screen.getByTestId("orcarouter-embedding-model-option-text-embedding-3-small"),
+    );
+    await waitFor(() => expect(screen.getByTestId("orcarouter-next")).not.toBeDisabled());
+    await user.click(screen.getByTestId("orcarouter-next"));
+
+    await user.click(screen.getByTestId("test-connection-button"));
+    await waitFor(() => expect(screen.getByTestId("test-result")).toBeInTheDocument());
+    expect(within(screen.getByTestId("test-result")).getByText("Connected!")).toBeInTheDocument();
+  });
+
+  it("keeps the deep-path LLM config out when no reasoning model is chosen", async () => {
+    stubOrcaRouterFetch();
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderWizard({ onChange });
+
+    await connectViaApiKey(user);
+    await user.click(await screen.findByTestId("orcarouter-embedding-model-trigger"));
+    await user.click(
+      screen.getByTestId("orcarouter-embedding-model-option-text-embedding-3-small"),
+    );
+    await waitFor(() => expect(screen.getByTestId("orcarouter-next")).not.toBeDisabled());
+    await user.click(screen.getByTestId("orcarouter-next"));
+    await user.click(screen.getByText(/skip test/i));
+
+    const calls = onChange.mock.calls;
+    const committed = calls[calls.length - 1]?.[0] as Record<string, unknown>;
+    expect(committed.embedding_model).toBe("text-embedding-3-small");
+    expect(committed).not.toHaveProperty("llm_model");
+    expect(committed).not.toHaveProperty("llm_api_key");
   });
 });
